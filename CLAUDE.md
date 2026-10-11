@@ -226,8 +226,9 @@ tools/perf-csv/analyze.py /tmp/tmc-debug/debug/tmc-perf-0001.csv
   after the transfer (`curl -Q "-SITE INSTALL <path>"`; the leading `-` means "after").
   The game refuses a CIA with another title ID, installs over itself
   (`cia_install_3ds.c`), replies `200` and jumps into the new build
-  (`Platform3DS_RequestRelaunch`). The relaunched game has the FTP server **off**
-  again; ask the owner to turn it on before the next install or fetch.
+  (`Platform3DS_RequestRelaunch`). The relaunched game turns the FTP server back on by
+  itself (`debug_ftp` in `tmc3ds.ini`), so installs and fetches can follow one another;
+  give it a few seconds after the relaunch.
 - Any unsaved progress is lost on relaunch: say so before installing while the owner plays.
 - If the IP is unknown or the connection is refused, ask the owner for the address the
   FTP SERVER cell shows; do not scan the network without need.

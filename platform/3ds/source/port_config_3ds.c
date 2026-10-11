@@ -138,6 +138,12 @@ static bool sAudioDspPcm = false;
  * reverses that migration once so an existing tmc3ds.ini cannot preserve the
  * broken split-timeline mix. */
 static int sPerformanceProfileVersion;
+#if TMC3DS_DEBUG_TOOLS
+/* debug_switches_3ds.h: the DEBUG tab tools restored at launch. */
+static bool sDebugLogOn = true;
+static bool sDebugLogDirect;
+static bool sDebugFtpOn;
+#endif
 
 enum { PERFORMANCE_PROFILE_VERSION = 2 };
 
@@ -199,6 +205,11 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("gpu_short_vertices=%u\n", sGpuShortVertices ? 1u : 0u);
     APPEND("audio_dsp=%u\n", sAudioDsp ? 1u : 0u);
     APPEND("audio_dsp_pcm=%u\n", sAudioDspPcm ? 1u : 0u);
+#if TMC3DS_DEBUG_TOOLS
+    APPEND("debug_log=%u\n", sDebugLogOn ? 1u : 0u);
+    APPEND("debug_log_direct=%u\n", sDebugLogDirect ? 1u : 0u);
+    APPEND("debug_ftp=%u\n", sDebugFtpOn ? 1u : 0u);
+#endif
 #undef APPEND
     return used;
 }
@@ -377,6 +388,11 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "master_volume") == 0) sVolume = strtof(value, NULL);
             else if (strcmp(key, "panel_backdrop") == 0) sBackdrop = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "turbo_multiplier") == 0) sTurboMultiplier = (unsigned)strtoul(value, NULL, 10);
+#if TMC3DS_DEBUG_TOOLS
+            else if (strcmp(key, "debug_log") == 0) sDebugLogOn = ParseBool(value);
+            else if (strcmp(key, "debug_log_direct") == 0) sDebugLogDirect = ParseBool(value);
+            else if (strcmp(key, "debug_ftp") == 0) sDebugFtpOn = ParseBool(value);
+#endif
         }
         fclose(file);
     }
@@ -433,6 +449,27 @@ bool Port_Config_AudioDspPcm(void) {
  * change is saved like any other setting. `bottom_rgb565` is left out: per
  * its own note above it turns the bottom screen red. */
 #include "debug_switches_3ds.h"
+
+#if TMC3DS_DEBUG_TOOLS
+bool Port_Config_DebugLogOn(void) { return sDebugLogOn; }
+void Port_Config_SetDebugLogOn(bool on) {
+    if (sDebugLogOn == on) return;
+    sDebugLogOn = on;
+    SaveConfig();
+}
+bool Port_Config_DebugLogDirect(void) { return sDebugLogDirect; }
+void Port_Config_SetDebugLogDirect(bool direct) {
+    if (sDebugLogDirect == direct) return;
+    sDebugLogDirect = direct;
+    SaveConfig();
+}
+bool Port_Config_DebugFtpOn(void) { return sDebugFtpOn; }
+void Port_Config_SetDebugFtpOn(bool on) {
+    if (sDebugFtpOn == on) return;
+    sDebugFtpOn = on;
+    SaveConfig();
+}
+#endif
 
 extern void Port_Audio_3DSRestartThread(void);
 

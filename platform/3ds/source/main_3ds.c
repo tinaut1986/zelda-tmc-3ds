@@ -22,6 +22,7 @@
 #include "debug_log_3ds.h"
 #include "debug_perf_3ds.h"
 #include "ftp_server_3ds.h"
+#include "debug_switches_3ds.h"
 #endif
 
 #define APP_DIR TMC3DS_APP_DIR
@@ -133,7 +134,12 @@ int main(int argc, char** argv) {
     printf("Loading ROM and tables...\n");
     Port_Config_Load("tmc3ds.ini");
 #if TMC3DS_DEBUG_TOOLS
-    DebugLog_Start(); /* debug builds log from boot; the DEBUG tab stops it */
+    /* Debug builds log from boot unless the DEBUG tab left it off; the FTP
+     * server comes back on its own once Wi-Fi is up (port_ppu_3ds.c). */
+    if (Port_Config_DebugLogOn()) {
+        DebugLog_SetDirect(Port_Config_DebugLogDirect());
+        DebugLog_Start();
+    }
 #endif
     Port_LoadRom(romPath);
     Port_SecondScreenTheme_Ready();

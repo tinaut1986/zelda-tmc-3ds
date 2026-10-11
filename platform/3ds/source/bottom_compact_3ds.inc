@@ -696,14 +696,19 @@ static void Compact_DebugCommand(int cmd) {
             if (DebugLog_Running()) {
                 int n = DebugLog_FileNumber();
                 DebugLog_Stop();
+                Port_Config_SetDebugLogOn(false);
                 Compact_Toast("LOG %04d SAVED", n);
             } else {
+                Port_Config_SetDebugLogOn(true);
                 DebugLog_Start();
                 if (DebugLog_Running()) Compact_Toast("LOG %04d STARTED", DebugLog_FileNumber());
                 else Compact_Toast("CANNOT WRITE THE LOG");
             }
             break;
-        case DBG_CMD_LOG_MODE: DebugLog_SetDirect(!DebugLog_Direct()); break;
+        case DBG_CMD_LOG_MODE:
+            DebugLog_SetDirect(!DebugLog_Direct());
+            Port_Config_SetDebugLogDirect(DebugLog_Direct());
+            break;
         case DBG_CMD_LOG_MARK:
             if (DebugLog_Running()) Compact_Toast("MARK %d", DebugLog_Mark());
             break;
@@ -720,10 +725,12 @@ static void Compact_DebugCommand(int cmd) {
             }
             break;
         case DBG_CMD_FTP_RUN:
-            if (FtpServer_Running()) {
+            if (FtpServer_Running() || Port_Config_DebugFtpOn()) {
+                /* Also cancels a restore still waiting for Wi-Fi. */
                 FtpServer_Stop();
+                Port_Config_SetDebugFtpOn(false);
                 Compact_Toast("FTP STOPPED");
-            } else if (FtpServer_Start()) {
+            } else if (Port_Config_SetDebugFtpOn(true), FtpServer_Start()) {
                 char address[40];
                 FtpServer_Address(address, sizeof(address));
                 Compact_Toast("FTP %s", address);

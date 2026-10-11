@@ -18,6 +18,8 @@
 #if TMC3DS_DEBUG_TOOLS
 #include "debug_log_3ds.h"
 #include "debug_perf_3ds.h"
+#include "debug_switches_3ds.h"
+#include "ftp_server_3ds.h"
 #endif
 #include "platform_gpu_3ds.h"
 #include "top_view_3ds.h"
@@ -1333,6 +1335,13 @@ void Port_PPU_PresentFrame(void) {
         DebugPerf_Record(&row);
     }
     DebugLog_Tick();
+    /* The FTP server was on when the game last ran (or a start found no
+     * Wi-Fi): try again every ~2 s until it serves or the DEBUG tab stops it. */
+    static unsigned ftpRetry = 120;
+    if (Port_Config_DebugFtpOn() && !FtpServer_Running() && ++ftpRetry >= 120) {
+        ftpRetry = 0;
+        FtpServer_Start();
+    }
 #endif
 
     /* Every third presentation cost 2759 repaints in 8336 frames, each a

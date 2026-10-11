@@ -79,6 +79,12 @@ and the usual client bookmarks work), a toast says it again, and the cell's titl
 changes while a client is connected. It needs Wi-Fi; the cell says why when it
 cannot start (`NO WI-FI`, `PORT 5000 BUSY`).
 
+The DEBUG tab's tools come back at the next launch as they were left (`tmc3ds.ini`:
+`debug_log`, `debug_log_direct`, `debug_ftp`; debug builds only, a production build ignores
+and drops them). An FTP server left on starts again by itself, retrying every ~2 s until
+Wi-Fi is up; tapping its button while it waits cancels it. The perf recorder and GPU CHECK
+are one-shot captures and always start off.
+
 - Anonymous: any user name and password.
 - `/` is the root of the SD card; the game's files are in
   `/3ds/Minish Cap 3DS/` (`debug/`, `dumps/`, saves, `tmc3ds.ini`).
@@ -92,8 +98,7 @@ wget -r -nH --cut-dirs=3 ftp://<3ds-ip>:5000/3ds/Minish%20Cap%203DS/debug/   # t
 ```
 
 `SITE INSTALL <path>` installs a CIA of this game that is already on the SD card
-over the running game and relaunches into the new build (the FTP server is then off
-again). `./build_3ds.sh --install IP` builds, uploads to
+over the running game and relaunches into the new build (the FTP server comes back on with it). `./build_3ds.sh --install IP` builds, uploads to
 `/3ds/Minish Cap 3DS/update/dev.cia` and installs in one go; the interactive menu
 offers it as "Install into the running game". Any unsaved progress is lost. While a
 `.cia` is being received and while it installs, the bottom screen says so
