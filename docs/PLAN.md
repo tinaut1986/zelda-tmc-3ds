@@ -276,6 +276,17 @@ Owner's report on upstream v2.2-E1 (2026-10-11, by eye, before the P1 tools):
 | New 3DS | Wide + Pixel Perfect (Full View) | 400x240 view, more world | ~30 |
 | Old 3DS | Wide + Pixel Perfect | the same picture as Original (Full View is New 3DS only in upstream's policy) | ~30 |
 
+First perf recordings (2026-10-11, build `0.1.1-dev.13.9+1774bfb`, New 3DS, Hyrule Field
+03/01, FRAMES = NO SKIP, walking ~25 s each; `tools/perf-csv/analyze.py`):
+
+| Setting | fps | Drawn by | Per frame (mean) |
+|---|---|---|---|
+| Wide + Pixel Perfect (Full View 400x240) | 33.8 | software PPU, every frame | sw render 28.8 ms; every frame takes 2 vblanks |
+| Wide + Bilinear | 57.5 | GPU, every frame | gpu build 10.3 ms + gpu begin (waiting for the previous GPU frame) 6.3 ms = 16.9 ms, just over the 16.7 ms budget; vblank wait 0 |
+
+Engine logic is 0.2-0.3 ms in both: the whole frame is drawing. The bottom screen paints on
+its own thread and does not show in the top's interval.
+
 Reference: `../mzm` runs wide + pixel perfect **with stereo 3D** at or near 60 on both models.
 Reading: on the New 3DS, Full View is drawn by the software PPU (2.5x the GBA's pixels), which
 P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besides drawing
