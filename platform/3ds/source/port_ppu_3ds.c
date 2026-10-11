@@ -256,9 +256,22 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
                                                 ? virtuappu_mode1_ws_shadow_base_tile[bg]
                                                 : -1;
         if (virtuappu_mode1_ws_shadow[bg]) {
-            memcpy(&sGpuWsShadow[bg * MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_COLS],
-                   virtuappu_mode1_ws_shadow[bg],
-                   MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_COLS * sizeof(uint16_t));
+            /* The producer packs each BG's rows at its own stride (7 columns for
+             * normal Wide, 54 for Full View: virtuappu_mode1_ws_shadow_stride);
+             * the builder reads at MODE1_WS_SHADOW_COLS. Copying the buffer as
+             * if it were already at that stride fed normal Wide rows 1-31 the
+             * wrong entries: garbage in the right-hand columns past x=240 on
+             * the GPU renderer only. Repack row by row; the columns the BG does
+             * not have are entry 0, as the software PPU reads them. */
+            uint16_t* dst = &sGpuWsShadow[bg * MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_COLS];
+            const unsigned cols = virtuappu_mode1_ws_shadow_cols[bg];
+            const unsigned stride = virtuappu_mode1_ws_shadow_stride[bg];
+            memset(dst, 0, MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_COLS * sizeof(uint16_t));
+            if (cols > 0 && cols <= MODE1_WS_SHADOW_COLS && stride >= cols && stride <= MODE1_WS_SHADOW_COLS) {
+                for (unsigned row = 0; row < MODE1_WS_SHADOW_ROWS; ++row)
+                    memcpy(dst + row * MODE1_WS_SHADOW_COLS, virtuappu_mode1_ws_shadow[bg] + row * stride,
+                           cols * sizeof(uint16_t));
+            }
             anyShadow = true;
         }
     }

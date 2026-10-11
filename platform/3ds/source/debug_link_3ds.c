@@ -277,6 +277,12 @@ bool DebugLink_Command(const char* verb, const char* args, char* reply, unsigned
         FormatState(reply, cap);
         return true;
     }
+    if (!strcmp(verb, "MARK")) {
+        /* A numbered marker in the SD log, which also writes out its buffer. */
+        if (DebugLog_Running()) snprintf(reply, cap, "200 MARK %d", DebugLog_Mark());
+        else snprintf(reply, cap, "550 The SD log is off.");
+        return true;
+    }
     if (!strcmp(verb, "PEEK")) {
         unsigned long address = 0, length = 0;
         if (sscanf(args, "%lx %lu", &address, &length) != 2 || length == 0 || length > LINK_PEEK_MAX) {

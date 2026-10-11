@@ -14,6 +14,7 @@
  *   SITE DUMP                             take a quick dump (as L+R+A)
  *   SITE SWITCH <name>                    cycle a DEBUG -> SWITCHES value
  *   SITE STATE                            one line: frame, fps, in game, area, room, Link, health
+ *   SITE MARK                             a marker in the SD log, flushing it
  *   SITE PEEK <address> <length>          hex of up to 256 bytes of this process's memory
  *   SITE POKE <address> <hex bytes>       write them (main thread, between frames)
  *
