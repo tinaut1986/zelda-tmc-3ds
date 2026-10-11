@@ -1147,6 +1147,7 @@ static volatile int sWsExperimentalMode = PORT_3DS_FULL_VIEW_FALLBACK;
 static u32 sWsExperimentalCameraRoomKey = 0xffffffffu;
 static int sWsExperimentalCameraSnapArmed = 1;
 static u32 sWsGameplayRoomKey = 0xffffffffu;
+static int sWsRoomLoadTicks; /* UpdateShadows ticks since the room key changed, counting down */
 static Port3DSFullViewMode sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
 static u32 sWsProducerPendingRoomKey = 0xffffffffu;
 static Port3DSFullViewMode sWsProducerPendingMode = PORT_3DS_FULL_VIEW_FALLBACK;
@@ -1437,6 +1438,22 @@ Port3DSFullViewMode Port_Widescreen_3DSViewMode(void) {
         return PORT_3DS_FULL_VIEW_FALLBACK;
     }
     return publishedMode;
+}
+
+int Port_Widescreen_3DSHoldTop(void) {
+#ifdef TMC_3DS
+    if (sWsRoomLoadTicks <= 0 || gFadeControl.active == 0 || gMain.task != TASK_GAME) return 0;
+    if (!Port_Config_3DSFullViewComboEnabled() || Port_WidescreenFixedCanvasSubtask()) return 0;
+    if (gRoomControls.area > AREA_98 ||
+        !Port3DSFullViewPolicy_AreaIsExterior(gRoomControls.area, gRoomControls.room,
+                                              gAreaMetadata[gRoomControls.area].flags))
+        return 0;
+    Port3DSFullViewMode published = PORT_3DS_FULL_VIEW_FALLBACK;
+    (void)Port_WidescreenRead3DSView(NULL, &published);
+    return published == PORT_3DS_FULL_VIEW_FALLBACK;
+#else
+    return 0;
+#endif
 }
 
 Port3DSFullViewFallbackReason Port_Widescreen_3DSFallbackReason(void) {
@@ -1902,7 +1919,9 @@ void Port_Widescreen_UpdateShadows(void) {
         sWsExperimentalCameraRoomKey = roomKey;
         sWsExperimentalCameraSnapArmed = 1;
     }
+    if (sWsRoomLoadTicks > 0) --sWsRoomLoadTicks;
     if (sWsGameplayRoomKey != roomKey) {
+        sWsRoomLoadTicks = 16;
         sWsGameplayRoomKey = roomKey;
         sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
         sWsProducerPendingRoomKey = 0xffffffffu;
@@ -2140,6 +2159,9 @@ Port3DSFullViewMode Port_Widescreen_3DSViewMode(void) {
 }
 Port3DSFullViewFallbackReason Port_Widescreen_3DSFallbackReason(void) {
     return PORT_3DS_FULL_VIEW_REASON_COMBO_DISABLED;
+}
+int Port_Widescreen_3DSHoldTop(void) {
+    return 0;
 }
 int Port_Widescreen_HudRightAnchor(void) {
     return 0;

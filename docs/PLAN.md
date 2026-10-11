@@ -427,3 +427,9 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   round trips Hyrule Field <-> Link's house: entering keeps 400 until the new room's first frame
   (240 interior); leaving goes 240 -> 266 (+4 frames) -> 400 (+6 frames) from the first frame of
   the field, under the start of the fade-in.
+- **2026-10-12** Leaving a house still showed 240 -> 266 -> 400 under the fade-in (owner saw a
+  "strange frame"). The top screen now holds its last frame (`Port_Widescreen_3DSHoldTop`) while
+  a fade is on, the room changed within 16 ticks, the area is an exterior and Full View is not
+  published yet: the held frame is the fully faded one, and the first frame shown is already
+  400x240. Never during a border scroll (no fade). The view log marks held frames with HOLD. Log,
+  two round trips: 240 / 266 frames at the black, 4 held frames at fade start, then 400.

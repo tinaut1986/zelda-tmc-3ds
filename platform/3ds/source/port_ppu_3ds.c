@@ -1043,6 +1043,10 @@ void Port_PPU_PresentFrame(void) {
     const uint16_t dispcnt = (uint16_t)(gIoMem[0] | (gIoMem[1] << 8));
     const uint8_t mode = (uint8_t)(dispcnt & 7);
     TopFrameState topFrame = SelectTopFrame();
+    /* Right after a door the field loads at 240/266 for a few frames before it
+     * is Full View; the screen is still fading in, so keep showing the last
+     * frame (the one the fade-out ended on) instead of two geometry steps. */
+    const bool holdTop = Port_Widescreen_3DSHoldTop() != 0;
     const TopView3DSPpuCoherence coherence = TopView3DS_ResolvePpuCoherence(
         topFrame.mode, virtuappu_mode1_ws_full_view != 0);
     if (coherence.forceNativeFrame) {
@@ -1059,15 +1063,15 @@ void Port_PPU_PresentFrame(void) {
         /* Every change of the top view (size, Full View mode, why it fell
          * back) goes to the SD log with where the game was: a screen that
          * flickers between Wide and normal leaves a trace per flip. */
-        static int lastW = -1, lastH = -1, lastMode = -1, lastReason = -1;
+        static int lastW = -1, lastH = -1, lastMode = -1, lastReason = -1, lastHold = -1;
         static unsigned lastFlip, flips;
         if (topFrame.width != lastW || topFrame.height != lastH || (int)topFrame.mode != lastMode ||
-            (int)topFrame.fallbackReason != lastReason) {
+            (int)topFrame.fallbackReason != lastReason || (int)holdTop != lastHold) {
             if (flips++ < 400) {
-                DebugLog_Printf("view: frame %u (+%u) %dx%d mode %d (%s) area %02x room %02x task %d",
+                DebugLog_Printf("view: frame %u (+%u) %dx%d mode %d (%s)%s area %02x room %02x task %d",
                                 (unsigned)sFrameNumber, (unsigned)sFrameNumber - lastFlip, topFrame.width,
                                 topFrame.height, (int)topFrame.mode,
-                                Port3DSFullViewPolicy_FallbackReasonName(topFrame.fallbackReason),
+                                Port3DSFullViewPolicy_FallbackReasonName(topFrame.fallbackReason), holdTop ? " HOLD" : "",
                                 (unsigned)gRoomControls.area, (unsigned)gRoomControls.room, (int)gMain.task);
             }
             lastFlip = (unsigned)sFrameNumber;
@@ -1075,6 +1079,7 @@ void Port_PPU_PresentFrame(void) {
             lastH = topFrame.height;
             lastMode = (int)topFrame.mode;
             lastReason = (int)topFrame.fallbackReason;
+            lastHold = (int)holdTop;
         }
     }
 #endif
@@ -1105,7 +1110,7 @@ void Port_PPU_PresentFrame(void) {
     PpuGpu3DSFrameView frameView;
     bool gpuReady = false;
     sGpuSnapshotValid = false;
-    if (Port_Config_GpuRenderer() &&
+    if (!holdTop && Port_Config_GpuRenderer() &&
         PpuGpu3DS_ShouldUse(sGpuPpuInitialized, sGpuPpuDisabled,
                             topFrame.mode != PORT_3DS_FULL_VIEW_FALLBACK)) {
         parityFrame = PortPpuGpu3DS_ParityRequested();
@@ -1179,7 +1184,8 @@ void Port_PPU_PresentFrame(void) {
     }
     Platform3DS_SetStage(4);
     const uint64_t softwareStartTick = Platform3DS_SystemTick();
-    if (!gpuReady) virtuappu_render_frame();
+    if (holdTop) port_hdma_vblank_reset();
+    else if (!gpuReady) virtuappu_render_frame();
     Platform3DS_SetStage(5);
     const uint64_t renderEndTick = Platform3DS_SystemTick();
 #ifdef TMC_3DS_DIAGNOSTICS
@@ -1205,7 +1211,9 @@ void Port_PPU_PresentFrame(void) {
     /* Presentation is the largest remaining cost on an Old 3DS and the
      * emulator reports it as nearly free, which means it is a GPU wait rather
      * than CPU work. Splitting it says which half to attack. */
-    if (!gpuReady) {
+    if (holdTop) {
+        /* nothing: the screen keeps its last frame */
+    } else if (!gpuReady) {
         Platform3DS_SetStage(6);
         PlatformGpu3DS_BeginTop(sTopUpload, (unsigned)sTopPresentWidth,
                                 (unsigned)sTopPresentHeight,

@@ -79,6 +79,11 @@ int Port_Widescreen_ProducerViewWidth(void);
 int Port_Widescreen_ProducerViewHeight(void);
 Port3DSFullViewMode Port_Widescreen_3DSViewMode(void);
 Port3DSFullViewFallbackReason Port_Widescreen_3DSFallbackReason(void);
+/* True while the top screen should keep showing its last frame instead of a
+ * 240/266 one: a door has just loaded an outdoor room that will be Full View
+ * within a few frames, and the fade-in is still on (the held frame is the
+ * fully faded one). */
+int Port_Widescreen_3DSHoldTop(void);
 int Port_Widescreen_HudRightAnchor(void);
 /* UI simulation can prepare button positions one frame before an experimental
  * geometry is published, keeping BG/OAM coherent on its first visible frame. */
