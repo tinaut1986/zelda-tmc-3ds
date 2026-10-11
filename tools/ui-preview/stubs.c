@@ -33,7 +33,9 @@ const char* Port_DumpState_ResultLabel(PortDumpStateResult r) { (void)r; return 
 void Port_SecondScreenState_RequestEquip(uint8_t itemId, uint8_t slot) { (void)itemId; (void)slot; }
 
 /* ---- runtime config: plain variables ---- */
-static int sUiTheme = 0;
+static int sUiTheme = 0, sPacing = 0;
+int Port_Config_GetFramePacing(void) { return sPacing; }
+void Port_Config_SetFramePacing(int p) { sPacing = p; }
 int Port_Config_GetUiTheme(void) { return sUiTheme; }
 void Port_Config_SetUiTheme(int theme) { sUiTheme = theme; }
 static int sAspect = 0, sStyle = 2, sBackdrop = 0;

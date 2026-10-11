@@ -27,7 +27,7 @@ boxes below. History: `git log` and the decisions log.
 |---|---|---|
 | `chore/fork-setup` | P0.1: own version scheme, title ID, data folder, updater repo, release CI, build assistant, this plan | waiting for the owner (build, install next to upstream's app, boot, check the version in the boot console) |
 | `feat/compact-ui` (cut from `chore/fork-setup`) | P2.1 UI preview on the host; first part of P2.2 (icon tab bar with clock, Wi-Fi and battery, four themes switched by a day/night-style button or the THEME cell and saved as `ui_theme`, OPTIONS as a cell grid, 5x7 font at 1x, version + upstream base in the footer, no ITEMS header chip) and of P1.1 (DEBUG tab with the old Developer cells) | waiting for the owner on the console (tabs, theme button, every OPTIONS cell, the title-screen OPTIONS with its BACK, the UPDATES page); the owner will tune the themes after using them |
-| `feat/debug-tools` (cut from `feat/compact-ui`) | P1.2 performance switches (SWITCHES page), P1.3 SD log, P1.4 perf recorder + `tools/perf-csv/analyze.py`, DEBUG tab main page with RECORD / TOOLS rows and toasts | waiting for the owner on the console: log written at boot, a mark, a perf recording fetched and analysed on the PC, each switch flipped (live ones visibly, at-boot ones after a restart) |
+| `feat/debug-tools` (cut from `feat/compact-ui`) | OPTIONS -> FRAMES (AUTO / LOCK 30 / NO SKIP); P1.2 performance switches (SWITCHES page), P1.3 SD log, P1.4 perf recorder + `tools/perf-csv/analyze.py`, DEBUG tab main page with RECORD / TOOLS rows and toasts | waiting for the owner on the console: log written at boot, a mark, a perf recording fetched and analysed on the PC, each switch flipped (live ones visibly, at-boot ones after a restart) |
 
 **Priority** (owner's order, 2026-10-11): P0.1 → P1 debug tools and P2 bottom UI (so
 that P3 can be measured) → P0.2 baseline → P3 performance → P4 wide modes.
@@ -242,5 +242,10 @@ Empty until P1.4 exists.
 - **2026-10-11** The repository stays public for now: GitHub does not let a fork of a public
   repository be made private, and a private repository would break the console's updater and
   the release QR codes (both download anonymously). Asked the owner before doing anything.
+- **2026-10-11** OPTIONS -> FRAMES (owner's request, as in the Metroid ports): AUTO, LOCK 30,
+  NO SKIP (`frame_pacing`). AUTO uses upstream's Old 3DS adaptive pacer **on the New 3DS too**,
+  which upstream never did (it always drew every frame there): to be judged on the console; NO
+  SKIP is upstream's old New 3DS behaviour. LOCK 30 waits a vblank on the undrawn tick so the
+  game stays at 60 Hz. C-stick turbo on the New 3DS is unchanged and overrides it while held.
 - **2026-10-11** The updater shows the `<!-- tmc-notes -->` block (our release
   notes) and falls back to upstream's `## Changelog` section.

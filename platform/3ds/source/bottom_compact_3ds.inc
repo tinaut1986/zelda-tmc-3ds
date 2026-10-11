@@ -374,6 +374,8 @@ static uint32_t CompactSettingValue(int setting, char* out, int cap) {
             return on ? CC_GOOD : CC_DIM;
         case SS_SET_TOP_HUD:
             return on ? CC_GOOD : CC_WARN;
+        case SS_SET_FRAMES:
+            return on ? CC_GOOD : (Port_Config_GetFramePacing() == PORT_3DS_PACING_NO_SKIP ? CC_WARN : CC_TEXT);
         default:
             return on ? CC_GOOD : CC_DIM;
     }
@@ -401,18 +403,18 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
     /* Screen */
     CSettingCell(s, tl, 0, 0, 1, "VIEW", SS_SET_ASPECT_RATIO);
     CSettingCell(s, tl, 0, 1, 1, "STYLE", SS_SET_DISPLAY_STYLE);
-    CSettingCell(s, tl, 0, 2, 1, "TOP HUD", SS_SET_TOP_HUD);
-    CSettingCell(s, tl, 0, 3, 1, "COLOURS", SS_SET_COLOR_CORRECTION);
+    CSettingCell(s, tl, 0, 2, 1, "FRAMES", SS_SET_FRAMES);
+    CSettingCell(s, tl, 0, 3, 1, "TOP HUD", SS_SET_TOP_HUD);
     /* Game */
     CSettingCell(s, tl, 1, 0, 1, "TURBO", SS_SET_TURBO);
     CSettingCell(s, tl, 1, 1, 1, "VOLUME", SS_SET_VOLUME);
     CSettingCell(s, tl, 1, 2, 1, "AUTOSAVE", SS_SET_AUTOSAVE);
     CSettingCell(s, tl, 1, 3, 1, "HOLD TEXT", SS_SET_HOLD_ADVANCE);
-    /* Map panel */
+    /* Map panel and colours */
     CSettingCell(s, tl, 2, 0, 1, "MAP FOLLOW", SS_SET_FOLLOW);
     CSettingCell(s, tl, 2, 1, 1, "CREST PINS", SS_SET_CRESTS);
     CSettingCell(s, tl, 2, 2, 1, "FLOOR BACK", SS_SET_FLOOR_RETURN);
-    CSettingCell(s, tl, 2, 3, 1, "SHOW FPS", SS_SET_SHOW_FPS);
+    CSettingCell(s, tl, 2, 3, 1, "COLOURS", SS_SET_COLOR_CORRECTION);
     /* Look and system */
     {
         int32_t x, w;
@@ -420,9 +422,10 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
         CCell(s, tl, x, CRowY(3), w, CC_CELL_H, "THEME", sCc->name, CC_ACCENT, SS_ACT_THEME, 0);
     }
     CSettingCell(s, tl, 3, 1, 1, "BACKDROP", SS_SET_BACKDROP);
+    CSettingCell(s, tl, 3, 2, 1, "SHOW FPS", SS_SET_SHOW_FPS);
     {
         int32_t x, w;
-        CColumn(s->w, 4, 2, 2, &x, &w);
+        CColumn(s->w, 4, 3, 1, &x, &w);
         UpdateStatus st;
         Updater_GetStatus(&st);
         const char* value = st.state == UPDATE_AVAILABLE ? "NEW VERSION" : (st.prerelease ? "+ BETAS" : "STABLE");

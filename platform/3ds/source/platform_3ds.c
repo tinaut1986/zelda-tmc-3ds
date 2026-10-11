@@ -5,6 +5,7 @@
 #include "port_audio_3ds.h"
 #include "port_second_screen_3ds.h"
 #include "port_second_screen_sync_3ds.h"
+#include "frame_pacing_3ds.h"
 
 #include <3ds.h>
 #include <stdbool.h>
@@ -56,6 +57,11 @@ static uint64_t sAptChecks;
 static uint64_t sFrameBoundaryEndTick;
 static Old3DSFramePacer sOld3DSFramePacer;
 static uint64_t sOld3DSSkippedTickSleep;
+/* FRAMES pacing state (Platform3DS_BeginFrameBoundary). */
+static int sLastPacing = -1;
+static bool sSkipWaitsVBlank;   /* LOCK 30 skipped this tick: wait one vblank anyway */
+static bool sPacerSkipped;      /* the adaptive pacer skipped this tick (sleep, then poll) */
+static uint64_t sLock30SkippedPresentations;
 static PrintConsole sGameplayLogSink;
 static bool sGameplayDisplayActive;
 static uintptr_t sStackRegionBase;
@@ -408,32 +414,53 @@ bool Platform3DS_BeginFrameBoundary(void) {
     }
 
     ++sLogicFrames;
-    if (sIsNew3DS && sLogicLastTick != 0) {
-        /* The New 3DS does not use adaptive presentation skipping, but its
-         * diagnostic cadence still needs the pacer's HOME/sleep/dump filter. */
+    /* OPTIONS -> FRAMES (Port_Config_GetFramePacing). A change resyncs the
+     * pacer so time spent in another mode is not taken as debt. */
+    const int pacing = Port_Config_GetFramePacing();
+    if (pacing != sLastPacing) {
+        if (sLastPacing >= 0) Old3DSFramePacer_MarkDiscontinuity(&sOld3DSFramePacer, OLD3DS_FRAME_PACER_DISCONTINUITY_APT);
+        sLastPacing = pacing;
+    }
+    const bool pacerRuns = !sIsNew3DS || pacing == PORT_3DS_PACING_AUTO;
+    if (sIsNew3DS && !pacerRuns && sLogicLastTick != 0) {
+        /* The pacer is not ticking, but its diagnostic cadence still needs
+         * the HOME/sleep/dump filter. */
         Old3DSFramePacer_RecordActiveInterval(&sOld3DSFramePacer, now - sLogicLastTick);
     }
     sLogicLastTick = now;
-    if (!sIsNew3DS) {
-        const bool present = Old3DSFramePacer_BeginTick(&sOld3DSFramePacer, now, &sOld3DSSkippedTickSleep);
-        if (present) ++sPresentedFrames;
-        return present;
-    }
 
-    if (!Platform3DS_TurboHeld()) {
-        sTurboPhase = 0;
-        ++sPresentedFrames;
-        return true;
+    if (sIsNew3DS && Platform3DS_TurboHeld()) {
+        ++sTurboLogicFrames;
+        if (++sTurboPhase >= Platform3DS_TurboMultiplier()) {
+            sTurboPhase = 0;
+            ++sPresentedFrames;
+            return true;
+        }
+        ++sTurboSkippedPresentations;
+        return false;
     }
+    sTurboPhase = 0;
 
-    ++sTurboLogicFrames;
-    if (++sTurboPhase >= Platform3DS_TurboMultiplier()) {
-        sTurboPhase = 0;
-        ++sPresentedFrames;
-        return true;
+    switch (pacing) {
+        case PORT_3DS_PACING_NO_SKIP:
+            ++sPresentedFrames;
+            return true;
+        case PORT_3DS_PACING_LOCK30:
+            if (sLogicFrames & 1u) {
+                /* Not drawn, but still one vblank long: the game stays at 60 Hz. */
+                sSkipWaitsVBlank = true;
+                ++sLock30SkippedPresentations;
+                return false;
+            }
+            ++sPresentedFrames;
+            return true;
+        default: {
+            const bool present = Old3DSFramePacer_BeginTick(&sOld3DSFramePacer, now, &sOld3DSSkippedTickSleep);
+            if (present) ++sPresentedFrames;
+            else sPacerSkipped = true;
+            return present;
+        }
     }
-    ++sTurboSkippedPresentations;
-    return false;
 }
 
 void Platform3DS_EndFrameBoundary(void) {
@@ -486,7 +513,17 @@ uint64_t Platform3DS_VblankWaitOverTwoPeriods(void) { return sVblankWaitOverTwoP
 
 void Platform3DS_PumpWithoutVBlank(void) {
     if (!PumpLifecycleAndAudio()) return;
-    if (sIsNew3DS) return;
+    if (sSkipWaitsVBlank) {
+        /* LOCK 30: nothing new to show, so no swap; the presenter keeps the
+         * last picture while the game ticks on the vblank. */
+        sSkipWaitsVBlank = false;
+        gspWaitForEvent(GSPGPU_EVENT_VBlank0, false);
+        PollInput();
+        return;
+    }
+    /* New 3DS turbo skips run as fast as they can; only a pacer skip sleeps. */
+    if (sIsNew3DS && !sPacerSkipped) return;
+    sPacerSkipped = false;
 
     if (sOld3DSSkippedTickSleep != 0) {
         const uint64_t sleepNs = sOld3DSSkippedTickSleep * 1000000000ULL / SYSCLOCK_ARM11;

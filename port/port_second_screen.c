@@ -204,6 +204,7 @@ enum {
 #ifdef TMC_3DS
     SS_SET_ASPECT_RATIO,
     SS_SET_DISPLAY_STYLE,
+    SS_SET_FRAMES,        /* frame_pacing: AUTO / LOCK 30 / NO SKIP */
 #endif
     SS_SET_COUNT
 };
@@ -1886,7 +1887,7 @@ static const char* const kSettingLabels[SS_SET_COUNT] = {
     "COLOR CORRECTION", "SHOW FPS",           "HOLD TO ADVANCE TEXT",
     "RANDOMIZER",       "PANEL BACKDROP",     "SWAP SCREENS",
 #ifdef TMC_3DS
-    "ASPECT RATIO",     "DISPLAY STYLE",
+    "ASPECT RATIO",     "DISPLAY STYLE",    "FRAMES",
 #endif
 };
 
@@ -2175,6 +2176,12 @@ static int GetSettingState(int row, char* out, int outCap) {
         case SS_SET_DISPLAY_STYLE:
             snprintf(out, (size_t)outCap, "%s", Port_Config_Get3DSDisplayStyleName());
             return Port_Config_Get3DSDisplayStyle() != PORT_3DS_DISPLAY_BILINEAR;
+        case SS_SET_FRAMES: {
+            static const char* const kPacing[PORT_3DS_PACING_COUNT] = { "AUTO", "LOCK 30", "NO SKIP" };
+            int pacing = Port_Config_GetFramePacing();
+            snprintf(out, (size_t)outCap, "%s", kPacing[pacing]);
+            return pacing == PORT_3DS_PACING_AUTO;
+        }
 #endif
     }
     if (row != SS_SET_TOP_HUD) {
@@ -3304,6 +3311,13 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
                 case SS_SET_DISPLAY_STYLE:
                     Port_Config_Cycle3DSDisplayStyle();
                     break;
+                case SS_SET_FRAMES: {
+                    int next = (Port_Config_GetFramePacing() + 1) % PORT_3DS_PACING_COUNT;
+                    Port_Config_SetFramePacing(next);
+                    if (next == PORT_3DS_PACING_NO_SKIP) Compact_Toast("THE GAME SLOWS DOWN IF IT CANNOT KEEP UP");
+                    else if (next == PORT_3DS_PACING_LOCK30) Compact_Toast("30 FPS SHOWN, GAME AT FULL SPEED");
+                    break;
+                }
 #endif
                 case SS_SET_FOLLOW:
                     Port_Config_SetSecondScreenFollowCam(!Port_Config_GetSecondScreenFollowCam());

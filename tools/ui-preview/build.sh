@@ -32,6 +32,7 @@ SHOTS=(
   "items:t1"
   "quest:t2"
   "options:t3"
+  "options_frames:t3;200,40;200,40"
   "updates:t3;240,110"
 )
 [ "${TMC3DS_DEBUG_TOOLS:-1}" = 1 ] && SHOTS+=("debug:t4" "debug_recording:t4;300,107" "debug_switches:t4;280,63;100,64;100,180")
