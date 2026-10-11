@@ -171,7 +171,25 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   game runs; shares the socket service with the updater.
   *Done when:* the debug folder is fetched from a PC while playing, and a file uploaded.
   Status: protocol checked on the PC with curl (list, get, put, mkdir, delete, 5 MB both
-  ways); waiting for the console.
+  ways); waiting for the console. Also SITE INSTALL: install a CIA over the running game and
+  relaunch (`./build_3ds.sh --install`).
+- [ ] **P1.10** Live debug link for Claude (owner's request, 2026-10-11).
+  *Spec:* Claude, on the owner's PC on the same LAN, looks at and acts on the running game:
+  1. A TCP command server in debug builds (DEBUG -> LINK, like FTP SERVER) with a PC client
+     `tools/tmc-link/` usable from a shell: screenshot of both screens as PNG, read and write
+     GBA memory (EWRAM, IWRAM, VRAM, palettes, OAM, I/O) and the port's state while it runs,
+     game state (task, area, room, Link, health, inventory), set any OPTIONS / SWITCHES value,
+     inject buttons and touches for N frames, pause / step N frames / resume, warp.
+  2. Symbols: read and write variables by name (`gRoomControls.area`) from the ELF's symbol
+     table on the PC side, so no address is typed by hand.
+  3. Live tunables: a small table of named values the game reads every frame, for numbers being
+     tuned (sizes, offsets, timings), changed from the client without rebuilding.
+  4. For breakpoints and stepping through code: Luma3DS's own GDB stub (Rosalina -> Debugger)
+     with `arm-none-eabi-gdb build-3ds/game/tmc-3ds.elf`; documented, no code of ours.
+  Code changes are not hot-patched: they go through `./build_3ds.sh --install` (P1.9), about
+  two minutes from edit to running.
+  *Done when:* Claude, from a shell here, takes a screenshot, reads Link's position, changes a
+  switch and injects a button press on the owner's console, and the owner sees it happen.
 - [ ] **P1.8** Save states.
   *Spec:* numbered states with thumbnail and place (like `../sm-3ds` STATES),
   available in every build; builds on `port_dump_state.c`.
