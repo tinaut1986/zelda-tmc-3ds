@@ -1262,14 +1262,16 @@ static int Port_WidescreenFullViewUiOverlayActive(void) {
         gRoomControls.area, gRoomControls.room);
 }
 
-/* A room change in progress. The fade is deliberately not part of it: the
- * fade-in after a door runs with the new room already loaded, and waiting for
- * it to end showed the room at 266 pixels and then popped to 400 on a
- * fully lit screen. The out phase is gRoomTransition's own flag. */
+/* A room change whose data is being replaced. The fades are not part of it:
+ * on the way out the old room is still drawn and fading (the player walks
+ * through the door in GAMEMAIN_UPDATE), so Full View stays until the screen is
+ * dark and the load begins; on the way in the new room is already loaded.
+ * What mixes two map generations is the load itself (INITROOM, CHANGEROOM,
+ * the reload flags) and the border scroll. */
 static int Port_WidescreenRoomTransitionActive(void) {
-    return Port3DSFullViewPolicy_RoomTransitionActive(
-        gRoomTransition.transitioningOut != 0 || gRoomTransition.field_0x4[1] != 0, 0,
-        gRoomControls.reload_flags, gRoomControls.scrollAction);
+    if (gMain.substate == GAMEMAIN_INITROOM || gMain.substate == GAMEMAIN_CHANGEROOM) return 1;
+    if (gMain.substate == GAMEMAIN_CHANGEAREA && gFadeControl.active == 0) return 1;
+    return Port3DSFullViewPolicy_RoomTransitionActive(0, 0, gRoomControls.reload_flags, gRoomControls.scrollAction);
 }
 
 static Port3DSFullViewInputs Port_WidescreenFullViewInputs(void) {
@@ -1965,7 +1967,7 @@ void Port_Widescreen_UpdateShadows(void) {
          * content scan, and the raw policy flipped open for two to four ticks
          * between those phases: 266 -> 400 -> 266 -> 400 with a camera snap
          * each time (a flashing screen). Dropping out stays immediate. */
-        enum { FULL_VIEW_ENTER_TICKS = 14 };
+        enum { FULL_VIEW_ENTER_TICKS = 4 };
         static unsigned stableTicks;
         if (desiredMode == PORT_3DS_FULL_VIEW_FALLBACK) {
             stableTicks = 0;

@@ -419,3 +419,11 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   Log of leaving Link's house: 240 (fade-out) -> 240 and 266 for one frame each at the start of
   the fade-in -> 400 fifteen frames later. Checked by log and by screenshot after; the frames in
   between were not seen.
+- **2026-10-12** Full View now stays through the fade-out of a door and the room change shows
+  as one early switch under the fade-in (owner: the wide disappeared before being inside a
+  house). `Port_WidescreenRoomTransitionActive` counts only what replaces the room's data:
+  GAMEMAIN_INITROOM / CHANGEROOM (CHANGEAREA once its fade ended), the reload flags and the border
+  scroll; `transitioningOut` and the fades are out. Entry needs 4 stable ticks. Log, three
+  round trips Hyrule Field <-> Link's house: entering keeps 400 until the new room's first frame
+  (240 interior); leaving goes 240 -> 266 (+4 frames) -> 400 (+6 frames) from the first frame of
+  the field, under the start of the fade-in.
