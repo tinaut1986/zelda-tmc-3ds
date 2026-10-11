@@ -12,6 +12,9 @@
  * atomic; SaveConfig still performs its file I/O on the main thread and never
  * holds a compositor lock while touching the SD card. */
 static _Atomic bool sShowFps;
+static _Atomic int sUiTheme; /* bottom_compact_3ds.inc kCcThemes index */
+/* OPTIONS -> FRAMES, as in ../mzm and ../sm-3ds: PORT_3DS_PACING_* */
+static _Atomic int sFramePacing;
 static _Atomic bool sFollow = true;
 static _Atomic bool sCrests = true;
 static _Atomic bool sFloorReturn = true;
@@ -146,9 +149,11 @@ static void SaveConfig(void) {
 
     FILE* file = fopen(temp, "wb");
     if (!file) return;
-    fprintf(file, "# The Minish Cap 3DS runtime settings\n");
+    fprintf(file, "# Minish Cap 3DS runtime settings\n");
     fprintf(file, "performance_profile_version=%d\n", PERFORMANCE_PROFILE_VERSION);
     fprintf(file, "show_fps=%u\n", sShowFps ? 1u : 0u);
+    fprintf(file, "ui_theme=%d\n", (int)sUiTheme);
+    fprintf(file, "frame_pacing=%d\n", (int)sFramePacing);
     fprintf(file, "follow_cam=%u\n", sFollow ? 1u : 0u);
     fprintf(file, "windcrest_pins=%u\n", sCrests ? 1u : 0u);
     fprintf(file, "floor_auto_return=%u\n", sFloorReturn ? 1u : 0u);
@@ -230,6 +235,8 @@ void Port_Config_Load(const char* path) {
             if (strcmp(key, "performance_profile_version") == 0)
                 sPerformanceProfileVersion = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "show_fps") == 0) sShowFps = ParseBool(value);
+            else if (strcmp(key, "ui_theme") == 0) sUiTheme = (int)strtol(value, NULL, 10);
+            else if (strcmp(key, "frame_pacing") == 0) sFramePacing = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "gpu_renderer") == 0) sGpuRenderer = ParseBool(value);
             else if (strcmp(key, "gpu_frame_sync") == 0) sGpuFrameSync = ParseBool(value);
             else if (strcmp(key, "gpu_viewport_offset") == 0) sGpuViewportOffset = ParseBool(value);
@@ -320,6 +327,102 @@ bool Port_Config_AudioDsp(void) {
 bool Port_Config_AudioDspPcm(void) {
     return false;
 }
+/* ---- Performance switches for the DEBUG tab (debug_switches_3ds.h) ----
+ * The ini-only knobs above, changeable on the console during play. Every
+ * change is saved like any other setting. `bottom_rgb565` is left out: per
+ * its own note above it turns the bottom screen red. */
+#include "debug_switches_3ds.h"
+
+extern void Port_Audio_3DSRestartThread(void);
+
+static int SwitchValue(int id) {
+    switch (id) {
+        case DEBUG_SW_RENDERER: return sGpuRenderer;
+        case DEBUG_SW_FRAME_SYNC: return sGpuFrameSync;
+        case DEBUG_SW_VBLANK_LOCK: return sVblankPhaseLock;
+        case DEBUG_SW_STATIC_QUAD: return sGpuStaticQuad;
+        case DEBUG_SW_MAP_SKIP: return sBottomMapSkip;
+        case DEBUG_SW_FRAME_LOG: return sFrameLog;
+        case DEBUG_SW_BOTTOM_CORE: return sBottomCore;
+        case DEBUG_SW_AUDIO_CORE: return sAudioCore;
+        case DEBUG_SW_COMPACT_UPLOAD: return sCompactUpload;
+        case DEBUG_SW_CPU_LIMIT: return sAppCpuLimit;
+        default: return 0;
+    }
+}
+
+const char* DebugSwitch_Name(int id) {
+    static const char* const kNames[DEBUG_SW_COUNT] = {
+        "RENDERER", "FRAME SYNC", "VBLANK LOCK", "STATIC QUAD", "MAP SKIP",
+        "FRAME LOG", "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT",
+    };
+    return id >= 0 && id < DEBUG_SW_COUNT ? kNames[id] : "?";
+}
+
+bool DebugSwitch_IsDefault(int id) {
+    static const int kDefaults[DEBUG_SW_COUNT] = { 1, 0, 0, 0, 1, 0, -1, -1, 0, 0 };
+    return id >= 0 && id < DEBUG_SW_COUNT && SwitchValue(id) == kDefaults[id];
+}
+
+void DebugSwitch_Value(int id, char* out, unsigned cap) {
+    const int v = SwitchValue(id);
+    switch (id) {
+        case DEBUG_SW_RENDERER:
+            snprintf(out, cap, "%s", v ? "GPU" : "CPU (TEST)");
+            return;
+        case DEBUG_SW_BOTTOM_CORE:
+            snprintf(out, cap, "%s", v == 1 ? "CORE 1" : "CORE 0");
+            return;
+        case DEBUG_SW_AUDIO_CORE:
+            snprintf(out, cap, "%s", v < 0 ? "AUTO" : (v ? "CORE 1" : "CORE 0"));
+            return;
+        case DEBUG_SW_COMPACT_UPLOAD:
+            snprintf(out, cap, "%s", Platform3DS_IsNew3DS() ? "OLD 3DS ONLY" : (v ? "ON" : "OFF"));
+            return;
+        case DEBUG_SW_CPU_LIMIT:
+            if (v <= 0) snprintf(out, cap, "AUTO %u%%", Platform3DS_Core1TimeLimit());
+            else snprintf(out, cap, "%d%% (%u%%)", v, Platform3DS_Core1TimeLimit());
+            return;
+        default:
+            snprintf(out, cap, "%s", v ? "ON" : "OFF");
+            return;
+    }
+}
+
+void DebugSwitch_Cycle(int id) {
+    switch (id) {
+        case DEBUG_SW_RENDERER: sGpuRenderer = !sGpuRenderer; break;
+        case DEBUG_SW_FRAME_SYNC: sGpuFrameSync = !sGpuFrameSync; break;
+        case DEBUG_SW_VBLANK_LOCK: sVblankPhaseLock = !sVblankPhaseLock; break;
+        case DEBUG_SW_STATIC_QUAD: sGpuStaticQuad = !sGpuStaticQuad; break;
+        case DEBUG_SW_MAP_SKIP: sBottomMapSkip = !sBottomMapSkip; break;
+        case DEBUG_SW_FRAME_LOG: sFrameLog = !sFrameLog; break;
+        case DEBUG_SW_BOTTOM_CORE:
+            sBottomCore = sBottomCore == 1 ? -1 : 1;
+            Platform3DS_RestartBottomWorker();
+            break;
+        case DEBUG_SW_AUDIO_CORE:
+            sAudioCore = sAudioCore < 0 ? 0 : (sAudioCore == 0 ? 1 : -1);
+            Port_Audio_3DSRestartThread();
+            break;
+        case DEBUG_SW_COMPACT_UPLOAD:
+            if (Platform3DS_IsNew3DS()) return;
+            sCompactUpload = !sCompactUpload; /* Port_PPU_PresentFrame takes it */
+            break;
+        case DEBUG_SW_CPU_LIMIT: {
+            static const int kSteps[] = { 0, 80, 70, 50, 30 };
+            int next = 0;
+            for (int i = 0; i < 5; i++)
+                if (kSteps[i] == sAppCpuLimit) next = kSteps[(i + 1) % 5];
+            sAppCpuLimit = next;
+            Platform3DS_ApplyCpuLimit();
+            break;
+        }
+        default: return;
+    }
+    SaveConfig();
+}
+
 u8 Port_Config_WindowScale(void) { return 1; }
 const char* Port_Config_UpscaleMethod(void) { return "nearest"; }
 u64 Port_Config_FrameTimeNs(void) { return 16666667ULL; }
@@ -329,6 +432,13 @@ bool Port_Config_GetDecoupleRender(void) { return false; }
 void Port_Config_SetDecoupleRender(bool on) { (void)on; }
 bool Port_Config_GetShowFps(void) { return sShowFps; }
 void Port_Config_SetShowFps(bool on) { sShowFps = on; SaveConfig(); }
+int Port_Config_GetUiTheme(void) { return sUiTheme; }
+void Port_Config_SetUiTheme(int theme) { sUiTheme = theme; SaveConfig(); }
+int Port_Config_GetFramePacing(void) {
+    int v = sFramePacing;
+    return v >= 0 && v < PORT_3DS_PACING_COUNT ? v : PORT_3DS_PACING_AUTO;
+}
+void Port_Config_SetFramePacing(int pacing) { sFramePacing = pacing; SaveConfig(); }
 bool Port_Config_GetTouchControls(void) { return false; }
 void Port_Config_SetTouchControls(bool on) { (void)on; }
 bool Port_Config_PortSettingsMenuEnabled(void) { return sPortSettings; }

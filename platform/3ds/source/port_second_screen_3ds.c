@@ -42,24 +42,13 @@ static uint32_t RequestTouchRefresh(void) {
 }
 
 static void IdleBackRect(int width, int height, float* x0, float* y0, float* x1, float* y1) {
-    float u = (float)(width < height ? width : height) / 720.0f;
-    int32_t ts = (width < height ? width : height) / 240;
-    if (ts < 2) ts = 2;
-    if (ts > 6) ts = 6;
-
-    const float panelX = 10.0f * u;
-    const float panelY = 10.0f * u;
-    const float inset = 6.0f * (float)ts;
-    int32_t headerScale = (int32_t)(2.4f * u);
-    if (headerScale < 1) headerScale = 1;
-    const float headerHeight = MENU_TEXT_BOX * headerScale + 24.0f * u;
-    float buttonWidth = 154.0f * u;
-    if (buttonWidth < 54.0f) buttonWidth = 54.0f;
-
-    *x0 = panelX + inset + 4.0f * u;
-    *y0 = panelY + inset;
-    *x1 = *x0 + buttonWidth;
-    *y1 = *y0 + headerHeight;
+    (void)width;
+    int32_t bx0, by0, bx1, by1;
+    Compact_IdleBackRect(height, &bx0, &by0, &bx1, &by1);
+    *x0 = (float)bx0;
+    *y0 = (float)by0;
+    *x1 = (float)bx1;
+    *y1 = (float)by1;
 }
 
 static bool IsIdleBackTap(int x, int y, int width, int height) {
@@ -89,11 +78,6 @@ static void ResetIdleOnlyState(void) {
     __atomic_store_n(&sIdleBackVisible, 0, __ATOMIC_RELEASE);
 }
 
-static void DrawIdleBack(const SSurf* surface, float u, int32_t ts) {
-    float x0, y0, x1, y1;
-    IdleBackRect(surface->w, surface->h, &x0, &y0, &x1, &y1);
-    DrawMenuButton(surface, x0, y0, x1, y1, "BACK", 0, 0, u, ts);
-}
 
 static void PaintIntroCinema(uint32_t* pixels, int width, int height, int stride) {
     __atomic_store_n(&sIdleSettingsOpen, 0, __ATOMIC_RELEASE);
@@ -143,7 +127,9 @@ uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height
     sUi.tab = SS_TAB_SETTINGS;
     sIdleOwnsSettingsTab = 1;
     UI_UNLOCK();
+    sCompactIdle = 1; /* the tab bar becomes BACK + title (bottom_compact_3ds.inc) */
     Port_SecondScreen_PaintInto(pixels, width, height, strideInPixels, &settingsSnapshot, tick);
+    sCompactIdle = 0;
 
     int settingsPage;
     int confirmationOpen;
@@ -152,14 +138,6 @@ uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height
     confirmationOpen = sUi.unavailableNoticeActive;
     UI_UNLOCK();
     const bool showIdleBack = settingsPage == SS_SETTINGS_ROOT && !confirmationOpen;
-    if (showIdleBack) {
-        SSurf surface = { pixels, width, height, strideInPixels };
-        float u = (float)(width < height ? width : height) / 720.0f;
-        int32_t ts = (width < height ? width : height) / 240;
-        if (ts < 2) ts = 2;
-        if (ts > 6) ts = 6;
-        DrawIdleBack(&surface, u, ts);
-    }
     __atomic_store_n(&sIdleBackVisible, showIdleBack ? 1 : 0, __ATOMIC_RELEASE);
     FinishRefresh(refreshRequest);
     return refreshRequest;
@@ -240,6 +218,9 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
         return Platform3DS_IsNew3DS();
     }
 
+    /* The clock, Wi-Fi bars and battery in the tab bar. */
+    if (Compact_ChromeChanged() || Compact_ToastNeedsPaint()) return 1;
+
     int tab;
     int settingsPage;
     uint32_t dumpFlashUntil;
@@ -276,6 +257,10 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
     }
     if (tab == SS_TAB_ITEMS) {
         /* The authentic item cursor blinks even when no values change. */
+        return 1;
+    }
+    if (tab == SS_TAB_DEBUG) {
+        /* Live timings and position. */
         return 1;
     }
     if (tab != SS_TAB_SETTINGS) {

@@ -65,6 +65,7 @@
 
 #ifdef TMC_3DS
 #include "platform_3ds.h"
+#include "tmc3ds_version.h"
 #include "port_dump_state_3ds.h"
 
 extern void Port_PPU_3DS_WriteQuickDump(void);
@@ -74,6 +75,9 @@ extern double Port_PPU_3DS_AverageFps(void);
 
 #ifndef TMC_PORT_VERSION
 #define TMC_PORT_VERSION "DEV"
+#endif
+#ifndef TMC_PORT_VERSION_LABEL
+#define TMC_PORT_VERSION_LABEL TMC_PORT_VERSION
 #endif
 
 /* Buffer pixel layout is RGBA_8888: as a little-endian u32 that's
@@ -134,7 +138,7 @@ static const int8_t kDungeonTopFloor[7] = { 2, 3, 3, 5, 2, 7, 5 };
 /*  UI state shared with the tap handler                               */
 /* ------------------------------------------------------------------ */
 
-enum { SS_TAB_MAP = 0, SS_TAB_ITEMS, SS_TAB_QUEST, SS_TAB_SETTINGS };
+enum { SS_TAB_MAP = 0, SS_TAB_ITEMS, SS_TAB_QUEST, SS_TAB_SETTINGS, SS_TAB_DEBUG /* 3DS debug-tools builds */ };
 
 /* What a tap target does when hit. arg meaning per action: item id,
  * tab id, ring (1 = A, 2 = B), plaque display-floor index, settings row.
@@ -161,6 +165,8 @@ enum {
 #ifdef TMC_3DS
     SS_ACT_UPDATE_CHANNEL, SS_ACT_UPDATE_RELEASE, SS_ACT_UPDATE_ACTION,
     SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT,
+    SS_ACT_THEME, /* the tab bar's theme button (bottom_compact_3ds.inc) */
+    SS_ACT_DEBUG, /* DEBUG tab command, arg = DBG_CMD_* (bottom_compact_3ds.inc) */
 #endif
 };
 
@@ -198,6 +204,7 @@ enum {
 #ifdef TMC_3DS
     SS_SET_ASPECT_RATIO,
     SS_SET_DISPLAY_STYLE,
+    SS_SET_FRAMES,        /* frame_pacing: AUTO / LOCK 30 / NO SKIP */
 #endif
     SS_SET_COUNT
 };
@@ -1556,6 +1563,12 @@ static void PaintItemsPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
                             int armedRing) {
     Port_SecondScreenTheme_DrawPlate(s->px, s->w, s->h, s->stride, (int32_t)rx0, (int32_t)ry0,
                                      (int32_t)(rx1 - rx0), (int32_t)(ry1 - ry0), ts);
+#ifdef TMC_3DS
+    /* The tab bar already says ITEMS: no header chip, and a thinner rim so
+     * the wells get the room (bottom_compact_3ds.inc). */
+    float inset = 7 * ts;
+    float ix0 = rx0 + inset, iy0 = ry0 + inset, ix1 = rx1 - inset, iy1 = ry1 - inset;
+#else
     float inset = 12 * ts;
     float ix0 = rx0 + inset, iy0 = ry0 + inset, ix1 = rx1 - inset, iy1 = ry1 - inset;
 
@@ -1565,6 +1578,7 @@ static void PaintItemsPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
     if (hms < 1) hms = 1;
     DrawPanelHeaderChip(s, (rx0 + rx1) / 2.0f, iy0, "ITEMS", hms, u);
     iy0 += MENU_TEXT_BOX * hms + 32 * u;
+#endif
 
     const int cols = 4, rows = 4;
     int32_t cellW = (int32_t)(ix1 - ix0) / cols;
@@ -1873,7 +1887,7 @@ static const char* const kSettingLabels[SS_SET_COUNT] = {
     "COLOR CORRECTION", "SHOW FPS",           "HOLD TO ADVANCE TEXT",
     "RANDOMIZER",       "PANEL BACKDROP",     "SWAP SCREENS",
 #ifdef TMC_3DS
-    "ASPECT RATIO",     "DISPLAY STYLE",
+    "ASPECT RATIO",     "DISPLAY STYLE",    "FRAMES",
 #endif
 };
 
@@ -2070,7 +2084,7 @@ static void PaintDeveloperOverlay(const SSurf* s, const SecondScreenSnapshot* sn
 #ifdef TMC_3DS
     double currentFps = Port_PPU_3DS_CurrentFps();
     double averageFps = Port_PPU_3DS_AverageFps();
-    snprintf(values[0], sizeof(values[0]), "%s", TMC_PORT_VERSION);
+    snprintf(values[0], sizeof(values[0]), "%s", TMC_PORT_VERSION_LABEL);
     snprintf(values[1], sizeof(values[1]), "%s", Platform3DS_IsNew3DS() ? "NEW 3DS" : "OLD 3DS");
     snprintf(values[2], sizeof(values[2]), "%.0f", currentFps);
     snprintf(values[3], sizeof(values[3]), "%.0f", averageFps);
@@ -2162,6 +2176,12 @@ static int GetSettingState(int row, char* out, int outCap) {
         case SS_SET_DISPLAY_STYLE:
             snprintf(out, (size_t)outCap, "%s", Port_Config_Get3DSDisplayStyleName());
             return Port_Config_Get3DSDisplayStyle() != PORT_3DS_DISPLAY_BILINEAR;
+        case SS_SET_FRAMES: {
+            static const char* const kPacing[PORT_3DS_PACING_COUNT] = { "AUTO", "LOCK 30", "NO SKIP" };
+            int pacing = Port_Config_GetFramePacing();
+            snprintf(out, (size_t)outCap, "%s", kPacing[pacing]);
+            return pacing == PORT_3DS_PACING_AUTO;
+        }
 #endif
     }
     if (row != SS_SET_TOP_HUD) {
@@ -2176,6 +2196,7 @@ static int GetSettingState(int row, char* out, int outCap) {
  * parchment, chips, font, and palette keep it native to this game. */
 #ifdef TMC_3DS
 #include "../platform/3ds/source/update_ui_3ds.inc"
+#include "../platform/3ds/source/bottom_compact_3ds.inc"
 #endif
 
 static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
@@ -2850,7 +2871,7 @@ static void PaintTabBar(const SSurf* s, TargetList* tl, float u, int32_t ts, int
  * average with ~89 ms peaks, which is the largest CPU cost left on the Old 3DS,
  * but the total alone does not say which phase to attack -- and guessing that
  * from reading the code is how earlier optimisation attempts went wrong. */
-extern unsigned long long Platform3DS_SystemTick(void);
+/* Platform3DS_SystemTick comes from platform_3ds.h. */
 enum { SS_PHASE_BACKDROP, SS_PHASE_PANEL, SS_PHASE_SIDEBAR, SS_PHASE_TABBAR, SS_PHASE_COUNT };
 static unsigned long long sSsPhaseTicks[SS_PHASE_COUNT];
 static unsigned long long sSsPhaseMax[SS_PHASE_COUNT];
@@ -2994,11 +3015,25 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     Port_SecondScreenTheme_DrawBackdrop(s.px, s.w, s.h, s.stride, 0, 0, s.w, s.h, ts);
     SS_MARK(SS_PHASE_BACKDROP);
 
+#ifdef TMC_3DS
+    /* Compact chrome (bottom_compact_3ds.inc): the tab bar is a slim strip on
+     * top (or at the bottom, by theme) and the panels get the rest. */
+    Compact_ApplyThemeFromConfig();
+    sCompactTick = tick;
+    float sideW = 220 * u;
+    float mx0 = CC_MARGIN, my0 = CcContentTop() + 2;
+    float mx1 = tab == SS_TAB_SETTINGS ? width - CC_MARGIN : width - sideW - 2;
+    float my1 = CcContentBottom(height) - CC_MARGIN;
+#if !TMC3DS_DEBUG_TOOLS
+    if (tab == SS_TAB_DEBUG) tab = SS_TAB_MAP;
+#endif
+#else
     float tabH = 96 * u;
     float sideW = 220 * u; /* widened for the grown rings/chip; map stays dominant */
     float mx0 = 10 * u, my0 = 10 * u;
     float mx1 = tab == SS_TAB_SETTINGS ? width - 10 * u : width - sideW - 4 * u;
     float my1 = height - tabH - 4 * u;
+#endif
 
     TargetList tl = { .n = 0 };
 
@@ -3007,8 +3042,17 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     } else if (tab == SS_TAB_QUEST) {
         PaintQuestPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, tick, questView);
     } else if (tab == SS_TAB_SETTINGS) {
+#ifdef TMC_3DS
+        if (settingsPage == SS_SETTINGS_ROOT) {
+            Compact_PaintOptions(&s, &tl);
+        } else
+#endif
         PaintSettingsPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, settingsPage, tick,
                            dumpFlashUntil, loadStateFlashUntil, loadStateResult);
+#if defined(TMC_3DS) && TMC3DS_DEBUG_TOOLS
+    } else if (tab == SS_TAB_DEBUG) {
+        Compact_PaintDebug(&s, &tl, snap, tick, dumpFlashUntil, loadStateFlashUntil, loadStateResult);
+#endif
     } else if (isDungeon) {
         PaintDungeon(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, tick, returnCfg);
 #ifdef TMC_3DS
@@ -3036,6 +3080,16 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
 
     SS_MARK(SS_PHASE_PANEL);
 
+#ifdef TMC_3DS
+    if (tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG) {
+        PaintSidebar(&s, snap, &tl, width - sideW + 2, my0, sideW - 2 - CC_MARGIN, my1 - my0, u, ts, tick,
+                     armedRing);
+    }
+    SS_MARK(SS_PHASE_SIDEBAR);
+    Compact_PaintTabBar(&s, &tl, tab, settingsPage);
+    Compact_PaintToast(&s);
+    SS_MARK(SS_PHASE_TABBAR);
+#else
     if (tab != SS_TAB_SETTINGS) {
         PaintSidebar(&s, snap, &tl, width - sideW + 4 * u, 10 * u, sideW - 14 * u, height - tabH - 14 * u, u,
                      ts, tick, armedRing);
@@ -3043,6 +3097,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     SS_MARK(SS_PHASE_SIDEBAR);
     PaintTabBar(&s, &tl, u, ts, tab);
     SS_MARK(SS_PHASE_TABBAR);
+#endif
 #ifdef TMC_3DS
     ++sSsPhasePaints;
 #endif
@@ -3122,6 +3177,16 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
     if (HandleUpdateTap(hit.action, hit.arg)) return;
 #endif
     switch (hit.action) {
+#ifdef TMC_3DS
+        case SS_ACT_THEME:
+            Compact_NextTheme();
+            break;
+#if TMC3DS_DEBUG_TOOLS
+        case SS_ACT_DEBUG:
+            Compact_DebugCommand(hit.arg);
+            break;
+#endif
+#endif
         case SS_ACT_TAB:
             UI_LOCK();
             /* Re-tapping the active panel tab returns to the map — the
@@ -3246,6 +3311,13 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
                 case SS_SET_DISPLAY_STYLE:
                     Port_Config_Cycle3DSDisplayStyle();
                     break;
+                case SS_SET_FRAMES: {
+                    int next = (Port_Config_GetFramePacing() + 1) % PORT_3DS_PACING_COUNT;
+                    Port_Config_SetFramePacing(next);
+                    if (next == PORT_3DS_PACING_NO_SKIP) Compact_Toast("THE GAME SLOWS DOWN IF IT CANNOT KEEP UP");
+                    else if (next == PORT_3DS_PACING_LOCK30) Compact_Toast("30 FPS SHOWN, GAME AT FULL SPEED");
+                    break;
+                }
 #endif
                 case SS_SET_FOLLOW:
                     Port_Config_SetSecondScreenFollowCam(!Port_Config_GetSecondScreenFollowCam());

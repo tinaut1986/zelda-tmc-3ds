@@ -1,6 +1,6 @@
 BasicInfo:
   Title: "Minish Cap 3DS"
-  ProductCode: "CTR-P-TMC3"
+  ProductCode: "CTR-P-TMCT"
   Logo: Homebrew
 
 RomFs:
@@ -8,7 +8,7 @@ RomFs:
 
 TitleInfo:
   Category: Application
-  UniqueId: 0x5A22D
+  UniqueId: 0x5A22E # not upstream's 0x5A22D: this fork installs as its own app
 
 Option:
   UseOnSD: true

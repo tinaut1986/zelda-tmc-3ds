@@ -23,7 +23,17 @@ static bool parse_version(const char *s, Version *v) {
     s++;
   }
   if (*s == '-') {
-    s++; if (*s++ != 'E' || !isdigit((unsigned char)*s)) return false;
+    s++;
+    // Our own builds: "-beta" is a published pre-release (the CI bakes the
+    // channel into the binary), "-dev.N+hash" a local or CI build off a
+    // release branch. Both sort below the plain X.Y.Z, like an upstream -En.
+    if (!strcmp(s, "beta")) { v->pre = true; return true; }
+    if (!strncmp(s, "dev", 3)) {
+      for (s += 3; *s; s++)
+        if (!isalnum((unsigned char)*s) && *s != '.' && *s != '+') return false;
+      v->pre = true; return true;
+    }
+    if (*s++ != 'E' || !isdigit((unsigned char)*s)) return false;
     v->pre = true;
     while (isdigit((unsigned char)*s)) {
       v->experiment = v->experiment * 10 + (*s++ - '0');
@@ -102,10 +112,23 @@ int Update_ParseRelease(const char *data, size_t size, bool pre, bool homebrew, 
 // Image/link destinations and Markdown markers are presentation, never actions.
 unsigned Update_FormatNotes(const char *md, char lines[][43], unsigned capacity) {
   char clean[12289]; size_t n = 0;
-  // TMC release bodies start with an experimental notice and QR. The handheld
-  // changelog begins at the explicitly labelled section when one is present.
-  const char *section = md ? strstr(md, "## Changelog") : NULL;
-  if (section) md = section;
+  // Release bodies start with a beta notice and a QR code. The handheld shows
+  // the player-facing notes (docs/release-notes/<tag>.md, which the release
+  // workflow puts between <!-- tmc-notes --> markers under "## What's new"),
+  // or else the commit list under "## Changelog" (upstream's releases).
+  const char *section = md ? strstr(md, "<!-- tmc-notes -->") : NULL;
+  if (section) {
+    md = section;
+    const char *stop = strstr(md, "<!-- /tmc-notes -->");
+    size_t len = stop ? (size_t)(stop - md) : strlen(md);
+    static char notes_only[12289];
+    if (len >= sizeof(notes_only)) len = sizeof(notes_only) - 1;
+    memcpy(notes_only, md, len); notes_only[len] = 0;
+    md = notes_only;
+  } else {
+    section = md ? strstr(md, "## Changelog") : NULL;
+    if (section) md = section;
+  }
 
   for (size_t i = 0; md && md[i] && n < sizeof(clean)-1;) {
     if (md[i] == '<') {

@@ -232,10 +232,14 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     /* MUST match the expression in Port_PPU_Init exactly: that one gives the
      * pitch to the painter, this one sizes the allocation and the transfer. */
     sUploadLayout = PlatformGpu3DS_GetUploadLayout(old3dsProfile && Port_Config_CompactUpload());
+    /* Allocated at the full size whatever the layout, so COMPACT UP can be
+     * switched during play (PlatformGpu3DS_SetCompactUpload): the compact
+     * layout only uses less of the same buffers. */
+    const PlatformGpu3DSUploadLayout fullLayout = PlatformGpu3DS_GetUploadLayout(false);
     const size_t topBytes =
-        (size_t)sUploadLayout.topPitch * sUploadLayout.topRows * sizeof(uint32_t);
+        (size_t)fullLayout.topPitch * fullLayout.topRows * sizeof(uint32_t);
     const size_t bottomBytes =
-        (size_t)sUploadLayout.bottomPitch * sUploadLayout.bottomRows * sizeof(uint32_t);
+        (size_t)fullLayout.bottomPitch * fullLayout.bottomRows * sizeof(uint32_t);
     sBottomTargetValid = false;
     sSharpBilinearTarget = NULL;
     sC2dFlushBase = NULL;
@@ -253,7 +257,8 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     GSPGPU_FlushDataCache(sTopUpload, topBytes);
     GSPGPU_FlushDataCache(sBottomUploads[0], bottomBytes);
     GSPGPU_FlushDataCache(sBottomUploads[1], bottomBytes);
-    if (!C3D_Init(old3dsProfile ? PPU_GPU3DS_COMMAND_BUFFER_BYTES : C3D_DEFAULT_CMDBUF_SIZE))
+    /* The GPU renderer runs on both models and needs the larger command buffer. */
+    if (!C3D_Init(PPU_GPU3DS_COMMAND_BUFFER_BYTES))
         goto fail_linear;
     if (!C2D_Init(128)) {
         C3D_Fini();
@@ -879,6 +884,14 @@ bool PlatformGpu3DS_BeginCustomTop(void) {
     }
     sFrameActive = true;
     return true;
+}
+
+PlatformGpu3DSUploadLayout PlatformGpu3DS_SetCompactUpload(bool compact) {
+    sUploadLayout = PlatformGpu3DS_GetUploadLayout(sOld3DSProfile && compact);
+    sStats.topUploadPitch = sUploadLayout.topPitch;
+    sStats.bottomUploadPitch = sUploadLayout.bottomPitch;
+    sBottomTargetValid = false; /* redraw the bottom from the new stride */
+    return sUploadLayout;
 }
 
 void PlatformGpu3DS_DrawTopTexture(void* texturePointer, unsigned width) {

@@ -44,6 +44,12 @@ bool Port_Config_GetDecoupleRender(void);
 void Port_Config_SetDecoupleRender(bool on);
 bool Port_Config_GetShowFps(void);
 void Port_Config_SetShowFps(bool on);
+#ifdef TMC_3DS
+/* Bottom-screen theme (platform/3ds/source/bottom_compact_3ds.inc). */
+int Port_Config_GetUiTheme(void);
+void Port_Config_SetUiTheme(int theme);
+#include "../platform/3ds/source/frame_pacing_3ds.h"
+#endif
 /* Android touch overlay master switch. Off both hides it and stops it
  * claiming touches, so nothing sits between the player and the game. */
 bool Port_Config_GetTouchControls(void);

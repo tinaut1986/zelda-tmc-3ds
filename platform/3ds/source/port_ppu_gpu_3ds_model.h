@@ -6,8 +6,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-static inline bool PpuGpu3DS_ShouldUse(bool isNew3DS, bool initialized, bool disabled) {
-    return !isNew3DS && initialized && !disabled;
+/* The GPU renderer draws every frame on both models (owner's rule, 2026-10-11:
+ * everything goes through the GPU). Upstream kept it to the Old 3DS. What it
+ * cannot draw yet falls back to the software PPU for that frame: the New 3DS
+ * Full View layouts (400x240 outdoors, 200x120 at 2x indoors), PLAN P3.4. */
+static inline bool PpuGpu3DS_ShouldUse(bool initialized, bool disabled, bool fullView) {
+    return initialized && !disabled && !fullView;
 }
 
 enum {

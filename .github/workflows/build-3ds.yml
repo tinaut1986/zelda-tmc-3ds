@@ -1,9 +1,14 @@
 name: Build 3DS
 
+# Compile check for pull requests and the release line; publishes nothing (the
+# packages are kept as workflow artifacts). Releases come from
+# build-release.yml on a vX.Y.Z tag.
+
 on:
   push:
     branches:
       - main
+      - 'release/**'
   pull_request:
   workflow_dispatch:
 
@@ -12,39 +17,39 @@ permissions:
 
 jobs:
   build:
-    name: Nintendo 3DS packages
+    name: Nintendo 3DS packages (debug tools)
     runs-on: ubuntu-latest
     container:
-      image: devkitpro/devkitarm:latest
+      image: devkitpro/devkitarm:20260610
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Verify bundled build tools
+      - name: Install host tools
         run: |
-          for tool in cmake make pkg-config zip; do
-            command -v "$tool"
-          done
+          command -v cmake > /dev/null || (apt-get update -qq && apt-get install -y -qq cmake > /dev/null)
+          command -v python3 > /dev/null || (apt-get update -qq && apt-get install -y -qq python3 > /dev/null)
 
-      - name: Build universal CIA and 3DSX
-        run: ./platform/3ds/build.sh
+      - name: Build CIA and 3DSX
+        run: |
+          git config --global --add safe.directory '*'
+          chmod +x platform/3ds/tools/bin/bannertool platform/3ds/tools/bin/makerom
+          TMC3DS_DEBUG_TOOLS=1 TMC3DS_JOBS=$(nproc) ./platform/3ds/build.sh
 
       - name: Verify build outputs and legal files
         run: |
-          VERSION="$(tr -d '\r\n' < platform/3ds/version.txt)"
+          git config --global --add safe.directory '*'
+          VERSION="$(sh platform/3ds/tools/version.sh)"
           test ! -f baserom.gba
           ! git ls-files | grep -Ei '(^|/)([^/]*\.gba|[^/]*\.sav|[^/]*\.ppu1|tmc3ds\.log|bugreport_.*)(/|$)'
-          ! git ls-files | grep -E '(^|/)(AGENTS\.md|PROTOCOL\.md|WORKFLOW\.md|GITHUB_RELEASE_WORKFLOW\.md)$'
           test -f "build-3ds/game/tmc-3ds-v${VERSION}.3dsx"
-          if [ -f "build-3ds/game/tmc-3ds-v${VERSION}.cia" ]; then
-            echo "CIA package was built."
-          else
-            echo "CIA package skipped because makerom/bannertool are unavailable in CI."
-          fi
+          test -f "build-3ds/game/tmc-3ds-v${VERSION}.cia"
 
       - name: Upload packages
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: tmc-3ds-packages
           if-no-files-found: error

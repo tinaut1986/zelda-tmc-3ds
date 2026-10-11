@@ -187,3 +187,9 @@ keystore.properties
 !platform/3ds/tools/build_update_deps.py
 !platform/3ds/tools/gen_triforce.py
 !platform/3ds/tests/run-update-tests.py
+
+# Fork tooling (tinaut1986): build assistant and the console IP it remembers.
+!platform/3ds/tools/build_3ds.py
+!tools/ui-preview/ppm2png.py
+!tools/perf-csv/analyze.py
+.3ds_ftp_ip

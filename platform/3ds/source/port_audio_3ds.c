@@ -257,6 +257,27 @@ void Port_Audio_3DSGetStats(PortAudio3DSStats* stats) {
     }
 }
 
+/* DEBUG -> SWITCHES -> AUDIO CORE: stop the refill thread and start it again
+ * on the core the config now names. The queued NDSP buffers keep playing
+ * meanwhile (four blocks, ~60 ms), so the move is not heard. Main thread. */
+void Port_Audio_3DSRestartThread(void) {
+    if (!sInitialized || !sAudioThread) return;
+    __atomic_store_n(&sAudioThreadRunning, false, __ATOMIC_RELEASE);
+    LightEvent_Signal(&sAudioWake);
+    threadJoin(sAudioThread, U64_MAX);
+    threadFree(sAudioThread);
+    sAudioThread = NULL;
+    extern int Port_Config_AudioCore(void);
+    const int audioCoreOverride = Port_Config_AudioCore();
+    const int core = (audioCoreOverride == 0 || audioCoreOverride == 1) ? audioCoreOverride : 0;
+    sStats.threadCore = core;
+    __atomic_store_n(&sAudioThreadRunning, true, __ATOMIC_RELEASE);
+    sAudioThread = threadCreate(AudioThreadMain, NULL, AUDIO_THREAD_STACK, sStats.threadPriority, core, false);
+    if (!sAudioThread) __atomic_store_n(&sAudioThreadRunning, false, __ATOMIC_RELEASE);
+    /* Refill whatever finished while no thread was there. */
+    LightEvent_Signal(&sAudioWake);
+}
+
 void Port_Audio_Shutdown(void) {
     if (!sInitialized) return;
     ndspSetCallback(NULL, NULL);

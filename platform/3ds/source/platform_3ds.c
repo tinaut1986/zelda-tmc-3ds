@@ -5,6 +5,7 @@
 #include "port_audio_3ds.h"
 #include "port_second_screen_3ds.h"
 #include "port_second_screen_sync_3ds.h"
+#include "frame_pacing_3ds.h"
 
 #include <3ds.h>
 #include <stdbool.h>
@@ -56,6 +57,11 @@ static uint64_t sAptChecks;
 static uint64_t sFrameBoundaryEndTick;
 static Old3DSFramePacer sOld3DSFramePacer;
 static uint64_t sOld3DSSkippedTickSleep;
+/* FRAMES pacing state (Platform3DS_BeginFrameBoundary). */
+static int sLastPacing = -1;
+static bool sSkipWaitsVBlank;   /* LOCK 30 skipped this tick: wait one vblank anyway */
+static bool sPacerSkipped;      /* the adaptive pacer skipped this tick (sleep, then poll) */
+static uint64_t sLock30SkippedPresentations;
 static PrintConsole sGameplayLogSink;
 static bool sGameplayDisplayActive;
 static uintptr_t sStackRegionBase;
@@ -102,6 +108,8 @@ static void RegisterAptHook(void) {
     sAptHookRegistered = true;
 }
 
+static bool sPtmuReady;
+
 int Platform3DS_Init(void) {
     Port_SecondScreen_3DS_SyncInit();
     sHeld = 0;
@@ -137,6 +145,7 @@ int Platform3DS_Init(void) {
     gfxInit(GSP_RGB565_OES, GSP_RGB565_OES, false);
     gfxSet3D(false);
     cfguInit();
+    sPtmuReady = R_SUCCEEDED(ptmuInit());
     romfsInit();
     consoleInit(GFX_BOTTOM, NULL);
 
@@ -160,19 +169,7 @@ int Platform3DS_Init(void) {
      * question, so it is a knob rather than a new default.
      *
      * `app_cpu_limit=0` (default) keeps the original preference order. */
-    extern int Port_Config_AppCpuLimit(void);
-    const int limitCap = Port_Config_AppCpuLimit();
-    static const u32 core1Candidates[] = { 80, 70, 50, 30 };
-    for (size_t i = 0; i < sizeof(core1Candidates) / sizeof(core1Candidates[0]); ++i) {
-        if (limitCap > 0 && core1Candidates[i] > (u32)limitCap) continue;
-        if (R_FAILED(APT_SetAppCpuTimeLimit(core1Candidates[i]))) continue;
-        u32 actual = 0;
-        if (R_SUCCEEDED(APT_GetAppCpuTimeLimit(&actual)) && actual > 0) {
-            sCore1Available = true;
-            sCore1TimeLimit = actual;
-            break;
-        }
-    }
+    Platform3DS_ApplyCpuLimit();
 
     sRunning = true;
     hidScanInput();
@@ -194,13 +191,62 @@ void Platform3DS_Shutdown(void) {
     virtuappu_mode1_shutdown_workers();
     Port_Audio_Shutdown();
     romfsExit();
+    if (sPtmuReady) ptmuExit();
+    sPtmuReady = false;
     cfguExit();
     gfxExit();
+}
+
+/* Battery and Wi-Fi for the bottom screen's status icons. The two PTM calls
+ * cost a few ms on the console (../sm-3ds measured 2-3 ms), and the level moves
+ * far slower than anything else, so they are asked at most every 3 s. */
+bool Platform3DS_BatteryStatus(uint8_t* level, uint8_t* charging) {
+    static uint64_t lastTick;
+    static u8 cachedLevel = 5, cachedCharging;
+    if (!sPtmuReady) return false;
+    const uint64_t now = svcGetSystemTick();
+    if (lastTick == 0 || now - lastTick > 3ull * SYSCLOCK_ARM11) {
+        u8 l = 0, c = 0;
+        if (R_SUCCEEDED(PTMU_GetBatteryLevel(&l))) cachedLevel = l > 5 ? 5 : l;
+        if (R_SUCCEEDED(PTMU_GetBatteryChargeState(&c))) cachedCharging = c;
+        lastTick = now;
+    }
+    *level = cachedLevel;
+    *charging = cachedCharging;
+    return true;
+}
+
+/* Cheap per-frame reads for the perf recorder (Platform3DS_GetRuntimeStats
+ * also queries the kernel for memory, too slow to call every frame). */
+uint64_t Platform3DS_LogicFrameCount(void) { return sLogicFrames; }
+uint64_t Platform3DS_EngineWorkLastTicks(void) { return sEngineWorkLastTicks; }
+uint64_t Platform3DS_VblankWaitLastTicks(void) { return sVblankWaitLastTicks; }
+
+int Platform3DS_WifiStrength(void) {
+    return (int)osGetWifiStrength();
 }
 
 bool Platform3DS_IsRunning(void) { return sRunning; }
 bool Platform3DS_IsNew3DS(void) { return sIsNew3DS; }
 bool Platform3DS_CanUseCore1(void) { return sCore1Available; }
+
+/* The app's share of core 1 (`app_cpu_limit`, DEBUG -> SWITCHES -> CPU LIMIT).
+ * APT accepts a new limit at any time, so the switch applies at once. */
+void Platform3DS_ApplyCpuLimit(void) {
+    extern int Port_Config_AppCpuLimit(void);
+    const int limitCap = Port_Config_AppCpuLimit();
+    static const u32 core1Candidates[] = { 80, 70, 50, 30 };
+    for (size_t i = 0; i < sizeof(core1Candidates) / sizeof(core1Candidates[0]); ++i) {
+        if (limitCap > 0 && core1Candidates[i] > (u32)limitCap) continue;
+        if (R_FAILED(APT_SetAppCpuTimeLimit(core1Candidates[i]))) continue;
+        u32 actual = 0;
+        if (R_SUCCEEDED(APT_GetAppCpuTimeLimit(&actual)) && actual > 0) {
+            sCore1Available = true;
+            sCore1TimeLimit = actual;
+            break;
+        }
+    }
+}
 unsigned Platform3DS_Core1TimeLimit(void) { return sCore1TimeLimit; }
 bool Platform3DS_TurboHeld(void) { return sIsNew3DS && sCStickHeld; }
 unsigned Platform3DS_TurboMultiplier(void) { return sTurboMultiplier; }
@@ -374,32 +420,53 @@ bool Platform3DS_BeginFrameBoundary(void) {
     }
 
     ++sLogicFrames;
-    if (sIsNew3DS && sLogicLastTick != 0) {
-        /* The New 3DS does not use adaptive presentation skipping, but its
-         * diagnostic cadence still needs the pacer's HOME/sleep/dump filter. */
+    /* OPTIONS -> FRAMES (Port_Config_GetFramePacing). A change resyncs the
+     * pacer so time spent in another mode is not taken as debt. */
+    const int pacing = Port_Config_GetFramePacing();
+    if (pacing != sLastPacing) {
+        if (sLastPacing >= 0) Old3DSFramePacer_MarkDiscontinuity(&sOld3DSFramePacer, OLD3DS_FRAME_PACER_DISCONTINUITY_APT);
+        sLastPacing = pacing;
+    }
+    const bool pacerRuns = !sIsNew3DS || pacing == PORT_3DS_PACING_AUTO;
+    if (sIsNew3DS && !pacerRuns && sLogicLastTick != 0) {
+        /* The pacer is not ticking, but its diagnostic cadence still needs
+         * the HOME/sleep/dump filter. */
         Old3DSFramePacer_RecordActiveInterval(&sOld3DSFramePacer, now - sLogicLastTick);
     }
     sLogicLastTick = now;
-    if (!sIsNew3DS) {
-        const bool present = Old3DSFramePacer_BeginTick(&sOld3DSFramePacer, now, &sOld3DSSkippedTickSleep);
-        if (present) ++sPresentedFrames;
-        return present;
-    }
 
-    if (!Platform3DS_TurboHeld()) {
-        sTurboPhase = 0;
-        ++sPresentedFrames;
-        return true;
+    if (sIsNew3DS && Platform3DS_TurboHeld()) {
+        ++sTurboLogicFrames;
+        if (++sTurboPhase >= Platform3DS_TurboMultiplier()) {
+            sTurboPhase = 0;
+            ++sPresentedFrames;
+            return true;
+        }
+        ++sTurboSkippedPresentations;
+        return false;
     }
+    sTurboPhase = 0;
 
-    ++sTurboLogicFrames;
-    if (++sTurboPhase >= Platform3DS_TurboMultiplier()) {
-        sTurboPhase = 0;
-        ++sPresentedFrames;
-        return true;
+    switch (pacing) {
+        case PORT_3DS_PACING_NO_SKIP:
+            ++sPresentedFrames;
+            return true;
+        case PORT_3DS_PACING_LOCK30:
+            if (sLogicFrames & 1u) {
+                /* Not drawn, but still one vblank long: the game stays at 60 Hz. */
+                sSkipWaitsVBlank = true;
+                ++sLock30SkippedPresentations;
+                return false;
+            }
+            ++sPresentedFrames;
+            return true;
+        default: {
+            const bool present = Old3DSFramePacer_BeginTick(&sOld3DSFramePacer, now, &sOld3DSSkippedTickSleep);
+            if (present) ++sPresentedFrames;
+            else sPacerSkipped = true;
+            return present;
+        }
     }
-    ++sTurboSkippedPresentations;
-    return false;
 }
 
 void Platform3DS_EndFrameBoundary(void) {
@@ -452,7 +519,17 @@ uint64_t Platform3DS_VblankWaitOverTwoPeriods(void) { return sVblankWaitOverTwoP
 
 void Platform3DS_PumpWithoutVBlank(void) {
     if (!PumpLifecycleAndAudio()) return;
-    if (sIsNew3DS) return;
+    if (sSkipWaitsVBlank) {
+        /* LOCK 30: nothing new to show, so no swap; the presenter keeps the
+         * last picture while the game ticks on the vblank. */
+        sSkipWaitsVBlank = false;
+        gspWaitForEvent(GSPGPU_EVENT_VBlank0, false);
+        PollInput();
+        return;
+    }
+    /* New 3DS turbo skips run as fast as they can; only a pacer skip sleeps. */
+    if (sIsNew3DS && !sPacerSkipped) return;
+    sPacerSkipped = false;
 
     if (sOld3DSSkippedTickSleep != 0) {
         const uint64_t sleepNs = sOld3DSSkippedTickSleep * 1000000000ULL / SYSCLOCK_ARM11;
@@ -570,8 +647,24 @@ static bool EnsureBottomWorker(void) {
     return sBottomWorkerThread != NULL;
 }
 
+/* DEBUG -> SWITCHES -> BOTTOM CORE: the painter thread is recreated on the
+ * other core before its next paint. Only between paints: a thread stopped
+ * mid-paint would leave its done event to a fresh LightEvent_Init. */
+static volatile bool sBottomWorkerRestart;
+
+void Platform3DS_RestartBottomWorker(void) {
+    sBottomWorkerRestart = true;
+}
+
 bool Platform3DS_SubmitBottomWorker(void) {
-    if (sBottomWorkerBusy || !EnsureBottomWorker()) return false;
+    if (sBottomWorkerBusy) return false;
+    if (sBottomWorkerRestart) {
+        sBottomWorkerRestart = false;
+        Platform3DS_ShutdownBottomWorker();
+        sBottomWorkerAttempts = 0;
+        sBottomWorkerRetryIn = 0;
+    }
+    if (!EnsureBottomWorker()) return false;
     __atomic_thread_fence(__ATOMIC_RELEASE);
     sBottomWorkerBusy = true;
     LightEvent_Signal(&sBottomWorkerStart);

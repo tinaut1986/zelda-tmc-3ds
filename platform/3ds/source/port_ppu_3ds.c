@@ -13,6 +13,12 @@
 #include "port_second_screen_state.h"
 #include "port_widescreen.h"
 #include "platform_3ds.h"
+#include "tmc3ds_version.h"
+#include "tmc3ds_build_config.h"
+#if TMC3DS_DEBUG_TOOLS
+#include "debug_log_3ds.h"
+#include "debug_perf_3ds.h"
+#endif
 #include "platform_gpu_3ds.h"
 #include "top_view_3ds.h"
 #include "port_ppu_gpu_3ds.h"
@@ -456,7 +462,7 @@ void Port_PPU_3DS_WriteQuickDump(void) {
             gpuStats.linearHeapBytes > gpuStats.c2dFlushBytes ? gpuStats.linearHeapBytes - gpuStats.c2dFlushBytes : 0;
         const double loadIntervalTicks =
             sPerfIntervalLastTicks ? (double)sPerfIntervalLastTicks : (double)Platform3DS_TicksPerSecond() / 60.0;
-        fprintf(info, "The Minish Cap 3DS v" TMC_PORT_VERSION " quick dump\n");
+        fprintf(info, "Minish Cap 3DS v" TMC_PORT_VERSION_LABEL " (upstream " TMC_UPSTREAM_VERSION ") quick dump\n");
         fprintf(info, "\n[System]\n");
         fprintf(info, "Model: %s\n", Platform3DS_IsNew3DS() ? "New Nintendo 3DS" : "Old Nintendo 3DS");
         fprintf(info, "CPU profile requested: %s\n", runtimeStats.speedupRequested ? "804 MHz + L2" : "268 MHz");
@@ -961,8 +967,8 @@ void Port_PPU_Init(SDL_Window* window) {
     sTopValidSourceHeight = GBA_H;
     sGpuPresenterReady = PlatformGpu3DS_Init(old3dsProfile);
     sGpuPpuDisabled = false;
-    sGpuPpuInitialized =
-        old3dsProfile && sGpuPresenterReady && PortPpuGpu3DS_Init();
+    /* Both models: see PpuGpu3DS_ShouldUse. */
+    sGpuPpuInitialized = sGpuPresenterReady && PortPpuGpu3DS_Init();
     sTopUpload = PlatformGpu3DS_TopBuffer();
     sBottomUploads[0] = PlatformGpu3DS_BottomBuffer(0);
     sBottomUploads[1] = PlatformGpu3DS_BottomBuffer(1);
@@ -973,9 +979,29 @@ void Port_PPU_Init(SDL_Window* window) {
 /* Frames skipped because the GPU had not finished the previous one. */
 static unsigned long long sGpuBusyFrameDrops;
 
+/* COMPACT UP changed in DEBUG -> SWITCHES: take the new pitches at the start
+ * of a frame, when neither the software renderer nor the bottom painter is
+ * writing into the upload surfaces. */
+static void ApplyUploadLayoutSwitch(void) {
+    static int applied = -1;
+    const int wanted = Port_Config_CompactUpload() ? 1 : 0;
+    if (applied < 0) {
+        applied = wanted;
+        return;
+    }
+    if (wanted == applied || sBottomWorkerPending) return;
+    const PlatformGpu3DSUploadLayout layout = PlatformGpu3DS_SetCompactUpload(wanted != 0);
+    sTopUploadPitch = layout.topPitch;
+    sBottomUploadPitch = layout.bottomPitch;
+    virtuappu_mode1_set_output_buffer(sTopUpload, sTopUploadPitch);
+    Port_SecondScreen_3DS_RequestRefresh();
+    applied = wanted;
+}
+
 void Port_PPU_PresentFrame(void) {
     if (!sInitialized)
         return;
+    ApplyUploadLayoutSwitch();
     PortPpuGpu3DS_FinishParityCheck();
     PortPpuGpu3DS_WriteFrameCapture(Port_PPU_3DS_LastDumpDirectory());
     /* Before this frame draws over it, the output texture still holds the
@@ -990,6 +1016,7 @@ void Port_PPU_PresentFrame(void) {
     bool parityFrame = false;
     ++sFrameNumber;
     const uint64_t frameStartTick = Platform3DS_SystemTick();
+    uint64_t perfBeginTicks = 0, perfPreflightTicks = 0; /* DEBUG tab perf recorder */
 
 #ifdef TMC_3DS_DIAGNOSTICS
     const uint64_t frameStart = Platform3DS_Milliseconds();
@@ -1036,8 +1063,8 @@ void Port_PPU_PresentFrame(void) {
     bool gpuReady = false;
     sGpuSnapshotValid = false;
     if (Port_Config_GpuRenderer() &&
-        PpuGpu3DS_ShouldUse(Platform3DS_IsNew3DS(), sGpuPpuInitialized,
-                            sGpuPpuDisabled)) {
+        PpuGpu3DS_ShouldUse(sGpuPpuInitialized, sGpuPpuDisabled,
+                            topFrame.mode != PORT_3DS_FULL_VIEW_FALLBACK)) {
         parityFrame = PortPpuGpu3DS_ParityRequested();
         if (parityFrame) {
             Platform3DS_MarkFrameDiscontinuity(
@@ -1089,6 +1116,8 @@ void Port_PPU_PresentFrame(void) {
         gpuReady = frameBegun && PortPpuGpu3DS_Preflight(&frameView);
         const uint64_t preflightTicks = Platform3DS_SystemTick() - beginStart - beginTicks;
         Platform3DS_SetStage(3);
+        perfBeginTicks = beginTicks;
+        perfPreflightTicks = preflightTicks;
         sFrameBeginTicks += beginTicks;
         sPreflightTicks += preflightTicks;
         if (beginTicks > sFrameBeginMaxTicks) sFrameBeginMaxTicks = beginTicks;
@@ -1106,6 +1135,7 @@ void Port_PPU_PresentFrame(void) {
         PortPpuGpu3DS_RecordDisabledFrame();
     }
     Platform3DS_SetStage(4);
+    const uint64_t softwareStartTick = Platform3DS_SystemTick();
     if (!gpuReady) virtuappu_render_frame();
     Platform3DS_SetStage(5);
     const uint64_t renderEndTick = Platform3DS_SystemTick();
@@ -1281,6 +1311,29 @@ void Port_PPU_PresentFrame(void) {
         sBottomBufferInGame[sBottomFrontBuffer] = sBottomWorkerSnapshot.inGame != 0;
         RecordBottomWorkerTiming();
     }
+#if TMC3DS_DEBUG_TOOLS
+    if (DebugPerf_Running()) {
+        static uint64_t lastLogicFrames;
+        const uint64_t logicFrames = Platform3DS_LogicFrameCount();
+        DebugPerfFrame row = {
+            .startTick = frameStartTick,
+            .workTicks = Platform3DS_EngineWorkLastTicks(),
+            .vblankTicks = Platform3DS_VblankWaitLastTicks(),
+            .beginTicks = perfBeginTicks,
+            .preflightTicks = perfPreflightTicks,
+            .renderTicks = gpuReady ? 0 : renderEndTick - softwareStartTick,
+            .topTicks = topEndTick - frameStartTick,
+            .bottomTicks = bottomChanged ? sBottomWorkerLastTicks : 0,
+            .logicFrames = (uint32_t)(lastLogicFrames ? logicFrames - lastLogicFrames : 1),
+            .gpu = gpuReady ? 1 : 0,
+            .area = gMain.task == TASK_GAME ? gRoomControls.area : 0xFF,
+            .room = gMain.task == TASK_GAME ? gRoomControls.room : 0xFF,
+        };
+        lastLogicFrames = logicFrames;
+        DebugPerf_Record(&row);
+    }
+    DebugLog_Tick();
+#endif
 
     /* Every third presentation cost 2759 repaints in 8336 frames, each a
      * software paint plus a 512 KB transfer -- about 169 KB a frame of GSP
