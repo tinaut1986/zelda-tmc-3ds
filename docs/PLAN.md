@@ -43,10 +43,10 @@ v2.2-E1: nothing stable published.
 | `perf/full-view-gpu` (cut from `perf/wide-bg-tile-runs`) | P3.4 first part: Full View (Wide + Pixel Perfect) drawn by the GPU renderer: whole-view shadow, OBJ Y wrap as mode1.c, presenter takes the Full View geometry | on the console by Claude, Hyrule Field 03/01: Full View 400x240 33.8 -> **59.8 fps** (bg 6.2 ms, vblank margin 9.6 ms; the per-frame tile memo and the per-tile Wide emitter), Wide + Bilinear bg 4.2 ms; GPU CHECK 0 structural pixels everywhere tried. Interiors (200x120 at 2x), BG3 native bounds and the Old 3DS not checked yet |
 | `fix/relaunch-hang` (cut from `perf/full-view-gpu`) | issue #2: no GPU teardown while relaunching, exit steps logged | relaunches checked; the hang itself not reproduced |
 
-**Where work stands (2026-10-11, end of session):** the branches above are stacked in table
-order; the tip, `fix/relaunch-hang`, holds all of them. None is merged into `release/v0.1.1`
-yet: the owner checks them on the console first (most were already checked by Claude over the
-link, see each row).
+**Where work stands (2026-10-11):** all the branches in the table above were merged into
+`release/v0.1.1` in one `--no-ff` merge of `fix/relaunch-hang` (the stack's tip) at the owner's
+request; their remote branches are deleted. Issue #2 and the Full View interiors / Old 3DS checks
+listed in the rows are still open.
 
 **On the owner's console now:** a debug build of the previous `fix/relaunch-hang` commit
 (GPU teardown skipped on relaunch), which is the bad one of issue #2: a relaunch from it can

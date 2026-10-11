@@ -69,8 +69,11 @@ Other local checkouts: `../mzm` and `../sm-3ds`, the reference ports.
   on it means "not stable yet". Active line: see PLAN's Status.
 - Topic branches (`feat/...`, `fix/...`, `perf/...`, `chore/...`, `docs/...`) are
   cut from the active release branch and merged back into it with `--no-ff` once
-  the owner has checked them on the console.
-- Never commit directly on `main` or `release/*`.
+  the owner has checked them on the console. **One topic per branch, always cut from
+  the release branch, never from another topic branch**: stacking them makes none
+  mergeable on its own. The one exception is a task that truly needs another
+  unmerged branch; say so in PLAN's branch table.
+- Never commit directly on `main` or `release/*`. Commit only when the owner asks.
 
 ### Versions
 
