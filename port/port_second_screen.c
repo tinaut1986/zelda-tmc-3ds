@@ -138,7 +138,7 @@ static const int8_t kDungeonTopFloor[7] = { 2, 3, 3, 5, 2, 7, 5 };
 /*  UI state shared with the tap handler                               */
 /* ------------------------------------------------------------------ */
 
-enum { SS_TAB_MAP = 0, SS_TAB_ITEMS, SS_TAB_QUEST, SS_TAB_SETTINGS };
+enum { SS_TAB_MAP = 0, SS_TAB_ITEMS, SS_TAB_QUEST, SS_TAB_SETTINGS, SS_TAB_DEBUG /* 3DS debug-tools builds */ };
 
 /* What a tap target does when hit. arg meaning per action: item id,
  * tab id, ring (1 = A, 2 = B), plaque display-floor index, settings row.
@@ -2180,6 +2180,7 @@ static int GetSettingState(int row, char* out, int outCap) {
  * parchment, chips, font, and palette keep it native to this game. */
 #ifdef TMC_3DS
 #include "../platform/3ds/source/update_ui_3ds.inc"
+#include "../platform/3ds/source/bottom_compact_3ds.inc"
 #endif
 
 static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
@@ -2854,7 +2855,7 @@ static void PaintTabBar(const SSurf* s, TargetList* tl, float u, int32_t ts, int
  * average with ~89 ms peaks, which is the largest CPU cost left on the Old 3DS,
  * but the total alone does not say which phase to attack -- and guessing that
  * from reading the code is how earlier optimisation attempts went wrong. */
-extern unsigned long long Platform3DS_SystemTick(void);
+/* Platform3DS_SystemTick comes from platform_3ds.h. */
 enum { SS_PHASE_BACKDROP, SS_PHASE_PANEL, SS_PHASE_SIDEBAR, SS_PHASE_TABBAR, SS_PHASE_COUNT };
 static unsigned long long sSsPhaseTicks[SS_PHASE_COUNT];
 static unsigned long long sSsPhaseMax[SS_PHASE_COUNT];
@@ -2998,11 +2999,23 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     Port_SecondScreenTheme_DrawBackdrop(s.px, s.w, s.h, s.stride, 0, 0, s.w, s.h, ts);
     SS_MARK(SS_PHASE_BACKDROP);
 
+#ifdef TMC_3DS
+    /* Compact chrome (bottom_compact_3ds.inc): the tab bar is a slim strip on
+     * top and the panels get everything under it. */
+    float sideW = 220 * u;
+    float mx0 = CC_MARGIN, my0 = CC_TOP + 2;
+    float mx1 = tab == SS_TAB_SETTINGS ? width - CC_MARGIN : width - sideW - 2;
+    float my1 = height - CC_MARGIN;
+#if !TMC3DS_DEBUG_TOOLS
+    if (tab == SS_TAB_DEBUG) tab = SS_TAB_MAP;
+#endif
+#else
     float tabH = 96 * u;
     float sideW = 220 * u; /* widened for the grown rings/chip; map stays dominant */
     float mx0 = 10 * u, my0 = 10 * u;
     float mx1 = tab == SS_TAB_SETTINGS ? width - 10 * u : width - sideW - 4 * u;
     float my1 = height - tabH - 4 * u;
+#endif
 
     TargetList tl = { .n = 0 };
 
@@ -3011,8 +3024,17 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     } else if (tab == SS_TAB_QUEST) {
         PaintQuestPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, tick, questView);
     } else if (tab == SS_TAB_SETTINGS) {
+#ifdef TMC_3DS
+        if (settingsPage == SS_SETTINGS_ROOT) {
+            Compact_PaintOptions(&s, &tl);
+        } else
+#endif
         PaintSettingsPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, settingsPage, tick,
                            dumpFlashUntil, loadStateFlashUntil, loadStateResult);
+#if defined(TMC_3DS) && TMC3DS_DEBUG_TOOLS
+    } else if (tab == SS_TAB_DEBUG) {
+        Compact_PaintDebug(&s, &tl, snap, tick, dumpFlashUntil, loadStateFlashUntil, loadStateResult);
+#endif
     } else if (isDungeon) {
         PaintDungeon(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, tick, returnCfg);
 #ifdef TMC_3DS
@@ -3040,6 +3062,15 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
 
     SS_MARK(SS_PHASE_PANEL);
 
+#ifdef TMC_3DS
+    if (tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG) {
+        PaintSidebar(&s, snap, &tl, width - sideW + 2, my0, sideW - 2 - CC_MARGIN, my1 - my0, u, ts, tick,
+                     armedRing);
+    }
+    SS_MARK(SS_PHASE_SIDEBAR);
+    Compact_PaintTabBar(&s, &tl, tab, settingsPage);
+    SS_MARK(SS_PHASE_TABBAR);
+#else
     if (tab != SS_TAB_SETTINGS) {
         PaintSidebar(&s, snap, &tl, width - sideW + 4 * u, 10 * u, sideW - 14 * u, height - tabH - 14 * u, u,
                      ts, tick, armedRing);
@@ -3047,6 +3078,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     SS_MARK(SS_PHASE_SIDEBAR);
     PaintTabBar(&s, &tl, u, ts, tab);
     SS_MARK(SS_PHASE_TABBAR);
+#endif
 #ifdef TMC_3DS
     ++sSsPhasePaints;
 #endif

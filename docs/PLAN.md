@@ -26,6 +26,7 @@ boxes below. History: `git log` and the decisions log.
 | Branch | What | State |
 |---|---|---|
 | `chore/fork-setup` | P0.1: own version scheme, title ID, data folder, updater repo, release CI, build assistant, this plan | waiting for the owner (build, install next to upstream's app, boot, check the version in the boot console) |
+| `feat/compact-ui` (cut from `chore/fork-setup`) | P2.1 UI preview on the host; first part of P2.2 (slim tab bar on top, OPTIONS as a cell grid, 5x7 font at 1x, version + upstream base in the footer) and of P1.1 (DEBUG tab with the old Developer cells) | waiting for the owner: previews approved?, then on the console (tabs, every OPTIONS cell, the title-screen OPTIONS with its BACK, the UPDATES page) |
 
 **Priority** (owner's order, 2026-10-11): P0.1 → P1 debug tools and P2 bottom UI (so
 that P3 can be measured) → P0.2 baseline → P3 performance → P4 wide modes.

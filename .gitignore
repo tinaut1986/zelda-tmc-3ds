@@ -190,4 +190,5 @@ keystore.properties
 
 # Fork tooling (tinaut1986): build assistant and the console IP it remembers.
 !platform/3ds/tools/build_3ds.py
+!tools/ui-preview/ppm2png.py
 .3ds_ftp_ip
