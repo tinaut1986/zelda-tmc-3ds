@@ -43,13 +43,25 @@ v2.2-E1: nothing stable published.
 | `perf/full-view-gpu` (cut from `perf/wide-bg-tile-runs`) | P3.4 first part: Full View (Wide + Pixel Perfect) drawn by the GPU renderer: whole-view shadow, OBJ Y wrap as mode1.c, presenter takes the Full View geometry | on the console by Claude, Hyrule Field 03/01: Full View 400x240 33.8 -> **59.8 fps** (bg 6.2 ms, vblank margin 9.6 ms; the per-frame tile memo and the per-tile Wide emitter), Wide + Bilinear bg 4.2 ms; GPU CHECK 0 structural pixels everywhere tried. Interiors (200x120 at 2x), BG3 native bounds and the Old 3DS not checked yet |
 | `fix/relaunch-hang` (cut from `perf/full-view-gpu`) | issue #2: no GPU teardown while relaunching, exit steps logged | relaunches checked; the hang itself not reproduced |
 
-**On the owner's console now (2026-10-11):** a debug build of `feat/ingame-ftp`
-(`0.1.1-dev.13.4+6528614`), sent with ftpd and installed with FBI: the first time any of this
-fork runs on hardware. To check, in order: it boots from `sdmc:/3ds/Minish Cap 3DS/`; the GPU
-renderer on the New 3DS draws correctly (Wide normal, then Wide + Pixel Perfect); the bottom
-screen (tabs, themes, OPTIONS, the title-screen OPTIONS); DEBUG -> FTP SERVER, then
-`./build_3ds.sh --install IP` from here; perf recordings in Hyrule Town on the New 3DS (Wide,
-and Wide + Pixel Perfect) and later on the 2DS (P0.2).
+**Where work stands (2026-10-11, end of session):** the branches above are stacked in table
+order; the tip, `fix/relaunch-hang`, holds all of them. None is merged into `release/v0.1.1`
+yet: the owner checks them on the console first (most were already checked by Claude over the
+link, see each row).
+
+**On the owner's console now:** a debug build of the previous `fix/relaunch-hang` commit
+(GPU teardown skipped on relaunch), which is the bad one of issue #2: a relaunch from it can
+freeze the new build. Next step, waiting for the owner's choice: install the current tip either
+over FTP (`./build_3ds.sh --install 192.168.1.133`, accepting one more possible freeze and a
+power cycle) or with FBI (CIA dropped in `/cias/`, game closed from HOME). Then check that
+relaunches, HOME and closing the lid no longer freeze (issue #2). Save states 1 (Link's house,
+22/10), 2 and 3 (Hyrule Field 03/01) are on the console for the loop in CLAUDE.md.
+
+**Next after that:** the Old 3DS/2DS at 60 with Wide + Pixel Perfect (P3.3, P4.1): the Full View
+build is ~6 ms on the New 3DS, ~18 ms expected at 268 MHz, so BG geometry has to be kept across
+frames (mzm/sm-3ds techniques, `docs/renderer-gpu-gap.md`), and the Full View policy still opts
+in only on the New 3DS. Also left: Wide BGs with mosaic, HUD anchor or message shift still go
+through the per-pixel path; the owner's 2DS on the network with a debug build would let Claude
+measure there.
 
 **Priority** (owner's order, 2026-10-11): P0.1 → P1 debug tools and P2 bottom UI (so
 that P3 can be measured) → P0.2 baseline → P3.4 Full View on the GPU, and Full View on the
