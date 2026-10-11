@@ -19,15 +19,27 @@ change (what goes where: the table in `CLAUDE.md`).
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.1.0` (nothing published yet).
+**Release line:** `release/v0.1.1` (on origin). Published: **`v0.1.0`** (2026-10-11, **beta**,
+not on `main`; GitHub release with the CIA and QR, the 3DSX asset deleted afterwards): the fork
+setup, the compact bottom screen with themes, FRAMES, the DEBUG tab tools and the GPU renderer on
+both models (branches `chore/fork-setup`, `feat/compact-ui`, `feat/debug-tools`, merged into
+`release/v0.1.0` before the tag; none of it checked on the console yet). `main` is still upstream's
+v2.2-E1: nothing stable published.
 
 **Branches:**
 
 | Branch | What | State |
 |---|---|---|
-| `chore/fork-setup` | P0.1: own version scheme, title ID, data folder, updater repo, release CI, build assistant, this plan | waiting for the owner (build, install next to upstream's app, boot, check the version in the boot console) |
-| `feat/compact-ui` (cut from `chore/fork-setup`) | P2.1 UI preview on the host; first part of P2.2 (icon tab bar with clock, Wi-Fi and battery, four themes switched by a day/night-style button or the THEME cell and saved as `ui_theme`, OPTIONS as a cell grid, 5x7 font at 1x, version + upstream base in the footer, no ITEMS header chip) and of P1.1 (DEBUG tab with the old Developer cells) | waiting for the owner on the console (tabs, theme button, every OPTIONS cell, the title-screen OPTIONS with its BACK, the UPDATES page); the owner will tune the themes after using them |
-| `feat/debug-tools` (cut from `feat/compact-ui`) | OPTIONS -> FRAMES (AUTO / LOCK 30 / NO SKIP); P1.2 performance switches (SWITCHES page), P1.3 SD log, P1.4 perf recorder + `tools/perf-csv/analyze.py`, DEBUG tab main page with RECORD / TOOLS rows and toasts | waiting for the owner on the console: log written at boot, a mark, a perf recording fetched and analysed on the PC, each switch flipped (live ones visibly, at-boot ones after a restart) |
+| `chore/no-3dsx-release` (local, cut from `release/v0.1.1`) | releases publish the CIA only | ready; not merged, not pushed |
+| `feat/ingame-ftp` (local, cut from `chore/no-3dsx-release`) | P1.9 FTP server in the DEBUG tab, `SITE INSTALL` + relaunch, `./build_3ds.sh --install`, CLAUDE.md "The console in the loop", PLAN P1.10 spec | checked on the PC with curl; not merged, not pushed |
+
+**On the owner's console now (2026-10-11):** a debug build of `feat/ingame-ftp`
+(`0.1.1-dev.13.4+6528614`), sent with ftpd and installed with FBI: the first time any of this
+fork runs on hardware. To check, in order: it boots from `sdmc:/3ds/Minish Cap 3DS/`; the GPU
+renderer on the New 3DS draws correctly (Wide normal, then Wide + Pixel Perfect); the bottom
+screen (tabs, themes, OPTIONS, the title-screen OPTIONS); DEBUG -> FTP SERVER, then
+`./build_3ds.sh --install IP` from here; perf recordings in Hyrule Town on the New 3DS (Wide,
+and Wide + Pixel Perfect) and later on the 2DS (P0.2).
 
 **Priority** (owner's order, 2026-10-11): P0.1 → P1 debug tools and P2 bottom UI (so
 that P3 can be measured) → P0.2 baseline → P3.4 Full View on the GPU, and Full View on the
@@ -115,7 +127,8 @@ criteria). IDs are stable; never renumber.
   Minish Woods, Deepwood Shrine, Mt. Crenel, Castor Wilds, Cave of Flames, a busy
   boss) on New 3DS and Old 3DS/2DS, Wide + Pixel Perfect and Original, 3D off.
   *Done when:* a table below with fps (avg / 1% low), CPU and GPU ms per frame.
-- [ ] **P0.3** Issues enabled on `tinaut1986/zelda-tmc-3ds`.
+- [x] **P0.3** Issues enabled on `tinaut1986/zelda-tmc-3ds`.
+  Done 2026-10-11 (`gh repo edit --enable-issues`, at the owner's request).
   *Spec:* the fork has issues disabled (GitHub's default for forks). The owner
   enables them in Settings, or asks Claude to (`gh repo edit --enable-issues`).
   *Done when:* playtest bugs can be filed there.
@@ -134,12 +147,11 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   *Done when:* a debug build shows the tab, a production build has no trace of it
   (no strings in the binary).
 - [ ] **P1.2** Live performance switches.
-  *Spec:* every ini-only switch that can change at runtime gets a cell in the
-  DEBUG tab (renderer GPU/CPU, frame sync, bottom core, audio DSP/PCM offload,
-  bottom map skip, vblank phase lock, static quad, compact upload, CPU limit...),
-  showing the current value; the ones that need a restart say so. Saved to the ini.
-  *Done when:* each can be flipped on the console and the perf recorder shows the
-  difference.
+  *Spec:* every ini-only performance switch gets a cell in DEBUG -> SWITCHES, showing the
+  current value, applied during play (none may need a restart: owner's rule, 2026-10-11) and
+  saved to the ini. Done in `v0.1.0`: renderer, frame sync, vblank lock, static quad, map skip,
+  frame log, bottom core, audio core, compact upload, CPU limit (docs/debug-tools.md).
+  *Done when:* each can be flipped on the console and the perf recorder shows the difference.
 - [ ] **P1.3** SD log.
   *Spec:* `debug/tmc-log-NN.txt` (10 rotating slots), started at boot in debug
   builds: console model, clocks, core-1 limit, every settings change, every 5 s a
