@@ -114,7 +114,9 @@ it is saved (`setting: frame_pacing 0 -> 1`: OPTIONS, the bottom-screen settings
 the SWITCHES alike), the marks, and every 5 s a perf line: frames shown and logic ticks
 per second, presentations skipped, engine work per logic tick (and its max),
 vblank wait per frame, GPU frames and software fallbacks, tiles decoded, area and
-room, free memory. BUFFERED (default): lines collect in a 16 KB buffer, written when
+room, free memory; with it, while the GPU renderer draws, a `build:` line with the command
+build's phases in ms per GPU frame (`sig` and `retain` are inside `maps`; `decode` is inside
+the phase that needed the tile). BUFFERED (default): lines collect in a 16 KB buffer, written when
 it fills, on a mark, on a mode change, on stop and on exit. DIRECT: each line is
 written and flushed at once, so a hang cannot swallow the last lines.
 

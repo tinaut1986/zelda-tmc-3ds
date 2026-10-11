@@ -8,8 +8,8 @@
 
 #include <string.h>
 
-/* Phase timing, compiled only into the host benchmark (PPU_GPU3DS_PROFILE).
- * The console build has no timers in the builder at all. */
+/* Phase timing (PPU_GPU3DS_PROFILE): the host benchmark and the console build
+ * both define it; on the console the SD log prints it every 5 s ("build:"). */
 #ifdef PPU_GPU3DS_PROFILE
 double gPpuGpu3DSPhase[PPU_GPU3DS_PHASE_COUNT];
 #ifdef __3DS__
