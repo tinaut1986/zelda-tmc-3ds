@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -42,6 +43,8 @@ static uint32_t sIp;
 static volatile unsigned sSent, sReceived;
 static volatile bool sConnected;
 static char sStatus[48] = "STOPPED";
+/* FtpServer_Notice: what the player is told while a new build comes in. */
+static const char* volatile sNotice;
 static unsigned sNextPasv;
 static char* sIo;
 
@@ -271,6 +274,7 @@ static void CmdRetr(Session* s, const char* arg) {
     int data = AcceptData(s);
     if (data < 0) {
         fclose(f);
+        sNotice = NULL;
         Reply(s, "425 No data connection.");
         return;
     }
@@ -293,10 +297,14 @@ static void CmdStor(Session* s, const char* arg, bool append) {
         Reply(s, "553 Cannot create the file.");
         return;
     }
+    const size_t len = strlen(vpath);
+    const bool cia = len > 4 && strcasecmp(vpath + len - 4, ".cia") == 0;
+    if (cia) sNotice = "RECEIVING NEW BUILD...";
     Reply(s, "150 Receiving.");
     int data = AcceptData(s);
     if (data < 0) {
         fclose(f);
+        sNotice = NULL;
         Reply(s, "425 No data connection.");
         return;
     }
@@ -316,6 +324,7 @@ static void CmdStor(Session* s, const char* arg, bool append) {
     if (fclose(f) != 0) ok = false;
     CloseData(&data);
     if (ok) sReceived++;
+    if (cia) sNotice = NULL;
     DebugLog_Printf("ftp: received %s%s", vpath, ok ? "" : " (failed)");
     Reply(s, ok ? "226 Done." : "451 Transfer failed.");
 }
@@ -409,10 +418,12 @@ static void HandleSession(int ctrl) {
             if (!strcmp(sub, "INSTALL") && path && *path) {
                 ResolvePath(s, path, vpath, sizeof(vpath));
                 char error[96];
+                sNotice = "INSTALLING NEW BUILD - GAME WILL RESTART";
                 if (CiaInstall_File(vpath, error, sizeof(error))) {
                     Reply(s, "200 Installed %s; relaunching the game.", vpath);
                     Platform3DS_RequestRelaunch();
                 } else {
+                    sNotice = NULL;
                     Reply(s, "550 Install failed: %s", error);
                 }
             } else {
@@ -499,6 +510,10 @@ bool FtpServer_Start(void) {
     }
     DebugLog_Printf("ftp: serving on %s:%d", inet_ntoa((struct in_addr){ .s_addr = sIp }), FTP_SERVER_PORT);
     return true;
+}
+
+const char* FtpServer_Notice(void) {
+    return sNotice;
 }
 
 void FtpServer_Stop(void) {
