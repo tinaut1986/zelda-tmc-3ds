@@ -15,32 +15,86 @@
 #include "ui_font_3ds.h"
 #include "tmc3ds_build_config.h"
 
-/* Colours, RGBA_8888 as the compositor stores them (RGB() above). */
-#define CC_BG        RGB(16, 20, 26)
-#define CC_BAR       RGB(10, 13, 18)
-#define CC_TAB       RGB(32, 40, 52)
-#define CC_TAB_EDGE  RGB(60, 74, 92)
-#define CC_TAB_ON    RGB(40, 112, 68)
-#define CC_TAB_ON_EDGE RGB(110, 200, 130)
-#define CC_CELL      RGB(26, 32, 42)
-#define CC_CELL_EDGE RGB(64, 80, 100)
-#define CC_BTN       RGB(22, 56, 42)
-#define CC_BTN_EDGE  RGB(70, 150, 100)
-#define CC_TEXT      RGB(232, 236, 240)
-#define CC_DIM       RGB(140, 150, 166)
-#define CC_FAINT     RGB(84, 94, 110)
-#define CC_GOOD      RGB(120, 220, 130)
-#define CC_WARN      RGB(240, 200, 80)
-#define CC_BAD       RGB(240, 110, 100)
-#define CC_ACCENT    RGB(110, 200, 240)
+/* Colours, RGBA_8888 as the compositor stores them (RGB() above). A theme is
+ * a palette plus where the tab bar goes; the owner picks one (2026-10-11:
+ * proposals rendered with tools/ui-preview, THEME=n). */
+typedef struct CcTheme {
+    const char* name;
+    uint32_t bg, bar, tab, tabEdge, tabOn, tabOnEdge, tabOnText, cell, cellEdge, btn, btnEdge;
+    uint32_t text, dim, faint, good, warn, bad, accent;
+    uint8_t tabsBottom;
+} CcTheme;
+
+static const CcTheme kCcThemes[] = {
+    { "SLATE", RGB(16, 20, 26), RGB(10, 13, 18), RGB(32, 40, 52), RGB(60, 74, 92), RGB(40, 112, 68),
+      RGB(110, 200, 130), RGB(232, 236, 240), RGB(26, 32, 42), RGB(64, 80, 100), RGB(22, 56, 42),
+      RGB(70, 150, 100), RGB(232, 236, 240), RGB(140, 150, 166), RGB(84, 94, 110), RGB(120, 220, 130),
+      RGB(240, 200, 80), RGB(240, 110, 100), RGB(110, 200, 240), 0 },
+    { "PARCHMENT", RGB(226, 212, 172), RGB(88, 60, 36), RGB(196, 176, 128), RGB(120, 92, 60), RGB(54, 112, 56),
+      RGB(24, 64, 28), RGB(244, 240, 220), RGB(242, 232, 200), RGB(150, 118, 76), RGB(70, 128, 70),
+      RGB(36, 78, 38), RGB(50, 38, 28), RGB(122, 96, 68), RGB(168, 146, 112), RGB(30, 120, 44),
+      RGB(160, 100, 14), RGB(176, 46, 36), RGB(36, 86, 156), 0 },
+    { "NIGHT AND GOLD", RGB(12, 16, 34), RGB(6, 8, 20), RGB(26, 34, 70), RGB(52, 66, 120), RGB(142, 104, 26),
+      RGB(240, 200, 90), RGB(255, 246, 220), RGB(20, 26, 54), RGB(56, 70, 124), RGB(40, 50, 100),
+      RGB(110, 130, 210), RGB(236, 236, 246), RGB(140, 148, 180), RGB(76, 84, 120), RGB(120, 220, 150),
+      RGB(250, 210, 90), RGB(240, 110, 100), RGB(110, 190, 255), 0 },
+    { "FOREST, TABS BELOW", RGB(14, 26, 18), RGB(8, 16, 10), RGB(28, 48, 32), RGB(56, 90, 60), RGB(60, 140, 70),
+      RGB(150, 220, 140), RGB(240, 246, 230), RGB(22, 38, 26), RGB(60, 100, 66), RGB(40, 90, 50),
+      RGB(110, 180, 110), RGB(236, 240, 224), RGB(150, 170, 140), RGB(80, 100, 80), RGB(150, 230, 120),
+      RGB(240, 200, 80), RGB(240, 110, 100), RGB(120, 210, 230), 1 },
+};
+enum { CC_THEME_COUNT = (int)(sizeof(kCcThemes) / sizeof(kCcThemes[0])) };
+static const CcTheme* sCc = &kCcThemes[0];
+
+void Port_SecondScreen_3DS_SetUiTheme(int theme) {
+    sCc = &kCcThemes[theme >= 0 && theme < CC_THEME_COUNT ? theme : 0];
+}
+
+/* For tools/ui-preview: the theme's name and the row a tab tap lands on. */
+const char* Port_SecondScreen_3DS_UiThemeName(void) {
+    return sCc->name;
+}
+int Port_SecondScreen_3DS_UiTabCenterY(int height);
+
+#define CC_BG          (sCc->bg)
+#define CC_BAR         (sCc->bar)
+#define CC_TAB         (sCc->tab)
+#define CC_TAB_EDGE    (sCc->tabEdge)
+#define CC_TAB_ON      (sCc->tabOn)
+#define CC_TAB_ON_EDGE (sCc->tabOnEdge)
+#define CC_TAB_ON_TEXT (sCc->tabOnText)
+#define CC_CELL        (sCc->cell)
+#define CC_CELL_EDGE   (sCc->cellEdge)
+#define CC_BTN         (sCc->btn)
+#define CC_BTN_EDGE    (sCc->btnEdge)
+#define CC_TEXT        (sCc->text)
+#define CC_DIM         (sCc->dim)
+#define CC_FAINT       (sCc->faint)
+#define CC_GOOD        (sCc->good)
+#define CC_WARN        (sCc->warn)
+#define CC_BAD         (sCc->bad)
+#define CC_ACCENT      (sCc->accent)
 
 enum {
-    CC_TAB_H = 18,     /* tab bar height; the content starts 2 px below */
-    CC_TOP = CC_TAB_H + 2,
+    CC_TAB_H = 18,     /* tab bar height; the content starts 2 px away from it */
     CC_MARGIN = 3,
     CC_GAP = 3,
     CC_CELL_H = 25,    /* name row + value row */
 };
+
+/* Where the tab bar and the content go for the current theme. */
+static int32_t CcTabY(int32_t h) {
+    return sCc->tabsBottom ? h - CC_TAB_H - 1 : 0;
+}
+static int32_t CcContentTop(void) {
+    return sCc->tabsBottom ? 0 : CC_TAB_H + 2;
+}
+static int32_t CcContentBottom(int32_t h) {
+    return sCc->tabsBottom ? h - CC_TAB_H - 3 : h;
+}
+int Port_SecondScreen_3DS_UiTabCenterY(int height) {
+    return CcTabY(height) + CC_TAB_H / 2;
+}
 
 /* ---- text: the 5x7 font at 1x, 6 px per character ---- */
 
@@ -121,35 +175,37 @@ static int CompactTabCount(void) {
  * no target. */
 static uint8_t sCompactIdle;
 
-static void Compact_IdleBackRect(int32_t* x0, int32_t* y0, int32_t* x1, int32_t* y1) {
+static void Compact_IdleBackRect(int32_t h, int32_t* x0, int32_t* y0, int32_t* x1, int32_t* y1) {
     *x0 = CC_MARGIN;
-    *y0 = 1;
+    *y0 = CcTabY(h) + 1;
     *x1 = CC_MARGIN + 64;
-    *y1 = CC_TAB_H;
+    *y1 = CcTabY(h) + CC_TAB_H;
 }
 
 static void Compact_PaintTabBar(const SSurf* s, TargetList* tl, int activeTab, int settingsPage) {
     static const char* const kNames[5] = { "MAP", "ITEMS", "QUEST", "OPTIONS", "DEBUG" };
     static const uint8_t kTabs[5] = { SS_TAB_MAP, SS_TAB_ITEMS, SS_TAB_QUEST, SS_TAB_SETTINGS, SS_TAB_DEBUG };
     int n = CompactTabCount();
-    FillRect(s, 0, 0, s->w, CC_TAB_H + 1, CC_BAR);
+    int32_t ty = CcTabY(s->h);
+    FillRect(s, 0, ty, s->w, ty + CC_TAB_H + 1, CC_BAR);
     if (sCompactIdle) {
         if (settingsPage == SS_SETTINGS_ROOT) {
             int32_t x0, y0, x1, y1;
-            Compact_IdleBackRect(&x0, &y0, &x1, &y1);
+            Compact_IdleBackRect(s->h, &x0, &y0, &x1, &y1);
             CBox(s, x0, y0, x1 - x0, y1 - y0, CC_BTN, CC_BTN_EDGE);
             CTextCentered(s, (x0 + x1) / 2, y0 + (y1 - y0 - kUiGlyphH) / 2, CC_TEXT, "< BACK");
         }
-        CTextCentered(s, s->w / 2, 1 + (CC_TAB_H - 1 - kUiGlyphH) / 2, CC_TEXT, "OPTIONS");
+        CTextCentered(s, s->w / 2, ty + 1 + (CC_TAB_H - 1 - kUiGlyphH) / 2, CC_TEXT, "OPTIONS");
         return;
     }
     for (int i = 0; i < n; i++) {
         int32_t x, w;
         CColumn(s->w, n, i, 1, &x, &w);
         int on = activeTab == kTabs[i];
-        CBox(s, x, 1, w, CC_TAB_H - 1, on ? CC_TAB_ON : CC_TAB, on ? CC_TAB_ON_EDGE : CC_TAB_EDGE);
-        CTextCentered(s, x + w / 2, 1 + (CC_TAB_H - 1 - kUiGlyphH) / 2, on ? CC_TEXT : CC_DIM, kNames[i]);
-        AddTarget(tl, (float)x, 0.0f, (float)(x + w), (float)(CC_TAB_H + 1), SS_ACT_TAB, kTabs[i]);
+        CBox(s, x, ty + 1, w, CC_TAB_H - 1, on ? CC_TAB_ON : CC_TAB, on ? CC_TAB_ON_EDGE : CC_TAB_EDGE);
+        CTextCentered(s, x + w / 2, ty + 1 + (CC_TAB_H - 1 - kUiGlyphH) / 2, on ? CC_TAB_ON_TEXT : CC_DIM,
+                      kNames[i]);
+        AddTarget(tl, (float)x, (float)ty, (float)(x + w), (float)(ty + CC_TAB_H + 1), SS_ACT_TAB, kTabs[i]);
     }
 }
 
@@ -181,7 +237,7 @@ static uint32_t CompactSettingValue(int setting, char* out, int cap) {
 }
 
 static int32_t CRowY(int row) {
-    return CC_TOP + 2 + row * (CC_CELL_H + CC_GAP);
+    return CcContentTop() + 2 + row * (CC_CELL_H + CC_GAP);
 }
 
 static void CSettingCellAt(const SSurf* s, TargetList* tl, int32_t y, int col, int span, const char* name,
@@ -198,7 +254,7 @@ static void CSettingCell(const SSurf* s, TargetList* tl, int row, int col, int s
 }
 
 static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
-    FillRect(s, 0, CC_TOP, s->w, s->h, CC_BG);
+    FillRect(s, 0, CcContentTop(), s->w, CcContentBottom(s->h), CC_BG);
     /* Screen */
     CSettingCell(s, tl, 0, 0, 1, "VIEW", SS_SET_ASPECT_RATIO);
     CSettingCell(s, tl, 0, 1, 1, "STYLE", SS_SET_DISPLAY_STYLE);
@@ -228,7 +284,7 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
 
     /* Footer: who we are and what we are built on. */
     char line[64];
-    int32_t y = s->h - 3 * 10 - 2;
+    int32_t y = CcContentBottom(s->h) - 3 * 10 - 2;
     CTextCentered(s, s->w / 2, y, CC_DIM, "MINISH CAP 3DS");
     snprintf(line, sizeof(line), "V%s", TMC_PORT_VERSION_LABEL);
     CTextCentered(s, s->w / 2, y + 10, CC_TEXT, line);
@@ -242,7 +298,7 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
 #if TMC3DS_DEBUG_TOOLS
 static void Compact_PaintDebug(const SSurf* s, TargetList* tl, const SecondScreenSnapshot* snap, uint32_t tick,
                                uint32_t dumpFlashUntil, uint32_t loadStateFlashUntil, int loadStateResult) {
-    FillRect(s, 0, CC_TOP, s->w, s->h, CC_BG);
+    FillRect(s, 0, CcContentTop(), s->w, CcContentBottom(s->h), CC_BG);
     char v[7][24];
     double now = Port_PPU_3DS_CurrentFps(), avg = Port_PPU_3DS_AverageFps();
     snprintf(v[0], sizeof(v[0]), "%s", Platform3DS_IsNew3DS() ? "NEW 3DS" : "OLD 3DS");

@@ -3003,9 +3003,9 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     /* Compact chrome (bottom_compact_3ds.inc): the tab bar is a slim strip on
      * top and the panels get everything under it. */
     float sideW = 220 * u;
-    float mx0 = CC_MARGIN, my0 = CC_TOP + 2;
+    float mx0 = CC_MARGIN, my0 = CcContentTop() + 2;
     float mx1 = tab == SS_TAB_SETTINGS ? width - CC_MARGIN : width - sideW - 2;
-    float my1 = height - CC_MARGIN;
+    float my1 = CcContentBottom(height) - CC_MARGIN;
 #if !TMC3DS_DEBUG_TOOLS
     if (tab == SS_TAB_DEBUG) tab = SS_TAB_MAP;
 #endif

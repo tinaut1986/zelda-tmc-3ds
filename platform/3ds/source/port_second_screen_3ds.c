@@ -43,9 +43,8 @@ static uint32_t RequestTouchRefresh(void) {
 
 static void IdleBackRect(int width, int height, float* x0, float* y0, float* x1, float* y1) {
     (void)width;
-    (void)height;
     int32_t bx0, by0, bx1, by1;
-    Compact_IdleBackRect(&bx0, &by0, &bx1, &by1);
+    Compact_IdleBackRect(height, &bx0, &by0, &bx1, &by1);
     *x0 = (float)bx0;
     *y0 = (float)by0;
     *x1 = (float)bx1;
