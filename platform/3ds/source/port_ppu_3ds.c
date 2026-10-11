@@ -247,6 +247,10 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     view->wsMsgY0 = virtuappu_mode1_ws_msg_y0;
     view->wsMsgY1 = virtuappu_mode1_ws_msg_y1;
     view->bg3Repeat = virtuappu_mode1_bg3_repeat;
+    view->wsFullView = virtuappu_mode1_ws_full_view != 0;
+    view->objYWrap = virtuappu_mode1_frame_height() > MODE1_GBA_NATIVE_HEIGHT ? virtuappu_mode1_frame_height()
+                                                                               : MODE1_GBA_NATIVE_HEIGHT;
+    view->objYNegative = virtuappu_mode1_obj_y_negative;
     view->objClipEnable = virtuappu_mode1_obj_clip_enable;
     view->objClipMark = virtuappu_mode1_obj_clip_mark;
     view->objClipY = virtuappu_mode1_obj_clip_y;
@@ -1207,8 +1211,8 @@ void Port_PPU_PresentFrame(void) {
         const uint64_t drawEndTick = Platform3DS_SystemTick();
         sTopDrawTicks += drawEndTick - renderEndTick;
         Platform3DS_SetStage(8);
-        PlatformGpu3DS_DrawTopTexture(PortPpuGpu3DS_OutputTexture(),
-                                      (unsigned)sTopPresentWidth);
+        PlatformGpu3DS_DrawTopTexture(PortPpuGpu3DS_OutputTexture(), (unsigned)sTopPresentWidth,
+                                      (unsigned)sTopPresentHeight, sTopPresentMode, sTopCropX, sTopCropY);
         Platform3DS_SetStage(9);
         sTopBlitTicks += Platform3DS_SystemTick() - drawEndTick;
         if (parityFrame && !PortPpuGpu3DS_QueueParityCopy()) {

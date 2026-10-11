@@ -306,8 +306,8 @@ int main(void) {
         const bool fullView = (bits & 4u) != 0;
         const bool initialized = (bits & 2u) != 0;
         const bool disabled = (bits & 1u) != 0;
-        CHECK(PpuGpu3DS_ShouldUse(initialized, disabled, fullView) ==
-              (initialized && !disabled && !fullView));
+        /* Full View frames are drawn by the GPU too (PLAN P3.4). */
+        CHECK(PpuGpu3DS_ShouldUse(initialized, disabled, fullView) == (initialized && !disabled));
     }
     /* The 16-byte vertex stores UV as a fixed-point multiple of
      * 1/PPU_GPU3DS_UV_SCALE. That is only safe if it is lossless for every UV

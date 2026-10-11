@@ -533,7 +533,8 @@ static bool read_obj(const PpuGpu3DSFrameView* frame, unsigned index,
     };
     obj->boundsWidth = obj->width * (obj->doubleSize ? 2 : 1);
     obj->boundsHeight = obj->height * (obj->doubleSize ? 2 : 1);
-    if (obj->y >= MODE1_GBA_HEIGHT) obj->y -= 256;
+    const int wrap = frame->objYWrap > 0 ? frame->objYWrap : MODE1_GBA_HEIGHT;
+    if (obj->y >= wrap || (frame->objYNegative && frame->objYNegative[index])) obj->y -= 256;
     if (obj->x >= (int)frame->width) obj->x -= 512;
     if (affine) {
         const unsigned group = (attr1 >> 9u) & 0x1fu;
@@ -1082,7 +1083,12 @@ static bool text_bg_sample(const PpuGpu3DSFrameView* frame, unsigned bg,
     const unsigned tileX = sourceX / PPU_GPU3DS_TILE_SIDE;
     const unsigned tileY = sourceY / PPU_GPU3DS_TILE_SIDE;
     uint16_t entry;
-    if (mapWidthTiles == 32u && trueExtension &&
+    if (mapWidthTiles == 32u && frame->wsFullView && frame->wsShadowBaseTile[bg] >= 0) {
+        /* Full View: every column from the shadow, indexed from the left of
+         * the view (mode1.c, mode1_shadow_index_for_x). */
+        const unsigned column = (unsigned)(effectiveX + (int)(scrollX & 7u)) >> 3u;
+        if (!PpuGpu3DS_ShadowEntry(frame, bg, tileY & 31u, column, &entry)) entry = 0;
+    } else if (mapWidthTiles == 32u && trueExtension &&
         frame->wsShadowBaseTile[bg] >= 0) {
         const unsigned column =
                 (unsigned)((int64_t)tileX - frame->wsShadowBaseTile[bg] + 32) &

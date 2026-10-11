@@ -620,18 +620,32 @@ static void BuildPresentQuad(float drawX, float drawY, float drawW, float drawH,
     sPresentQuadValid = true;
 }
 
-static void DrawTopTexture(C3D_Tex* texture, unsigned width, bool configureAbgr) {
+static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Port3DSFullViewMode mode,
+                           int cropX, int cropY, bool configureAbgr) {
     if (!texture) return;
-    if (width < 240u) width = 240u;
-    if (width > 266u) width = 266u;
+    const bool fullView = mode != PORT_3DS_FULL_VIEW_FALLBACK;
+    if (!fullView) {
+        /* E2: 240 to 266 columns by 160 rows. */
+        if (width < 240u) width = 240u;
+        if (width > 266u) width = 266u;
+        height = 160u;
+        cropX = cropY = 0;
+    }
 
     const int style = Port_Config_Get3DSDisplayStyle();
     TopView3DSPlan plan;
-    TopView3DS_BuildPlan(true, false, Port_Config_Get3DSAspectRatio(), style,
-                         PORT_3DS_FULL_VIEW_FALLBACK, (int)width, 160,
-                         (int)width, 160, 0, 0, &plan);
+    /* Full View frames (400x240 outdoors, 200x120 at 2x indoors) take the
+     * same plan as the software path's DrawTopImage. */
+    TopView3DS_BuildPlan(!fullView, fullView, Port_Config_Get3DSAspectRatio(), style, mode, (int)width,
+                         (int)height, (int)width, (int)height, cropX, cropY, &plan);
     const Port3DSFullViewPresentation* presentation = &plan.source;
     sTopPresentWidth = (unsigned)presentation->renderWidth;
+    sTopPresentHeight = (unsigned)presentation->renderHeight;
+    sTopValidSourceWidth = width;
+    sTopValidSourceHeight = height;
+    sTopPresentMode = plan.mode;
+    sTopCropX = presentation->sourceX;
+    sTopCropY = presentation->sourceY;
 
     sTopSubtexture = (Tex3DS_SubTexture){
         .width = (u16)presentation->sourceWidth,
@@ -894,10 +908,11 @@ PlatformGpu3DSUploadLayout PlatformGpu3DS_SetCompactUpload(bool compact) {
     return sUploadLayout;
 }
 
-void PlatformGpu3DS_DrawTopTexture(void* texturePointer, unsigned width) {
+void PlatformGpu3DS_DrawTopTexture(void* texturePointer, unsigned width, unsigned height,
+                                   Port3DSFullViewMode mode, int cropX, int cropY) {
     C3D_Tex* texture = texturePointer;
     if (!sFrameActive || !texture) return;
-    DrawTopTexture(texture, width, false);
+    DrawTopTexture(texture, width, height, mode, cropX, cropY, false);
 }
 
 bool PlatformGpu3DS_QueueRgba5551Readback(void* texturePointer, uint16_t* pixels) {
@@ -1047,7 +1062,8 @@ void PlatformGpu3DS_ShowDumpSavedOverlay(void* currentTopTexture) {
      * Re-present the live output texture so saving a dump never flashes an
      * older CPU/parity frame. */
     if (currentTopTexture)
-        DrawTopTexture((C3D_Tex*)currentTopTexture, sTopPresentWidth, false);
+        DrawTopTexture((C3D_Tex*)currentTopTexture, sTopValidSourceWidth, sTopValidSourceHeight, sTopPresentMode,
+                       sTopCropX, sTopCropY, false);
     else
         DrawTopImage(sTopUpload, sTopPresentWidth, sTopPresentHeight,
                      sTopValidSourceWidth, sTopValidSourceHeight,
