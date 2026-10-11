@@ -21,6 +21,8 @@ SITE commands of platform/3ds/source/debug_link_3ds.h. Standard library only.
     dump                      take a quick dump (as L+R+A)
     switch NAME               cycle a DEBUG -> SWITCHES value ("FRAME SYNC")
     shot [DIR]                screenshots of both screens as PNG, default /tmp/tmc-shot
+    rec                       record the top screen around the next room change
+    recfetch [DIR]            wait for the recording, write DIR/frames.png (a contact sheet) and list the frames
     peek WHAT LENGTH          hex bytes; WHAT is a hex address or a symbol of the ELF
     poke WHAT HEXBYTES        write bytes there
     mark                      a numbered marker in the SD log (flushes it)
@@ -142,6 +144,36 @@ def bmp_to_png(data):
             chunk(b'IDAT', zlib.compress(bytes(raw), 9)) + chunk(b'IEND', b''))
 
 
+def frames_to_png(data, path, columns=6):
+    """debug/frames.bin (SITE REC) to a contact sheet; returns the frame list."""
+    magic, count, w, h = struct.unpack_from('<IIII', data, 0)
+    if magic != 0x31524D46:
+        raise LinkError('not a frame recording')
+    size = 12 + w * h * 2
+    rows = (count + columns - 1) // columns
+    sheet = [bytearray(columns * (w + 2) * 3) for _ in range(rows * (h + 2))]
+    lines = []
+    for i in range(count):
+        o = 16 + i * size
+        vw, vh, hold, mode, _, _, frame = struct.unpack_from('<HHBBBBI', data, o)
+        lines.append('%2d frame %6d view %dx%d mode %d%s' % (i, frame, vw, vh, mode, ' HOLD' if hold else ''))
+        cx, cy = (i % columns) * (w + 2), (i // columns) * (h + 2)
+        for y in range(h):
+            row = sheet[cy + y]
+            for x in range(w):
+                v, = struct.unpack_from('<H', data, o + 12 + (y * w + x) * 2)
+                r, g, b = (v >> 11) & 31, (v >> 5) & 63, v & 31
+                row[(cx + x) * 3:(cx + x) * 3 + 3] = bytes((r * 255 // 31, g * 255 // 63, b * 255 // 31))
+    raw = b''.join(b'\0' + bytes(r) for r in sheet)
+
+    def chunk(kind, payload):
+        return struct.pack('>I', len(payload)) + kind + payload + struct.pack('>I', zlib.crc32(kind + payload))
+    with open(path, 'wb') as f:
+        f.write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', columns * (w + 2), rows * (h + 2), 8, 2, 0, 0, 0)) +
+                chunk(b'IDAT', zlib.compress(raw, 6)) + chunk(b'IEND', b''))
+    return path + '\n' + '\n'.join(lines)
+
+
 def run(link, argv):
     cmd, args = argv[0], argv[1:]
     if cmd == 'wait':
@@ -190,6 +222,24 @@ def run(link, argv):
             with open(path, 'wb') as f:
                 f.write(bmp_to_png(buf.getvalue()))
             print(path)
+    elif cmd == 'rec':
+        print(link.site('REC'))
+    elif cmd == 'recfetch':
+        # waits for debug/frames.bin, writes OUTDIR/frames.png (a contact sheet) and prints each frame
+        out = args[0] if args else '/tmp/tmc-rec'
+        os.makedirs(out, exist_ok=True)
+        end = time.time() + 60
+        while True:
+            names = [os.path.basename(n) for n in link.connect().nlst(DATA + '/debug')]
+            if 'frames.bin' in names:
+                break
+            if time.time() > end:
+                raise LinkError('no debug/frames.bin: was REC armed and did the room change?')
+            time.sleep(0.5)
+        buf = io.BytesIO()
+        link.connect().retrbinary('RETR %s/debug/frames.bin' % DATA, buf.write)
+        link.connect().voidcmd('DELE %s/debug/frames.bin' % DATA)
+        print(frames_to_png(buf.getvalue(), os.path.join(out, 'frames.png')))
     elif cmd == 'peek':
         address, length = link.address(args[0]), int(args[1], 0)
         data = ''

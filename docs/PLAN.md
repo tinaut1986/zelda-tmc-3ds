@@ -433,3 +433,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   published yet: the held frame is the fully faded one, and the first frame shown is already
   400x240. Never during a border scroll (no fade). The view log marks held frames with HOLD. Log,
   two round trips: 240 / 266 frames at the black, 4 held frames at fade start, then 400.
+- **2026-10-12** The "1+X+1" frame of leaving a house was the field's first frames at 266 on a
+  white fade: a white box wider than the interior's, then the 400 view. Found with the new frame
+  recorder (`SITE REC`, docs/debug-tools.md). The hold starts at the room change of a door (a
+  fade within the last 90 ticks, not a border scroll), not when the fade-in starts, so the white
+  box keeps the interior's width until the 400x240 frame is ready: one change instead of two.
