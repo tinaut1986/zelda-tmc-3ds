@@ -520,14 +520,11 @@ static void RelaunchSelf(void) {
     DebugLog_Printf("relaunching into the build just installed");
     DebugLog_Flush();
     sRelaunching = true;
-    /* The jump ends this process without running main's exit path, and a GPU
-     * left mid-frame freezes the build it starts (issue #2): put citro3d down
-     * first, the way a normal exit does. */
-    extern void Port_PPU_Shutdown(void);
-    Port_Audio_Shutdown();
-    Port_PPU_Shutdown();
-    DebugLog_Printf("relaunch: gpu down, jumping");
-    DebugLog_Flush();
+    /* The jump is requested with the GPU still ours, and the game then closes
+     * through main's normal exit path (the APT hook drains citro3d's queue,
+     * the teardown runs on a thread with a timeout), exactly as HOME -> close
+     * and as ../sm-3ds does after SITE INSTALL (its #20). Tearing citro3d down
+     * *before* the jump hung the console on one relaunch in two (issue #2). */
     u8 param[0x300] = { 0 };
     u8 hmac[0x20] = { 0 };
     if (R_SUCCEEDED(APT_PrepareToDoApplicationJump(0, TMC3DS_TITLE_ID, MEDIATYPE_SD)))
