@@ -1121,6 +1121,29 @@ static bool text_bg_sample(const PpuGpu3DSFrameView* frame, unsigned bg,
 }
 
 
+/* How far a run starting at screen x may go on line y before a column where
+ * text_bg_sample changes its mapping (where a straight run could break). */
+static unsigned widescreen_run_limit(const PpuGpu3DSFrameView* frame, unsigned bg, unsigned y, unsigned x,
+                                     unsigned renderWidth) {
+    unsigned end = renderWidth;
+    int edges[7];
+    int n = 0;
+    edges[n++] = MODE1_GBA_BG_CLIP_X;
+    if (bg == 0) {
+        edges[n++] = frame->wsHudRightNativeX;
+        edges[n++] = (int)frame->width - (MODE1_GBA_BG_CLIP_X - frame->wsHudRightNativeX);
+        if (message_line(frame, bg, y)) {
+            edges[n++] = frame->wsMsgX0;
+            edges[n++] = frame->wsMsgX1;
+            edges[n++] = frame->wsMsgX0 + frame->wsMsgShift;
+            edges[n++] = frame->wsMsgX1 + frame->wsMsgShift;
+        }
+    }
+    for (int i = 0; i < n; ++i)
+        if (edges[i] > (int)x && (unsigned)edges[i] < end) end = (unsigned)edges[i];
+    return end - x;
+}
+
 static bool build_widescreen_bg_geometry(
         const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
         uint16_t* atlas, PpuGpu3DSCommandBuffer* cmd,
@@ -1190,13 +1213,38 @@ static bool build_widescreen_bg_geometry(
             }
             int dx = 0;
             unsigned width = 1;
+            /* Fast path: a run is almost always the rest of one tile, read
+             * straight (dx 1) or flipped (dx -1). Check only its last pixel
+             * against that prediction instead of every pixel; a run that must
+             * not cross a remap edge (x=240, the HUD and message shifts) stops
+             * there. Anything else (mosaic, an edge inside the tile) falls to
+             * the pixel-by-pixel walk below, which is exact. This walk was
+             * ~170k samples a frame in Wide, the whole 10 ms of the build. */
+            if (mosaicWidth == 1u && x + 1u < renderWidth) {
+                const unsigned limit = widescreen_run_limit(frame, bg, y, x, renderWidth);
+                for (int dir = 1; dir >= -1 && width == 1u; dir -= 2) {
+                    const unsigned left = dir > 0 ? PPU_GPU3DS_TILE_SIDE - (unsigned)first.pixelX
+                                                  : (unsigned)first.pixelX + 1u;
+                    const unsigned run = left < limit ? left : limit;
+                    if (run < 2u) break;
+                    PpuGpu3DSTextSample last;
+                    if (!text_bg_sample(frame, bg, charBase, screenBase, bpp8, mapWidthTiles, mapHeightTiles,
+                                        scrollX, scrollY, mosaicWidth, mosaicHeight, x + run - 1u, y, &last))
+                        return false;
+                    if (last.visible && keys_equal(first.key, last.key) && last.pixelY == first.pixelY &&
+                        (int)last.pixelX == (int)first.pixelX + dir * (int)(run - 1u)) {
+                        dx = dir;
+                        width = run;
+                    }
+                }
+            }
             PpuGpu3DSTextSample next;
-            if (x + 1u < renderWidth &&
+            if (width == 1u && x + 1u < renderWidth &&
                 !text_bg_sample(frame, bg, charBase, screenBase, bpp8,
                                 mapWidthTiles, mapHeightTiles, scrollX, scrollY,
                                 mosaicWidth, mosaicHeight, x + 1u, y, &next))
                 return false;
-            if (x + 1u < renderWidth && next.visible &&
+            if (width == 1u && x + 1u < renderWidth && next.visible &&
                 keys_equal(first.key, next.key) &&
                 first.pixelY == next.pixelY) {
                 dx = (int)next.pixelX - first.pixelX;

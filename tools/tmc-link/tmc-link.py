@@ -23,7 +23,9 @@ SITE commands of platform/3ds/source/debug_link_3ds.h. Standard library only.
     shot [DIR]                screenshots of both screens as PNG, default /tmp/tmc-shot
     peek WHAT LENGTH          hex bytes; WHAT is a hex address or a symbol of the ELF
     poke WHAT HEXBYTES        write bytes there
-    log [DIR]                 fetch the newest SD log, default /tmp/tmc-debug
+    mark                      a numbered marker in the SD log (flushes it)
+    gpucheck                  the next frame drawn by both renderers, compared
+    log [DIR]                 flush and fetch the newest SD log, default /tmp/tmc-debug
     run FILE                  one command per line ('#' comments), stops at the first error
 
 The IP defaults to .3ds_ftp_ip in the repository (the build assistant's last).
@@ -197,7 +199,15 @@ def run(link, argv):
         print(data)
     elif cmd == 'poke':
         print(link.site('POKE %x %s' % (link.address(args[0]), args[1])))
+    elif cmd == 'mark':
+        print(link.site('MARK'))
+    elif cmd == 'gpucheck':
+        print(link.site('GPUCHECK'))
     elif cmd == 'log':
+        try:
+            link.site('MARK')  # writes out the buffered lines
+        except LinkError:
+            pass
         out = args[0] if args else '/tmp/tmc-debug'
         os.makedirs(out, exist_ok=True)
         names = sorted(n for n in link.connect().nlst(DATA + '/debug') if 'tmc-log-0' in n)

@@ -7,6 +7,7 @@
 #include "port_second_screen_3ds.h"
 #include "port_second_screen_state.h"
 #include "save_state_3ds.h"
+#include "port_ppu_gpu_3ds.h"
 
 #include <3ds.h>
 #include <ctype.h>
@@ -275,6 +276,26 @@ bool DebugLink_Command(const char* verb, const char* args, char* reply, unsigned
     }
     if (!strcmp(verb, "STATE")) {
         FormatState(reply, cap);
+        return true;
+    }
+    if (!strcmp(verb, "GPUCHECK")) {
+        /* Upstream's parity check: the next frame drawn both ways, compared. */
+        PortPpuGpu3DSStats before, after;
+        PortPpuGpu3DS_GetStats(&before);
+        PortPpuGpu3DS_RequestParityCheck();
+        const uint64_t give_up = svcGetSystemTick() + 5ull * SYSCLOCK_ARM11;
+        do {
+            svcSleepThread(20000000);
+            PortPpuGpu3DS_GetStats(&after);
+        } while (after.parityChecks == before.parityChecks && svcGetSystemTick() < give_up);
+        if (after.parityChecks == before.parityChecks) {
+            snprintf(reply, cap, "451 No check ran (GPU renderer off, or not drawing).");
+            return true;
+        }
+        snprintf(reply, cap, "200 differing=%llu structural=%llu failed=%llu",
+                 (unsigned long long)(after.differingPixels - before.differingPixels),
+                 (unsigned long long)(after.structuralPixels - before.structuralPixels),
+                 (unsigned long long)(after.parityFailures - before.parityFailures));
         return true;
     }
     if (!strcmp(verb, "MARK")) {

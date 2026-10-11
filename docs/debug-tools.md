@@ -130,6 +130,8 @@ tools/tmc-link/tmc-link.py states               # number=area/room for each
 tools/tmc-link/tmc-link.py shot                 # /tmp/tmc-shot/top.png and bottom.png
 tools/tmc-link/tmc-link.py peek gRoomControls 16    # symbols from build-3ds/game/tmc-3ds.elf
 tools/tmc-link/tmc-link.py switch "FRAME SYNC"
+tools/tmc-link/tmc-link.py gpucheck             # next frame by both renderers: differing=N structural=N
+tools/tmc-link/tmc-link.py log                  # flush (MARK) and fetch the newest SD log
 tools/tmc-link/tmc-link.py run tools/tmc-link/examples/walk-left.txt
 ```
 
