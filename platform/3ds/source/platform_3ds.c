@@ -1020,6 +1020,45 @@ static bool SaveCapturedFramebufferBmp(const char* path, const GSPGPU_CaptureInf
     return ok;
 }
 
+/* The top screen as shown, scaled to width x height RGB565 (each output pixel
+ * the average of its block), for save-state screenshots. */
+bool Platform3DS_CaptureTopThumbnail(uint16_t* pixels, int width, int height) {
+    GSPGPU_CaptureInfo capture;
+    memset(&capture, 0, sizeof(capture));
+    if (!pixels || width <= 0 || height <= 0 || R_FAILED(GSPGPU_ImportDisplayCaptureInfo(&capture))) return false;
+    const GSPGPU_CaptureInfoEntry* top = &capture.screencapture[GSP_SCREEN_TOP];
+    if (!top->framebuf0_vaddr || top->framebuf_widthbytesize == 0) return false;
+    const GSPGPU_FramebufferFormat format = (GSPGPU_FramebufferFormat)(top->format & 7u);
+    const unsigned bpp = gspGetBytesPerPixel(format);
+    if (bpp < 2 || bpp > 4) return false;
+    const int srcW = 400, srcH = 240;
+    const uint8_t* fb = (const uint8_t*)top->framebuf0_vaddr;
+    GSPGPU_InvalidateDataCache(fb, top->framebuf_widthbytesize * (u32)srcW);
+    const int bw = srcW / width > 0 ? srcW / width : 1, bh = srcH / height > 0 ? srcH / height : 1;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            unsigned r = 0, g = 0, b = 0;
+            for (int dy = 0; dy < bh; ++dy) {
+                for (int dx = 0; dx < bw; ++dx) {
+                    const int sx = x * srcW / width + dx, sy = y * srcH / height + dy;
+                    uint8_t pr, pg, pb;
+                    ReadFramebufferPixel(fb + (size_t)sx * top->framebuf_widthbytesize + (size_t)sy * bpp, format,
+                                         &pr, &pg, &pb);
+                    r += pr;
+                    g += pg;
+                    b += pb;
+                }
+            }
+            const unsigned n = (unsigned)(bw * bh);
+            r /= n;
+            g /= n;
+            b /= n;
+            pixels[y * width + x] = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+        }
+    }
+    return true;
+}
+
 static bool SaveCapturedFramebufferRaw(const char* path, const GSPGPU_CaptureInfoEntry* capture,
                                        int width) {
     if (!path) return true;

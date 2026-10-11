@@ -37,6 +37,7 @@ v2.2-E1: nothing stable published.
 | `feat/debug-restore` (cut from `perf/gpu-build-profile`) | the SD log (on/off, mode) and the FTP server come back at launch as left; debug builds only | builds (debug and production); not checked on the console |
 | `feat/bottom-always` (cut from `feat/debug-restore`) | the whole bottom screen outside gameplay too (intro, title, file select): every tab, OPTIONS and DEBUG working, MAP/ITEMS/QUEST say they need a game | builds; not checked on the console |
 | `feat/remote-link` (cut from `feat/bottom-always`) | P1.10 first cut: SITE KEYS/TOUCH/SHOT/LOADSTATE/DUMP/SWITCH/STATE/PEEK/POKE over the FTP server, `tools/tmc-link/` | on the console (2026-10-11): the FTP server came back by itself after each install; STATE, SHOT (2 s) and KEYS work (START at the title reached file select, read back in `gInput`); SWITCH, TOUCH, LOADSTATE, POKE not tried yet |
+| `feat/save-states` (cut from `feat/remote-link`) | P1.8 save states (STATES tab, `3dsx.ld` game layout pinned, link SAVESTATE/LOADSTATE), tab-bar theme button removed | builds; not checked on the console |
 
 **On the owner's console now (2026-10-11):** a debug build of `feat/ingame-ftp`
 (`0.1.1-dev.13.4+6528614`), sent with ftpd and installed with FBI: the first time any of this
@@ -214,7 +215,9 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   switch and injects a button press on the owner's console, and the owner sees it happen.
 - [ ] **P1.8** Save states.
   *Spec:* numbered states with thumbnail and place (like `../sm-3ds` STATES),
-  available in every build; builds on `port_dump_state.c`.
+  available in every build. Done as a raw copy of the game's data with the game's layout
+  pinned by `platform/3ds/3dsx.ld` (docs/save-states.md), not on `port_dump_state.c`
+  (upstream's "load state" only reloads the save file).
   *Done when:* save, power cycle, load in another area works on both models.
 
 ## Phase 2: bottom-screen UI
@@ -351,6 +354,14 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   recordings (baseline) put our GPU renderer's build at 10.3 ms per frame on a New 3DS,
   against ~3 ms on a 2DS for sm-3ds's, so mzm's and sm-3ds's renderers are the starting
   point for P3 rather than tuning upstream's.
+- **2026-10-11** Save states as a raw copy of the game's `.data`/`.bss` with the game's code,
+  constants and data laid out first at pinned addresses (`platform/3ds/3dsx.ld`), instead of
+  mzm's globals by name with relocated pointers: far less code, and enough for the loop the
+  owner asked for (Claude installing port builds and reloading a state on each). A change to
+  the game's sources refuses older states; mzm's format is the way out if that ever matters.
+  The fingerprint covers the layout, not the game's code bytes, which change with every port
+  change (they hold the addresses of port functions). The tab bar's theme button is gone
+  (OPTIONS -> THEME does it; owner).
 - **2026-10-11** The bottom screen shows all of its UI outside gameplay (owner: everything
   must be there to interact with, locked where it needs a game). Upstream's title card and
   its OPTIONS-only sheet with a BACK button are gone; it opens on OPTIONS, and MAP, ITEMS

@@ -6,7 +6,11 @@
  *   SITE KEYS <A+B+LEFT|NONE> [frames]   hold 3DS buttons for N logic frames (default 1)
  *   SITE TOUCH <x> <y>                    tap the bottom screen
  *   SITE SHOT                             write debug/shot-top.bmp and debug/shot-bottom.bmp
- *   SITE LOADSTATE                        load the newest quick dump's game state
+ *   SITE SAVESTATE [n]                    a new save state, or over number n (save_state_3ds.h)
+ *   SITE LOADSTATE [n]                    load save state n (1 = newest, the default)
+ *   SITE DELSTATE <n>                     delete save state n
+ *   SITE STATES                           the list: n=area/room ...
+ *   SITE LOADDUMP                         load the newest quick dump's save (upstream's LOAD STATE)
  *   SITE DUMP                             take a quick dump (as L+R+A)
  *   SITE SWITCH <name>                    cycle a DEBUG -> SWITCHES value
  *   SITE STATE                            one line: frame, fps, in game, area, room, Link, health

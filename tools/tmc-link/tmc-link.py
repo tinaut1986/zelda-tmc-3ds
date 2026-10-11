@@ -13,7 +13,11 @@ SITE commands of platform/3ds/source/debug_link_3ds.h. Standard library only.
     touch X Y                 tap the bottom screen (320x240)
     frames N                  wait until the game has run N more logic frames
     sleep SECONDS             wait on the PC
-    loadstate                 load the newest quick dump's game state
+    savestate [N]             save a new state, or over number N
+    loadstate [N]             load save state N (1 = newest, the default)
+    delstate N                delete save state N
+    states                    the save states: number=area/room
+    loaddump                  load the newest quick dump's save (upstream's LOAD STATE)
     dump                      take a quick dump (as L+R+A)
     switch NAME               cycle a DEBUG -> SWITCHES value ("FRAME SYNC")
     shot [DIR]                screenshots of both screens as PNG, default /tmp/tmc-shot
@@ -70,6 +74,8 @@ class Link:
 
     def site(self, text):
         try:
+            # A save or load can keep the game busy a few seconds.
+            self.connect().sock.settimeout(40)
             reply = self.connect().sendcmd('SITE ' + text)
         except ftplib.error_reply as e:
             reply = str(e)
@@ -161,8 +167,12 @@ def run(link, argv):
         link.wait_frames(int(args[0]))
     elif cmd == 'sleep':
         time.sleep(float(args[0]))
-    elif cmd == 'loadstate':
-        print(link.site('LOADSTATE'))
+    elif cmd in ('savestate', 'loadstate', 'delstate'):
+        print(link.site((cmd.upper() + ' ' + ' '.join(args)).strip()))
+    elif cmd == 'states':
+        print(link.site('STATES'))
+    elif cmd == 'loaddump':
+        print(link.site('LOADDUMP'))
     elif cmd == 'dump':
         print(link.site('DUMP'))
     elif cmd == 'switch':

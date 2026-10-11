@@ -151,6 +151,7 @@ add_executable(tmc-3ds
     source/net_3ds.c
     source/ftp_server_3ds.c
     source/debug_link_3ds.c
+    source/save_state_3ds.c
     source/cia_install_3ds.c
     source/port_second_screen_sync_3ds.c
     source/port_ppu_3ds.c
@@ -212,7 +213,11 @@ set_source_files_properties(
     ${AGBPLAY_SOURCES}
     PROPERTIES COMPILE_OPTIONS "-flto;-fno-semantic-interposition;-ffast-math"
 )
-target_link_options(tmc-3ds PRIVATE -O3 -flto -Wl,--gc-sections)
+target_link_options(tmc-3ds PRIVATE -O3 -flto -Wl,--gc-sections
+    # -specs=3dsx.specs links with `-T 3dsx.ld%s`; -B makes that find our copy,
+    # which lays the game out at fixed addresses for save states (see the file).
+    "-B${CMAKE_CURRENT_LIST_DIR}" "-Wl,-Map,${CMAKE_CURRENT_BINARY_DIR}/tmc-3ds.map")
+set_property(TARGET tmc-3ds APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/3dsx.ld")
 set(UPDATE_DEPS_ROOT "$ENV{DEVKITPRO}/portlibs/3ds" CACHE PATH "3DS updater dependencies")
 target_include_directories(tmc-3ds PRIVATE "${UPDATE_DEPS_ROOT}/include")
 target_link_directories(tmc-3ds PRIVATE "${UPDATE_DEPS_ROOT}/lib")

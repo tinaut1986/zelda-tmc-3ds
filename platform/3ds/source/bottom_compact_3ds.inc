@@ -172,7 +172,7 @@ static void CColumn(int32_t width, int cols, int col, int span, int32_t* x, int3
  * button, and the clock, Wi-Fi bars and battery on the right. */
 
 static int CompactTabCount(void) {
-    return TMC3DS_DEBUG_TOOLS ? 5 : 4;
+    return TMC3DS_DEBUG_TOOLS ? 6 : 5;
 }
 
 /* Set by the 3DS glue (port_second_screen_3ds.c) while no game runs (intro,
@@ -204,24 +204,17 @@ static const char* const kIconDebug[12] = {
     "####.....####", "...###.###...", ".#.###.###.#.", "#..#######..#", "....#####....", ".............",
 };
 
+static const char* const kIconStates[12] = {
+    "###########..", "#..#####..##.", "#..#####..###", "#..#####..###", "#.........###", "#############",
+    "#...........#", "#.#########.#", "#...........#", "#.#########.#", "#...........#", "#############",
+};
+
 static void CIcon(const SSurf* s, int32_t cx, int32_t cy, const char* const* rows, uint32_t color) {
     for (int y = 0; y < 12; y++) {
         for (int x = 0; x < 13; x++) {
             if (rows[y][x] == '#') {
                 FillRect(s, cx - 6 + x, cy - 6 + y, cx - 5 + x, cy - 5 + y, color);
             }
-        }
-    }
-}
-
-/* The theme button's icon: a ring, its right half filled (the usual day/night
- * contrast glyph). */
-static void CThemeIcon(const SSurf* s, int32_t cx, int32_t cy, uint32_t color) {
-    for (int y = -6; y <= 6; y++) {
-        for (int x = -6; x <= 6; x++) {
-            int d2 = x * x + y * y;
-            if (d2 > 42) continue;
-            if (d2 >= 25 || x >= 0) FillRect(s, cx + x, cy + y, cx + x + 1, cy + y + 1, color);
         }
     }
 }
@@ -295,8 +288,10 @@ static int Compact_ChromeChanged(void) {
 }
 
 static void Compact_PaintTabBar(const SSurf* s, TargetList* tl, int activeTab, int settingsPage) {
-    static const char* const* const kIcons[5] = { kIconMap, kIconItems, kIconQuest, kIconOptions, kIconDebug };
-    static const uint8_t kTabs[5] = { SS_TAB_MAP, SS_TAB_ITEMS, SS_TAB_QUEST, SS_TAB_SETTINGS, SS_TAB_DEBUG };
+    static const char* const* const kIcons[6] = { kIconMap,    kIconItems,   kIconQuest,
+                                                  kIconStates, kIconOptions, kIconDebug };
+    static const uint8_t kTabs[6] = { SS_TAB_MAP,    SS_TAB_ITEMS,    SS_TAB_QUEST,
+                                      SS_TAB_STATES, SS_TAB_SETTINGS, SS_TAB_DEBUG };
     int n = CompactTabCount();
     int32_t ty = CcTabY(s->h);
     FillRect(s, 0, ty, s->w, ty + CC_TAB_H, CC_BAR);
@@ -314,11 +309,7 @@ static void Compact_PaintTabBar(const SSurf* s, TargetList* tl, int activeTab, i
         AddTarget(tl, (float)x, (float)ty, (float)(x + CC_TAB_W + 2), (float)(ty + CC_TAB_H), SS_ACT_TAB,
                   kTabs[i]);
     }
-    const int32_t themeX = CC_TAB_X0 + n * CC_TAB_STEP + 6;
-    /* Theme button: cycles kCcThemes, like a day/night switch. */
-    CBox(s, themeX, ty + 2, CC_TAB_W, CC_TAB_H - 4, CC_TAB, CC_TAB_EDGE);
-    CThemeIcon(s, themeX + CC_TAB_W / 2, ty + CC_TAB_H / 2, CC_ACCENT);
-    AddTarget(tl, (float)themeX, (float)ty, (float)(themeX + CC_TAB_W), (float)(ty + CC_TAB_H), SS_ACT_THEME, 0);
+    /* The theme is picked in OPTIONS (THEME); the tab bar has no shortcut. */
 }
 
 /* The theme picked in the config, and its panel backdrop with it. */
@@ -472,6 +463,295 @@ static void Compact_PaintToast(const SSurf* s) {
     int32_t x = (s->w - w) / 2, y = CcContentBottom(s->h) - h - 4;
     CBox(s, x, y, w, h, CC_BAR, CC_ACCENT);
     CTextCentered(s, s->w / 2, y + 4, CC_TEXT, sToast);
+}
+
+/* ---- STATES: save states (save_state_3ds.h), as in ../mzm and ../sm-3ds ----
+ * A list of cards, newest first, three rows of two per page; a card opens its
+ * detail: the screenshot, where and when, and LOAD / SAVE OVER / DELETE, each
+ * needing a second tap. Taps run on the main thread, painting on the bottom
+ * worker; the shared values below are single words. */
+
+#include "save_state_3ds.h"
+
+enum {
+    STATES_CMD_NEW = 1,
+    STATES_CMD_PREV,
+    STATES_CMD_NEXT,
+    STATES_CMD_BACK,
+    STATES_CMD_LOAD,
+    STATES_CMD_OVER,
+    STATES_CMD_DELETE,
+    STATES_CMD_CARD0 = 16, /* + the card's place on the page */
+    STATES_PER_PAGE = 6,
+    STATES_CARD_THUMB_W = 80,
+    STATES_CARD_THUMB_H = 48,
+    STATES_ARM_TICKS = 60, /* ~3 s at the ~20 Hz paint rate */
+};
+
+static volatile int sStatesPage;
+static volatile uint32_t sStatesOpenId;   /* 0 = the list */
+static volatile int sStatesArmed;         /* the command waiting for its second tap */
+static volatile uint32_t sStatesArmedAt;
+static volatile uint8_t sStatesThumbPending;
+static uint32_t sStatesToastGen;
+static uint8_t sStatesScanAsked;
+
+/* Screenshots: the open state's at full size, the page's cards scaled down.
+ * Bottom worker only. */
+static uint16_t sStatesBig[SAVE_STATE_THUMB_W * SAVE_STATE_THUMB_H];
+static uint32_t sStatesBigId;
+static uint8_t sStatesBigOk;
+static struct {
+    uint32_t id;
+    uint8_t ok;
+    uint16_t px[STATES_CARD_THUMB_W * STATES_CARD_THUMB_H];
+} sStatesCards[STATES_PER_PAGE];
+static uint32_t sStatesThumbGen = 0xFFFFFFFFu;
+
+static uint32_t Rgb565ToColor(uint16_t v) {
+    const uint32_t r = (v >> 11) & 31u, g = (v >> 5) & 63u, b = v & 31u;
+    return RGB((r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2));
+}
+
+static void BlitRgb565(const SSurf* s, int32_t x, int32_t y, const uint16_t* px, int w, int h) {
+    for (int j = 0; j < h; ++j)
+        for (int i = 0; i < w; ++i) FillRect(s, x + i, y + j, x + i + 1, y + j + 1, Rgb565ToColor(px[j * w + i]));
+}
+
+static void Compact_StatesInvalidateThumbs(void) {
+    const uint32_t gen = SaveState_Generation();
+    if (gen == sStatesThumbGen) return;
+    sStatesThumbGen = gen; /* an overwrite replaces a picture under the same id */
+    sStatesBigId = 0;
+    for (int i = 0; i < STATES_PER_PAGE; ++i) sStatesCards[i].id = 0;
+}
+
+static const uint16_t* Compact_StatesCardThumb(int slot, uint32_t id, int* loads) {
+    if (sStatesCards[slot].id == id) return sStatesCards[slot].ok ? sStatesCards[slot].px : NULL;
+    if (*loads <= 0) {
+        sStatesThumbPending = 1; /* a later paint reads it: one SD read per paint */
+        return NULL;
+    }
+    --*loads;
+    sStatesCards[slot].id = id;
+    sStatesCards[slot].ok = SaveState_ReadThumb(id, sStatesBig) ? 1 : 0;
+    sStatesBigId = 0; /* sStatesBig was borrowed */
+    if (sStatesCards[slot].ok) {
+        for (int y = 0; y < STATES_CARD_THUMB_H; ++y)
+            for (int x = 0; x < STATES_CARD_THUMB_W; ++x)
+                sStatesCards[slot].px[y * STATES_CARD_THUMB_W + x] =
+                    sStatesBig[(y * SAVE_STATE_THUMB_H / STATES_CARD_THUMB_H) * SAVE_STATE_THUMB_W +
+                               x * SAVE_STATE_THUMB_W / STATES_CARD_THUMB_W];
+    }
+    return sStatesCards[slot].ok ? sStatesCards[slot].px : NULL;
+}
+
+static void Compact_StatesWhen(uint32_t savedAt, char* out, size_t cap) {
+    const time_t t = (time_t)savedAt;
+    const struct tm* tm = savedAt ? gmtime(&t) : NULL;
+    if (tm) snprintf(out, cap, "%02d/%02d %02d:%02d", tm->tm_mday, tm->tm_mon + 1, tm->tm_hour, tm->tm_min);
+    else snprintf(out, cap, "--");
+}
+
+static const char* Compact_StatesArea(unsigned area, char* buf, size_t cap) {
+    const char* name = SaveState_AreaName(area);
+    if (!name) {
+        snprintf(buf, cap, "AREA %02X", area);
+        return buf;
+    }
+    return name;
+}
+
+static bool Compact_StatesArmed(int cmd) {
+    return sStatesArmed == cmd && (int32_t)(sCompactTick - sStatesArmedAt) < STATES_ARM_TICKS;
+}
+
+static void Compact_PaintStatesList(const SSurf* s, TargetList* tl) {
+    const int32_t top = CcContentTop() + 2, bottom = CcContentBottom(s->h) - CC_MARGIN;
+    const int count = SaveState_Count();
+    const int pages = count > 0 ? (count + STATES_PER_PAGE - 1) / STATES_PER_PAGE : 1;
+    int page = sStatesPage;
+    if (page >= pages) page = sStatesPage = pages - 1;
+    if (page < 0) page = sStatesPage = 0;
+
+    const bool canSave = SaveState_CanSave() && !SaveState_Busy();
+    CButton(s, tl, CC_MARGIN, top, 96, 20, "+ NEW STATE", canSave ? CC_ACCENT : CC_FAINT, SS_ACT_STATES,
+            STATES_CMD_NEW);
+    char line[40];
+    snprintf(line, sizeof(line), "%d STATE%s  %d/%d", count, count == 1 ? "" : "S", page + 1, pages);
+    CText(s, CC_MARGIN + 104, top + 7, CC_DIM, line);
+    CButton(s, tl, s->w - CC_MARGIN - 62, top, 30, 20, "<", page > 0 ? CC_TEXT : CC_FAINT, SS_ACT_STATES,
+            STATES_CMD_PREV);
+    CButton(s, tl, s->w - CC_MARGIN - 30, top, 30, 20, ">", page + 1 < pages ? CC_TEXT : CC_FAINT, SS_ACT_STATES,
+            STATES_CMD_NEXT);
+
+    if (count == 0) {
+        CTextCentered(s, s->w / 2, (top + bottom) / 2 - 8, CC_DIM, "NO SAVE STATES YET");
+        CTextCentered(s, s->w / 2, (top + bottom) / 2 + 4, CC_FAINT,
+                      SaveState_CanSave() ? "+ NEW STATE SAVES ONE" : "LOAD A GAME TO SAVE ONE");
+        return;
+    }
+    const int32_t gridTop = top + 24;
+    const int32_t cardH = (bottom - gridTop - 2 * CC_GAP) / 3;
+    int loads = 1;
+    for (int k = 0; k < STATES_PER_PAGE; ++k) {
+        SaveStateInfo info;
+        if (!SaveState_InfoAt(page * STATES_PER_PAGE + k, &info)) break;
+        int32_t x, w;
+        CColumn(s->w, 2, k % 2, 1, &x, &w);
+        const int32_t y = gridTop + (k / 2) * (cardH + CC_GAP);
+        CBox(s, x, y, w, cardH, CC_CELL, CC_CELL_EDGE);
+        const int32_t ty = y + (cardH - STATES_CARD_THUMB_H) / 2;
+        const uint16_t* thumb = info.hasThumb ? Compact_StatesCardThumb(k, info.id, &loads) : NULL;
+        if (thumb) BlitRgb565(s, x + 3, ty, thumb, STATES_CARD_THUMB_W, STATES_CARD_THUMB_H);
+        else FillRect(s, x + 3, ty, x + 3 + STATES_CARD_THUMB_W, ty + STATES_CARD_THUMB_H, CC_BG);
+        const int32_t tx = x + STATES_CARD_THUMB_W + 7;
+        char when[16], area[16], buf[24];
+        Compact_StatesWhen(info.savedAt, when, sizeof(when));
+        snprintf(buf, sizeof(buf), "#%d", page * STATES_PER_PAGE + k + 1);
+        CText(s, tx, y + 5, CC_ACCENT, buf);
+        snprintf(area, sizeof(area), "%.11s", Compact_StatesArea(info.area, buf, sizeof(buf)));
+        CText(s, tx, y + 16, info.compatible ? CC_TEXT : CC_BAD, area);
+        snprintf(buf, sizeof(buf), "HP %u/%u", info.health / 8u, info.maxHealth / 8u);
+        CText(s, tx, y + 27, CC_DIM, buf);
+        CText(s, tx, y + 38, CC_FAINT, when + 6); /* the time; the date is in the detail */
+        AddTarget(tl, (float)x, (float)y, (float)(x + w), (float)(y + cardH), SS_ACT_STATES,
+                  (uint8_t)(STATES_CMD_CARD0 + k));
+    }
+}
+
+static void Compact_PaintStatesDetail(const SSurf* s, TargetList* tl, uint32_t id) {
+    SaveStateInfo info;
+    int number = 0;
+    for (int i = 0; i < SaveState_Count(); ++i) {
+        if (SaveState_InfoAt(i, &info) && info.id == id) {
+            number = i + 1;
+            break;
+        }
+    }
+    if (!number) { /* deleted meanwhile */
+        sStatesOpenId = 0;
+        Compact_PaintStatesList(s, tl);
+        return;
+    }
+    const int32_t top = CcContentTop() + 2;
+    if (sStatesBigId != id) {
+        sStatesBigOk = info.hasThumb && SaveState_ReadThumb(id, sStatesBig);
+        sStatesBigId = id;
+    }
+    CBox(s, CC_MARGIN, top, SAVE_STATE_THUMB_W + 2, SAVE_STATE_THUMB_H + 2, CC_CELL, CC_CELL_EDGE);
+    if (sStatesBigOk) BlitRgb565(s, CC_MARGIN + 1, top + 1, sStatesBig, SAVE_STATE_THUMB_W, SAVE_STATE_THUMB_H);
+    else CTextCentered(s, CC_MARGIN + 1 + SAVE_STATE_THUMB_W / 2, top + 56, CC_FAINT, "NO PICTURE");
+
+    const int32_t tx = CC_MARGIN + SAVE_STATE_THUMB_W + 8;
+    int32_t ty = top + 2;
+    char buf[40], area[24];
+    snprintf(buf, sizeof(buf), "STATE %d", number);
+    CText(s, tx, ty, CC_ACCENT, buf);
+    ty += 13;
+    const char* name = Compact_StatesArea(info.area, area, sizeof(area));
+    snprintf(buf, sizeof(buf), "%.17s", name);
+    CText(s, tx, ty, CC_TEXT, buf);
+    if (strlen(name) > 17) {
+        ty += 10;
+        snprintf(buf, sizeof(buf), "%.17s", name + 17);
+        CText(s, tx, ty, CC_TEXT, buf);
+    }
+    ty += 11;
+    snprintf(buf, sizeof(buf), "ROOM %02X", info.room);
+    CText(s, tx, ty, CC_DIM, buf);
+    ty += 11;
+    snprintf(buf, sizeof(buf), "HP %u/%u  R %u", info.health / 8u, info.maxHealth / 8u, info.rupees);
+    CText(s, tx, ty, CC_DIM, buf);
+    ty += 11;
+    Compact_StatesWhen(info.savedAt, buf, sizeof(buf));
+    CText(s, tx, ty, CC_DIM, buf);
+    ty += 11;
+    snprintf(buf, sizeof(buf), "%.17s", info.build);
+    CText(s, tx, ty, CC_FAINT, buf);
+    ty += 13;
+    if (!info.compatible) {
+        CText(s, tx, ty, CC_BAD, "ANOTHER BUILD:");
+        CText(s, tx, ty + 10, CC_BAD, "CANNOT LOAD");
+    }
+
+    const int32_t by = top + SAVE_STATE_THUMB_H + 8;
+    static const char* const kLabels[4] = { "LOAD", "SAVE OVER", "DELETE", "BACK" };
+    static const uint8_t kCmds[4] = { STATES_CMD_LOAD, STATES_CMD_OVER, STATES_CMD_DELETE, STATES_CMD_BACK };
+    const bool busy = SaveState_Busy();
+    for (int i = 0; i < 4; ++i) {
+        int32_t x, w;
+        CColumn(s->w, 4, i, 1, &x, &w);
+        bool enabled = !busy;
+        if (kCmds[i] == STATES_CMD_LOAD) enabled = enabled && info.compatible;
+        if (kCmds[i] == STATES_CMD_OVER) enabled = enabled && SaveState_CanSave();
+        if (kCmds[i] == STATES_CMD_BACK) enabled = true;
+        const bool armed = Compact_StatesArmed(kCmds[i]);
+        CButton(s, tl, x, by, w, 24, armed ? "SURE?" : kLabels[i], armed ? CC_WARN : (enabled ? CC_TEXT : CC_FAINT),
+                SS_ACT_STATES, kCmds[i]);
+    }
+    CText(s, CC_MARGIN + 1, by + 32, CC_FAINT, "TAP TWICE TO CONFIRM");
+}
+
+static void Compact_PaintStates(const SSurf* s, TargetList* tl) {
+    FillRect(s, 0, CcContentTop(), s->w, CcContentBottom(s->h), CC_BG);
+    if (!sStatesScanAsked && SaveState_Request(SAVE_STATE_JOB_SCAN, 0)) sStatesScanAsked = 1;
+    Compact_StatesInvalidateThumbs();
+    sStatesThumbPending = 0;
+    /* The result of a save, load or delete, once. */
+    const uint32_t gen = SaveState_Generation();
+    if (gen != sStatesToastGen) {
+        sStatesToastGen = gen;
+        char message[48];
+        SaveState_LastResult(message, sizeof(message), NULL);
+        if (strcmp(message, "STATES READ")) Compact_Toast("%s", message);
+    }
+    if (SaveState_Busy()) Compact_Toast("PLEASE WAIT");
+    const uint32_t id = sStatesOpenId;
+    if (id) Compact_PaintStatesDetail(s, tl, id);
+    else Compact_PaintStatesList(s, tl);
+}
+
+/* Repaint while a job runs, a result is due or a picture is still to read. */
+static int Compact_StatesNeedsPaint(void) {
+    return SaveState_Busy() || SaveState_Generation() != sStatesToastGen || sStatesThumbPending ||
+           (sStatesArmed && (int32_t)(sCompactTick - sStatesArmedAt) < STATES_ARM_TICKS + 2);
+}
+
+/* SS_ACT_STATES taps (main thread). */
+static void Compact_StatesCommand(int cmd) {
+    const uint32_t id = sStatesOpenId;
+    if (cmd >= STATES_CMD_CARD0 && cmd < STATES_CMD_CARD0 + STATES_PER_PAGE) {
+        SaveStateInfo info;
+        if (SaveState_InfoAt(sStatesPage * STATES_PER_PAGE + (cmd - STATES_CMD_CARD0), &info)) sStatesOpenId = info.id;
+        sStatesArmed = 0;
+        return;
+    }
+    switch (cmd) {
+        case STATES_CMD_NEW:
+            if (!SaveState_CanSave()) Compact_Toast("LOAD A GAME FIRST");
+            else if (SaveState_Request(SAVE_STATE_JOB_SAVE_NEW, 0)) sStatesPage = 0;
+            return;
+        case STATES_CMD_PREV:
+            if (sStatesPage > 0) --sStatesPage;
+            return;
+        case STATES_CMD_NEXT: ++sStatesPage; return;
+        case STATES_CMD_BACK:
+            sStatesOpenId = 0;
+            sStatesArmed = 0;
+            return;
+        default: break;
+    }
+    /* LOAD, SAVE OVER, DELETE: the first tap arms, the second does it. */
+    if (!Compact_StatesArmed(cmd)) {
+        sStatesArmed = cmd;
+        sStatesArmedAt = sCompactTick;
+        return;
+    }
+    sStatesArmed = 0;
+    if (cmd == STATES_CMD_LOAD) SaveState_Request(SAVE_STATE_JOB_LOAD, id);
+    else if (cmd == STATES_CMD_OVER) SaveState_Request(SAVE_STATE_JOB_OVERWRITE, id);
+    else if (cmd == STATES_CMD_DELETE && SaveState_Request(SAVE_STATE_JOB_DELETE, id)) sStatesOpenId = 0;
 }
 
 /* ---- MAP / ITEMS / QUEST without a game ---- */

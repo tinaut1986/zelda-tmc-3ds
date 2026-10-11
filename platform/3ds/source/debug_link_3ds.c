@@ -6,6 +6,7 @@
 #include "platform_3ds.h"
 #include "port_second_screen_3ds.h"
 #include "port_second_screen_state.h"
+#include "save_state_3ds.h"
 
 #include <3ds.h>
 #include <ctype.h>
@@ -152,6 +153,65 @@ static void FormatState(char* reply, unsigned cap) {
              (long)snap.playerX, (long)snap.playerY, snap.health, snap.maxHealth, snap.rupees);
 }
 
+/* Runs a save-state job and waits for the game's main loop to finish it. */
+static bool RunStateJob(SaveStateJob job, uint32_t id, char* reply, unsigned cap) {
+    const uint64_t give_up = svcGetSystemTick() + 30ull * SYSCLOCK_ARM11;
+    while (!SaveState_Request(job, id)) {
+        if (svcGetSystemTick() > give_up) {
+            snprintf(reply, cap, "451 Save states busy.");
+            return false;
+        }
+        svcSleepThread(20000000);
+    }
+    const uint32_t gen = SaveState_Generation();
+    while (SaveState_Generation() == gen) {
+        if (svcGetSystemTick() > give_up) {
+            snprintf(reply, cap, "451 The game did not run the job (no game loop?).");
+            return false;
+        }
+        svcSleepThread(20000000);
+    }
+    char message[48];
+    uint32_t done;
+    const bool ok = SaveState_LastResult(message, sizeof(message), &done);
+    int number = 0;
+    SaveStateInfo info;
+    for (int i = 0; i < SaveState_Count(); ++i)
+        if (SaveState_InfoAt(i, &info) && info.id == done) number = i + 1;
+    snprintf(reply, cap, "%s %s (number %d)", ok ? "200" : "550", message, number);
+    return ok;
+}
+
+/* SAVESTATE [N]: a new state, or over number N. LOADSTATE [N] and DELSTATE N:
+ * N counts from 1, newest first (default 1). STATES: the list. */
+static void StateCommand(const char* verb, const char* args, char* reply, unsigned cap) {
+    if (!SaveState_Count() && !RunStateJob(SAVE_STATE_JOB_SCAN, 0, reply, cap)) return;
+    const long n = strtol(args, NULL, 10);
+    SaveStateInfo info;
+    if (!strcmp(verb, "STATES")) {
+        int len = snprintf(reply, cap, "200 %d:", SaveState_Count());
+        for (int i = 0; i < SaveState_Count() && len + 24 < (int)cap; ++i) {
+            if (!SaveState_InfoAt(i, &info)) break;
+            len += snprintf(reply + len, cap - (unsigned)len, " %d=%02X/%02X%s", i + 1, info.area, info.room,
+                            info.compatible ? "" : "(other build)");
+        }
+        return;
+    }
+    if (!strcmp(verb, "SAVESTATE") && n <= 0) {
+        RunStateJob(SAVE_STATE_JOB_SAVE_NEW, 0, reply, cap);
+        return;
+    }
+    const long number = n > 0 ? n : 1;
+    if (!SaveState_InfoAt((int)number - 1, &info)) {
+        snprintf(reply, cap, "550 No state number %ld (%d saved).", number, SaveState_Count());
+        return;
+    }
+    const SaveStateJob job = !strcmp(verb, "SAVESTATE") ? SAVE_STATE_JOB_OVERWRITE
+                             : !strcmp(verb, "LOADSTATE") ? SAVE_STATE_JOB_LOAD
+                                                          : SAVE_STATE_JOB_DELETE;
+    RunStateJob(job, info.id, reply, cap);
+}
+
 bool DebugLink_Command(const char* verb, const char* args, char* reply, unsigned cap) {
     if (!args) args = "";
     if (!strcmp(verb, "KEYS")) {
@@ -181,8 +241,13 @@ bool DebugLink_Command(const char* verb, const char* args, char* reply, unsigned
         RunOnMainThread(LINK_OP_SHOT, reply, cap);
         return true;
     }
-    if (!strcmp(verb, "LOADSTATE")) {
+    if (!strcmp(verb, "LOADDUMP")) {
         RunOnMainThread(LINK_OP_LOADSTATE, reply, cap);
+        return true;
+    }
+    if (!strcmp(verb, "SAVESTATE") || !strcmp(verb, "LOADSTATE") || !strcmp(verb, "DELSTATE") ||
+        !strcmp(verb, "STATES")) {
+        StateCommand(verb, args, reply, cap);
         return true;
     }
     if (!strcmp(verb, "DUMP")) {

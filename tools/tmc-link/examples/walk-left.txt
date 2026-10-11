@@ -1,4 +1,4 @@
-# After an install: wait for the relaunched game, load the newest dump's state,
+# After an install: wait for the relaunched game, load the newest save state,
 # walk left for two seconds, take screenshots and fetch the log.
 wait
 loadstate

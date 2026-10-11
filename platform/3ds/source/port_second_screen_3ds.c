@@ -164,6 +164,7 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
     UI_UNLOCK();
 
     /* Without a game the MAP, ITEMS and QUEST tabs are a still notice. */
+    if (tab == SS_TAB_STATES) return Compact_StatesNeedsPaint();
     if (!snap->inGame && tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG) return 0;
 
     if (tab == SS_TAB_MAP) {
