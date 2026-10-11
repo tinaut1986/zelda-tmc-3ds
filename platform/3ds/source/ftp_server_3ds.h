@@ -12,7 +12,8 @@
  * over the running game and relaunches into the new build. With curl:
  *   curl -T game.cia "ftp://IP:5000/3ds/Minish%20Cap%203DS/update/dev.cia" \
  *        -Q "-SITE INSTALL /3ds/Minish Cap 3DS/update/dev.cia"   (the "-": after the upload)
- * (./build_3ds.sh --install does both).
+ * (./build_3ds.sh --install does both). The bottom screen says so meanwhile
+ * (FtpServer_Notice): an install never happens without a warning.
  *
  * Its thread runs at a lower priority than the game and blocks on the
  * network, so it costs nothing while idle. */
@@ -28,3 +29,6 @@ bool FtpServer_Running(void);
 void FtpServer_Address(char* out, unsigned cap);
 /* Files sent and received since start, and whether a client is connected. */
 void FtpServer_Stats(unsigned* sent, unsigned* received, bool* connected);
+/* While a .cia is being received or SITE INSTALL runs, the line to show the
+ * player (the bottom screen's toast); NULL otherwise. */
+const char* FtpServer_Notice(void);

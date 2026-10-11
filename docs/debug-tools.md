@@ -95,7 +95,9 @@ wget -r -nH --cut-dirs=3 ftp://<3ds-ip>:5000/3ds/Minish%20Cap%203DS/debug/   # t
 over the running game and relaunches into the new build (the FTP server is then off
 again). `./build_3ds.sh --install IP` builds, uploads to
 `/3ds/Minish Cap 3DS/update/dev.cia` and installs in one go; the interactive menu
-offers it as "Install into the running game". Any unsaved progress is lost.
+offers it as "Install into the running game". Any unsaved progress is lost. While a
+`.cia` is being received and while it installs, the bottom screen says so
+(`RECEIVING NEW BUILD...`, then `INSTALLING NEW BUILD - GAME WILL RESTART`) on any tab.
 
 Its thread runs on core 1 below the game's priority and sleeps on the network,
 so it costs nothing while idle; a transfer competes with the game for the SD

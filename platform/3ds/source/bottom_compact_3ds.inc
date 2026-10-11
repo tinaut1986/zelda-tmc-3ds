@@ -460,16 +460,31 @@ static void Compact_Toast(const char* fmt, ...) {
 
 static uint8_t sToastOnScreen;
 
+#if TMC3DS_DEBUG_TOOLS
+#include "ftp_server_3ds.h"
+#endif
+
+/* A notice that holds the toast while it lasts: a build arriving over FTP. */
+static const char* Compact_StandingNotice(void) {
+#if TMC3DS_DEBUG_TOOLS
+    return FtpServer_Notice();
+#else
+    return NULL;
+#endif
+}
+
 static int Compact_ToastVisible(void) {
     return sToast[0] && (int32_t)(sToastUntil - sCompactTick) > 0;
 }
 
 /* Paint while it shows, and once more to take it away. */
 static int Compact_ToastNeedsPaint(void) {
-    return Compact_ToastVisible() || sToastOnScreen;
+    return Compact_StandingNotice() || Compact_ToastVisible() || sToastOnScreen;
 }
 
 static void Compact_PaintToast(const SSurf* s) {
+    const char* notice = Compact_StandingNotice();
+    if (notice) Compact_Toast("%s", notice);
     sToastOnScreen = (uint8_t)Compact_ToastVisible();
     if (!sToastOnScreen) return;
     int32_t w = CTextWidth(sToast) + 12, h = 15;
