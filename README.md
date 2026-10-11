@@ -44,7 +44,7 @@ https://discord.gg/zy8BqH5ss
 * Three display styles: Blur, Bilinear, and Pixel Perfect.
 * On New Nintendo 3DS, the existing Wide + Pixel Perfect combination enables
   experimental Full View: compatible outdoor rooms render at 400x240, while
-  supported interiors use a centered 200x120 view scaled exactly 2x.
+  interiors keep the same 1x pixel size as the rest of the game.
 * In-app updates with Stable and Pre-release channels, top-screen changelogs, and verified CIA/3DSX installation.
 * Native stereo audio, persistent settings, reliable save handling, FPS tools, and diagnostic dumps for bug reports.
 

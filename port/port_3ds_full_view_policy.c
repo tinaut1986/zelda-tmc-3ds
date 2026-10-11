@@ -83,15 +83,11 @@ Port3DSFullViewMode Port3DSFullViewPolicy_Decide(const Port3DSFullViewInputs* in
         return PORT_3DS_FULL_VIEW_OUTDOOR_1X;
     }
 
-    if (inputs->roomWidth < PORT_3DS_INTERIOR_CROP_WIDTH ||
-        inputs->roomHeight < PORT_3DS_INTERIOR_CROP_HEIGHT ||
-        inputs->contentWidth < PORT_3DS_INTERIOR_CROP_WIDTH ||
-        inputs->contentHeight < PORT_3DS_INTERIOR_CROP_HEIGHT) {
-        if (reason != 0) *reason = PORT_3DS_FULL_VIEW_REASON_INTERIOR_BOUNDS;
-        return PORT_3DS_FULL_VIEW_FALLBACK;
-    }
-    if (reason != 0) *reason = PORT_3DS_FULL_VIEW_REASON_NONE;
-    return PORT_3DS_FULL_VIEW_INTERIOR_2X;
+    /* Interiors keep the pixel size of the rest of the game (owner's rule,
+     * 2026-10-11): the 200x120 viewport drawn at 2x is never selected. They
+     * run the established Wide path at 1x. */
+    if (reason != 0) *reason = PORT_3DS_FULL_VIEW_REASON_INTERIOR_NO_ZOOM;
+    return PORT_3DS_FULL_VIEW_FALLBACK;
 }
 
 Port3DSFullViewMode Port3DSFullViewPolicy_Desired(const Port3DSFullViewInputs* inputs) {
@@ -102,7 +98,7 @@ const char* Port3DSFullViewPolicy_FallbackReasonName(Port3DSFullViewFallbackReas
     static const char* const names[] = {
         "none", "combo-disabled", "non-game-task", "fixed-canvas", "transition",
         "player-invalid", "unsupported-scene", "outdoor-bounds", "interior-bounds", "room-generation",
-        "shadows-unavailable", "latch-mismatch", "presentation-bounds",
+        "shadows-unavailable", "latch-mismatch", "presentation-bounds", "interior-1x",
     };
     const unsigned index = (unsigned)reason;
     return index < sizeof(names) / sizeof(names[0]) ? names[index] : "unknown";

@@ -12,7 +12,7 @@ change (what goes where: the table in `CLAUDE.md`).
   down. It already has a GPU tile renderer (`platform/3ds/source/port_ppu_gpu_3ds*.c`,
   on by default) with a software fallback, an Old 3DS adaptive frame pacer, NDSP
   audio offload, an updater, a quick memory dump (L+R+A) and an experimental New 3DS
-  "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors).
+  "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors; the 2x indoor zoom is gone, see the decisions log).
 
 ## Status (2026-10-11)
 
@@ -284,7 +284,7 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   the software PPU stays only as a comparison (DEBUG -> SWITCHES -> RENDERER, GPU CHECK). Done
   so far: the renderer runs on the New 3DS too (upstream kept it to the Old 3DS). Left: the
   frames that still fall back to software, each to be taught to the GPU renderer: the New 3DS
-  Full View layouts (400x240 outdoors, 200x120 at 2x indoors), command-budget overflows,
+  Full View layout (400x240 outdoors; indoors run the 1x Wide path), command-budget overflows,
   build failures (`PpuGpu3DSBuildReason`). The perf recorder's `gpu` column and the SD log's
   `fallback` count show how many are left.
   *Done when:* a long session on each model records `gpu` = 1 on every gameplay frame.
@@ -389,3 +389,7 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   and QUEST show a notice until a game is loaded.
 - **2026-10-11** The updater shows the `<!-- tmc-notes -->` block (our release
   notes) and falls back to upstream's `## Changelog` section.
+- **2026-10-11** Interiors are never drawn at 2x (owner: the pixel size must be the same
+  everywhere in the game). `Port3DSFullViewPolicy_Decide` no longer returns
+  `INTERIOR_2X`; indoors fall back to the 1x Wide path (reason `interior-1x`). The enum, the
+  200x120 renderer and its presenter geometry stay in the code, unused.
