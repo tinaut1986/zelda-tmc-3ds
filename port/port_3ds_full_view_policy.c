@@ -53,9 +53,10 @@ Port3DSFullViewMode Port3DSFullViewPolicy_Decide(const Port3DSFullViewInputs* in
     } else if (inputs->fixedCanvas) {
         localReason = PORT_3DS_FULL_VIEW_REASON_FIXED_CANVAS;
     } else if (inputs->uiOverlay) {
-        /* Retail dialogue and room banners own a 240-pixel BG0 canvas. Keep
+        /* Room banners and native windows own a 240-pixel BG0 canvas. Keep
          * their established E2 geometry instead of cutting or repositioning
-         * them in either experimental mode. */
+         * them. Dialogue is not here: the message box is centred by the
+         * ws_msg shift in 400 pixels as it is in E2 Wide. */
         localReason = PORT_3DS_FULL_VIEW_REASON_FIXED_CANVAS;
     } else if (inputs->transitioning) {
         localReason = PORT_3DS_FULL_VIEW_REASON_TRANSITION;
