@@ -220,7 +220,13 @@ curl "ftp://$IP:5000/3ds/Minish%20Cap%203DS/debug/"                         # li
 curl -O "ftp://$IP:5000/3ds/Minish%20Cap%203DS/debug/tmc-perf-0001.csv"     # fetch one
 wget -q -r -nH --cut-dirs=3 -P /tmp/tmc-debug "ftp://$IP:5000/3ds/Minish%20Cap%203DS/debug/"
 tools/perf-csv/analyze.py /tmp/tmc-debug/debug/tmc-perf-0001.csv
+tools/tmc-link/tmc-link.py wait && tools/tmc-link/tmc-link.py run SCRIPT   # drive the game
 ```
+
+- `tools/tmc-link/tmc-link.py` (docs/debug-tools.md, "Remote control") presses buttons,
+  taps, loads the newest dump's state, takes screenshots (`shot`, then look at the PNGs),
+  reads state and memory by symbol. Use it to reproduce and check on the console without
+  the owner; say before driving the game while the owner is playing.
 
 - `--install` uploads to `/3ds/Minish Cap 3DS/update/dev.cia` and sends `SITE INSTALL`
   after the transfer (`curl -Q "-SITE INSTALL <path>"`; the leading `-` means "after").

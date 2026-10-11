@@ -36,6 +36,7 @@ v2.2-E1: nothing stable published.
 | `perf/gpu-build-profile` (cut from `feat/log-settings`) | SD log `build:` line (the GPU builder's phase timers); `docs/renderer-gpu-gap.md` | builds; to record in Hyrule Field |
 | `feat/debug-restore` (cut from `perf/gpu-build-profile`) | the SD log (on/off, mode) and the FTP server come back at launch as left; debug builds only | builds (debug and production); not checked on the console |
 | `feat/bottom-always` (cut from `feat/debug-restore`) | the whole bottom screen outside gameplay too (intro, title, file select): every tab, OPTIONS and DEBUG working, MAP/ITEMS/QUEST say they need a game | builds; not checked on the console |
+| `feat/remote-link` (cut from `feat/bottom-always`) | P1.10 first cut: SITE KEYS/TOUCH/SHOT/LOADSTATE/DUMP/SWITCH/STATE/PEEK/POKE over the FTP server, `tools/tmc-link/` | builds; client checked on the PC; not checked on the console |
 
 **On the owner's console now (2026-10-11):** a debug build of `feat/ingame-ftp`
 (`0.1.1-dev.13.4+6528614`), sent with ftpd and installed with FBI: the first time any of this
@@ -204,6 +205,11 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
      with `arm-none-eabi-gdb build-3ds/game/tmc-3ds.elf`; documented, no code of ours.
   Code changes are not hot-patched: they go through `./build_3ds.sh --install` (P1.9), about
   two minutes from edit to running.
+  Transport (2026-10-11): SITE commands on the in-game FTP server instead of a second TCP
+  server: one port, one switch, already restored at launch. Unattended scenarios after an
+  install (owner): `tmc-link.py wait`, then a `run` script (load state, buttons, shots).
+  First cut done: buttons, taps, screenshots, load state, dump, switches, state line,
+  memory by symbol. Left: pause/step, warp, live tunables, setting any OPTIONS value.
   *Done when:* Claude, from a shell here, takes a screenshot, reads Link's position, changes a
   switch and injects a button press on the owner's console, and the owner sees it happen.
 - [ ] **P1.8** Save states.

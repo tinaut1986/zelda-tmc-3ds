@@ -1,4 +1,5 @@
 #include "ftp_server_3ds.h"
+#include "debug_link_3ds.h"
 
 #include "cia_install_3ds.h"
 #include "debug_log_3ds.h"
@@ -426,8 +427,12 @@ static void HandleSession(int ctrl) {
                     sNotice = NULL;
                     Reply(s, "550 Install failed: %s", error);
                 }
-            } else {
+            } else if (!strcmp(sub, "INSTALL")) {
                 Reply(s, "501 SITE INSTALL <path to a .cia of this game>");
+            } else {
+                char reply[FTP_LINE_MAX - 8];
+                if (DebugLink_Command(sub, path, reply, sizeof(reply))) Reply(s, "%s", reply);
+                else Reply(s, "504 Unknown SITE command.");
             }
         } else if (!strcmp(line, "QUIT")) {
             Reply(s, "221 Bye.");

@@ -7,6 +7,10 @@
 #include "port_second_screen_sync_3ds.h"
 #include "frame_pacing_3ds.h"
 #include "app_paths_3ds.h"
+#include "tmc3ds_build_config.h"
+#if TMC3DS_DEBUG_TOOLS
+#include "debug_link_3ds.h"
+#endif
 
 #include <3ds.h>
 #include <stdbool.h>
@@ -722,6 +726,9 @@ static void PollInput(void) {
     hidScanInput();
     sHeld = hidKeysHeld();
     sDown = hidKeysDown();
+#if TMC3DS_DEBUG_TOOLS
+    DebugLink_Poll(&sHeld, &sDown, sLogicFrames); /* remote buttons and requests (SITE over FTP) */
+#endif
     hidCircleRead(&sCirclePosition);
     if (sIsNew3DS) {
         hidCstickRead(&sCStickPosition);

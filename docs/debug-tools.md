@@ -110,6 +110,35 @@ so it costs nothing while idle; a transfer competes with the game for the SD
 card. It shares the network service with the updater (`net_3ds.c`), so both
 can run together. Transfers are written to the SD log.
 
+## Remote control
+
+While the FTP server runs, the PC can drive the game through SITE commands
+(`platform/3ds/source/debug_link_3ds.h`): hold buttons for N frames, tap the bottom
+screen, take screenshots, load the newest dump's state, take a dump, cycle a switch,
+read the game state and read or write memory. `tools/tmc-link/tmc-link.py` is the
+client (standard-library Python):
+
+```sh
+tools/tmc-link/tmc-link.py wait                 # until the game answers (after an install)
+tools/tmc-link/tmc-link.py state                # frame=... ingame=1 area=03 room=01 x=... y=...
+tools/tmc-link/tmc-link.py press LEFT 120       # hold LEFT 120 logic frames and wait for them
+tools/tmc-link/tmc-link.py keys A+B 2           # buttons by their 3DS names, joined by +
+tools/tmc-link/tmc-link.py touch 160 120        # a bottom-screen tap
+tools/tmc-link/tmc-link.py loadstate            # the newest quick dump's game state
+tools/tmc-link/tmc-link.py shot                 # /tmp/tmc-shot/top.png and bottom.png
+tools/tmc-link/tmc-link.py peek gRoomControls 16    # symbols from build-3ds/game/tmc-3ds.elf
+tools/tmc-link/tmc-link.py switch "FRAME SYNC"
+tools/tmc-link/tmc-link.py run tools/tmc-link/examples/walk-left.txt
+```
+
+Buttons are added to the real ones and counted in logic frames, so a held direction
+moves Link exactly as far each time. Touches, screenshots, state loads, dumps,
+switches and writes run on the main thread between frames; the reply waits for them.
+Reads and writes check that the memory is mapped first, so a wrong address answers
+`550` instead of crashing. Together with the FTP server coming back after a relaunch,
+`./build_3ds.sh --install IP && tools/tmc-link/tmc-link.py run SCRIPT` installs a build
+and plays a scenario on it with nobody at the console.
+
 ## SD log
 
 `debug/tmc-log-NNNN.txt` in the data folder. Debug builds start it at boot (one
