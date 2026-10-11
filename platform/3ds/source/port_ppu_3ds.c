@@ -967,8 +967,8 @@ void Port_PPU_Init(SDL_Window* window) {
     sTopValidSourceHeight = GBA_H;
     sGpuPresenterReady = PlatformGpu3DS_Init(old3dsProfile);
     sGpuPpuDisabled = false;
-    sGpuPpuInitialized =
-        old3dsProfile && sGpuPresenterReady && PortPpuGpu3DS_Init();
+    /* Both models: see PpuGpu3DS_ShouldUse. */
+    sGpuPpuInitialized = sGpuPresenterReady && PortPpuGpu3DS_Init();
     sTopUpload = PlatformGpu3DS_TopBuffer();
     sBottomUploads[0] = PlatformGpu3DS_BottomBuffer(0);
     sBottomUploads[1] = PlatformGpu3DS_BottomBuffer(1);
@@ -979,9 +979,29 @@ void Port_PPU_Init(SDL_Window* window) {
 /* Frames skipped because the GPU had not finished the previous one. */
 static unsigned long long sGpuBusyFrameDrops;
 
+/* COMPACT UP changed in DEBUG -> SWITCHES: take the new pitches at the start
+ * of a frame, when neither the software renderer nor the bottom painter is
+ * writing into the upload surfaces. */
+static void ApplyUploadLayoutSwitch(void) {
+    static int applied = -1;
+    const int wanted = Port_Config_CompactUpload() ? 1 : 0;
+    if (applied < 0) {
+        applied = wanted;
+        return;
+    }
+    if (wanted == applied || sBottomWorkerPending) return;
+    const PlatformGpu3DSUploadLayout layout = PlatformGpu3DS_SetCompactUpload(wanted != 0);
+    sTopUploadPitch = layout.topPitch;
+    sBottomUploadPitch = layout.bottomPitch;
+    virtuappu_mode1_set_output_buffer(sTopUpload, sTopUploadPitch);
+    Port_SecondScreen_3DS_RequestRefresh();
+    applied = wanted;
+}
+
 void Port_PPU_PresentFrame(void) {
     if (!sInitialized)
         return;
+    ApplyUploadLayoutSwitch();
     PortPpuGpu3DS_FinishParityCheck();
     PortPpuGpu3DS_WriteFrameCapture(Port_PPU_3DS_LastDumpDirectory());
     /* Before this frame draws over it, the output texture still holds the
@@ -1043,8 +1063,8 @@ void Port_PPU_PresentFrame(void) {
     bool gpuReady = false;
     sGpuSnapshotValid = false;
     if (Port_Config_GpuRenderer() &&
-        PpuGpu3DS_ShouldUse(Platform3DS_IsNew3DS(), sGpuPpuInitialized,
-                            sGpuPpuDisabled)) {
+        PpuGpu3DS_ShouldUse(sGpuPpuInitialized, sGpuPpuDisabled,
+                            topFrame.mode != PORT_3DS_FULL_VIEW_FALLBACK)) {
         parityFrame = PortPpuGpu3DS_ParityRequested();
         if (parityFrame) {
             Platform3DS_MarkFrameDiscontinuity(

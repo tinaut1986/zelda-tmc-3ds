@@ -39,6 +39,12 @@ static inline PlatformGpu3DSUploadLayout PlatformGpu3DS_GetUploadLayout(bool com
     return (PlatformGpu3DSUploadLayout){ 512u, 256u, 512u, 256u };
 }
 
+/* Switches the upload layout during play (DEBUG -> SWITCHES -> COMPACT UP; Old
+ * 3DS only, the New 3DS keeps the full layout). The caller must hand the new
+ * pitches to the painter and VirtuaPPU in the same frame, with no bottom paint
+ * in flight (Port_PPU_PresentFrame does). */
+PlatformGpu3DSUploadLayout PlatformGpu3DS_SetCompactUpload(bool compact);
+
 typedef struct PlatformGpu3DSStats {
     uint64_t frames;
     uint64_t frameBeginFailures;

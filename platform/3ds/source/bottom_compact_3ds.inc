@@ -622,29 +622,18 @@ static void Compact_PaintDebugSwitches(const SSurf* s, TargetList* tl) {
     int32_t x, w;
     CColumn(s->w, 4, 0, 1, &x, &w);
     CButton(s, tl, x, CRowY(0), w, 16, "< BACK", CC_TEXT, SS_ACT_DEBUG, DBG_CMD_PAGE_MAIN);
-    CText(s, x + w + 8, CRowY(0) + 5, CC_DIM, "TAP A CELL TO CHANGE IT");
-    int32_t y = CRowY(0) + 16 + CC_GAP + 2;
-    int pending = 0;
-    for (int section = 0; section < 2; section++) {
-        CSectionTitle(s, y, section == 0 ? "LIVE" : "AT NEXT BOOT");
-        y += 10;
-        int slot = 0;
-        for (int id = 0; id < DEBUG_SW_COUNT; id++) {
-            if ((int)DebugSwitch_AtBoot(id) != section) continue;
-            char value[24];
-            DebugSwitch_Value(id, value, sizeof(value));
-            int pend = DebugSwitch_Pending(id);
-            pending |= pend;
-            CColumn(s->w, 4, slot % 4, 1, &x, &w);
-            uint32_t color = pend ? CC_WARN : (DebugSwitch_IsDefault(id) ? CC_TEXT : CC_ACCENT);
-            CCell(s, tl, x, y + (slot / 4) * (CC_CELL_H + CC_GAP), w, CC_CELL_H, DebugSwitch_Name(id), value, color,
-                  SS_ACT_DEBUG, (uint8_t)(DBG_CMD_SWITCH0 + id));
-            slot++;
-        }
-        y += ((slot + 3) / 4) * (CC_CELL_H + CC_GAP) + 2;
+    CText(s, x + w + 8, CRowY(0) + 5, CC_DIM, "TAP TO CHANGE, APPLIES AT ONCE");
+    int32_t y0 = CRowY(0) + 16 + CC_GAP + 2;
+    for (int id = 0; id < DEBUG_SW_COUNT; id++) {
+        char value[24];
+        DebugSwitch_Value(id, value, sizeof(value));
+        CColumn(s->w, 4, id % 4, 1, &x, &w);
+        uint32_t color = DebugSwitch_IsDefault(id) ? CC_TEXT : CC_ACCENT;
+        CCell(s, tl, x, y0 + (id / 4) * (CC_CELL_H + CC_GAP), w, CC_CELL_H, DebugSwitch_Name(id), value, color,
+              SS_ACT_DEBUG, (uint8_t)(DBG_CMD_SWITCH0 + id));
     }
+    int32_t y = y0 + ((DEBUG_SW_COUNT + 3) / 4) * (CC_CELL_H + CC_GAP) + 2;
     CText(s, CC_MARGIN + 1, y, CC_FAINT, "WHITE: DEFAULT  BLUE: CHANGED  (TMC3DS.INI)");
-    if (pending) CText(s, CC_MARGIN + 1, y + 10, CC_WARN, "YELLOW: RESTART THE GAME TO APPLY");
 }
 
 static void Compact_PaintDebug(const SSurf* s, TargetList* tl, const SecondScreenSnapshot* snap, uint32_t tick,
@@ -664,8 +653,7 @@ static void Compact_DebugCommand(int cmd) {
         DebugSwitch_Cycle(id);
         char value[24];
         DebugSwitch_Value(id, value, sizeof(value));
-        DebugLog_Printf("switch %s -> %s%s", DebugSwitch_Name(id), value,
-                        DebugSwitch_AtBoot(id) ? " (at next boot)" : "");
+        DebugLog_Printf("switch %s -> %s", DebugSwitch_Name(id), value);
         return;
     }
     switch (cmd) {

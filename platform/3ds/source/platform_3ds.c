@@ -169,19 +169,7 @@ int Platform3DS_Init(void) {
      * question, so it is a knob rather than a new default.
      *
      * `app_cpu_limit=0` (default) keeps the original preference order. */
-    extern int Port_Config_AppCpuLimit(void);
-    const int limitCap = Port_Config_AppCpuLimit();
-    static const u32 core1Candidates[] = { 80, 70, 50, 30 };
-    for (size_t i = 0; i < sizeof(core1Candidates) / sizeof(core1Candidates[0]); ++i) {
-        if (limitCap > 0 && core1Candidates[i] > (u32)limitCap) continue;
-        if (R_FAILED(APT_SetAppCpuTimeLimit(core1Candidates[i]))) continue;
-        u32 actual = 0;
-        if (R_SUCCEEDED(APT_GetAppCpuTimeLimit(&actual)) && actual > 0) {
-            sCore1Available = true;
-            sCore1TimeLimit = actual;
-            break;
-        }
-    }
+    Platform3DS_ApplyCpuLimit();
 
     sRunning = true;
     hidScanInput();
@@ -241,6 +229,24 @@ int Platform3DS_WifiStrength(void) {
 bool Platform3DS_IsRunning(void) { return sRunning; }
 bool Platform3DS_IsNew3DS(void) { return sIsNew3DS; }
 bool Platform3DS_CanUseCore1(void) { return sCore1Available; }
+
+/* The app's share of core 1 (`app_cpu_limit`, DEBUG -> SWITCHES -> CPU LIMIT).
+ * APT accepts a new limit at any time, so the switch applies at once. */
+void Platform3DS_ApplyCpuLimit(void) {
+    extern int Port_Config_AppCpuLimit(void);
+    const int limitCap = Port_Config_AppCpuLimit();
+    static const u32 core1Candidates[] = { 80, 70, 50, 30 };
+    for (size_t i = 0; i < sizeof(core1Candidates) / sizeof(core1Candidates[0]); ++i) {
+        if (limitCap > 0 && core1Candidates[i] > (u32)limitCap) continue;
+        if (R_FAILED(APT_SetAppCpuTimeLimit(core1Candidates[i]))) continue;
+        u32 actual = 0;
+        if (R_SUCCEEDED(APT_GetAppCpuTimeLimit(&actual)) && actual > 0) {
+            sCore1Available = true;
+            sCore1TimeLimit = actual;
+            break;
+        }
+    }
+}
 unsigned Platform3DS_Core1TimeLimit(void) { return sCore1TimeLimit; }
 bool Platform3DS_TurboHeld(void) { return sIsNew3DS && sCStickHeld; }
 unsigned Platform3DS_TurboMultiplier(void) { return sTurboMultiplier; }
@@ -641,8 +647,24 @@ static bool EnsureBottomWorker(void) {
     return sBottomWorkerThread != NULL;
 }
 
+/* DEBUG -> SWITCHES -> BOTTOM CORE: the painter thread is recreated on the
+ * other core before its next paint. Only between paints: a thread stopped
+ * mid-paint would leave its done event to a fresh LightEvent_Init. */
+static volatile bool sBottomWorkerRestart;
+
+void Platform3DS_RestartBottomWorker(void) {
+    sBottomWorkerRestart = true;
+}
+
 bool Platform3DS_SubmitBottomWorker(void) {
-    if (sBottomWorkerBusy || !EnsureBottomWorker()) return false;
+    if (sBottomWorkerBusy) return false;
+    if (sBottomWorkerRestart) {
+        sBottomWorkerRestart = false;
+        Platform3DS_ShutdownBottomWorker();
+        sBottomWorkerAttempts = 0;
+        sBottomWorkerRetryIn = 0;
+    }
+    if (!EnsureBottomWorker()) return false;
     __atomic_thread_fence(__ATOMIC_RELEASE);
     sBottomWorkerBusy = true;
     LightEvent_Signal(&sBottomWorkerStart);

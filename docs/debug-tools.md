@@ -49,26 +49,25 @@ says what happened (file number, rows written).
 ### SWITCHES
 
 The performance knobs that upstream left in `tmc3ds.ini` only, on the console.
-Each tap cycles the value and saves it (white: the default, blue: changed). LIVE
-ones are read every frame and take effect at once; AT NEXT BOOT ones are read
-when the game starts and show yellow until it is restarted.
+Each tap cycles the value, applies it at once and saves it (white: the default,
+blue: changed). None needs a restart.
 
 | Switch | Key | Values | What |
 |---|---|---|---|
-| RENDERER | `gpu_renderer` | GPU / CPU | the PICA200 tile renderer or the software PPU. The GPU renderer only exists on Old 3DS; a New 3DS shows `CPU (N3DS)` |
+| RENDERER | `gpu_renderer` | GPU / CPU (TEST) | the GPU renderer (both models) or the software PPU, only to compare against |
 | FRAME SYNC | `gpu_frame_sync` | ON / OFF | wait for the previous GPU frame before rewriting its buffers (off by default: it coincided with a black screen) |
 | VBLANK LOCK | `vblank_phase_lock` | ON / OFF | lock the presentation to the next vblank instead of a pending one |
 | STATIC QUAD | `gpu_static_quad` | ON / OFF | reuse the presenter's quad |
 | MAP SKIP | `bottom_map_skip` | ON / OFF | skip MAP-tab repaints that would draw the same picture |
 | FRAME LOG | `frame_log` | ON / OFF | upstream's per-line `tmc3ds.log` (opens and closes the file per line: slow, it causes stalls) |
-| BOTTOM CORE | `bottom_core` | AUTO / CORE 1 | where the bottom-screen painter runs |
-| AUDIO CORE | `audio_core` | AUTO / CORE 0 / CORE 1 | where the audio worker runs |
-| COMPACT UP | `compact_upload` | ON / OFF | smaller upload surfaces on Old 3DS |
-| BOTTOM 565 | `bottom_rgb565` | ON / OFF | bottom screen in RGB565 |
-| CPU LIMIT | `app_cpu_limit` | AUTO / 80 / 70 / 50 / 30 % | the app's share of core 1 (the rest goes to GSP and the sysmodules) |
+| BOTTOM CORE | `bottom_core` | CORE 0 / CORE 1 | where the bottom-screen painter runs; its thread is recreated before the next paint |
+| AUDIO CORE | `audio_core` | AUTO / CORE 0 / CORE 1 | where the audio refill thread runs; it is recreated at once (the queued buffers cover the gap) |
+| COMPACT UP | `compact_upload` | ON / OFF | smaller upload surfaces, Old 3DS only; taken at the start of the next frame |
+| CPU LIMIT | `app_cpu_limit` | AUTO / 80 / 70 / 50 / 30 % | the app's share of core 1 (the rest goes to GSP and the sysmodules); the cell shows the share granted |
 
-Upstream's comments on each are in `platform/3ds/source/port_config_3ds.c`. Every
-change is also written to the SD log when it runs.
+`bottom_rgb565` is not offered: upstream's own note says it turns the bottom
+screen red. Upstream's comments on each are in `platform/3ds/source/port_config_3ds.c`.
+Every change is also written to the SD log when it runs.
 
 ## SD log
 

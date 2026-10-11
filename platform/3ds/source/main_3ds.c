@@ -17,7 +17,6 @@
 #include <unistd.h>
 
 #include "app_paths_3ds.h"
-#include "debug_switches_3ds.h"
 #include "tmc3ds_build_config.h"
 #if TMC3DS_DEBUG_TOOLS
 #include "debug_log_3ds.h"
@@ -132,7 +131,6 @@ int main(int argc, char** argv) {
 
     printf("Loading ROM and tables...\n");
     Port_Config_Load("tmc3ds.ini");
-    DebugSwitch_Init(); /* what the at-boot performance switches started with */
 #if TMC3DS_DEBUG_TOOLS
     DebugLog_Start(); /* debug builds log from boot; the DEBUG tab stops it */
 #endif

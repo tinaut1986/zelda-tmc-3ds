@@ -201,6 +201,15 @@ below and the decisions log.
   model vs GPU build/submit vs present vs bottom screen vs audio, and how often the
   software fallback runs.
 - [ ] **P3.2** New 3DS at a locked 60 in every P0.2 spot, Wide + Pixel Perfect.
+- [ ] **P3.4** Everything through the GPU.
+  *Spec:* owner's rule (2026-10-11): every frame is drawn by the GPU renderer on both models;
+  the software PPU stays only as a comparison (DEBUG -> SWITCHES -> RENDERER, GPU CHECK). Done
+  so far: the renderer runs on the New 3DS too (upstream kept it to the Old 3DS). Left: the
+  frames that still fall back to software, each to be taught to the GPU renderer: the New 3DS
+  Full View layouts (400x240 outdoors, 200x120 at 2x indoors), command-budget overflows,
+  build failures (`PpuGpu3DSBuildReason`). The perf recorder's `gpu` column and the SD log's
+  `fallback` count show how many are left.
+  *Done when:* a long session on each model records `gpu` = 1 on every gameplay frame.
 - [ ] **P3.3** Old 3DS/2DS at 60 (or a stable 30 with no hitches where 60 is out of
   reach, decided with the owner) in every P0.2 spot.
 
@@ -242,6 +251,13 @@ Empty until P1.4 exists.
 - **2026-10-11** The repository stays public for now: GitHub does not let a fork of a public
   repository be made private, and a private repository would break the console's updater and
   the release QR codes (both download anonymously). Asked the owner before doing anything.
+- **2026-10-11** The GPU renderer on both models (owner: "everything, always, through the GPU;
+  if it takes more work, it takes more work"). Upstream's New 3DS drew in software on several
+  cores. Full View frames still use the software PPU until P3.4 teaches the GPU renderer them.
+- **2026-10-11** Every DEBUG switch applies during play (owner asked why any needed a restart):
+  CPU limit through APT at once, the bottom painter and audio threads recreated on the other
+  core, the compact upload layout swapped at a frame start (the surfaces are now allocated at
+  full size). `bottom_rgb565` dropped from the page: upstream documents it as broken.
 - **2026-10-11** OPTIONS -> FRAMES (owner's request, as in the Metroid ports): AUTO, LOCK 30,
   NO SKIP (`frame_pacing`). AUTO uses upstream's Old 3DS adaptive pacer **on the New 3DS too**,
   which upstream never did (it always drew every frame there): to be judged on the console; NO

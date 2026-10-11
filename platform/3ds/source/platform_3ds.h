@@ -80,6 +80,9 @@ bool Platform3DS_BatteryStatus(uint8_t* level, uint8_t* charging);
 /* Wi-Fi bars, 0-3. */
 int Platform3DS_WifiStrength(void);
 uint64_t Platform3DS_LogicFrameCount(void);
+/* Live performance switches (DEBUG -> SWITCHES). */
+void Platform3DS_ApplyCpuLimit(void);
+void Platform3DS_RestartBottomWorker(void);
 uint64_t Platform3DS_EngineWorkLastTicks(void);
 uint64_t Platform3DS_VblankWaitLastTicks(void);
 void Platform3DS_ShowSplash(void);
