@@ -48,12 +48,9 @@ v2.2-E1: nothing stable published.
 request; their remote branches are deleted. Issue #2 and the Full View interiors / Old 3DS checks
 listed in the rows are still open.
 
-**On the owner's console now:** a debug build of the previous `fix/relaunch-hang` commit
-(GPU teardown skipped on relaunch), which is the bad one of issue #2: a relaunch from it can
-freeze the new build. Next step, waiting for the owner's choice: install the current tip either
-over FTP (`./build_3ds.sh --install 192.168.1.133`, accepting one more possible freeze and a
-power cycle) or with FBI (CIA dropped in `/cias/`, game closed from HOME). Then check that
-relaunches, HOME and closing the lid no longer freeze (issue #2). Save states 1 (Link's house,
+**On the owner's console now:** a debug build of `release/v0.1.1` with the relaunch jumping
+first (issue #2); six FTP installs in a row from it relaunched without a freeze. HOME, the lid
+and closing the game from HOME have not been checked on it yet. Save states 1 (Link's house,
 22/10), 2 and 3 (Hyrule Field 03/01) are on the console for the loop in CLAUDE.md.
 
 **Next after that:** the Old 3DS/2DS at 60 with Wide + Pixel Perfect (P3.3, P4.1): the Full View
@@ -393,3 +390,9 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   everywhere in the game). `Port3DSFullViewPolicy_Decide` no longer returns
   `INTERIOR_2X`; indoors fall back to the 1x Wide path (reason `interior-1x`). The enum, the
   200x120 renderer and its presenter geometry stay in the code, unused.
+- **2026-10-11** Relaunch after `SITE INSTALL` requests the jump with the GPU alive and closes
+  through the normal exit path (drain hook, teardown on a thread with a timeout), as `../sm-3ds`.
+  Tearing citro3d down *before* `APT_DoApplicationJump` (`fe7780a`) hung one relaunch in two on
+  the console (logs ended at "relaunch: gpu down, jumping"); after the change, six installs in a
+  row from the new build went through. The first install onto the new code still goes through
+  the old exit path and can hang once.
