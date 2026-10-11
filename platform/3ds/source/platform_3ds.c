@@ -986,10 +986,12 @@ static bool SaveCapturedFramebufferBmp(const char* path, const GSPGPU_CaptureInf
     const uint8_t* framebuffer = (const uint8_t*)capture->framebuf0_vaddr;
     GSPGPU_InvalidateDataCache(framebuffer, capture->framebuf_widthbytesize * (u32)width);
 
-    FILE* file = fopen(path, "wb");
-    if (!file) return false;
     const int rowSize = (width * 3 + 3) & ~3;
     const uint32_t fileSize = 54u + (uint32_t)rowSize * (uint32_t)height;
+    /* Built in RAM and written with one fwrite: row by row, the SD card took
+     * about 5 s for the two screens, with the game frozen meanwhile. */
+    uint8_t* image = calloc(1, fileSize);
+    if (!image) return false;
     const uint8_t header[54] = {
         'B', 'M',
         (uint8_t)fileSize, (uint8_t)(fileSize >> 8), (uint8_t)(fileSize >> 16), (uint8_t)(fileSize >> 24),
@@ -998,10 +1000,9 @@ static bool SaveCapturedFramebufferBmp(const char* path, const GSPGPU_CaptureInf
         (uint8_t)height, (uint8_t)(height >> 8), (uint8_t)(height >> 16), (uint8_t)(height >> 24),
         1, 0, 24, 0,
     };
-    bool ok = fwrite(header, 1, sizeof(header), file) == sizeof(header);
-    uint8_t row[400 * 3];
-    for (int y = height - 1; ok && y >= 0; --y) {
-        memset(row, 0, (size_t)rowSize);
+    memcpy(image, header, sizeof(header));
+    for (int y = height - 1; y >= 0; --y) {
+        uint8_t* row = image + 54 + (size_t)(height - 1 - y) * (size_t)rowSize;
         for (int x = 0; x < width; ++x) {
             const uint8_t* pixel = framebuffer + (size_t)x * capture->framebuf_widthbytesize +
                                    (size_t)(height - 1 - y) * bytesPerPixel;
@@ -1011,9 +1012,11 @@ static bool SaveCapturedFramebufferBmp(const char* path, const GSPGPU_CaptureInf
             row[x * 3 + 1] = green;
             row[x * 3 + 2] = red;
         }
-        ok = fwrite(row, 1, (size_t)rowSize, file) == (size_t)rowSize;
     }
-    if (fclose(file) != 0) ok = false;
+    FILE* file = fopen(path, "wb");
+    bool ok = file && fwrite(image, 1, fileSize, file) == fileSize;
+    if (file && fclose(file) != 0) ok = false;
+    free(image);
     return ok;
 }
 
