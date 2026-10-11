@@ -75,6 +75,15 @@ _Static_assert(SHARP_BILINEAR_TEXTURE_HEIGHT >= 160 * 2 + 1,
 extern u32 __ctru_linear_heap;
 extern u32 __ctru_linear_heap_size;
 extern bool Port_Config_GetShowFps(void);
+extern void Port_FadedBlackRGB(uint8_t* r, uint8_t* g, uint8_t* b); /* src/fade.c */
+
+/* What the bars beside a narrow view are filled with: black, or the fade's
+ * colour while the game fades (a door's white fade takes the whole screen). */
+static u32 TopClearColor(void) {
+    uint8_t r, g, b;
+    Port_FadedBlackRGB(&r, &g, &b);
+    return C2D_Color32(r, g, b, 255);
+}
 extern int Port_Config_Get3DSAspectRatio(void);
 extern int Port_Config_Get3DSDisplayStyle(void);
 extern bool Port_Config_3DSFullViewComboEnabled(void);
@@ -414,7 +423,7 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
                  .w = (float)plan.drawWidth, .h = (float)plan.drawHeight },
         .center = { 0.0f, 0.0f }, .depth = 0.0f, .angle = 0.0f,
     };
-    C2D_TargetClear(sTopTarget, C2D_Color32(0, 0, 0, 255));
+    C2D_TargetClear(sTopTarget, TopClearColor());
     const unsigned intermediateScale = (unsigned)plan.sharpBilinearScale;
     const bool validSharpBilinearScale = intermediateScale == 2u;
     const unsigned intermediateWidth = validSharpBilinearScale
@@ -670,7 +679,7 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
     /* Keep the clear as the render-to-texture submission boundary between
      * the PICA200 PPU target and its physical-screen sampling pass. */
     if (sTopClearFrames != 0) --sTopClearFrames;
-    C2D_TargetClear(sTopTarget, C2D_Color32(0, 0, 0, 255));
+    C2D_TargetClear(sTopTarget, TopClearColor());
     const unsigned intermediateScale = (unsigned)plan.sharpBilinearScale;
     const unsigned intermediateWidth =
         intermediateScale == 2u ? (unsigned)presentation->sourceWidth * 2u : 0u;

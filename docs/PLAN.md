@@ -438,3 +438,7 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   recorder (`SITE REC`, docs/debug-tools.md). The hold starts at the room change of a door (a
   fade within the last 90 ticks, not a border scroll), not when the fade-in starts, so the white
   box keeps the interior's width until the 400x240 frame is ready: one change instead of two.
+- **2026-10-12** The bars beside a narrow view take the fade's colour (`Port_FadedBlackRGB` in
+  `src/fade.c`, used for the presenter's clear): a door's white fade now covers the whole
+  400x240, so leaving a house is white all over and the field comes out of it at full width.
+  Checked with the frame recorder. Black fades are unchanged.
