@@ -8,6 +8,12 @@
  * CWD CDUP PASV EPSV LIST NLST MLSD RETR STOR APPE DELE MKD RMD RNFR RNTO SIZE
  * MDTM NOOP QUIT OPTS. Enough for FileZilla, WinSCP, curl and lftp.
  *
+ * SITE INSTALL <path>: installs that CIA (it must be this game's title ID)
+ * over the running game and relaunches into the new build. With curl:
+ *   curl -T game.cia "ftp://IP:5000/3ds/Minish%20Cap%203DS/update/dev.cia" \
+ *        -Q "-SITE INSTALL /3ds/Minish Cap 3DS/update/dev.cia"   (the "-": after the upload)
+ * (./build_3ds.sh --install does both).
+ *
  * Its thread runs at a lower priority than the game and blocks on the
  * network, so it costs nothing while idle. */
 #include <stdbool.h>

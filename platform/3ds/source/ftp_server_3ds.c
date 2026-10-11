@@ -1,5 +1,6 @@
 #include "ftp_server_3ds.h"
 
+#include "cia_install_3ds.h"
 #include "debug_log_3ds.h"
 #include "net_3ds.h"
 #include "platform_3ds.h"
@@ -397,6 +398,26 @@ static void HandleSession(int ctrl) {
             RealPath(vpath, rpath, sizeof(rpath));
             Reply(s, s->rnfr[0] && rename(from, rpath) == 0 ? "250 Renamed." : "550 Rename failed.");
             s->rnfr[0] = 0;
+        } else if (!strcmp(line, "SITE")) {
+            /* SITE INSTALL <path>: install a CIA of this game from the SD card
+             * and relaunch into it (./build_3ds.sh --install does this). */
+            char* sub = arg;
+            char* path = strchr(sub, ' ');
+            if (path) *path++ = 0;
+            for (char* c = sub; *c; c++)
+                if (*c >= 'a' && *c <= 'z') *c = (char)(*c - 32);
+            if (!strcmp(sub, "INSTALL") && path && *path) {
+                ResolvePath(s, path, vpath, sizeof(vpath));
+                char error[96];
+                if (CiaInstall_File(vpath, error, sizeof(error))) {
+                    Reply(s, "200 Installed %s; relaunching the game.", vpath);
+                    Platform3DS_RequestRelaunch();
+                } else {
+                    Reply(s, "550 Install failed: %s", error);
+                }
+            } else {
+                Reply(s, "501 SITE INSTALL <path to a .cia of this game>");
+            }
         } else if (!strcmp(line, "QUIT")) {
             Reply(s, "221 Bye.");
             break;

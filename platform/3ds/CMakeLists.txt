@@ -151,6 +151,7 @@ add_executable(tmc-3ds
     source/debug_perf_3ds.c
     source/net_3ds.c
     source/ftp_server_3ds.c
+    source/cia_install_3ds.c
     source/port_second_screen_sync_3ds.c
     source/port_ppu_3ds.c
     source/port_ppu_gpu_3ds_model.c

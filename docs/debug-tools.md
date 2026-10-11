@@ -91,6 +91,12 @@ curl -O ftp://<3ds-ip>:5000/3ds/Minish%20Cap%203DS/debug/tmc-perf-0001.csv   # f
 wget -r -nH --cut-dirs=3 ftp://<3ds-ip>:5000/3ds/Minish%20Cap%203DS/debug/   # the whole folder
 ```
 
+`SITE INSTALL <path>` installs a CIA of this game that is already on the SD card
+over the running game and relaunches into the new build (the FTP server is then off
+again). `./build_3ds.sh --install IP` builds, uploads to
+`/3ds/Minish Cap 3DS/update/dev.cia` and installs in one go; the interactive menu
+offers it as "Install into the running game". Any unsaved progress is lost.
+
 Its thread runs on core 1 below the game's priority and sleeps on the network,
 so it costs nothing while idle; a transfer competes with the game for the SD
 card. It shares the network service with the updater (`net_3ds.c`), so both

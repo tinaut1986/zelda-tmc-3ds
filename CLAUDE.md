@@ -207,6 +207,33 @@ the CIA as `cias/tmc-3ds-<version>.cia`; the last IP is kept in `.3ds_ftp_ip`
 (`docs/debug-tools.md`); a plain build leaves them out. CI passes 1 for Beta builds
 and 0 for Release ones.
 
+## The console in the loop (for Claude)
+
+A debug build running on the owner's console can be reached from this machine
+(same LAN, 192.168.1.x) once the owner turns on **DEBUG -> FTP SERVER**; the cell
+shows the console's IP. Nothing needs FBI or closing the game:
+
+```sh
+IP=$(cat .3ds_ftp_ip)                       # the last console IP the build assistant used
+./build_3ds.sh --install "$IP"              # build, upload, install over the running game, relaunch
+curl "ftp://$IP:5000/3ds/Minish%20Cap%203DS/debug/"                         # list the debug files
+curl -O "ftp://$IP:5000/3ds/Minish%20Cap%203DS/debug/tmc-perf-0001.csv"     # fetch one
+wget -q -r -nH --cut-dirs=3 -P /tmp/tmc-debug "ftp://$IP:5000/3ds/Minish%20Cap%203DS/debug/"
+tools/perf-csv/analyze.py /tmp/tmc-debug/debug/tmc-perf-0001.csv
+```
+
+- `--install` uploads to `/3ds/Minish Cap 3DS/update/dev.cia` and sends `SITE INSTALL`
+  after the transfer (`curl -Q "-SITE INSTALL <path>"`; the leading `-` means "after").
+  The game refuses a CIA with another title ID, installs over itself
+  (`cia_install_3ds.c`), replies `200` and jumps into the new build
+  (`Platform3DS_RequestRelaunch`). The relaunched game has the FTP server **off**
+  again; ask the owner to turn it on before the next install or fetch.
+- Any unsaved progress is lost on relaunch: say so before installing while the owner plays.
+- If the IP is unknown or the connection is refused, ask the owner for the address the
+  FTP SERVER cell shows; do not scan the network without need.
+- The protocol and the server are documented in `docs/debug-tools.md` ("FTP server") and
+  `platform/3ds/source/ftp_server_3ds.h`.
+
 Host tests: `platform/3ds/tests/*_test.c` are plain C programs (see each file's
 header for its sources); the updater's are run by
 `platform/3ds/tests/run-update-tests.py`. Test on hardware whenever performance is

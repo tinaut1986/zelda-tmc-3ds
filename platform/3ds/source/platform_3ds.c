@@ -6,6 +6,7 @@
 #include "port_second_screen_3ds.h"
 #include "port_second_screen_sync_3ds.h"
 #include "frame_pacing_3ds.h"
+#include "app_paths_3ds.h"
 
 #include <3ds.h>
 #include <stdbool.h>
@@ -490,7 +491,32 @@ static uint64_t sAptMaxTicks;
 static uint64_t sAudioPumpTicks;
 static uint64_t sAudioPumpMaxTicks;
 
+/* SITE INSTALL (ftp_server_3ds.c) installed a new build of this title: jump
+ * into it from the main thread, then let the game close as on HOME -> close. */
+static volatile bool sRelaunchRequested;
+
+void Platform3DS_RequestRelaunch(void) {
+    sRelaunchRequested = true;
+}
+
+static void RelaunchSelf(void) {
+    extern void DebugLog_Printf(const char* fmt, ...);
+    extern void DebugLog_Stop(void);
+    DebugLog_Printf("relaunching into the build just installed");
+    DebugLog_Stop();
+    u8 param[0x300] = { 0 };
+    u8 hmac[0x20] = { 0 };
+    if (R_SUCCEEDED(APT_PrepareToDoApplicationJump(0, TMC3DS_TITLE_ID, MEDIATYPE_SD)))
+        APT_DoApplicationJump(param, sizeof(param), hmac);
+}
+
 static bool PumpLifecycleAndAudio(void) {
+    if (sRelaunchRequested) {
+        sRelaunchRequested = false;
+        RelaunchSelf();
+        sRunning = false;
+        return false;
+    }
     ++sAptChecks;
     const uint64_t aptStart = svcGetSystemTick();
     const bool alive = sRunning && !Updater_ShouldClose() && aptMainLoop();
