@@ -30,8 +30,8 @@ v2.2-E1: nothing stable published.
 
 | Branch | What | State |
 |---|---|---|
-| `chore/no-3dsx-release` (local, cut from `release/v0.1.1`) | releases publish the CIA only | ready; not merged, not pushed |
-| `feat/ingame-ftp` (local, cut from `chore/no-3dsx-release`) | P1.9 FTP server in the DEBUG tab, `SITE INSTALL` + relaunch, `./build_3ds.sh --install`, CLAUDE.md "The console in the loop", PLAN P1.10 spec | checked on the PC with curl; not merged, not pushed |
+| `chore/no-3dsx-release` (cut from `release/v0.1.1`) | releases publish the CIA only | ready; not merged |
+| `feat/ingame-ftp` (cut from `chore/no-3dsx-release`) | P1.9 FTP server in the DEBUG tab, `SITE INSTALL` + relaunch, `./build_3ds.sh --install`, CLAUDE.md "The console in the loop", PLAN P1.10 spec | checked on the PC with curl; not merged |
 
 **On the owner's console now (2026-10-11):** a debug build of `feat/ingame-ftp`
 (`0.1.1-dev.13.4+6528614`), sent with ftpd and installed with FBI: the first time any of this
