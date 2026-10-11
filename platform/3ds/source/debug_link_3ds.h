@@ -6,6 +6,8 @@
  *   SITE KEYS <A+B+LEFT|NONE> [frames]   hold 3DS buttons for N logic frames (default 1)
  *   SITE TOUCH <x> <y>                    tap the bottom screen
  *   SITE SHOT                             write debug/shot-top.bmp and debug/shot-bottom.bmp
+ *   SITE REC                              record the top screen around the next room change
+ *                                         (200x120, 24 frames before, 36 after: debug/frames.bin)
  *   SITE SAVESTATE [n]                    a new save state, or over number n (save_state_3ds.h)
  *   SITE LOADSTATE [n]                    load save state n (1 = newest, the default)
  *   SITE DELSTATE <n>                     delete save state n

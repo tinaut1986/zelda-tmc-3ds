@@ -1147,7 +1147,8 @@ static volatile int sWsExperimentalMode = PORT_3DS_FULL_VIEW_FALLBACK;
 static u32 sWsExperimentalCameraRoomKey = 0xffffffffu;
 static int sWsExperimentalCameraSnapArmed = 1;
 static u32 sWsGameplayRoomKey = 0xffffffffu;
-static int sWsRoomLoadTicks; /* UpdateShadows ticks since the room key changed, counting down */
+static int sWsRoomLoadTicks; /* UpdateShadows ticks since a door changed the room key, counting down */
+static int sWsFadeRecent;    /* ticks left since a fade was last on: a door, not a border scroll */
 static Port3DSFullViewMode sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
 static u32 sWsProducerPendingRoomKey = 0xffffffffu;
 static Port3DSFullViewMode sWsProducerPendingMode = PORT_3DS_FULL_VIEW_FALLBACK;
@@ -1442,7 +1443,7 @@ Port3DSFullViewMode Port_Widescreen_3DSViewMode(void) {
 
 int Port_Widescreen_3DSHoldTop(void) {
 #ifdef TMC_3DS
-    if (sWsRoomLoadTicks <= 0 || gFadeControl.active == 0 || gMain.task != TASK_GAME) return 0;
+    if (sWsRoomLoadTicks <= 0 || gMain.task != TASK_GAME) return 0;
     if (!Port_Config_3DSFullViewComboEnabled() || Port_WidescreenFixedCanvasSubtask()) return 0;
     if (gRoomControls.area > AREA_98 ||
         !Port3DSFullViewPolicy_AreaIsExterior(gRoomControls.area, gRoomControls.room,
@@ -1920,8 +1921,10 @@ void Port_Widescreen_UpdateShadows(void) {
         sWsExperimentalCameraSnapArmed = 1;
     }
     if (sWsRoomLoadTicks > 0) --sWsRoomLoadTicks;
+    if (gFadeControl.active != 0) sWsFadeRecent = 90;
+    else if (sWsFadeRecent > 0) --sWsFadeRecent;
     if (sWsGameplayRoomKey != roomKey) {
-        sWsRoomLoadTicks = 16;
+        sWsRoomLoadTicks = sWsFadeRecent > 0 ? 16 : 0;
         sWsGameplayRoomKey = roomKey;
         sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
         sWsProducerPendingRoomKey = 0xffffffffu;

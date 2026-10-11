@@ -38,6 +38,7 @@ typedef enum LinkOp {
     LINK_OP_DUMP,
     LINK_OP_SWITCH,
     LINK_OP_POKE,
+    LINK_OP_REC,
 } LinkOp;
 
 /* One request at a time: the FTP server serves one client and one command. */
@@ -242,6 +243,10 @@ bool DebugLink_Command(const char* verb, const char* args, char* reply, unsigned
         RunOnMainThread(LINK_OP_SHOT, reply, cap);
         return true;
     }
+    if (!strcmp(verb, "REC")) {
+        RunOnMainThread(LINK_OP_REC, reply, cap);
+        return true;
+    }
     if (!strcmp(verb, "LOADDUMP")) {
         RunOnMainThread(LINK_OP_LOADSTATE, reply, cap);
         return true;
@@ -353,6 +358,11 @@ static void RunRequest(LinkOp op) {
                                                              DEBUG_FILES_DIR "/shot-bottom.bmp");
             snprintf(sResult, sizeof(sResult), ok ? "200 debug/shot-top.bmp debug/shot-bottom.bmp"
                                                   : "550 Could not write the screenshots.");
+            break;
+        }
+        case LINK_OP_REC: {
+            extern bool Port_PPU_3DS_ArmFrameRecorder(char* reply, unsigned cap);
+            Port_PPU_3DS_ArmFrameRecorder(sResult, sizeof(sResult));
             break;
         }
         case LINK_OP_LOADSTATE: {

@@ -1017,6 +1017,76 @@ static void ApplyUploadLayoutSwitch(void) {
     applied = wanted;
 }
 
+#if TMC3DS_DEBUG_TOOLS
+/* Frame recorder (SITE REC, docs/debug-tools.md): the top screen as shown, at
+ * 200x120, for the frames around the next room change, so a glitch that lasts
+ * a few frames can be looked at. Armed it keeps the last REC_PRE frames; at
+ * the room change it records REC_POST more and writes debug/frames.bin. */
+extern bool Platform3DS_CaptureTopThumbnail(uint16_t* pixels, int width, int height);
+
+enum { REC_W = 200, REC_H = 120, REC_PRE = 24, REC_POST = 36, REC_FRAMES = REC_PRE + REC_POST };
+
+typedef struct RecFrame {
+    uint16_t viewW, viewH;
+    uint8_t hold, mode, gfx, pad;
+    uint32_t frame;
+    uint16_t px[REC_W * REC_H];
+} RecFrame;
+
+static RecFrame* sRec;
+static int sRecState; /* 0 off, 1 armed (ring), 2 recording after the change */
+static int sRecHead, sRecCount, sRecPost;
+static uint32_t sRecRoom;
+
+bool Port_PPU_3DS_ArmFrameRecorder(char* reply, unsigned cap) {
+    if (!sRec) sRec = malloc(sizeof(RecFrame) * REC_FRAMES);
+    if (!sRec) {
+        snprintf(reply, cap, "550 No memory for %u frames.", (unsigned)REC_FRAMES);
+        return false;
+    }
+    sRecState = 1;
+    sRecHead = sRecCount = sRecPost = 0;
+    sRecRoom = ((uint32_t)gRoomControls.area << 8) | gRoomControls.room;
+    snprintf(reply, cap, "200 Recording around the next room change (debug/frames.bin).");
+    return true;
+}
+
+static void RecWrite(void) {
+    mkdir("debug", 0777);
+    FILE* f = fopen("debug/frames.tmp", "wb");
+    if (!f) return;
+    const uint32_t head[4] = { 0x31524D46u /* FMR1 */, (uint32_t)sRecCount, REC_W, REC_H };
+    fwrite(head, sizeof(head), 1, f);
+    const int first = sRecCount < REC_FRAMES ? 0 : sRecHead;
+    for (int i = 0; i < sRecCount; ++i) fwrite(&sRec[(first + i) % REC_FRAMES], sizeof(RecFrame), 1, f);
+    fclose(f);
+    remove("debug/frames.bin");
+    rename("debug/frames.tmp", "debug/frames.bin");
+}
+
+static void RecTick(int viewW, int viewH, bool hold, int mode) {
+    if (sRecState == 0 || !sRec) return;
+    RecFrame* slot = &sRec[sRecHead];
+    slot->viewW = (uint16_t)viewW;
+    slot->viewH = (uint16_t)viewH;
+    slot->hold = hold;
+    slot->mode = (uint8_t)mode;
+    slot->gfx = 0;
+    slot->frame = (uint32_t)sFrameNumber;
+    if (!Platform3DS_CaptureTopThumbnail(slot->px, REC_W, REC_H)) memset(slot->px, 0, sizeof(slot->px));
+    sRecHead = (sRecHead + 1) % REC_FRAMES;
+    if (sRecCount < REC_FRAMES) ++sRecCount;
+    const uint32_t room = ((uint32_t)gRoomControls.area << 8) | gRoomControls.room;
+    if (sRecState == 1 && room != sRecRoom) {
+        sRecState = 2;
+        sRecPost = REC_POST;
+    } else if (sRecState == 2 && --sRecPost <= 0) {
+        RecWrite();
+        sRecState = 0;
+    }
+}
+#endif
+
 void Port_PPU_PresentFrame(void) {
     if (!sInitialized)
         return;
@@ -1254,6 +1324,9 @@ void Port_PPU_PresentFrame(void) {
             PortPpuGpu3DS_DeferParityCheck();
         }
     }
+#if TMC3DS_DEBUG_TOOLS
+    RecTick(topFrame.width, topFrame.height, holdTop, (int)topFrame.mode);
+#endif
     /* A screen that stays black means neither render path drew anything, and
      * the counters that say why are otherwise only visible in a quick dump --
      * which is hard to take when the screen is blank. Report the first frames
