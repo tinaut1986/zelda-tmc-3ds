@@ -43,15 +43,17 @@ v2.2-E1: nothing stable published.
 | `perf/full-view-gpu` (cut from `perf/wide-bg-tile-runs`) | P3.4 first part: Full View (Wide + Pixel Perfect) drawn by the GPU renderer: whole-view shadow, OBJ Y wrap as mode1.c, presenter takes the Full View geometry | on the console by Claude, Hyrule Field 03/01: Full View 400x240 33.8 -> **59.8 fps** (bg 6.2 ms, vblank margin 9.6 ms; the per-frame tile memo and the per-tile Wide emitter), Wide + Bilinear bg 4.2 ms; GPU CHECK 0 structural pixels everywhere tried. Interiors (200x120 at 2x), BG3 native bounds and the Old 3DS not checked yet |
 | `fix/relaunch-hang` (cut from `perf/full-view-gpu`) | issue #2: no GPU teardown while relaunching, exit steps logged | relaunches checked; the hang itself not reproduced |
 
-**Where work stands (2026-10-11):** all the branches in the table above were merged into
-`release/v0.1.1` in one `--no-ff` merge of `fix/relaunch-hang` (the stack's tip) at the owner's
-request; their remote branches are deleted. Issue #2 and the Full View interiors / Old 3DS checks
-listed in the rows are still open.
+**Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` (not pushed).
+Checked on the console by Claude over the link: save states are build independent (P1.8b: a state
+loads after the game side gained a global and a function; both directions); leaving an interior
+into Hyrule Field now switches 266 -> 400 once (it flipped three times), the state thumbnails are
+upright, issues #1 and #2 are closed. Still to check by the owner: the STATES tab itself, and
+states of other scenes than Hyrule Field and Link's house (run `tools/state-census` on a state
+of each; a holder nobody listed crashes on load into a different build).
 
-**On the owner's console now:** a debug build of `release/v0.1.1` with the relaunch jumping
-first (issue #2); six FTP installs in a row from it relaunched without a freeze. HOME, the lid
-and closing the game from HOME have not been checked on it yet. Save states 1 (Link's house,
-22/10), 2 and 3 (Hyrule Field 03/01) are on the console for the loop in CLAUDE.md.
+**On the owner's console now:** a debug build of `release/v0.1.1`. Save states 1 (Link's house,
+22/10) and 2..4 (Hyrule Field) are format 2; the older ones show "other build" and cannot be
+loaded. Delete them from the STATES tab.
 
 **Next after that:** the Old 3DS/2DS at 60 with Wide + Pixel Perfect (P3.3, P4.1): the Full View
 build is ~6 ms on the New 3DS, ~18 ms expected at 268 MHz, so BG geometry has to be kept across
