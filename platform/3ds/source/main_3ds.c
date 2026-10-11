@@ -21,6 +21,7 @@
 #if TMC3DS_DEBUG_TOOLS
 #include "debug_log_3ds.h"
 #include "debug_perf_3ds.h"
+#include "ftp_server_3ds.h"
 #endif
 
 #define APP_DIR TMC3DS_APP_DIR
@@ -146,6 +147,7 @@ int main(int argc, char** argv) {
     Updater_Init(argc > 0 ? argv[0] : NULL);
     AgbMain();
 #if TMC3DS_DEBUG_TOOLS
+    if (FtpServer_Running()) FtpServer_Stop();
     if (DebugPerf_Running()) DebugPerf_Stop();
     DebugLog_Printf("exit: engine returned");
     DebugLog_Stop();

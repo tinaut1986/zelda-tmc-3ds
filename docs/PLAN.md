@@ -166,6 +166,12 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   *Spec:* teleport to any area/room (list by area name), refill hearts / max
   rupees / all items toggles, invincibility; a `CHT` mark on the top bar while on.
   *Done when:* any dungeon can be reached in seconds for a perf or bug check.
+- [ ] **P1.9** FTP server inside the game (owner's request, 2026-10-11).
+  *Spec:* DEBUG -> FTP SERVER: anonymous, passive, SD root as `/`, port 5000, while the
+  game runs; shares the socket service with the updater.
+  *Done when:* the debug folder is fetched from a PC while playing, and a file uploaded.
+  Status: protocol checked on the PC with curl (list, get, put, mkdir, delete, 5 MB both
+  ways); waiting for the console.
 - [ ] **P1.8** Save states.
   *Spec:* numbered states with thumbnail and place (like `../sm-3ds` STATES),
   available in every build; builds on `port_dump_state.c`.

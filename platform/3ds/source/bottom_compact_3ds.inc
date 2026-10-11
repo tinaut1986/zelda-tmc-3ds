@@ -485,6 +485,7 @@ static void Compact_PaintToast(const SSurf* s) {
 #include "debug_perf_3ds.h"
 #include "debug_switches_3ds.h"
 #include "port_ppu_gpu_3ds.h"
+#include "ftp_server_3ds.h"
 
 enum { DBG_PAGE_MAIN, DBG_PAGE_SWITCHES };
 static int sDebugPage;
@@ -498,6 +499,7 @@ enum {
     DBG_CMD_LOG_MARK,
     DBG_CMD_PERF_RUN,
     DBG_CMD_GPU_CHECK,
+    DBG_CMD_FTP_RUN,
     DBG_CMD_SWITCH0 = 32, /* + DEBUG_SW_* */
 };
 
@@ -600,6 +602,22 @@ static void Compact_PaintDebugMain(const SSurf* s, TargetList* tl, const SecondS
     PortPpuGpu3DSStats gpu;
     PortPpuGpu3DS_GetStats(&gpu);
     CColumn(s->w, 4, 0, 2, &x, &w);
+    int32_t gpuX = x, gpuW = w;
+    /* FTP: the SD card over the network while the game runs (ftp_server_3ds.h). */
+    {
+        unsigned sent = 0, received = 0;
+        bool connected = false;
+        FtpServer_Stats(&sent, &received, &connected);
+        char address[40];
+        FtpServer_Address(address, sizeof(address));
+        CColumn(s->w, 4, 2, 2, &x, &w);
+        CRunCell(s, tl, x, y, w, connected ? "FTP  CLIENT ON" : "FTP SERVER", address,
+                 FtpServer_Running() ? CC_GOOD : CC_DIM, FtpServer_Running(), DBG_CMD_FTP_RUN, 0);
+        (void)sent;
+        (void)received;
+    }
+    x = gpuX;
+    w = gpuW;
     uint32_t color = CC_ACCENT;
     if (!gpu.initialized) {
         snprintf(value, sizeof(value), "NO GPU RENDERER");
@@ -684,6 +702,20 @@ static void Compact_DebugCommand(int cmd) {
                 Compact_Toast("RECORDING");
             } else {
                 Compact_Toast("NO MEMORY");
+            }
+            break;
+        case DBG_CMD_FTP_RUN:
+            if (FtpServer_Running()) {
+                FtpServer_Stop();
+                Compact_Toast("FTP STOPPED");
+            } else if (FtpServer_Start()) {
+                char address[40];
+                FtpServer_Address(address, sizeof(address));
+                Compact_Toast("FTP %s", address);
+            } else {
+                char reason[40];
+                FtpServer_Address(reason, sizeof(reason));
+                Compact_Toast("FTP: %s", reason);
             }
             break;
         case DBG_CMD_GPU_CHECK:

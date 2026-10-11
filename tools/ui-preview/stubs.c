@@ -151,3 +151,8 @@ void DebugSwitch_Cycle(int id) { sSw[id] = sSw[id] == 1 ? (id == 6 || id == 7 ? 
 bool DebugSwitch_IsDefault(int id) { static const int d[10] = { 1, 0, 0, 0, 1, 0, -1, -1, 0, 0 }; return sSw[id] == d[id]; }
 void PortPpuGpu3DS_GetStats(PortPpuGpu3DSStats* st) { memset(st, 0, sizeof(*st)); st->initialized = true; st->parityChecks = 2; }
 void PortPpuGpu3DS_RequestParityCheck(void) {}
+bool FtpServer_Running(void) { return true; }
+void FtpServer_Address(char* out, unsigned cap) { snprintf(out, cap, "192.168.1.50:5000"); }
+void FtpServer_Stats(unsigned* a, unsigned* b, bool* c) { *a = 3; *b = 1; *c = false; }
+bool FtpServer_Start(void) { return true; }
+void FtpServer_Stop(void) {}

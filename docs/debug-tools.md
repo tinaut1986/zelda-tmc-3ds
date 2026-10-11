@@ -40,6 +40,7 @@ The bug icon in the tab bar (debug builds only).
 | MEM DUMP | writes a quick dump, as L+R+A does (below) |
 | LOAD STATE | loads the game state of the newest dump, after a confirmation |
 | SHOW FPS | the top-screen FPS box |
+| FTP SERVER | an FTP server inside the game (below): the side button starts or stops it, the cell shows the address to connect to |
 | GPU CHECK | upstream's parity check: the next frame is drawn by both renderers and compared; the cell shows the checks done and the pixels that differed. Differing frames are saved next to the last dump, and a difference the blender cannot explain turns the GPU renderer off for the session (`GPU OFF: FAILED`). Old 3DS only (the only model with the GPU renderer) |
 
 Cells for something that runs work as in mzm and sm-3ds: the button on their
@@ -68,6 +69,32 @@ blue: changed). None needs a restart.
 `bottom_rgb565` is not offered: upstream's own note says it turns the bottom
 screen red. Upstream's comments on each are in `platform/3ds/source/port_config_3ds.c`.
 Every change is also written to the SD log when it runs.
+
+## FTP server
+
+DEBUG -> FTP SERVER starts a small FTP server inside the game, so files can be
+fetched or dropped while it keeps running: no closing the game, no FBI or ftpd.
+The cell shows `IP:5000` (the same port as FBI and ftpd, so `./build_3ds.sh --ftp`
+and the usual client bookmarks work), a toast says it again, and the cell's title
+changes while a client is connected. It needs Wi-Fi; the cell says why when it
+cannot start (`NO WI-FI`, `PORT 5000 BUSY`).
+
+- Anonymous: any user name and password.
+- `/` is the root of the SD card; the game's files are in
+  `/3ds/Minish Cap 3DS/` (`debug/`, `dumps/`, saves, `tmc3ds.ini`).
+- Passive mode only (PASV and EPSV, data ports 5001-5064), one client at a time.
+  FileZilla, WinSCP, lftp and curl work:
+
+```sh
+curl ftp://<3ds-ip>:5000/3ds/Minish%20Cap%203DS/debug/                       # list
+curl -O ftp://<3ds-ip>:5000/3ds/Minish%20Cap%203DS/debug/tmc-perf-0001.csv   # fetch
+wget -r -nH --cut-dirs=3 ftp://<3ds-ip>:5000/3ds/Minish%20Cap%203DS/debug/   # the whole folder
+```
+
+Its thread runs on core 1 below the game's priority and sleeps on the network,
+so it costs nothing while idle; a transfer competes with the game for the SD
+card. It shares the network service with the updater (`net_3ds.c`), so both
+can run together. Transfers are written to the SD log.
 
 ## SD log
 

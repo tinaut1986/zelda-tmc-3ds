@@ -8,6 +8,7 @@ static int test_sd_close(FILE *file);
 #define write test_sd_write
 #define fclose test_sd_close
 #include "updater.c"
+#include "net_3ds.c"
 #undef write
 #undef fclose
 static unsigned sd_writes;
