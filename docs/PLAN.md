@@ -30,7 +30,8 @@ boxes below. History: `git log` and the decisions log.
 | `feat/debug-tools` (cut from `feat/compact-ui`) | OPTIONS -> FRAMES (AUTO / LOCK 30 / NO SKIP); P1.2 performance switches (SWITCHES page), P1.3 SD log, P1.4 perf recorder + `tools/perf-csv/analyze.py`, DEBUG tab main page with RECORD / TOOLS rows and toasts | waiting for the owner on the console: log written at boot, a mark, a perf recording fetched and analysed on the PC, each switch flipped (live ones visibly, at-boot ones after a restart) |
 
 **Priority** (owner's order, 2026-10-11): P0.1 → P1 debug tools and P2 bottom UI (so
-that P3 can be measured) → P0.2 baseline → P3 performance → P4 wide modes.
+that P3 can be measured) → P0.2 baseline → P3.4 Full View on the GPU, and Full View on the
+Old 3DS (P4.1) → the rest of P3 → P4.2.
 
 Tasks ticked [x] have been checked on the console by the owner; do not re-propose them.
 
@@ -231,7 +232,17 @@ below and the decisions log.
 
 ## Baseline measurements (P0.2)
 
-Empty until P1.4 exists.
+Owner's report on upstream v2.2-E1 (2026-10-11, by eye, before the P1 tools):
+
+| Console | Setting | What it showed | fps |
+|---|---|---|---|
+| New 3DS | Wide + Pixel Perfect (Full View) | 400x240 view, more world | ~30 |
+| Old 3DS | Wide + Pixel Perfect | the same picture as Original (Full View is New 3DS only in upstream's policy) | ~30 |
+
+Reference: `../mzm` runs wide + pixel perfect **with stereo 3D** at or near 60 on both models.
+Reading: on the New 3DS, Full View is drawn by the software PPU (2.5x the GBA's pixels), which
+P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besides drawing
+(pacing, bottom screen, GPU waits) to be found with the perf recorder.
 
 ## Decisions log
 
