@@ -36,7 +36,7 @@ v2.2-E1: nothing stable published.
 | `perf/gpu-build-profile` (cut from `feat/log-settings`) | SD log `build:` line (the GPU builder's phase timers); `docs/renderer-gpu-gap.md` | builds; to record in Hyrule Field |
 | `feat/debug-restore` (cut from `perf/gpu-build-profile`) | the SD log (on/off, mode) and the FTP server come back at launch as left; debug builds only | builds (debug and production); not checked on the console |
 | `feat/bottom-always` (cut from `feat/debug-restore`) | the whole bottom screen outside gameplay too (intro, title, file select): every tab, OPTIONS and DEBUG working, MAP/ITEMS/QUEST say they need a game | builds; not checked on the console |
-| `feat/remote-link` (cut from `feat/bottom-always`) | P1.10 first cut: SITE KEYS/TOUCH/SHOT/LOADSTATE/DUMP/SWITCH/STATE/PEEK/POKE over the FTP server, `tools/tmc-link/` | builds; client checked on the PC; not checked on the console |
+| `feat/remote-link` (cut from `feat/bottom-always`) | P1.10 first cut: SITE KEYS/TOUCH/SHOT/LOADSTATE/DUMP/SWITCH/STATE/PEEK/POKE over the FTP server, `tools/tmc-link/` | on the console (2026-10-11): the FTP server came back by itself after each install; STATE, SHOT (2 s) and KEYS work (START at the title reached file select, read back in `gInput`); SWITCH, TOUCH, LOADSTATE, POKE not tried yet |
 
 **On the owner's console now (2026-10-11):** a debug build of `feat/ingame-ftp`
 (`0.1.1-dev.13.4+6528614`), sent with ftpd and installed with FBI: the first time any of this
