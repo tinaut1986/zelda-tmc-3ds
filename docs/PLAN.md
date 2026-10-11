@@ -254,6 +254,9 @@ Empty until P1.4 exists.
 - **2026-10-11** The GPU renderer on both models (owner: "everything, always, through the GPU;
   if it takes more work, it takes more work"). Upstream's New 3DS drew in software on several
   cores. Full View frames still use the software PPU until P3.4 teaches the GPU renderer them.
+  Context from the owner: upstream's GPU path was built as a stopgap for Old 3DS complaints
+  about the software renderer, not as the intended design; here it is the main renderer, as
+  in `../mzm` and `../sm-3ds`, and the software PPU is only a reference.
 - **2026-10-11** Every DEBUG switch applies during play (owner asked why any needed a restart):
   CPU limit through APT at once, the bottom painter and audio threads recreated on the other
   core, the compact upload layout swapped at a frame start (the surfaces are now allocated at
