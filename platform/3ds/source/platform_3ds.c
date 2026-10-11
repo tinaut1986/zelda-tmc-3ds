@@ -1049,7 +1049,7 @@ bool Platform3DS_CaptureTopThumbnail(uint16_t* pixels, int width, int height) {
     const unsigned bpp = gspGetBytesPerPixel(format);
     if (bpp < 2 || bpp > 4) return false;
     const int srcW = 400, srcH = 240;
-    const uint8_t* fb = (const uint8_t*)top->framebuf0_vaddr;
+    const uint8_t* fb = (const uint8_t*)top->framebuf0_vaddr; /* column-major, origin bottom-left */
     GSPGPU_InvalidateDataCache(fb, top->framebuf_widthbytesize * (u32)srcW);
     const int bw = srcW / width > 0 ? srcW / width : 1, bh = srcH / height > 0 ? srcH / height : 1;
     for (int y = 0; y < height; ++y) {
@@ -1057,7 +1057,7 @@ bool Platform3DS_CaptureTopThumbnail(uint16_t* pixels, int width, int height) {
             unsigned r = 0, g = 0, b = 0;
             for (int dy = 0; dy < bh; ++dy) {
                 for (int dx = 0; dx < bw; ++dx) {
-                    const int sx = x * srcW / width + dx, sy = y * srcH / height + dy;
+                    const int sx = x * srcW / width + dx, sy = srcH - 1 - (y * srcH / height + dy);
                     uint8_t pr, pg, pb;
                     ReadFramebufferPixel(fb + (size_t)sx * top->framebuf_widthbytesize + (size_t)sy * bpp, format,
                                          &pr, &pg, &pb);

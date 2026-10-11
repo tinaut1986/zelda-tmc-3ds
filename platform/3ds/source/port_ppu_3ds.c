@@ -1054,6 +1054,30 @@ void Port_PPU_PresentFrame(void) {
             virtuappu_mode1_ws_full_view = 0;
         }
     }
+#if TMC3DS_DEBUG_TOOLS
+    {
+        /* Every change of the top view (size, Full View mode, why it fell
+         * back) goes to the SD log with where the game was: a screen that
+         * flickers between Wide and normal leaves a trace per flip. */
+        static int lastW = -1, lastH = -1, lastMode = -1, lastReason = -1;
+        static unsigned lastFlip, flips;
+        if (topFrame.width != lastW || topFrame.height != lastH || (int)topFrame.mode != lastMode ||
+            (int)topFrame.fallbackReason != lastReason) {
+            if (flips++ < 400) {
+                DebugLog_Printf("view: frame %u (+%u) %dx%d mode %d (%s) area %02x room %02x task %d",
+                                (unsigned)sFrameNumber, (unsigned)sFrameNumber - lastFlip, topFrame.width,
+                                topFrame.height, (int)topFrame.mode,
+                                Port3DSFullViewPolicy_FallbackReasonName(topFrame.fallbackReason),
+                                (unsigned)gRoomControls.area, (unsigned)gRoomControls.room, (int)gMain.task);
+            }
+            lastFlip = (unsigned)sFrameNumber;
+            lastW = topFrame.width;
+            lastH = topFrame.height;
+            lastMode = (int)topFrame.mode;
+            lastReason = (int)topFrame.fallbackReason;
+        }
+    }
+#endif
     virtuappu_registers.mode = (mode == 1 || mode == 2) ? 2 : 1;
     sTopPresentWidth = topFrame.width;
     sTopPresentHeight = topFrame.height;
