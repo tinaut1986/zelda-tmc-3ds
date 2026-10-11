@@ -408,6 +408,7 @@ int main(void) {
     CHECK(atlas[(size_t)slot0 * 64 + PpuGpu3DS_MortonIndex(2, 0)] == 0x0000);
 
     vram[64] = 17;
+    PpuGpu3DS_CacheForgetLookups(&cache); /* VRAM changed within the frame */
     CHECK(PpuGpu3DS_CacheTile(&cache, vram,
                               (PpuGpu3DSTileKey){ .vramOffset = 64,
                                                  .paletteBank = 0,

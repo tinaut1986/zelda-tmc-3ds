@@ -105,8 +105,20 @@ typedef struct PpuGpu3DSRetainedMap {
     bool valid;
 } PpuGpu3DSRetainedMap;
 
+enum { PPU_GPU3DS_MEMO_SIZE = 512 };
+
 typedef struct PpuGpu3DSCache {
     PpuGpu3DSCacheEntry entries[PPU_GPU3DS_SLOT_COUNT];
+    /* Tiles already looked up in this frame: VRAM and the palettes cannot
+     * change within a frame and a slot used in it is never evicted or
+     * refreshed in it, so a repeat lookup can skip the bucket walk, the
+     * 32-byte compare and the LRU move. Valid while memoEpoch matches. */
+    struct {
+        PpuGpu3DSTileKey key;
+        uint16_t slot;
+        uint32_t epoch;
+    } memo[PPU_GPU3DS_MEMO_SIZE];
+    uint32_t memoEpoch;
     uint16_t buckets[PPU_GPU3DS_CACHE_BUCKETS];
     /* Slots decoded since the last upload, so the backend flushes only what
      * changed rather than walking every slot. */
@@ -338,6 +350,10 @@ void PpuGpu3DS_CacheInit(PpuGpu3DSCache* cache);
 void PpuGpu3DS_CacheClearDirty(PpuGpu3DSCache* cache);
 void PpuGpu3DS_CacheBeginFrame(PpuGpu3DSCache* cache, const uint16_t* bgPalette,
                                const uint16_t* objPalette, uint32_t frame);
+/* CacheTile remembers this frame's lookups (PpuGpu3DSCache.memo), which
+ * holds because VRAM and the palettes do not change while a frame is built.
+ * Anything that changes them between two lookups of one frame calls this. */
+void PpuGpu3DS_CacheForgetLookups(PpuGpu3DSCache* cache);
 bool PpuGpu3DS_CacheTile(PpuGpu3DSCache* cache, const uint8_t* vram, PpuGpu3DSTileKey key,
                          uint16_t* atlas, uint16_t* outSlot);
 uint8_t PpuGpu3DS_MortonIndex(unsigned x, unsigned y);

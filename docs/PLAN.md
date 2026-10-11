@@ -40,7 +40,7 @@ v2.2-E1: nothing stable published.
 | `feat/save-states` (cut from `feat/remote-link`) | P1.8 save states (STATES tab, `3dsx.ld` game layout pinned, link SAVESTATE/LOADSTATE), tab-bar theme button removed | on the console (2026-10-11, by Claude over the link): save 2 s, load 0.3 s, exact; a state loaded from the title right after a relaunch, and after a rebuild that moved the port's code by 0x50 the game went on normally. The tab itself (cards, detail, confirm) not yet seen by the owner |
 | `fix/gpu-wide-shadow-stride` (cut from `feat/save-states`) | normal Wide on the GPU renderer: garbage in the right-hand columns (shadow rows read at the wrong stride) | fixed and checked on the console by Claude (two save states in Hyrule Field 03/01, against the software renderer) |
 | `perf/wide-bg-tile-runs` (cut from `fix/gpu-wide-shadow-stride`) | Wide BG build: tile runs checked at their ends instead of every pixel; link MARK and GPUCHECK | on the console by Claude: Hyrule Field 03/01 Wide + Bilinear, bg 10.4 -> 4.9 ms, 57.5 -> 59.8 fps with 10.7 ms of vblank margin; GPU CHECK identical to the build before (5176 / 3986 differing pixels, 0 structural) |
-| `perf/full-view-gpu` (cut from `perf/wide-bg-tile-runs`) | P3.4 first part: Full View (Wide + Pixel Perfect) drawn by the GPU renderer: whole-view shadow, OBJ Y wrap as mode1.c, presenter takes the Full View geometry | on the console by Claude: Hyrule Field 03/01 400x240, 33.8 -> 45.8 fps (bg 12.9 ms); GPU CHECK 0 structural pixels in both states. Interiors (200x120 at 2x) and BG3 native bounds not checked yet |
+| `perf/full-view-gpu` (cut from `perf/wide-bg-tile-runs`) | P3.4 first part: Full View (Wide + Pixel Perfect) drawn by the GPU renderer: whole-view shadow, OBJ Y wrap as mode1.c, presenter takes the Full View geometry | on the console by Claude, Hyrule Field 03/01: Full View 400x240 33.8 -> **59.8 fps** (bg 6.2 ms, vblank margin 9.6 ms; the per-frame tile memo and the per-tile Wide emitter), Wide + Bilinear bg 4.2 ms; GPU CHECK 0 structural pixels everywhere tried. Interiors (200x120 at 2x), BG3 native bounds and the Old 3DS not checked yet |
 
 **On the owner's console now (2026-10-11):** a debug build of `feat/ingame-ftp`
 (`0.1.1-dev.13.4+6528614`), sent with ftpd and installed with FBI: the first time any of this
@@ -313,7 +313,8 @@ First perf recordings (2026-10-11, build `0.1.1-dev.13.9+1774bfb`, New 3DS, Hyru
 
 After `perf/wide-bg-tile-runs` (same spot, Wide + Bilinear): 59.8 fps, build 5.1 ms (`bg` 4.9;
 it was 10.4: Wide BGs cannot use the map-space path and were sampled pixel by pixel), vblank
-wait 10.7 ms.
+wait 10.7 ms. After `perf/full-view-gpu`: Wide + Pixel Perfect (Full View) on the GPU at
+59.8 fps, build 6.3 ms, vblank wait 9.6 ms; Wide + Bilinear build 4.3 ms.
 
 Engine logic is 0.2-0.3 ms in both: the whole frame is drawing. The bottom screen paints on
 its own thread and does not show in the top's interval.
