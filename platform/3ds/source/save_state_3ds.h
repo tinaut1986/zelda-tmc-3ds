@@ -1,12 +1,12 @@
 #pragma once
-/* Save states (PLAN P1.8, docs/save-states.md), in every build.
+/* Save states (PLAN P1.8 and P1.8b, docs/save-states.md), in every build.
  *
- * A state is states/tmc-state<id>.bin in the data folder: a header and a raw
- * copy of the game's .data and .bss, which 3dsx.ld lays out at fixed
- * addresses together with the game's code and constants. A state therefore
- * loads into any build whose game side is unchanged (renderer, UI and
- * platform changes do not matter) and is refused, never half applied, by a
- * build that moved the game. states/tmc-state<id>.thm holds a 200x120 RGB565
+ * A state is states/tmc-state<id>.bin in the data folder: a header and the
+ * game's globals by name, with their pointers written as relocations, so a
+ * state loads into any build of the same ROM (format 2); a binary without the
+ * symbol table (tools/gen_state_symbols.py) writes the raw format 1, which
+ * loads only where the game's layout is the same and is refused, never half
+ * applied, elsewhere. states/tmc-state<id>.thm holds a 200x120 RGB565
  * screenshot of the top screen.
  *
  * The list is open ended, newest first; the number shown is the position in
