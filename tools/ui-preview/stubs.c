@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "updater.h"
@@ -117,3 +118,34 @@ void* port_resolve_addr(void) { return NULL; }
 void* Port_ResolveGfxGroupVram(void) { return NULL; }
 void sub_080AD8F0(void) {}
 void UnpackTextNibbles(void) {}
+
+/* ---- debug tools (debug_log_3ds.c, debug_perf_3ds.c, port_config_3ds.c) ---- */
+static bool sLog = true, sDirect, sPerf;
+void DebugLog_Start(void) { sLog = true; }
+void DebugLog_Stop(void) { sLog = false; }
+bool DebugLog_Running(void) { return sLog; }
+void DebugLog_SetDirect(bool d) { sDirect = d; }
+bool DebugLog_Direct(void) { return sDirect; }
+int DebugLog_FileNumber(void) { return sLog ? 7 : 0; }
+void DebugLog_Printf(const char* fmt, ...) { (void)fmt; }
+int DebugLog_Mark(void) { return 1; }
+bool DebugPerf_Start(void) { sPerf = true; return true; }
+int DebugPerf_Stop(void) { sPerf = false; return 3; }
+bool DebugPerf_Running(void) { return sPerf; }
+unsigned DebugPerf_Rows(void) { return sPerf ? 1834 : 0; }
+unsigned DebugPerf_Capacity(void) { return 36000; }
+static int sSw[11] = { 1, 0, 0, 0, 1, 0, -1, -1, 0, 0, 0 };
+static const char* const kSwNames[11] = { "RENDERER", "FRAME SYNC", "VBLANK LOCK", "STATIC QUAD", "MAP SKIP",
+                                          "FRAME LOG", "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "BOTTOM 565",
+                                          "CPU LIMIT" };
+const char* DebugSwitch_Name(int id) { return kSwNames[id]; }
+void DebugSwitch_Value(int id, char* out, unsigned cap) {
+    if (id == 0) snprintf(out, cap, "%s", sSw[0] ? "GPU" : "CPU");
+    else if (id == 6 || id == 7) snprintf(out, cap, "%s", sSw[id] < 0 ? "AUTO" : (sSw[id] ? "CORE 1" : "CORE 0"));
+    else if (id == 10) snprintf(out, cap, "AUTO");
+    else snprintf(out, cap, "%s", sSw[id] ? "ON" : "OFF");
+}
+void DebugSwitch_Cycle(int id) { sSw[id] = sSw[id] == 1 ? (id == 6 || id == 7 ? -1 : 0) : 1; }
+bool DebugSwitch_AtBoot(int id) { return id >= 6; }
+bool DebugSwitch_Pending(int id) { return id == 7 && sSw[7] != -1; }
+bool DebugSwitch_IsDefault(int id) { static const int d[11] = { 1, 0, 0, 0, 1, 0, -1, -1, 0, 0, 0 }; return sSw[id] == d[id]; }

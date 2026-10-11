@@ -166,6 +166,7 @@ enum {
     SS_ACT_UPDATE_CHANNEL, SS_ACT_UPDATE_RELEASE, SS_ACT_UPDATE_ACTION,
     SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT,
     SS_ACT_THEME, /* the tab bar's theme button (bottom_compact_3ds.inc) */
+    SS_ACT_DEBUG, /* DEBUG tab command, arg = DBG_CMD_* (bottom_compact_3ds.inc) */
 #endif
 };
 
@@ -3011,6 +3012,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     /* Compact chrome (bottom_compact_3ds.inc): the tab bar is a slim strip on
      * top (or at the bottom, by theme) and the panels get the rest. */
     Compact_ApplyThemeFromConfig();
+    sCompactTick = tick;
     float sideW = 220 * u;
     float mx0 = CC_MARGIN, my0 = CcContentTop() + 2;
     float mx1 = tab == SS_TAB_SETTINGS ? width - CC_MARGIN : width - sideW - 2;
@@ -3078,6 +3080,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     }
     SS_MARK(SS_PHASE_SIDEBAR);
     Compact_PaintTabBar(&s, &tl, tab, settingsPage);
+    Compact_PaintToast(&s);
     SS_MARK(SS_PHASE_TABBAR);
 #else
     if (tab != SS_TAB_SETTINGS) {
@@ -3171,6 +3174,11 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
         case SS_ACT_THEME:
             Compact_NextTheme();
             break;
+#if TMC3DS_DEBUG_TOOLS
+        case SS_ACT_DEBUG:
+            Compact_DebugCommand(hit.arg);
+            break;
+#endif
 #endif
         case SS_ACT_TAB:
             UI_LOCK();

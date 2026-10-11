@@ -219,7 +219,7 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
     }
 
     /* The clock, Wi-Fi bars and battery in the tab bar. */
-    if (Compact_ChromeChanged()) return 1;
+    if (Compact_ChromeChanged() || Compact_ToastNeedsPaint()) return 1;
 
     int tab;
     int settingsPage;

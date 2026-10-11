@@ -17,6 +17,12 @@
 #include <unistd.h>
 
 #include "app_paths_3ds.h"
+#include "debug_switches_3ds.h"
+#include "tmc3ds_build_config.h"
+#if TMC3DS_DEBUG_TOOLS
+#include "debug_log_3ds.h"
+#include "debug_perf_3ds.h"
+#endif
 
 #define APP_DIR TMC3DS_APP_DIR
 #define ROM_PATH_SIZE 512
@@ -126,6 +132,10 @@ int main(int argc, char** argv) {
 
     printf("Loading ROM and tables...\n");
     Port_Config_Load("tmc3ds.ini");
+    DebugSwitch_Init(); /* what the at-boot performance switches started with */
+#if TMC3DS_DEBUG_TOOLS
+    DebugLog_Start(); /* debug builds log from boot; the DEBUG tab stops it */
+#endif
     Port_LoadRom(romPath);
     Port_SecondScreenTheme_Ready();
     Port_PPU_Init(NULL);
@@ -137,6 +147,11 @@ int main(int argc, char** argv) {
     Platform3DS_EnterGameplayDisplay();
     Updater_Init(argc > 0 ? argv[0] : NULL);
     AgbMain();
+#if TMC3DS_DEBUG_TOOLS
+    if (DebugPerf_Running()) DebugPerf_Stop();
+    DebugLog_Printf("exit: engine returned");
+    DebugLog_Stop();
+#endif
     Updater_Shutdown();
 
     Port_PPU_Shutdown();

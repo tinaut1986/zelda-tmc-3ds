@@ -97,6 +97,10 @@ int main(int argc, char** argv) {
          * leaving through the settings tab twice returns from any page. */
         Port_SecondScreen_Init();
         Paint(&snap, tick++);
+        /* Tabs keep their state between shots: start each from MAP (tapping
+         * the active MAP tab keeps it; any other active tab goes there). */
+        Port_SecondScreen_OnTap(4 + 15, Port_SecondScreen_3DS_UiTabCenterY(H), 0);
+        Paint(&snap, tick++);
         for (char* t = taps ? strtok(taps, ";") : NULL; t; t = strtok(NULL, ";")) {
             int x, y, tab;
             if (sscanf(t, "t%d", &tab) == 1) {

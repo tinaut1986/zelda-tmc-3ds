@@ -79,6 +79,9 @@ unsigned Platform3DS_Core1TimeLimit(void);
 bool Platform3DS_BatteryStatus(uint8_t* level, uint8_t* charging);
 /* Wi-Fi bars, 0-3. */
 int Platform3DS_WifiStrength(void);
+uint64_t Platform3DS_LogicFrameCount(void);
+uint64_t Platform3DS_EngineWorkLastTicks(void);
+uint64_t Platform3DS_VblankWaitLastTicks(void);
 void Platform3DS_ShowSplash(void);
 void Platform3DS_EnterGameplayDisplay(void);
 uint16_t Platform3DS_ReadKeyInput(void);

@@ -222,6 +222,12 @@ bool Platform3DS_BatteryStatus(uint8_t* level, uint8_t* charging) {
     return true;
 }
 
+/* Cheap per-frame reads for the perf recorder (Platform3DS_GetRuntimeStats
+ * also queries the kernel for memory, too slow to call every frame). */
+uint64_t Platform3DS_LogicFrameCount(void) { return sLogicFrames; }
+uint64_t Platform3DS_EngineWorkLastTicks(void) { return sEngineWorkLastTicks; }
+uint64_t Platform3DS_VblankWaitLastTicks(void) { return sVblankWaitLastTicks; }
+
 int Platform3DS_WifiStrength(void) {
     return (int)osGetWifiStrength();
 }

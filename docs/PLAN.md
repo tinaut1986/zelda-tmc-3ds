@@ -27,6 +27,7 @@ boxes below. History: `git log` and the decisions log.
 |---|---|---|
 | `chore/fork-setup` | P0.1: own version scheme, title ID, data folder, updater repo, release CI, build assistant, this plan | waiting for the owner (build, install next to upstream's app, boot, check the version in the boot console) |
 | `feat/compact-ui` (cut from `chore/fork-setup`) | P2.1 UI preview on the host; first part of P2.2 (icon tab bar with clock, Wi-Fi and battery, four themes switched by a day/night-style button or the THEME cell and saved as `ui_theme`, OPTIONS as a cell grid, 5x7 font at 1x, version + upstream base in the footer, no ITEMS header chip) and of P1.1 (DEBUG tab with the old Developer cells) | waiting for the owner on the console (tabs, theme button, every OPTIONS cell, the title-screen OPTIONS with its BACK, the UPDATES page); the owner will tune the themes after using them |
+| `feat/debug-tools` (cut from `feat/compact-ui`) | P1.2 performance switches (SWITCHES page), P1.3 SD log, P1.4 perf recorder + `tools/perf-csv/analyze.py`, DEBUG tab main page with RECORD / TOOLS rows and toasts | waiting for the owner on the console: log written at boot, a mark, a perf recording fetched and analysed on the PC, each switch flipped (live ones visibly, at-boot ones after a restart) |
 
 **Priority** (owner's order, 2026-10-11): P0.1 → P1 debug tools and P2 bottom UI (so
 that P3 can be measured) → P0.2 baseline → P3 performance → P4 wide modes.

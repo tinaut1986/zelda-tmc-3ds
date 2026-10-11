@@ -323,6 +323,113 @@ bool Port_Config_AudioDsp(void) {
 bool Port_Config_AudioDspPcm(void) {
     return false;
 }
+/* ---- Performance switches for the DEBUG tab (debug_switches_3ds.h) ----
+ * The ini-only knobs above, changeable on the console. Live ones are read
+ * every frame; the others are read once at boot, so the cell says AT BOOT
+ * until the next launch. Every change is saved like any other setting. */
+#include "debug_switches_3ds.h"
+
+static int sSwitchBootValue[DEBUG_SW_COUNT];
+static bool sSwitchBootKnown;
+
+static int SwitchValue(int id) {
+    switch (id) {
+        case DEBUG_SW_RENDERER: return sGpuRenderer;
+        case DEBUG_SW_FRAME_SYNC: return sGpuFrameSync;
+        case DEBUG_SW_VBLANK_LOCK: return sVblankPhaseLock;
+        case DEBUG_SW_STATIC_QUAD: return sGpuStaticQuad;
+        case DEBUG_SW_MAP_SKIP: return sBottomMapSkip;
+        case DEBUG_SW_FRAME_LOG: return sFrameLog;
+        case DEBUG_SW_BOTTOM_CORE: return sBottomCore;
+        case DEBUG_SW_AUDIO_CORE: return sAudioCore;
+        case DEBUG_SW_COMPACT_UPLOAD: return sCompactUpload;
+        case DEBUG_SW_BOTTOM_565: return sBottomRgb565;
+        case DEBUG_SW_CPU_LIMIT: return sAppCpuLimit;
+        default: return 0;
+    }
+}
+
+static void RememberBootValues(void) {
+    if (sSwitchBootKnown) return;
+    for (int i = 0; i < DEBUG_SW_COUNT; i++) sSwitchBootValue[i] = SwitchValue(i);
+    sSwitchBootKnown = true;
+}
+
+const char* DebugSwitch_Name(int id) {
+    static const char* const kNames[DEBUG_SW_COUNT] = {
+        "RENDERER", "FRAME SYNC", "VBLANK LOCK", "STATIC QUAD", "MAP SKIP", "FRAME LOG",
+        "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "BOTTOM 565", "CPU LIMIT",
+    };
+    return id >= 0 && id < DEBUG_SW_COUNT ? kNames[id] : "?";
+}
+
+bool DebugSwitch_AtBoot(int id) {
+    return id >= DEBUG_SW_BOTTOM_CORE;
+}
+
+bool DebugSwitch_Pending(int id) {
+    RememberBootValues();
+    return DebugSwitch_AtBoot(id) && SwitchValue(id) != sSwitchBootValue[id];
+}
+
+bool DebugSwitch_IsDefault(int id) {
+    static const int kDefaults[DEBUG_SW_COUNT] = { 1, 0, 0, 0, 1, 0, -1, -1, 0, 0, 0 };
+    return id >= 0 && id < DEBUG_SW_COUNT && SwitchValue(id) == kDefaults[id];
+}
+
+void DebugSwitch_Value(int id, char* out, unsigned cap) {
+    const int v = SwitchValue(id);
+    switch (id) {
+        case DEBUG_SW_RENDERER:
+            /* The GPU tile renderer only starts on Old 3DS (Port_PPU_Init). */
+            snprintf(out, cap, "%s", Platform3DS_IsNew3DS() ? "CPU (N3DS)" : (v ? "GPU" : "CPU"));
+            return;
+        case DEBUG_SW_BOTTOM_CORE:
+            snprintf(out, cap, "%s", v == 1 ? "CORE 1" : "CORE 0");
+            return;
+        case DEBUG_SW_AUDIO_CORE:
+            snprintf(out, cap, "%s", v < 0 ? "AUTO" : (v ? "CORE 1" : "CORE 0"));
+            return;
+        case DEBUG_SW_CPU_LIMIT:
+            if (v <= 0) snprintf(out, cap, "AUTO");
+            else snprintf(out, cap, "%d%%", v);
+            return;
+        default:
+            snprintf(out, cap, "%s", v ? "ON" : "OFF");
+            return;
+    }
+}
+
+void DebugSwitch_Cycle(int id) {
+    RememberBootValues();
+    switch (id) {
+        case DEBUG_SW_RENDERER: sGpuRenderer = !sGpuRenderer; break;
+        case DEBUG_SW_FRAME_SYNC: sGpuFrameSync = !sGpuFrameSync; break;
+        case DEBUG_SW_VBLANK_LOCK: sVblankPhaseLock = !sVblankPhaseLock; break;
+        case DEBUG_SW_STATIC_QUAD: sGpuStaticQuad = !sGpuStaticQuad; break;
+        case DEBUG_SW_MAP_SKIP: sBottomMapSkip = !sBottomMapSkip; break;
+        case DEBUG_SW_FRAME_LOG: sFrameLog = !sFrameLog; break;
+        case DEBUG_SW_BOTTOM_CORE: sBottomCore = sBottomCore == 1 ? -1 : 1; break;
+        case DEBUG_SW_AUDIO_CORE: sAudioCore = sAudioCore < 0 ? 0 : (sAudioCore == 0 ? 1 : -1); break;
+        case DEBUG_SW_COMPACT_UPLOAD: sCompactUpload = !sCompactUpload; break;
+        case DEBUG_SW_BOTTOM_565: sBottomRgb565 = !sBottomRgb565; break;
+        case DEBUG_SW_CPU_LIMIT: {
+            static const int kSteps[] = { 0, 80, 70, 50, 30 };
+            int next = 0;
+            for (int i = 0; i < 5; i++)
+                if (kSteps[i] == sAppCpuLimit) next = kSteps[(i + 1) % 5];
+            sAppCpuLimit = next;
+            break;
+        }
+        default: return;
+    }
+    SaveConfig();
+}
+
+void DebugSwitch_Init(void) {
+    RememberBootValues();
+}
+
 u8 Port_Config_WindowScale(void) { return 1; }
 const char* Port_Config_UpscaleMethod(void) { return "nearest"; }
 u64 Port_Config_FrameTimeNs(void) { return 16666667ULL; }

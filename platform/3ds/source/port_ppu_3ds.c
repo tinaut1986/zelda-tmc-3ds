@@ -14,6 +14,11 @@
 #include "port_widescreen.h"
 #include "platform_3ds.h"
 #include "tmc3ds_version.h"
+#include "tmc3ds_build_config.h"
+#if TMC3DS_DEBUG_TOOLS
+#include "debug_log_3ds.h"
+#include "debug_perf_3ds.h"
+#endif
 #include "platform_gpu_3ds.h"
 #include "top_view_3ds.h"
 #include "port_ppu_gpu_3ds.h"
@@ -991,6 +996,7 @@ void Port_PPU_PresentFrame(void) {
     bool parityFrame = false;
     ++sFrameNumber;
     const uint64_t frameStartTick = Platform3DS_SystemTick();
+    uint64_t perfBeginTicks = 0, perfPreflightTicks = 0; /* DEBUG tab perf recorder */
 
 #ifdef TMC_3DS_DIAGNOSTICS
     const uint64_t frameStart = Platform3DS_Milliseconds();
@@ -1090,6 +1096,8 @@ void Port_PPU_PresentFrame(void) {
         gpuReady = frameBegun && PortPpuGpu3DS_Preflight(&frameView);
         const uint64_t preflightTicks = Platform3DS_SystemTick() - beginStart - beginTicks;
         Platform3DS_SetStage(3);
+        perfBeginTicks = beginTicks;
+        perfPreflightTicks = preflightTicks;
         sFrameBeginTicks += beginTicks;
         sPreflightTicks += preflightTicks;
         if (beginTicks > sFrameBeginMaxTicks) sFrameBeginMaxTicks = beginTicks;
@@ -1107,6 +1115,7 @@ void Port_PPU_PresentFrame(void) {
         PortPpuGpu3DS_RecordDisabledFrame();
     }
     Platform3DS_SetStage(4);
+    const uint64_t softwareStartTick = Platform3DS_SystemTick();
     if (!gpuReady) virtuappu_render_frame();
     Platform3DS_SetStage(5);
     const uint64_t renderEndTick = Platform3DS_SystemTick();
@@ -1282,6 +1291,29 @@ void Port_PPU_PresentFrame(void) {
         sBottomBufferInGame[sBottomFrontBuffer] = sBottomWorkerSnapshot.inGame != 0;
         RecordBottomWorkerTiming();
     }
+#if TMC3DS_DEBUG_TOOLS
+    if (DebugPerf_Running()) {
+        static uint64_t lastLogicFrames;
+        const uint64_t logicFrames = Platform3DS_LogicFrameCount();
+        DebugPerfFrame row = {
+            .startTick = frameStartTick,
+            .workTicks = Platform3DS_EngineWorkLastTicks(),
+            .vblankTicks = Platform3DS_VblankWaitLastTicks(),
+            .beginTicks = perfBeginTicks,
+            .preflightTicks = perfPreflightTicks,
+            .renderTicks = gpuReady ? 0 : renderEndTick - softwareStartTick,
+            .topTicks = topEndTick - frameStartTick,
+            .bottomTicks = bottomChanged ? sBottomWorkerLastTicks : 0,
+            .logicFrames = (uint32_t)(lastLogicFrames ? logicFrames - lastLogicFrames : 1),
+            .gpu = gpuReady ? 1 : 0,
+            .area = gMain.task == TASK_GAME ? gRoomControls.area : 0xFF,
+            .room = gMain.task == TASK_GAME ? gRoomControls.room : 0xFF,
+        };
+        lastLogicFrames = logicFrames;
+        DebugPerf_Record(&row);
+    }
+    DebugLog_Tick();
+#endif
 
     /* Every third presentation cost 2759 repaints in 8336 frames, each a
      * software paint plus a 512 KB transfer -- about 169 KB a frame of GSP

@@ -15,6 +15,7 @@
 #include "ui_font_3ds.h"
 #include "tmc3ds_build_config.h"
 
+#include <stdarg.h>
 #include <time.h>
 
 /* Colours, RGBA_8888 as the compositor stores them (RGB() above). A theme is
@@ -440,13 +441,89 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
     CTextCentered(s, s->w / 2, y + 20, TMC3DS_DEBUG_TOOLS ? CC_WARN : CC_FAINT, line);
 }
 
+/* ---- toast: one line over the bottom of the content for ~2 s ---- */
+
+static char sToast[48];
+static uint32_t sToastUntil;
+static uint32_t sCompactTick; /* the tick of the frame being painted (PaintInto) */
+
+static void Compact_Toast(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(sToast, sizeof(sToast), fmt, args);
+    va_end(args);
+    sToastUntil = sCompactTick + 40; /* paint ticks run at ~20 Hz */
+}
+
+static uint8_t sToastOnScreen;
+
+static int Compact_ToastVisible(void) {
+    return sToast[0] && (int32_t)(sToastUntil - sCompactTick) > 0;
+}
+
+/* Paint while it shows, and once more to take it away. */
+static int Compact_ToastNeedsPaint(void) {
+    return Compact_ToastVisible() || sToastOnScreen;
+}
+
+static void Compact_PaintToast(const SSurf* s) {
+    sToastOnScreen = (uint8_t)Compact_ToastVisible();
+    if (!sToastOnScreen) return;
+    int32_t w = CTextWidth(sToast) + 12, h = 15;
+    int32_t x = (s->w - w) / 2, y = CcContentBottom(s->h) - h - 4;
+    CBox(s, x, y, w, h, CC_BAR, CC_ACCENT);
+    CTextCentered(s, s->w / 2, y + 4, CC_TEXT, sToast);
+}
+
 /* ---- DEBUG (debug-tools builds) ---- */
 
 #if TMC3DS_DEBUG_TOOLS
-static void Compact_PaintDebug(const SSurf* s, TargetList* tl, const SecondScreenSnapshot* snap, uint32_t tick,
-                               uint32_t dumpFlashUntil, uint32_t loadStateFlashUntil, int loadStateResult) {
-    FillRect(s, 0, CcContentTop(), s->w, CcContentBottom(s->h), CC_BG);
-    char v[7][24];
+#include "debug_log_3ds.h"
+#include "debug_perf_3ds.h"
+#include "debug_switches_3ds.h"
+
+enum { DBG_PAGE_MAIN, DBG_PAGE_SWITCHES };
+static int sDebugPage;
+
+/* SS_ACT_DEBUG arguments. */
+enum {
+    DBG_CMD_PAGE_MAIN = 1,
+    DBG_CMD_PAGE_SWITCHES,
+    DBG_CMD_LOG_RUN,
+    DBG_CMD_LOG_MODE,
+    DBG_CMD_LOG_MARK,
+    DBG_CMD_PERF_RUN,
+    DBG_CMD_SWITCH0 = 32, /* + DEBUG_SW_* */
+};
+
+/* A cell for something that runs (mzm, sm-3ds): the square button on its right
+ * starts it (green triangle) or stops it (red square); the rest of the cell
+ * changes its option, or does nothing when `optionCmd` is 0. */
+static void CRunCell(const SSurf* s, TargetList* tl, int32_t x, int32_t y, int32_t w, const char* name,
+                     const char* value, uint32_t valueColor, int running, uint8_t runCmd, uint8_t optionCmd) {
+    const int32_t bw = 18;
+    CBox(s, x, y, w, CC_CELL_H, CC_CELL, CC_CELL_EDGE);
+    CText(s, x + 4, y + 4, CC_DIM, name);
+    CText(s, x + 4, y + 14, valueColor, value);
+    int32_t bx = x + w - bw - 2, by = y + 2, bh = CC_CELL_H - 4;
+    CBox(s, bx, by, bw, bh, running ? CC_BAR : CC_BTN, running ? CC_BAD : CC_BTN_EDGE);
+    int32_t cx = bx + bw / 2, cy = by + bh / 2;
+    if (running) {
+        FillRect(s, cx - 3, cy - 3, cx + 4, cy + 4, CC_BAD);
+    } else {
+        for (int i = 0; i < 7; i++) FillRect(s, cx - 3 + i, cy - 3 + i / 2, cx - 2 + i, cy + 4 - i / 2, CC_GOOD);
+    }
+    AddTarget(tl, (float)bx, (float)y, (float)(x + w), (float)(y + CC_CELL_H), SS_ACT_DEBUG, runCmd);
+    if (optionCmd) AddTarget(tl, (float)x, (float)y, (float)bx, (float)(y + CC_CELL_H), SS_ACT_DEBUG, optionCmd);
+}
+
+static void CSectionTitle(const SSurf* s, int32_t y, const char* title) {
+    CText(s, CC_MARGIN + 1, y, CC_FAINT, title);
+}
+
+static void Compact_PaintDebugMain(const SSurf* s, TargetList* tl, const SecondScreenSnapshot* snap, uint32_t tick,
+                                   uint32_t dumpFlashUntil, uint32_t loadStateFlashUntil, int loadStateResult) {
+    char v[8][24];
     double now = Port_PPU_3DS_CurrentFps(), avg = Port_PPU_3DS_AverageFps();
     snprintf(v[0], sizeof(v[0]), "%s", Platform3DS_IsNew3DS() ? "NEW 3DS" : "OLD 3DS");
     snprintf(v[1], sizeof(v[1]), "%.1f", now);
@@ -455,7 +532,8 @@ static void Compact_PaintDebug(const SSurf* s, TargetList* tl, const SecondScree
     snprintf(v[4], sizeof(v[4]), "%s", Port_Config_WidescreenEnabled() ? "WIDE" : "NATIVE");
     snprintf(v[5], sizeof(v[5]), "%02X / %02X", snap->area, snap->room);
     snprintf(v[6], sizeof(v[6]), "%d,%d", (int)snap->playerX, (int)snap->playerY);
-    static const char* const kNames[7] = { "CONSOLE", "FPS NOW", "FPS AVG", "CORE 1", "VIEW", "AREA/ROOM", "LINK X,Y" };
+    static const char* const kNames[7] = { "CONSOLE", "FPS NOW", "FPS AVG", "CORE 1", "VIEW", "AREA/ROOM",
+                                           "LINK X,Y" };
     for (int i = 0; i < 7; i++) {
         int32_t x, w;
         CColumn(s->w, 4, i % 4, 1, &x, &w);
@@ -466,22 +544,131 @@ static void Compact_PaintDebug(const SSurf* s, TargetList* tl, const SecondScree
         }
         CCell(s, tl, x, CRowY(i / 4), w, CC_CELL_H, kNames[i], v[i], color, 0, 0);
     }
-
-    int32_t y = CRowY(2) + 4;
-    CText(s, CC_MARGIN + 1, y, CC_FAINT, "TOOLS");
-    y += 10;
     {
         int32_t x, w;
-        const char* dump = (int32_t)(dumpFlashUntil - tick) > 0 ? "WRITTEN" : "WRITE";
-        CColumn(s->w, 4, 0, 1, &x, &w);
-        CCell(s, tl, x, y, w, CC_CELL_H, "MEM DUMP", dump, (int32_t)(dumpFlashUntil - tick) > 0 ? CC_GOOD : CC_ACCENT,
-              SS_ACT_DEVELOPER_DUMP, 0);
-        const char* load = (int32_t)(loadStateFlashUntil - tick) > 0
-                               ? Port_DumpState_ResultLabel((PortDumpStateResult)loadStateResult)
-                               : "LAST DUMP";
-        CColumn(s->w, 4, 1, 1, &x, &w);
-        CCell(s, tl, x, y, w, CC_CELL_H, "LOAD STATE", load, CC_ACCENT, SS_ACT_DEVELOPER_LOAD, 0);
+        CColumn(s->w, 4, 3, 1, &x, &w);
+        CCell(s, tl, x, CRowY(1), w, CC_CELL_H, "SWITCHES", "PERF >", CC_ACCENT, SS_ACT_DEBUG,
+              DBG_CMD_PAGE_SWITCHES);
     }
-    CSettingCellAt(s, tl, y, 2, 1, "SHOW FPS", SS_SET_SHOW_FPS);
+
+    int32_t y = CRowY(2) + 2;
+    CSectionTitle(s, y, "RECORD");
+    y += 10;
+    char value[24];
+    int32_t x, w;
+    /* SD log: side button runs it, the rest switches BUFFERED / DIRECT. */
+    if (DebugLog_Running()) snprintf(value, sizeof(value), "%04d %s", DebugLog_FileNumber(), DebugLog_Direct() ? "DIR" : "BUF");
+    else snprintf(value, sizeof(value), "%s", DebugLog_Direct() ? "DIRECT" : "BUFFERED");
+    CColumn(s->w, 4, 0, 2, &x, &w);
+    CRunCell(s, tl, x, y, w, "SD LOG", value, DebugLog_Running() ? CC_GOOD : CC_DIM, DebugLog_Running(),
+             DBG_CMD_LOG_RUN, DBG_CMD_LOG_MODE);
+    CColumn(s->w, 4, 2, 2, &x, &w);
+    if (DebugPerf_Running())
+        snprintf(value, sizeof(value), "%u ROWS %u%%", DebugPerf_Rows(), DebugPerf_Rows() * 100u / DebugPerf_Capacity());
+    else
+        snprintf(value, sizeof(value), "STOPPED");
+    CRunCell(s, tl, x, y, w, "PERF RECORDER", value, DebugPerf_Running() ? CC_GOOD : CC_DIM, DebugPerf_Running(),
+             DBG_CMD_PERF_RUN, 0);
+
+    y += CC_CELL_H + CC_GAP + 2;
+    CSectionTitle(s, y, "TOOLS");
+    y += 10;
+    CColumn(s->w, 4, 0, 1, &x, &w);
+    CCell(s, tl, x, y, w, CC_CELL_H, "LOG MARK", DebugLog_Running() ? "WRITE" : "LOG OFF",
+          DebugLog_Running() ? CC_ACCENT : CC_FAINT, SS_ACT_DEBUG, DBG_CMD_LOG_MARK);
+    const int dumped = (int32_t)(dumpFlashUntil - tick) > 0;
+    CColumn(s->w, 4, 1, 1, &x, &w);
+    CCell(s, tl, x, y, w, CC_CELL_H, "MEM DUMP", dumped ? "WRITTEN" : "WRITE", dumped ? CC_GOOD : CC_ACCENT,
+          SS_ACT_DEVELOPER_DUMP, 0);
+    const char* load = (int32_t)(loadStateFlashUntil - tick) > 0
+                           ? Port_DumpState_ResultLabel((PortDumpStateResult)loadStateResult)
+                           : "LAST DUMP";
+    CColumn(s->w, 4, 2, 1, &x, &w);
+    CCell(s, tl, x, y, w, CC_CELL_H, "LOAD STATE", load, CC_ACCENT, SS_ACT_DEVELOPER_LOAD, 0);
+    CSettingCellAt(s, tl, y, 3, 1, "SHOW FPS", SS_SET_SHOW_FPS);
+}
+
+static void Compact_PaintDebugSwitches(const SSurf* s, TargetList* tl) {
+    int32_t x, w;
+    CColumn(s->w, 4, 0, 1, &x, &w);
+    CButton(s, tl, x, CRowY(0), w, 16, "< BACK", CC_TEXT, SS_ACT_DEBUG, DBG_CMD_PAGE_MAIN);
+    CText(s, x + w + 8, CRowY(0) + 5, CC_DIM, "TAP A CELL TO CHANGE IT");
+    int32_t y = CRowY(0) + 16 + CC_GAP + 2;
+    int pending = 0;
+    for (int section = 0; section < 2; section++) {
+        CSectionTitle(s, y, section == 0 ? "LIVE" : "AT NEXT BOOT");
+        y += 10;
+        int slot = 0;
+        for (int id = 0; id < DEBUG_SW_COUNT; id++) {
+            if ((int)DebugSwitch_AtBoot(id) != section) continue;
+            char value[24];
+            DebugSwitch_Value(id, value, sizeof(value));
+            int pend = DebugSwitch_Pending(id);
+            pending |= pend;
+            CColumn(s->w, 4, slot % 4, 1, &x, &w);
+            uint32_t color = pend ? CC_WARN : (DebugSwitch_IsDefault(id) ? CC_TEXT : CC_ACCENT);
+            CCell(s, tl, x, y + (slot / 4) * (CC_CELL_H + CC_GAP), w, CC_CELL_H, DebugSwitch_Name(id), value, color,
+                  SS_ACT_DEBUG, (uint8_t)(DBG_CMD_SWITCH0 + id));
+            slot++;
+        }
+        y += ((slot + 3) / 4) * (CC_CELL_H + CC_GAP) + 2;
+    }
+    CText(s, CC_MARGIN + 1, y, CC_FAINT, "WHITE: DEFAULT  BLUE: CHANGED  (TMC3DS.INI)");
+    if (pending) CText(s, CC_MARGIN + 1, y + 10, CC_WARN, "YELLOW: RESTART THE GAME TO APPLY");
+}
+
+static void Compact_PaintDebug(const SSurf* s, TargetList* tl, const SecondScreenSnapshot* snap, uint32_t tick,
+                               uint32_t dumpFlashUntil, uint32_t loadStateFlashUntil, int loadStateResult) {
+    FillRect(s, 0, CcContentTop(), s->w, CcContentBottom(s->h), CC_BG);
+    if (sDebugPage == DBG_PAGE_SWITCHES) {
+        Compact_PaintDebugSwitches(s, tl);
+    } else {
+        Compact_PaintDebugMain(s, tl, snap, tick, dumpFlashUntil, loadStateFlashUntil, loadStateResult);
+    }
+}
+
+/* SS_ACT_DEBUG taps (main thread, from Port_SecondScreen_OnTap). */
+static void Compact_DebugCommand(int cmd) {
+    if (cmd >= DBG_CMD_SWITCH0 && cmd < DBG_CMD_SWITCH0 + DEBUG_SW_COUNT) {
+        int id = cmd - DBG_CMD_SWITCH0;
+        DebugSwitch_Cycle(id);
+        char value[24];
+        DebugSwitch_Value(id, value, sizeof(value));
+        DebugLog_Printf("switch %s -> %s%s", DebugSwitch_Name(id), value,
+                        DebugSwitch_AtBoot(id) ? " (at next boot)" : "");
+        return;
+    }
+    switch (cmd) {
+        case DBG_CMD_PAGE_MAIN: sDebugPage = DBG_PAGE_MAIN; break;
+        case DBG_CMD_PAGE_SWITCHES: sDebugPage = DBG_PAGE_SWITCHES; break;
+        case DBG_CMD_LOG_RUN:
+            if (DebugLog_Running()) {
+                int n = DebugLog_FileNumber();
+                DebugLog_Stop();
+                Compact_Toast("LOG %04d SAVED", n);
+            } else {
+                DebugLog_Start();
+                if (DebugLog_Running()) Compact_Toast("LOG %04d STARTED", DebugLog_FileNumber());
+                else Compact_Toast("CANNOT WRITE THE LOG");
+            }
+            break;
+        case DBG_CMD_LOG_MODE: DebugLog_SetDirect(!DebugLog_Direct()); break;
+        case DBG_CMD_LOG_MARK:
+            if (DebugLog_Running()) Compact_Toast("MARK %d", DebugLog_Mark());
+            break;
+        case DBG_CMD_PERF_RUN:
+            if (DebugPerf_Running()) {
+                unsigned rows = DebugPerf_Rows();
+                int n = DebugPerf_Stop();
+                if (n > 0) Compact_Toast("PERF %04d: %u ROWS", n, rows);
+                else Compact_Toast("CANNOT WRITE THE CSV");
+            } else if (DebugPerf_Start()) {
+                Compact_Toast("RECORDING");
+            } else {
+                Compact_Toast("NO MEMORY");
+            }
+            break;
+        default: break;
+    }
 }
 #endif
