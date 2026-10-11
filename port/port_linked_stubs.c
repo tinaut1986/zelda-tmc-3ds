@@ -1262,6 +1262,16 @@ static int Port_WidescreenFullViewUiOverlayActive(void) {
         gRoomControls.area, gRoomControls.room);
 }
 
+/* A room change in progress. The fade is deliberately not part of it: the
+ * fade-in after a door runs with the new room already loaded, and waiting for
+ * it to end showed the room at 266 pixels and then popped to 400 on a
+ * fully lit screen. The out phase is gRoomTransition's own flag. */
+static int Port_WidescreenRoomTransitionActive(void) {
+    return Port3DSFullViewPolicy_RoomTransitionActive(
+        gRoomTransition.transitioningOut != 0 || gRoomTransition.field_0x4[1] != 0, 0,
+        gRoomControls.reload_flags, gRoomControls.scrollAction);
+}
+
 static Port3DSFullViewInputs Port_WidescreenFullViewInputs(void) {
     Port3DSFullViewInputs inputs;
     memset(&inputs, 0, sizeof(inputs));
@@ -1275,10 +1285,7 @@ static Port3DSFullViewInputs Port_WidescreenFullViewInputs(void) {
     inputs.gameTask = gMain.task == TASK_GAME;
     inputs.fixedCanvas = Port_WidescreenFixedCanvasSubtask();
     inputs.uiOverlay = Port_WidescreenFullViewUiOverlayActive();
-    inputs.transitioning = Port3DSFullViewPolicy_RoomTransitionActive(
-        gRoomTransition.transitioningOut != 0 || gRoomTransition.field_0x4[1] != 0,
-        gFadeControl.active != 0,
-        gRoomControls.reload_flags, gRoomControls.scrollAction);
+    inputs.transitioning = Port_WidescreenRoomTransitionActive();
     inputs.playerValid = gPlayerEntity.base.kind == PLAYER && gRoomControls.camera_target != NULL;
     /* Mt. Crenel room 2 uses a non-tileable 32x32 static BG3 landscape.
      * Repeating it across 400 pixels creates a visible seam; keep the entire
@@ -1885,10 +1892,7 @@ void Port_Widescreen_UpdateShadows(void) {
     int fullViewOutdoor;
     int requiredMapShadows = 0;
     int preparedMapShadows = 0;
-    const int transitionActive = Port3DSFullViewPolicy_RoomTransitionActive(
-        gRoomTransition.transitioningOut != 0 || gRoomTransition.field_0x4[1] != 0,
-        gFadeControl.active != 0,
-        gRoomControls.reload_flags, gRoomControls.scrollAction);
+    const int transitionActive = Port_WidescreenRoomTransitionActive();
 
     (void)Port_WidescreenRead3DSView(&previousRoomKey, &previousMode);
     if (previousRoomKey != roomKey) previousMode = PORT_3DS_FULL_VIEW_FALLBACK;
@@ -1961,7 +1965,7 @@ void Port_Widescreen_UpdateShadows(void) {
          * content scan, and the raw policy flipped open for two to four ticks
          * between those phases: 266 -> 400 -> 266 -> 400 with a camera snap
          * each time (a flashing screen). Dropping out stays immediate. */
-        enum { FULL_VIEW_ENTER_TICKS = 24 };
+        enum { FULL_VIEW_ENTER_TICKS = 14 };
         static unsigned stableTicks;
         if (desiredMode == PORT_3DS_FULL_VIEW_FALLBACK) {
             stableTicks = 0;

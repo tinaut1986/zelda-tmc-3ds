@@ -412,3 +412,10 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   with an NPC dialogue in Hyrule Field (box at the top, 400x240 kept, no flip at its end). A
   box that the game puts at the bottom of the 160-row canvas has not been seen in Full View:
   it would sit 80 rows above the bottom of the 240-row view.
+- **2026-10-12** Leaving a house showed the room at 240/266 for the whole fade-in and popped to
+  400 on a lit screen: the fade counted as a room transition. The fade is out of the transition
+  test now (`Port_WidescreenRoomTransitionActive`: the out phase, reload flags and the border
+  scroll are what mix two map generations), and Full View needs 14 stable ticks instead of 24.
+  Log of leaving Link's house: 240 (fade-out) -> 240 and 266 for one frame each at the start of
+  the fade-in -> 400 fifteen frames later. Checked by log and by screenshot after; the frames in
+  between were not seen.
