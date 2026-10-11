@@ -235,6 +235,15 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
 Measured with P1 tools, one change at a time, on hardware; numbers in the table
 below and the decisions log.
 
+The goal is 60 with Wide + Pixel Perfect on **both** models, the Old 3DS/2DS included.
+Reference renderers (owner's other ports, both GPU-only and at 60 on an Old 3DS):
+`../mzm/platform/3ds/source/port_gpu_renderer.c` (a GBA PPU on the PICA, already draws a
+400x240 wide view; its lessons in `../mzm/docs/3ds-renderer-perf-plan.md`) and
+`../sm-3ds/source/gpu_ppu.c` (`../sm-3ds/docs/gpu-ppu-design.md`: whole tilemaps decoded
+into BG textures with dirty tracking, one quad per scroll run, a sprite atlas; ~3 ms of
+build on a 2DS at 268 MHz). Ours (upstream's, per-tile quads) spends 10.3 ms building on a
+New 3DS at 804 MHz (see the baseline): take their design or code before tuning ours.
+
 - [ ] **P3.1** Find where the frame goes on each model (from P0.2): logic vs PPU
   model vs GPU build/submit vs present vs bottom screen vs audio, and how often the
   software fallback runs.
@@ -248,8 +257,8 @@ below and the decisions log.
   build failures (`PpuGpu3DSBuildReason`). The perf recorder's `gpu` column and the SD log's
   `fallback` count show how many are left.
   *Done when:* a long session on each model records `gpu` = 1 on every gameplay frame.
-- [ ] **P3.3** Old 3DS/2DS at 60 (or a stable 30 with no hitches where 60 is out of
-  reach, decided with the owner) in every P0.2 spot.
+- [ ] **P3.3** Old 3DS/2DS at a locked 60 with Wide + Pixel Perfect (Full View) in every
+  P0.2 spot (owner, 2026-10-11: the target is the same as the New 3DS; no 30 fps fallback).
 
 ## Phase 4: wide modes
 
@@ -325,5 +334,10 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   which upstream never did (it always drew every frame there): to be judged on the console; NO
   SKIP is upstream's old New 3DS behaviour. LOCK 30 waits a vblank on the undrawn tick so the
   game stays at 60 Hz. C-stick turbo on the New 3DS is unchanged and overrides it while held.
+- **2026-10-11** Performance target (owner): 60 fps with Wide + Pixel Perfect on the Old
+  3DS/2DS as well, not only the New 3DS; P3.3 no longer allows a stable 30. The first
+  recordings (baseline) put our GPU renderer's build at 10.3 ms per frame on a New 3DS,
+  against ~3 ms on a 2DS for sm-3ds's, so mzm's and sm-3ds's renderers are the starting
+  point for P3 rather than tuning upstream's.
 - **2026-10-11** The updater shows the `<!-- tmc-notes -->` block (our release
   notes) and falls back to upstream's `## Changelog` section.
