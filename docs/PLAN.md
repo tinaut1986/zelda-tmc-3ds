@@ -405,3 +405,10 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   the console (logs ended at "relaunch: gpu down, jumping"); after the change, six installs in a
   row from the new build went through. The first install onto the new code still goes through
   the old exit path and can hang once.
+- **2026-10-12** Dialogues keep Full View (owner: wide must not be lost in dialogues). A message
+  no longer counts as a UI overlay in `Port_WidescreenFullViewUiOverlayActive`: the box is
+  centred by the same `ws_msg_shift` the E2 Wide path uses, which already follows the view
+  width. Room-name banners and native windows still fall back to E2. Checked on the console
+  with an NPC dialogue in Hyrule Field (box at the top, 400x240 kept, no flip at its end). A
+  box that the game puts at the bottom of the 160-row canvas has not been seen in Full View:
+  it would sit 80 rows above the bottom of the 240-row view.

@@ -1254,9 +1254,6 @@ static int Port_WidescreenFixedCanvasSubtask(void) {
 }
 
 static int Port_WidescreenFullViewUiOverlayActive(void) {
-    if ((gMessage.state & MESSAGE_ACTIVE) != 0) {
-        return 1;
-    }
     if (Port3DSFullViewPolicy_NativeWindowActive(gScreen.lcd.displayControl)) {
         return 1;
     }
