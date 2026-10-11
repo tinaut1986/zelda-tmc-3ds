@@ -481,6 +481,7 @@ static void Compact_PaintToast(const SSurf* s) {
 #include "debug_log_3ds.h"
 #include "debug_perf_3ds.h"
 #include "debug_switches_3ds.h"
+#include "port_ppu_gpu_3ds.h"
 
 enum { DBG_PAGE_MAIN, DBG_PAGE_SWITCHES };
 static int sDebugPage;
@@ -493,6 +494,7 @@ enum {
     DBG_CMD_LOG_MODE,
     DBG_CMD_LOG_MARK,
     DBG_CMD_PERF_RUN,
+    DBG_CMD_GPU_CHECK,
     DBG_CMD_SWITCH0 = 32, /* + DEBUG_SW_* */
 };
 
@@ -586,6 +588,31 @@ static void Compact_PaintDebugMain(const SSurf* s, TargetList* tl, const SecondS
     CColumn(s->w, 4, 2, 1, &x, &w);
     CCell(s, tl, x, y, w, CC_CELL_H, "LOAD STATE", load, CC_ACCENT, SS_ACT_DEVELOPER_LOAD, 0);
     CSettingCellAt(s, tl, y, 3, 1, "SHOW FPS", SS_SET_SHOW_FPS);
+
+    /* GPU CHECK: upstream's parity check, the next frame drawn by both
+     * renderers and compared; differing frames are saved next to the last
+     * dump, and a difference the blender cannot explain turns the GPU
+     * renderer off for the session. */
+    y += CC_CELL_H + CC_GAP;
+    PortPpuGpu3DSStats gpu;
+    PortPpuGpu3DS_GetStats(&gpu);
+    CColumn(s->w, 4, 0, 2, &x, &w);
+    uint32_t color = CC_ACCENT;
+    if (!gpu.initialized) {
+        snprintf(value, sizeof(value), "NO GPU RENDERER");
+        color = CC_FAINT;
+    } else if (gpu.disabled) {
+        snprintf(value, sizeof(value), "GPU OFF: FAILED");
+        color = CC_BAD;
+    } else if (gpu.parityChecks) {
+        snprintf(value, sizeof(value), "%llu DONE, %llu PX DIFF", (unsigned long long)gpu.parityChecks,
+                 (unsigned long long)gpu.differingPixels);
+        color = gpu.differingPixels ? CC_WARN : CC_GOOD;
+    } else {
+        snprintf(value, sizeof(value), "COMPARE NEXT FRAME");
+    }
+    CCell(s, tl, x, y, w, CC_CELL_H, "GPU CHECK", value, color, gpu.initialized ? SS_ACT_DEBUG : 0,
+          DBG_CMD_GPU_CHECK);
 }
 
 static void Compact_PaintDebugSwitches(const SSurf* s, TargetList* tl) {
@@ -667,6 +694,11 @@ static void Compact_DebugCommand(int cmd) {
             } else {
                 Compact_Toast("NO MEMORY");
             }
+            break;
+        case DBG_CMD_GPU_CHECK:
+            PortPpuGpu3DS_RequestParityCheck();
+            DebugLog_Printf("gpu check requested");
+            Compact_Toast("GPU CHECK REQUESTED");
             break;
         default: break;
     }

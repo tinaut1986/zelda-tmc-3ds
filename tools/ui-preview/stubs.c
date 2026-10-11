@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "updater.h"
+#include "port_ppu_gpu_3ds.h"
 
 /* Built apart from the game headers (their declarations of the ROM symbols
  * below differ from these placeholders), so the dump enum is an int here. */
@@ -149,3 +150,5 @@ void DebugSwitch_Cycle(int id) { sSw[id] = sSw[id] == 1 ? (id == 6 || id == 7 ? 
 bool DebugSwitch_AtBoot(int id) { return id >= 6; }
 bool DebugSwitch_Pending(int id) { return id == 7 && sSw[7] != -1; }
 bool DebugSwitch_IsDefault(int id) { static const int d[11] = { 1, 0, 0, 0, 1, 0, -1, -1, 0, 0, 0 }; return sSw[id] == d[id]; }
+void PortPpuGpu3DS_GetStats(PortPpuGpu3DSStats* st) { memset(st, 0, sizeof(*st)); st->initialized = true; st->parityChecks = 2; }
+void PortPpuGpu3DS_RequestParityCheck(void) {}

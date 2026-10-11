@@ -40,6 +40,7 @@ The bug icon in the tab bar (debug builds only).
 | MEM DUMP | writes a quick dump, as L+R+A does (below) |
 | LOAD STATE | loads the game state of the newest dump, after a confirmation |
 | SHOW FPS | the top-screen FPS box |
+| GPU CHECK | upstream's parity check: the next frame is drawn by both renderers and compared; the cell shows the checks done and the pixels that differed. Differing frames are saved next to the last dump, and a difference the blender cannot explain turns the GPU renderer off for the session (`GPU OFF: FAILED`). Old 3DS only (the only model with the GPU renderer) |
 
 Cells for something that runs work as in mzm and sm-3ds: the button on their
 right starts it (green triangle) or stops it (red square). A toast at the bottom
