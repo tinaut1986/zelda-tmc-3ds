@@ -140,7 +140,6 @@ add_executable(tmc-3ds
     source/old3ds_frame_pacer.c
     source/top_view_3ds.c
     source/platform_gpu_3ds.c
-    source/bottom_idle_3ds.c
     source/bottom_frame_state_3ds.c
     source/bottom_map_anim_3ds.c
     source/speaker_eq_3ds.c

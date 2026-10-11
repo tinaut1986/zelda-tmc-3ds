@@ -3,11 +3,11 @@
  *
  * Keeping the wrapper in platform/3ds makes the title/file-select behavior
  * independent of Android and desktop. The shared compositor is included as
- * this translation unit's implementation so this small adapter can select
- * its existing Settings page without adding title-menu state to every port.
+ * this translation unit's implementation. Outside gameplay (intro, title,
+ * file select) the whole bottom screen still shows: every tab, OPTIONS and
+ * DEBUG working, the game tabs saying they need a game (sCompactNoGame).
  */
 #include "port_second_screen_3ds.h"
-#include "bottom_idle_3ds.h"
 #include "bottom_frame_state_3ds.h"
 #include "bottom_map_anim_3ds.h"
 
@@ -17,9 +17,7 @@
  * source list. All normal exported functions retain their original symbols. */
 #include "../../../port/port_second_screen.c"
 
-static volatile uint8_t sIdleSettingsOpen;
 static uint8_t sIdleOwnsSettingsTab;
-static volatile uint8_t sIdleBackVisible;
 static BottomFrameState3DS sFrameState;
 
 static uint32_t BeginRefresh(void) {
@@ -41,22 +39,6 @@ static uint32_t RequestTouchRefresh(void) {
     return BottomFrameState3DS_RequestTouchRefresh(&sFrameState);
 }
 
-static void IdleBackRect(int width, int height, float* x0, float* y0, float* x1, float* y1) {
-    (void)width;
-    int32_t bx0, by0, bx1, by1;
-    Compact_IdleBackRect(height, &bx0, &by0, &bx1, &by1);
-    *x0 = (float)bx0;
-    *y0 = (float)by0;
-    *x1 = (float)bx1;
-    *y1 = (float)by1;
-}
-
-static bool IsIdleBackTap(int x, int y, int width, int height) {
-    float x0, y0, x1, y1;
-    IdleBackRect(width, height, &x0, &y0, &x1, &y1);
-    return (float)x >= x0 && (float)x < x1 && (float)y >= y0 && (float)y < y1;
-}
-
 static void ResetIdleOnlyState(void) {
     UI_LOCK();
     sTapTargetCount = 0;
@@ -75,70 +57,39 @@ static void ResetIdleOnlyState(void) {
     sLastFix.valid = 0;
     sCam.valid = 0;
     sIdleOwnsSettingsTab = 0;
-    __atomic_store_n(&sIdleBackVisible, 0, __ATOMIC_RELEASE);
 }
 
-
-static void PaintIntroCinema(uint32_t* pixels, int width, int height, int stride) {
-    __atomic_store_n(&sIdleSettingsOpen, 0, __ATOMIC_RELEASE);
-    ResetIdleOnlyState();
-    SSurf surface = { pixels, width, height, stride };
-    FillRect(&surface, 0, 0, width, height, RGB(0, 0, 0));
-}
 
 uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height, int strideInPixels,
                                         const SecondScreenSnapshot* snap, uint32_t tick) {
     if (!pixels || !snap || width <= 0 || height <= 0 || strideInPixels < width) return 0;
 
     const uint32_t refreshRequest = BeginRefresh();
-    const bool settingsOpen = __atomic_load_n(&sIdleSettingsOpen, __ATOMIC_ACQUIRE) != 0;
-
-    if (snap->introCinema) {
-        PaintIntroCinema(pixels, width, height, strideInPixels);
-        FinishRefresh(refreshRequest);
-        return refreshRequest;
-    }
 
     if (snap->inGame) {
-        if (settingsOpen) __atomic_store_n(&sIdleSettingsOpen, 0, __ATOMIC_RELEASE);
         if (sIdleOwnsSettingsTab) ResetIdleOnlyState();
         Port_SecondScreen_PaintInto(pixels, width, height, strideInPixels, snap, tick);
         FinishRefresh(refreshRequest);
         return refreshRequest;
     }
 
-    if (!settingsOpen) {
-        /* Preserve every reset the shared non-game cinema path performed:
-         * stale map fixes, armed items and submenu state must not cross a
-         * title/file-select boundary even though the picture is replaced. */
+    /* No game running: the same UI, opening on OPTIONS. Its values come from
+     * the port configuration, not from gameplay, so a zeroed snapshot is safe;
+     * the game tabs paint a notice instead of reading it (sCompactNoGame).
+     * Map fixes, armed items and submenus must not cross a title/file-select
+     * boundary, hence the reset on the way in. */
+    if (!sIdleOwnsSettingsTab) {
         ResetIdleOnlyState();
-        BottomIdle3DS_Paint(pixels, width, height, strideInPixels, tick, Platform3DS_IsNew3DS());
-        FinishRefresh(refreshRequest);
-        return refreshRequest;
+        UI_LOCK();
+        sUi.tab = SS_TAB_SETTINGS;
+        UI_UNLOCK();
+        sIdleOwnsSettingsTab = 1;
     }
-
-    /* The existing Settings painter only needs the inGame gate to become
-     * visible; its values come from persistent port configuration, not from
-     * gameplay coordinates. A zeroed title snapshot is therefore safe. */
-    if (!sIdleOwnsSettingsTab) ResetIdleOnlyState();
-    SecondScreenSnapshot settingsSnapshot = *snap;
-    settingsSnapshot.inGame = 1;
-    UI_LOCK();
-    sUi.tab = SS_TAB_SETTINGS;
-    sIdleOwnsSettingsTab = 1;
-    UI_UNLOCK();
-    sCompactIdle = 1; /* the tab bar becomes BACK + title (bottom_compact_3ds.inc) */
-    Port_SecondScreen_PaintInto(pixels, width, height, strideInPixels, &settingsSnapshot, tick);
-    sCompactIdle = 0;
-
-    int settingsPage;
-    int confirmationOpen;
-    UI_LOCK();
-    settingsPage = sUi.settingsPage;
-    confirmationOpen = sUi.unavailableNoticeActive;
-    UI_UNLOCK();
-    const bool showIdleBack = settingsPage == SS_SETTINGS_ROOT && !confirmationOpen;
-    __atomic_store_n(&sIdleBackVisible, showIdleBack ? 1 : 0, __ATOMIC_RELEASE);
+    SecondScreenSnapshot menuSnapshot = *snap;
+    menuSnapshot.inGame = 1;
+    sCompactNoGame = 1;
+    Port_SecondScreen_PaintInto(pixels, width, height, strideInPixels, &menuSnapshot, tick);
+    sCompactNoGame = 0;
     FinishRefresh(refreshRequest);
     return refreshRequest;
 }
@@ -166,7 +117,6 @@ void Port_SecondScreen_3DS_GetFrameStats(BottomFrameState3DSStats* out) {
 void Port_SecondScreen_3DS_OnTap(int x, int y, int longPress) {
     SecondScreenSnapshot currentSnapshot;
     Port_SecondScreenState_Read(&currentSnapshot);
-    if (currentSnapshot.introCinema) return;
     /* Painting publishes the compositor's new hit boxes before its texture
      * can be submitted or shown.  Dispatch only when those hit boxes belong
      * to the confirmed visible generation and task; otherwise fail closed
@@ -180,25 +130,6 @@ void Port_SecondScreen_3DS_OnTap(int x, int y, int longPress) {
         }
         return;
     }
-    if (currentSnapshot.inGame) {
-        Port_SecondScreen_OnTap(x, y, longPress);
-        RequestTouchRefresh();
-        return;
-    }
-
-    if (!__atomic_load_n(&sIdleSettingsOpen, __ATOMIC_ACQUIRE)) {
-        __atomic_store_n(&sIdleSettingsOpen, 1, __ATOMIC_RELEASE);
-        RequestTouchRefresh();
-        return;
-    }
-
-    if (__atomic_load_n(&sIdleBackVisible, __ATOMIC_ACQUIRE) &&
-        IsIdleBackTap(x, y, 320, 240)) {
-        __atomic_store_n(&sIdleSettingsOpen, 0, __ATOMIC_RELEASE);
-        RequestTouchRefresh();
-        return;
-    }
-
     Port_SecondScreen_OnTap(x, y, longPress);
     RequestTouchRefresh();
 }
@@ -210,13 +141,7 @@ int Port_SecondScreen_3DS_NeedsRefresh(void) {
 int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap, uint32_t tick,
                                                uint32_t paintedTick, int32_t width,
                                                int32_t height) {
-    if (!snap || snap->introCinema) return 0;
-
-    const bool idleSettings = __atomic_load_n(&sIdleSettingsOpen, __ATOMIC_ACQUIRE) != 0;
-    if (!snap->inGame && !idleSettings) {
-        /* Match ALttP PR #32: Old 3DS keeps a steady gold card. */
-        return Platform3DS_IsNew3DS();
-    }
+    if (!snap) return 0;
 
     /* The clock, Wi-Fi bars and battery in the tab bar. */
     if (Compact_ChromeChanged() || Compact_ToastNeedsPaint()) return 1;
@@ -237,6 +162,9 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
     floorPreview = sUi.floorPreview;
     cameraMoving = sMapCameraMoving;
     UI_UNLOCK();
+
+    /* Without a game the MAP, ITEMS and QUEST tabs are a still notice. */
+    if (!snap->inGame && tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG) return 0;
 
     if (tab == SS_TAB_MAP) {
         if (!Port_Config_BottomMapSkip()) {

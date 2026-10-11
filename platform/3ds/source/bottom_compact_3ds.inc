@@ -175,20 +175,12 @@ static int CompactTabCount(void) {
     return TMC3DS_DEBUG_TOOLS ? 5 : 4;
 }
 
-/* Set by the 3DS glue (port_second_screen_3ds.c) while OPTIONS is open from
- * the title screen: there are no game tabs then, only a way back. The BACK
- * box is drawn here, but its tap is the glue's (IsIdleBackTap), so it adds
- * no target. */
-static uint8_t sCompactIdle;
+/* Set by the 3DS glue (port_second_screen_3ds.c) while no game runs (intro,
+ * title, file select): every tab still shows; MAP, ITEMS and QUEST paint
+ * Compact_PaintNoGame instead of reading the (zeroed) snapshot. */
+static uint8_t sCompactNoGame;
 
 enum { CC_TAB_W = 30, CC_TAB_STEP = 34, CC_TAB_X0 = 4 };
-
-static void Compact_IdleBackRect(int32_t h, int32_t* x0, int32_t* y0, int32_t* x1, int32_t* y1) {
-    *x0 = CC_TAB_X0;
-    *y0 = CcTabY(h) + 2;
-    *x1 = CC_TAB_X0 + 64;
-    *y1 = CcTabY(h) + CC_TAB_H - 2;
-}
 
 /* 13x12 pixel-art icons, '#' = ink. */
 static const char* const kIconItems[12] = {
@@ -313,27 +305,16 @@ static void Compact_PaintTabBar(const SSurf* s, TargetList* tl, int activeTab, i
     sCompactChromeKey = CompactChromeKey();
     CStatus(s, ty);
 
-    int32_t themeX;
-    if (sCompactIdle) {
-        if (settingsPage == SS_SETTINGS_ROOT) {
-            int32_t x0, y0, x1, y1;
-            Compact_IdleBackRect(s->h, &x0, &y0, &x1, &y1);
-            CBox(s, x0, y0, x1 - x0, y1 - y0, CC_BTN, CC_BTN_EDGE);
-            CTextCentered(s, (x0 + x1) / 2, y0 + (y1 - y0 - kUiGlyphH) / 2, CC_TEXT, "< BACK");
-        }
-        CText(s, CC_TAB_X0 + 72, ty + (CC_TAB_H - kUiGlyphH) / 2, CC_TEXT, "OPTIONS");
-        themeX = CC_TAB_X0 + 72 + CTextWidth("OPTIONS") + 10;
-    } else {
-        for (int i = 0; i < n; i++) {
-            int32_t x = CC_TAB_X0 + i * CC_TAB_STEP;
-            int on = activeTab == kTabs[i];
-            CBox(s, x, ty + 2, CC_TAB_W, CC_TAB_H - 4, on ? CC_TAB_ON : CC_TAB, on ? CC_TAB_ON_EDGE : CC_TAB_EDGE);
-            CIcon(s, x + CC_TAB_W / 2, ty + CC_TAB_H / 2, kIcons[i], on ? CC_TAB_ON_TEXT : CC_DIM);
-            AddTarget(tl, (float)x, (float)ty, (float)(x + CC_TAB_W + 2), (float)(ty + CC_TAB_H), SS_ACT_TAB,
-                      kTabs[i]);
-        }
-        themeX = CC_TAB_X0 + n * CC_TAB_STEP + 6;
+    (void)settingsPage;
+    for (int i = 0; i < n; i++) {
+        int32_t x = CC_TAB_X0 + i * CC_TAB_STEP;
+        int on = activeTab == kTabs[i];
+        CBox(s, x, ty + 2, CC_TAB_W, CC_TAB_H - 4, on ? CC_TAB_ON : CC_TAB, on ? CC_TAB_ON_EDGE : CC_TAB_EDGE);
+        CIcon(s, x + CC_TAB_W / 2, ty + CC_TAB_H / 2, kIcons[i], on ? CC_TAB_ON_TEXT : CC_DIM);
+        AddTarget(tl, (float)x, (float)ty, (float)(x + CC_TAB_W + 2), (float)(ty + CC_TAB_H), SS_ACT_TAB,
+                  kTabs[i]);
     }
+    const int32_t themeX = CC_TAB_X0 + n * CC_TAB_STEP + 6;
     /* Theme button: cycles kCcThemes, like a day/night switch. */
     CBox(s, themeX, ty + 2, CC_TAB_W, CC_TAB_H - 4, CC_TAB, CC_TAB_EDGE);
     CThemeIcon(s, themeX + CC_TAB_W / 2, ty + CC_TAB_H / 2, CC_ACCENT);
@@ -491,6 +472,16 @@ static void Compact_PaintToast(const SSurf* s) {
     int32_t x = (s->w - w) / 2, y = CcContentBottom(s->h) - h - 4;
     CBox(s, x, y, w, h, CC_BAR, CC_ACCENT);
     CTextCentered(s, s->w / 2, y + 4, CC_TEXT, sToast);
+}
+
+/* ---- MAP / ITEMS / QUEST without a game ---- */
+
+static void Compact_PaintNoGame(const SSurf* s) {
+    const int32_t top = CcContentTop(), bottom = CcContentBottom(s->h);
+    FillRect(s, 0, top, s->w, bottom, CC_BG);
+    const int32_t y = (top + bottom) / 2 - kUiGlyphH;
+    CTextCentered(s, s->w / 2, y, CC_TEXT, "AVAILABLE ONCE A GAME IS LOADED");
+    CTextCentered(s, s->w / 2, y + kUiGlyphH + 6, CC_DIM, "OPTIONS AND DEBUG WORK NOW");
 }
 
 /* ---- DEBUG (debug-tools builds) ---- */

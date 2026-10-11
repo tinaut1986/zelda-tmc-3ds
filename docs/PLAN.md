@@ -35,6 +35,7 @@ v2.2-E1: nothing stable published.
 | `feat/log-settings` (cut from `feat/ingame-ftp`) | the SD log records every setting at start and each change as it is saved | builds; not checked on the console |
 | `perf/gpu-build-profile` (cut from `feat/log-settings`) | SD log `build:` line (the GPU builder's phase timers); `docs/renderer-gpu-gap.md` | builds; to record in Hyrule Field |
 | `feat/debug-restore` (cut from `perf/gpu-build-profile`) | the SD log (on/off, mode) and the FTP server come back at launch as left; debug builds only | builds (debug and production); not checked on the console |
+| `feat/bottom-always` (cut from `feat/debug-restore`) | the whole bottom screen outside gameplay too (intro, title, file select): every tab, OPTIONS and DEBUG working, MAP/ITEMS/QUEST say they need a game | builds; not checked on the console |
 
 **On the owner's console now (2026-10-11):** a debug build of `feat/ingame-ftp`
 (`0.1.1-dev.13.4+6528614`), sent with ftpd and installed with FBI: the first time any of this
@@ -344,5 +345,9 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   recordings (baseline) put our GPU renderer's build at 10.3 ms per frame on a New 3DS,
   against ~3 ms on a 2DS for sm-3ds's, so mzm's and sm-3ds's renderers are the starting
   point for P3 rather than tuning upstream's.
+- **2026-10-11** The bottom screen shows all of its UI outside gameplay (owner: everything
+  must be there to interact with, locked where it needs a game). Upstream's title card and
+  its OPTIONS-only sheet with a BACK button are gone; it opens on OPTIONS, and MAP, ITEMS
+  and QUEST show a notice until a game is loaded.
 - **2026-10-11** The updater shows the `<!-- tmc-notes -->` block (our release
   notes) and falls back to upstream's `## Changelog` section.

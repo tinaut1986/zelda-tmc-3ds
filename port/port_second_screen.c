@@ -3037,6 +3037,12 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
 
     TargetList tl = { .n = 0 };
 
+#ifdef TMC_3DS
+    const int noGamePanel = sCompactNoGame && tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG;
+    if (noGamePanel) {
+        Compact_PaintNoGame(&s);
+    } else
+#endif
     if (tab == SS_TAB_ITEMS) {
         PaintItemsPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, tick, armedRing);
     } else if (tab == SS_TAB_QUEST) {
@@ -3081,7 +3087,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     SS_MARK(SS_PHASE_PANEL);
 
 #ifdef TMC_3DS
-    if (tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG) {
+    if (tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && !noGamePanel) {
         PaintSidebar(&s, snap, &tl, width - sideW + 2, my0, sideW - 2 - CC_MARGIN, my1 - my0, u, ts, tick,
                      armedRing);
     }
