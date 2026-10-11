@@ -107,7 +107,9 @@ can run together. Transfers are written to the SD log.
 `debug/tmc-log-NNNN.txt` in the data folder. Debug builds start it at boot (one
 file per session; the SD LOG cell stops and restarts it, each start is a new
 file). It holds the version, the console, core 1, kernel and free memory, every
-switch change, the marks, and every 5 s a perf line: frames shown and logic ticks
+setting (`settings:` lines, the keys and values of `tmc3ds.ini`), then each change as
+it is saved (`setting: frame_pacing 0 -> 1`: OPTIONS, the bottom-screen settings and
+the SWITCHES alike), the marks, and every 5 s a perf line: frames shown and logic ticks
 per second, presentations skipped, engine work per logic tick (and its max),
 vblank wait per frame, GPU frames and software fallbacks, tiles decoded, area and
 room, free memory. BUFFERED (default): lines collect in a 16 KB buffer, written when

@@ -7,6 +7,13 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "tmc3ds_build_config.h"
+#if TMC3DS_DEBUG_TOOLS
+#include "debug_log_3ds.h"
+#endif
+
+enum { CONFIG_TEXT_CAP = 3072 };
+
 /* BottomWorkerMain renders the settings panel while the main thread handles
  * taps and persists changes. Keep every value shared by those two threads
  * atomic; SaveConfig still performs its file I/O on the main thread and never
@@ -139,8 +146,146 @@ static bool ParseBool(const char* value) {
                              value[0] == 'y' || value[0] == 'Y');
 }
 
+/* Every persisted setting as "key=value\n" lines, the body of tmc3ds.ini. */
+static size_t FormatConfig(char* out, size_t cap) {
+    size_t used = 0;
+#define APPEND(...)                                                                     \
+    do {                                                                                \
+        int n_ = snprintf(out + used, cap - used, __VA_ARGS__);                        \
+        if (n_ > 0) used = used + (size_t)n_ < cap ? used + (size_t)n_ : cap - 1;      \
+    } while (0)
+    APPEND("performance_profile_version=%d\n", PERFORMANCE_PROFILE_VERSION);
+    APPEND("show_fps=%u\n", sShowFps ? 1u : 0u);
+    APPEND("ui_theme=%d\n", (int)sUiTheme);
+    APPEND("frame_pacing=%d\n", (int)sFramePacing);
+    APPEND("follow_cam=%u\n", sFollow ? 1u : 0u);
+    APPEND("windcrest_pins=%u\n", sCrests ? 1u : 0u);
+    APPEND("floor_auto_return=%u\n", sFloorReturn ? 1u : 0u);
+    APPEND("hide_top_hud=%u\n", sHideHud ? 1u : 0u);
+    APPEND("hold_to_advance_text=%u\n", sHoldText ? 1u : 0u);
+    APPEND("color_correction=%u\n", sColorCorrection ? 1u : 0u);
+    APPEND("autosave=%u\n", sAutosave ? 1u : 0u);
+    APPEND("widescreen=%u\n", sAspectRatio == PORT_3DS_ASPECT_WIDE ? 1u : 0u);
+    APPEND("screen_aspect=%s\n", ConfigValues3DS_AspectName(sAspectRatio));
+    APPEND("display_style=%s\n", ConfigValues3DS_DisplayName(sDisplayStyle));
+    APPEND("master_volume=%.2f\n", (double)sVolume);
+    APPEND("panel_backdrop=%d\n", sBackdrop);
+    APPEND("turbo_multiplier=%u\n", sTurboMultiplier);
+
+    /* Round-trip the performance/research switches. SaveConfig parses these
+     * but used to omit them, so any Settings change -- or any exit that saves
+     * -- silently erased every hand-set flag from tmc3ds.ini and the next run
+     * quietly reverted to compiled defaults. That destroyed the config of the
+     * very run being measured; `dump-20260820-205902` was diagnosed only by
+     * reading the offload counters back out of info.txt. Whatever is parsed
+     * must be written. */
+    APPEND("gpu_renderer=%u\n", sGpuRenderer ? 1u : 0u);
+    APPEND("gpu_frame_sync=%u\n", sGpuFrameSync ? 1u : 0u);
+    APPEND("gpu_viewport_offset=%u\n", sGpuViewportOffset ? 1u : 0u);
+    APPEND("gpu_scissor_mode=%d\n", sGpuScissorMode);
+    APPEND("gpu_stencil=%u\n", sGpuStencil ? 1u : 0u);
+    APPEND("audio_core=%d\n", sAudioCore);
+    APPEND("bottom_core=%d\n", sBottomCore);
+    APPEND("bottom_map_skip=%u\n", sBottomMapSkip ? 1u : 0u);
+    APPEND("vblank_phase_lock=%u\n", sVblankPhaseLock ? 1u : 0u);
+    APPEND("audio_dsp_interp_linear=%u\n", sAudioDspInterpLinear ? 1u : 0u);
+    APPEND("speaker_eq=%u\n", sSpeakerEq ? 1u : 0u);
+    APPEND("speaker_eq_hz=%.1f\n", (double)sSpeakerEqHz);
+    APPEND("frame_log=%u\n", sFrameLog ? 1u : 0u);
+    APPEND("compact_upload=%u\n", sCompactUpload ? 1u : 0u);
+    APPEND("app_cpu_limit=%d\n", sAppCpuLimit);
+    APPEND("gpu_static_quad=%u\n", sGpuStaticQuad ? 1u : 0u);
+    APPEND("bottom_rgb565=%u\n", sBottomRgb565 ? 1u : 0u);
+    APPEND("gpu_short_vertices=%u\n", sGpuShortVertices ? 1u : 0u);
+    APPEND("audio_dsp=%u\n", sAudioDsp ? 1u : 0u);
+    APPEND("audio_dsp_pcm=%u\n", sAudioDspPcm ? 1u : 0u);
+#undef APPEND
+    return used;
+}
+
+#if TMC3DS_DEBUG_TOOLS
+/* The settings as last written to the SD log, to log only what changed. */
+static char sLoggedConfig[CONFIG_TEXT_CAP];
+
+/* Calls fn(key, old, new) for each line of `now` that differs from `before`
+ * (old is NULL for a key `before` lacks). */
+static void ForEachChange(const char* before, const char* now,
+                          void (*fn)(const char* key, int keyLen, const char* oldValue, int oldLen,
+                                     const char* newValue, int newLen)) {
+    for (const char* line = now; *line;) {
+        const char* eol = strchr(line, '\n');
+        if (!eol) eol = line + strlen(line);
+        const char* eq = memchr(line, '=', (size_t)(eol - line));
+        if (eq) {
+            const int keyLen = (int)(eq - line);
+            const char* oldValue = NULL;
+            int oldLen = 0;
+            for (const char* b = before; *b;) {
+                const char* beol = strchr(b, '\n');
+                if (!beol) beol = b + strlen(b);
+                if (beol - b > keyLen && b[keyLen] == '=' && memcmp(b, line, (size_t)keyLen) == 0) {
+                    oldValue = b + keyLen + 1;
+                    oldLen = (int)(beol - oldValue);
+                    break;
+                }
+                b = *beol ? beol + 1 : beol;
+            }
+            const int newLen = (int)(eol - eq - 1);
+            if (!oldValue || oldLen != newLen || memcmp(oldValue, eq + 1, (size_t)newLen) != 0)
+                fn(line, keyLen, oldValue, oldLen, eq + 1, newLen);
+        }
+        line = *eol ? eol + 1 : eol;
+    }
+}
+
+static void LogChange(const char* key, int keyLen, const char* oldValue, int oldLen, const char* newValue,
+                      int newLen) {
+    if (oldValue)
+        DebugLog_Printf("setting: %.*s %.*s -> %.*s", keyLen, key, oldLen, oldValue, newLen, newValue);
+    else
+        DebugLog_Printf("setting: %.*s = %.*s", keyLen, key, newLen, newValue);
+}
+
+void Port_Config_3DSLogSettings(void) {
+    char text[CONFIG_TEXT_CAP];
+    FormatConfig(text, sizeof(text));
+    /* Several keys per line, under the log's 512-byte line limit. */
+    char line[400];
+    size_t used = 0;
+    for (const char* p = text; *p;) {
+        const char* eol = strchr(p, '\n');
+        if (!eol) eol = p + strlen(p);
+        const size_t len = (size_t)(eol - p);
+        if (used && used + len + 2 > sizeof(line)) {
+            DebugLog_Printf("settings: %.*s", (int)used, line);
+            used = 0;
+        }
+        if (len + 2 < sizeof(line)) {
+            if (used) line[used++] = ' ';
+            memcpy(line + used, p, len);
+            used += len;
+        }
+        p = *eol ? eol + 1 : eol;
+    }
+    if (used) DebugLog_Printf("settings: %.*s", (int)used, line);
+    memcpy(sLoggedConfig, text, sizeof(text));
+}
+
+static void LogConfigChanges(const char* text) {
+    if (!DebugLog_Running()) return;
+    ForEachChange(sLoggedConfig, text, LogChange);
+    snprintf(sLoggedConfig, sizeof(sLoggedConfig), "%s", text);
+}
+#endif
+
 static void SaveConfig(void) {
     if (!sConfigLoaded) return;
+
+    char text[CONFIG_TEXT_CAP];
+    const size_t textLen = FormatConfig(text, sizeof(text));
+#if TMC3DS_DEBUG_TOOLS
+    LogConfigChanges(text);
+#endif
 
     char temp[sizeof(sConfigPath) + 8];
     char backup[sizeof(sConfigPath) + 8];
@@ -150,51 +295,7 @@ static void SaveConfig(void) {
     FILE* file = fopen(temp, "wb");
     if (!file) return;
     fprintf(file, "# Minish Cap 3DS runtime settings\n");
-    fprintf(file, "performance_profile_version=%d\n", PERFORMANCE_PROFILE_VERSION);
-    fprintf(file, "show_fps=%u\n", sShowFps ? 1u : 0u);
-    fprintf(file, "ui_theme=%d\n", (int)sUiTheme);
-    fprintf(file, "frame_pacing=%d\n", (int)sFramePacing);
-    fprintf(file, "follow_cam=%u\n", sFollow ? 1u : 0u);
-    fprintf(file, "windcrest_pins=%u\n", sCrests ? 1u : 0u);
-    fprintf(file, "floor_auto_return=%u\n", sFloorReturn ? 1u : 0u);
-    fprintf(file, "hide_top_hud=%u\n", sHideHud ? 1u : 0u);
-    fprintf(file, "hold_to_advance_text=%u\n", sHoldText ? 1u : 0u);
-    fprintf(file, "color_correction=%u\n", sColorCorrection ? 1u : 0u);
-    fprintf(file, "autosave=%u\n", sAutosave ? 1u : 0u);
-    fprintf(file, "widescreen=%u\n", sAspectRatio == PORT_3DS_ASPECT_WIDE ? 1u : 0u);
-    fprintf(file, "screen_aspect=%s\n", ConfigValues3DS_AspectName(sAspectRatio));
-    fprintf(file, "display_style=%s\n", ConfigValues3DS_DisplayName(sDisplayStyle));
-    fprintf(file, "master_volume=%.2f\n", (double)sVolume);
-    fprintf(file, "panel_backdrop=%d\n", sBackdrop);
-    fprintf(file, "turbo_multiplier=%u\n", sTurboMultiplier);
-
-    /* Round-trip the performance/research switches. SaveConfig parses these
-     * but used to omit them, so any Settings change -- or any exit that saves
-     * -- silently erased every hand-set flag from tmc3ds.ini and the next run
-     * quietly reverted to compiled defaults. That destroyed the config of the
-     * very run being measured; `dump-20260820-205902` was diagnosed only by
-     * reading the offload counters back out of info.txt. Whatever is parsed
-     * must be written. */
-    fprintf(file, "gpu_renderer=%u\n", sGpuRenderer ? 1u : 0u);
-    fprintf(file, "gpu_frame_sync=%u\n", sGpuFrameSync ? 1u : 0u);
-    fprintf(file, "gpu_viewport_offset=%u\n", sGpuViewportOffset ? 1u : 0u);
-    fprintf(file, "gpu_scissor_mode=%d\n", sGpuScissorMode);
-    fprintf(file, "gpu_stencil=%u\n", sGpuStencil ? 1u : 0u);
-    fprintf(file, "audio_core=%d\n", sAudioCore);
-    fprintf(file, "bottom_core=%d\n", sBottomCore);
-    fprintf(file, "bottom_map_skip=%u\n", sBottomMapSkip ? 1u : 0u);
-    fprintf(file, "vblank_phase_lock=%u\n", sVblankPhaseLock ? 1u : 0u);
-    fprintf(file, "audio_dsp_interp_linear=%u\n", sAudioDspInterpLinear ? 1u : 0u);
-    fprintf(file, "speaker_eq=%u\n", sSpeakerEq ? 1u : 0u);
-    fprintf(file, "speaker_eq_hz=%.1f\n", (double)sSpeakerEqHz);
-    fprintf(file, "frame_log=%u\n", sFrameLog ? 1u : 0u);
-    fprintf(file, "compact_upload=%u\n", sCompactUpload ? 1u : 0u);
-    fprintf(file, "app_cpu_limit=%d\n", sAppCpuLimit);
-    fprintf(file, "gpu_static_quad=%u\n", sGpuStaticQuad ? 1u : 0u);
-    fprintf(file, "bottom_rgb565=%u\n", sBottomRgb565 ? 1u : 0u);
-    fprintf(file, "gpu_short_vertices=%u\n", sGpuShortVertices ? 1u : 0u);
-    fprintf(file, "audio_dsp=%u\n", sAudioDsp ? 1u : 0u);
-    fprintf(file, "audio_dsp_pcm=%u\n", sAudioDspPcm ? 1u : 0u);
+    fwrite(text, 1, textLen, file);
 
     /* A synchronous SD flush can stall the 3DS main thread for seconds on
      * every Settings change. The temporary file plus close/rename/backup

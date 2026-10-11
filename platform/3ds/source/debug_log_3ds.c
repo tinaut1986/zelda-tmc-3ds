@@ -90,8 +90,12 @@ void DebugLog_Printf(const char* fmt, ...) {
     Unlock();
 }
 
+/* port_config_3ds.c: every setting, then each change as it is saved. */
+extern void Port_Config_3DSLogSettings(void);
+
 void DebugLog_Start(void) {
     Lock();
+    const bool opened = !sFile;
     if (!sFile) {
         char path[96];
         sNumber = DebugFiles_Next("log", ".txt", path, sizeof(path));
@@ -112,6 +116,7 @@ void DebugLog_Start(void) {
         }
     }
     Unlock();
+    if (opened && sFile) Port_Config_3DSLogSettings();
 }
 
 void DebugLog_Stop(void) {
