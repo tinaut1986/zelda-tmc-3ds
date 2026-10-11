@@ -499,15 +499,24 @@ static uint64_t sAudioPumpMaxTicks;
  * into it from the main thread, then let the game close as on HOME -> close. */
 static volatile bool sRelaunchRequested;
 
+static bool sRelaunching;
+
 void Platform3DS_RequestRelaunch(void) {
     sRelaunchRequested = true;
 }
 
+bool Platform3DS_Relaunching(void) {
+    return sRelaunching;
+}
+
 static void RelaunchSelf(void) {
     extern void DebugLog_Printf(const char* fmt, ...);
-    extern void DebugLog_Stop(void);
+    extern void DebugLog_Flush(void);
+    /* The log stays open: main's exit path writes each shutdown step, so a
+     * relaunch that never completes shows where it stopped. */
     DebugLog_Printf("relaunching into the build just installed");
-    DebugLog_Stop();
+    DebugLog_Flush();
+    sRelaunching = true;
     u8 param[0x300] = { 0 };
     u8 hmac[0x20] = { 0 };
     if (R_SUCCEEDED(APT_PrepareToDoApplicationJump(0, TMC3DS_TITLE_ID, MEDIATYPE_SD)))

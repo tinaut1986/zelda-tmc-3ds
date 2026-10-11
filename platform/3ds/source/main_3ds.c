@@ -153,14 +153,26 @@ int main(int argc, char** argv) {
     Updater_Init(argc > 0 ? argv[0] : NULL);
     AgbMain();
 #if TMC3DS_DEBUG_TOOLS
+    /* Each step is flushed: if one never returns, the log says which. */
+#define EXIT_STEP(name)                         \
+    do {                                        \
+        DebugLog_Printf("exit: %s", name);      \
+        DebugLog_Flush();                       \
+    } while (0)
+    EXIT_STEP("engine returned");
     if (FtpServer_Running()) FtpServer_Stop();
+    EXIT_STEP("ftp stopped");
     if (DebugPerf_Running()) DebugPerf_Stop();
-    DebugLog_Printf("exit: engine returned");
-    DebugLog_Stop();
+#else
+#define EXIT_STEP(name) ((void)0)
 #endif
     Updater_Shutdown();
-
+    EXIT_STEP("updater stopped");
     Port_PPU_Shutdown();
+    EXIT_STEP("ppu stopped");
+#if TMC3DS_DEBUG_TOOLS
+    DebugLog_Stop();
+#endif
     Platform3DS_Shutdown();
     return 0;
 }

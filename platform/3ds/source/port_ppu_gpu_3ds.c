@@ -85,6 +85,8 @@ static PortPpuGpu3DSStats sStats;
 void PortPpuGpu3DS_Shutdown(void) {
     sPrepared = false;
     sReady = false;
+    /* C3D_RenderTargetDelete waits on the GPU queue; see PlatformGpu3DS_Shutdown. */
+    if (Platform3DS_Relaunching()) return;
 
     if (sOutputTarget) C3D_RenderTargetDelete(sOutputTarget);
     if (sOutputTexture.data) C3D_TexDelete(&sOutputTexture);

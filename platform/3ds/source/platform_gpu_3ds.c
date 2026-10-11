@@ -1122,6 +1122,12 @@ void PlatformGpu3DS_Shutdown(void) {
     if (sUpdatePixels) linearFree(sUpdatePixels);
     sUpdateReady=false; sUpdatePixels=NULL;
     if (!sReady) return;
+    /* Relaunching into a new build: the process ends right after this, and
+     * every teardown call below waits on the GPU queue. One that never drains
+     * (a frame the parity check left behind) hung the console with the jump
+     * armed. The system frees it all with the process (as ../sm-3ds does at
+     * any exit). */
+    if (Platform3DS_Relaunching()) return;
     if (sFrameActive) {
         C2D_Flush();
         if (sC2dFlushBase && sC2dFlushSize) GSPGPU_FlushDataCache(sC2dFlushBase, sC2dFlushSize);
