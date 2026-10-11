@@ -1957,6 +1957,25 @@ void Port_Widescreen_UpdateShadows(void) {
         desiredMode = PORT_3DS_FULL_VIEW_FALLBACK;
     }
 
+#ifdef TMC_3DS
+    {
+        /* Entering Full View needs the policy to hold for a while. Leaving an
+         * interior runs through a fade, a scroll, the room banner and the
+         * content scan, and the raw policy flipped open for two to four ticks
+         * between those phases: 266 -> 400 -> 266 -> 400 with a camera snap
+         * each time (a flashing screen). Dropping out stays immediate. */
+        enum { FULL_VIEW_ENTER_TICKS = 24 };
+        static unsigned stableTicks;
+        if (desiredMode == PORT_3DS_FULL_VIEW_FALLBACK) {
+            stableTicks = 0;
+        } else if (stableTicks < FULL_VIEW_ENTER_TICKS) {
+            ++stableTicks;
+            const Port3DSFullViewMode currentlyProducing =
+                sWsGameplayRoomKey == roomKey ? sWsGameplayMode : PORT_3DS_FULL_VIEW_FALLBACK;
+            if (currentlyProducing == PORT_3DS_FULL_VIEW_FALLBACK) desiredMode = PORT_3DS_FULL_VIEW_FALLBACK;
+        }
+    }
+#endif
     /* Commit the geometry this tick actually used to produce BG/OAM. Policy
      * only schedules the following tick. This is what prevents a late fade,
      * message or settings tap from reinterpreting a completed 200/400 frame
