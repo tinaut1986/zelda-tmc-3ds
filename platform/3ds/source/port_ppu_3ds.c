@@ -13,6 +13,7 @@
 #include "port_second_screen_state.h"
 #include "port_widescreen.h"
 #include "platform_3ds.h"
+#include "tmc3ds_version.h"
 #include "platform_gpu_3ds.h"
 #include "top_view_3ds.h"
 #include "port_ppu_gpu_3ds.h"
@@ -456,7 +457,7 @@ void Port_PPU_3DS_WriteQuickDump(void) {
             gpuStats.linearHeapBytes > gpuStats.c2dFlushBytes ? gpuStats.linearHeapBytes - gpuStats.c2dFlushBytes : 0;
         const double loadIntervalTicks =
             sPerfIntervalLastTicks ? (double)sPerfIntervalLastTicks : (double)Platform3DS_TicksPerSecond() / 60.0;
-        fprintf(info, "The Minish Cap 3DS v" TMC_PORT_VERSION " quick dump\n");
+        fprintf(info, "Minish Cap 3DS v" TMC_PORT_VERSION_LABEL " (upstream " TMC_UPSTREAM_VERSION ") quick dump\n");
         fprintf(info, "\n[System]\n");
         fprintf(info, "Model: %s\n", Platform3DS_IsNew3DS() ? "New Nintendo 3DS" : "Old Nintendo 3DS");
         fprintf(info, "CPU profile requested: %s\n", runtimeStats.speedupRequested ? "804 MHz + L2" : "268 MHz");

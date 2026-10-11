@@ -1,0 +1,178 @@
+name: Build 3DS Release
+
+# Same release scheme as ../mzm and ../sm-3ds (CLAUDE.md, "Releases"):
+# a vX.Y.Z tag builds the CIA and the 3DSX and publishes a GitHub Release.
+# Only three-component tags are ours: the upstream port's tags (v2.1,
+# v2.2-E1...) live in this repository too and never trigger a build.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-3ds:
+    runs-on: ubuntu-latest
+    container:
+      # Pinned to the same image as ../mzm and ../sm-3ds. Bump deliberately.
+      image: devkitpro/devkitarm:20260610
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install host tools
+        run: |
+          command -v cmake > /dev/null || (apt-get update -qq && apt-get install -y -qq cmake > /dev/null)
+          command -v python3 > /dev/null || (apt-get update -qq && apt-get install -y -qq python3 > /dev/null)
+
+      # NOTE: container default shell is dash/sh -- no [[ ]], use POSIX case
+      - name: Determine release tag and channel
+        id: vars
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          case "$GITHUB_REF" in
+            refs/tags/*)
+              TAG="${GITHUB_REF#refs/tags/}"
+              ;;
+            *)
+              # A manual run on a branch publishes that build as a beta named
+              # after its dev version. '+' would end up in asset URLs, so the
+              # hash is joined with '.' instead (still a valid -dev version
+              # for the updater).
+              TAG="v$(sh platform/3ds/tools/version.sh | tr '+' '.')"
+              ;;
+          esac
+          VERSION="${TAG#v}"
+
+          # Stable vs beta is decided by whether main can reach this commit,
+          # NOT by "was this a tag push" (same rule as ../mzm):
+          #   - Tag on an unmerged release/* branch  -> Beta (prerelease).
+          #   - Tag on (or merged into) main         -> Release.
+          #   - Manual workflow_dispatch on a branch -> Beta.
+          #   - Re-running this workflow ON THE TAG for a tag that shipped as
+          #     a beta and is now merged promotes that same page to stable.
+          # Push main BEFORE the tag. If the fetch fails we fall through to
+          # Beta: mislabelling stable as beta is recoverable, not the reverse.
+          git fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main || true
+          if git merge-base --is-ancestor HEAD refs/remotes/origin/main 2>/dev/null; then
+            PRERELEASE=false
+            CHANNEL=Release
+          else
+            PRERELEASE=true
+            CHANNEL=Beta
+          fi
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            echo "prerelease=$PRERELEASE"
+            echo "channel=$CHANNEL"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build 3DS port
+        run: |
+          git config --global --add safe.directory '*'
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITARM=/opt/devkitpro/devkitARM
+          chmod +x platform/3ds/tools/bin/bannertool platform/3ds/tools/bin/makerom
+          # The ROM is never part of the repository or of a published build.
+          test ! -f baserom.gba
+          if git ls-files | grep -Ei '\.(gba|sav)$'; then echo "ROM or save tracked by git"; exit 1; fi
+          # Betas carry the debug tools for playtesting; stable releases
+          # (reachable from main) do not. The channel is also baked into the
+          # binary: a beta shows "vX.Y.Z BETA", and its updater offers the
+          # stable build of its own number.
+          if [ "${{ steps.vars.outputs.channel }}" = "Release" ]; then DEBUG=0; CH=release; else DEBUG=1; CH=beta; fi
+          echo "channel ${{ steps.vars.outputs.channel }}: TMC3DS_DEBUG_TOOLS=$DEBUG TMC3DS_CHANNEL=$CH"
+          TMC3DS_VERSION="${{ steps.vars.outputs.version }}" TMC3DS_DEBUG_TOOLS=$DEBUG TMC3DS_CHANNEL=$CH \
+            TMC3DS_JOBS=$(nproc) ./platform/3ds/build.sh
+          V="${{ steps.vars.outputs.version }}"
+          test -f "build-3ds/game/tmc-3ds-v${V}.cia"
+          test -f "build-3ds/game/tmc-3ds-v${V}.3dsx"
+
+      - name: Generate release notes and QR code
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          TAG="${{ steps.vars.outputs.tag }}"
+          V="${{ steps.vars.outputs.version }}"
+          REPO="${{ github.repository }}"
+          BASE="https://github.com/${REPO}/releases/download/${TAG}"
+          PRERELEASE="${{ steps.vars.outputs.prerelease }}"
+
+          PREV=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "HEAD^" 2>/dev/null || true)
+          RANGE="${PREV:+${PREV}..}HEAD"
+
+          if [ ! -f "docs/release-notes/${TAG}.md" ]; then
+            echo "::warning::docs/release-notes/${TAG}.md is missing: the updater will show the commit list for ${TAG}"
+          fi
+
+          {
+            if [ "$PRERELEASE" = "true" ]; then
+              echo "> **Beta build.** This comes off a \`release/*\` branch that has not"
+              echo "> been merged into \`main\` yet, so it is not a stable version."
+              echo
+            fi
+            echo "![QR code for the ${TAG} CIA](${BASE}/QR-${TAG}.png)"
+            echo
+            # The updater on the console shows this block (update_manifest.c,
+            # Update_FormatNotes). Keep the markers identical.
+            NOTES="docs/release-notes/${TAG}.md"
+            if [ -f "$NOTES" ]; then
+              echo "<!-- tmc-notes -->"
+              echo "## What's new"
+              echo
+              cat "$NOTES"
+              echo
+              echo "<!-- /tmc-notes -->"
+              echo
+            fi
+            echo "## Downloads"
+            echo
+            echo "- [tmc-3ds-v${V}.cia](${BASE}/tmc-3ds-v${V}.cia) (install with FBI)"
+            echo "- [tmc-3ds-v${V}.3dsx](${BASE}/tmc-3ds-v${V}.3dsx) (Homebrew Launcher)"
+            echo
+            echo "Based on [EstebanPdN/zelda-tmc-3ds](https://github.com/EstebanPdN/zelda-tmc-3ds) $(tr -d '\r\n' < platform/3ds/upstream_version.txt)."
+            echo "The ROM is not included: put your own USA or European ROM in"
+            echo "\`sdmc:/3ds/Minish Cap 3DS/\`, see the README."
+            echo
+            echo "## Changelog"
+            echo
+            git log ${RANGE} --no-merges --pretty='- %s (%h)'
+          } > release_notes.md
+
+          apt-get update -qq && apt-get install -y -qq qrencode > /dev/null
+          qrencode -s 10 -o "QR-${TAG}.png" "${BASE}/tmc-3ds-v${V}.cia"
+
+          cp "build-3ds/game/tmc-3ds-v${V}.cia" "build-3ds/game/tmc-3ds-v${V}.3dsx" .
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tmc-3ds-build
+          path: |
+            tmc-3ds-v*.cia
+            tmc-3ds-v*.3dsx
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: ${{ steps.vars.outputs.channel }} ${{ steps.vars.outputs.tag }}
+          draft: false
+          prerelease: ${{ steps.vars.outputs.prerelease == 'true' }}
+          # A beta promoted in place stays behind the previous stable as "latest"
+          # unless asked: /releases/latest must be the stable one.
+          make_latest: ${{ steps.vars.outputs.prerelease == 'true' && 'false' || 'true' }}
+          body_path: release_notes.md
+          files: |
+            tmc-3ds-v${{ steps.vars.outputs.version }}.cia
+            tmc-3ds-v${{ steps.vars.outputs.version }}.3dsx
+            QR-${{ steps.vars.outputs.tag }}.png
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

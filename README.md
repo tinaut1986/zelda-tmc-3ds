@@ -1,3 +1,14 @@
+# The Minish Cap 3DS (tinaut1986 fork)
+
+> This is a fork of [EstebanPdN/zelda-tmc-3ds](https://github.com/EstebanPdN/zelda-tmc-3ds)
+> with its own version line (`v0.1.0` onwards), aimed at smooth 60 fps on both
+> New 3DS and Old 3DS, a wide mode that fills the top screen, and on-console debug
+> tools. It installs as a separate app, **Minish Cap 3DS**, and reads its ROM and
+> saves from `sdmc:/3ds/Minish Cap 3DS/` (not upstream's `The Minish Cap 3DS`
+> folder), so both can be installed side by side. Downloads are on this
+> repository's [releases](https://github.com/tinaut1986/zelda-tmc-3ds/releases).
+> The rest of this README is upstream's.
+
 # The Minish Cap 3DS
 
 <img width="1672" height="941" alt="The Minish Cap 3DS" src="https://github.com/user-attachments/assets/db99e777-12a2-4222-86c3-7c8f14062586" />

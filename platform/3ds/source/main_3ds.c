@@ -1,4 +1,5 @@
 #include "platform_3ds.h"
+#include "tmc3ds_version.h"
 #include "updater.h"
 #include "port_second_screen_theme.h"
 
@@ -15,7 +16,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define APP_DIR "sdmc:/3ds/The Minish Cap 3DS"
+#include "app_paths_3ds.h"
+
+#define APP_DIR TMC3DS_APP_DIR
 #define ROM_PATH_SIZE 512
 
 extern void AgbMain(void);
@@ -75,7 +78,7 @@ int main(int argc, char** argv) {
     if (!Platform3DS_Init()) return 1;
     Platform3DS_ShowSplash();
 
-    printf("The Minish Cap 3DS v" TMC_PORT_VERSION "\n\n");
+    printf("Minish Cap 3DS v" TMC_PORT_VERSION_LABEL " (upstream " TMC_UPSTREAM_VERSION ")\n\n");
     printf("agbplay: ipatix and contributors (LGPLv3).\nLicenses: romfs:/licenses/\n\n");
     printf("System: %s\n", Platform3DS_IsNew3DS() ? "New Nintendo 3DS" : "Nintendo 3DS");
     printf("Performance: %s\n",

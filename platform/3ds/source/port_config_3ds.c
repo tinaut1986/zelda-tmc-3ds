@@ -146,7 +146,7 @@ static void SaveConfig(void) {
 
     FILE* file = fopen(temp, "wb");
     if (!file) return;
-    fprintf(file, "# The Minish Cap 3DS runtime settings\n");
+    fprintf(file, "# Minish Cap 3DS runtime settings\n");
     fprintf(file, "performance_profile_version=%d\n", PERFORMANCE_PROFILE_VERSION);
     fprintf(file, "show_fps=%u\n", sShowFps ? 1u : 0u);
     fprintf(file, "follow_cam=%u\n", sFollow ? 1u : 0u);

@@ -20,9 +20,15 @@ int main(int argc,char **argv) {
  assert(!Update_IsNewer("v3.0","3.1-E1"));assert(!Update_IsNewer("v3.1-E1","3.1-E1"));
  assert(!Update_ValidVersion("3.1/../evil"));assert(!Update_ValidVersion("3..1"));
  assert(!Update_ValidVersion("3.1-E99999999"));assert(!Update_ValidVersion("3.1.2.3"));
+ assert(Update_IsNewer("v0.1.0","0.1.0-beta"));assert(Update_IsNewer("v0.1.0","0.1.0-dev.3+abc1234"));
+ assert(Update_IsNewer("v0.1.1-beta","0.1.0"));assert(!Update_IsNewer("v0.1.0-beta","0.1.0-beta"));
+ assert(Update_IsNewer("v0.1.0-beta","0.1.0-dev.3.2+abc1234")==false);assert(!Update_IsNewer("v0.1.0","0.1.1-dev.1+abc1234"));
+ assert(!Update_ValidVersion("0.1.0-dev/../x"));assert(!Update_ValidVersion("0.1.0-betax"));
  char lines[384][43];
  unsigned count=Update_FormatNotes("## Changelog\n\n- **Fixed** [world colors](https://example.com).\n![QR](https://example.com/qr.png)",lines,384);
  assert(count==3 && !strcmp(lines[0],"Changelog") && !lines[1][0] && !strcmp(lines[2],"- Fixed world colors."));
+ count=Update_FormatNotes("> Beta\n<!-- tmc-notes -->\n## What's new\n\n- Faster map\n<!-- /tmc-notes -->\n## Changelog\n- x (abc)",lines,384);
+ assert(count==3 && !strcmp(lines[0],"What's new") && !strcmp(lines[2],"- Faster map"));
  assert(Update_IsNewer("v1.3-E15","1.3-E14"));
  assert(!Update_IsNewer("v1.2","1.3-E14"));
  assert(Update_FormatNotes("<img src=\"https://example.com/qr.png\" />\n## Changelog",lines,384)==1 && !strcmp(lines[0],"Changelog"));

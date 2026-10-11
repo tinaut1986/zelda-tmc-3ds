@@ -65,6 +65,7 @@
 
 #ifdef TMC_3DS
 #include "platform_3ds.h"
+#include "tmc3ds_version.h"
 #include "port_dump_state_3ds.h"
 
 extern void Port_PPU_3DS_WriteQuickDump(void);
@@ -74,6 +75,9 @@ extern double Port_PPU_3DS_AverageFps(void);
 
 #ifndef TMC_PORT_VERSION
 #define TMC_PORT_VERSION "DEV"
+#endif
+#ifndef TMC_PORT_VERSION_LABEL
+#define TMC_PORT_VERSION_LABEL TMC_PORT_VERSION
 #endif
 
 /* Buffer pixel layout is RGBA_8888: as a little-endian u32 that's
@@ -2070,7 +2074,7 @@ static void PaintDeveloperOverlay(const SSurf* s, const SecondScreenSnapshot* sn
 #ifdef TMC_3DS
     double currentFps = Port_PPU_3DS_CurrentFps();
     double averageFps = Port_PPU_3DS_AverageFps();
-    snprintf(values[0], sizeof(values[0]), "%s", TMC_PORT_VERSION);
+    snprintf(values[0], sizeof(values[0]), "%s", TMC_PORT_VERSION_LABEL);
     snprintf(values[1], sizeof(values[1]), "%s", Platform3DS_IsNew3DS() ? "NEW 3DS" : "OLD 3DS");
     snprintf(values[2], sizeof(values[2]), "%.0f", currentFps);
     snprintf(values[3], sizeof(values[3]), "%.0f", averageFps);

@@ -154,7 +154,7 @@ bool Port_SecondScreen_3DS_PaintUpdateTop(uint32_t* pixels, int stride) {
     if (revision != st.revision || notes != lastNotes) {
         static char body[12289], formatted[512][43];
         if (notes && st.version[0]) Updater_GetNotes(body,sizeof(body));
-        else snprintf(body,sizeof(body),"Installed: v%s\n\n%s\n\nSelect a release below to read its changelog.\nChoose Stable or Pre-release to check that channel.",TMC_PORT_VERSION,st.message);
+        else snprintf(body,sizeof(body),"Installed: v%s\n\n%s\n\nSelect a release below to read its changelog.\nChoose Stable or Pre-release to check that channel.",TMC_PORT_VERSION_LABEL,st.message);
         unsigned n = Update_FormatNotes(body,formatted,512);
         count = 0;
         for (unsigned i=0; i<n && count<512; i++) {
