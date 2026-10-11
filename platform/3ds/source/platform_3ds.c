@@ -6,6 +6,11 @@
 #include "port_second_screen_3ds.h"
 #include "port_second_screen_sync_3ds.h"
 #include "frame_pacing_3ds.h"
+#include "app_paths_3ds.h"
+#include "tmc3ds_build_config.h"
+#if TMC3DS_DEBUG_TOOLS
+#include "debug_link_3ds.h"
+#endif
 
 #include <3ds.h>
 #include <stdbool.h>
@@ -96,6 +101,9 @@ static void OnAptEvent(APT_HookType hook, void* parameter) {
              * restore callbacks before that boundary coalesce into one resync. */
             Platform3DS_MarkFrameDiscontinuity(OLD3DS_FRAME_PACER_DISCONTINUITY_APT);
             PlatformGpu3DS_InvalidateBottomTarget();
+            /* HOME or the lid is about to take the GPU: drain citro3d's queue
+             * while it is still ours (PlatformGpu3DS_DrainQueue). */
+            if (hook == APTHOOK_ONSUSPEND || hook == APTHOOK_ONSLEEP) PlatformGpu3DS_DrainQueue();
             break;
         default:
             break;
@@ -490,7 +498,49 @@ static uint64_t sAptMaxTicks;
 static uint64_t sAudioPumpTicks;
 static uint64_t sAudioPumpMaxTicks;
 
+/* SITE INSTALL (ftp_server_3ds.c) installed a new build of this title: jump
+ * into it from the main thread, then let the game close as on HOME -> close. */
+static volatile bool sRelaunchRequested;
+
+static bool sRelaunching;
+
+void Platform3DS_RequestRelaunch(void) {
+    sRelaunchRequested = true;
+}
+
+bool Platform3DS_Relaunching(void) {
+    return sRelaunching;
+}
+
+static void RelaunchSelf(void) {
+    extern void DebugLog_Printf(const char* fmt, ...);
+    extern void DebugLog_Flush(void);
+    /* The log stays open: main's exit path writes each shutdown step, so a
+     * relaunch that never completes shows where it stopped. */
+    DebugLog_Printf("relaunching into the build just installed");
+    DebugLog_Flush();
+    sRelaunching = true;
+    /* The jump ends this process without running main's exit path, and a GPU
+     * left mid-frame freezes the build it starts (issue #2): put citro3d down
+     * first, the way a normal exit does. */
+    extern void Port_PPU_Shutdown(void);
+    Port_Audio_Shutdown();
+    Port_PPU_Shutdown();
+    DebugLog_Printf("relaunch: gpu down, jumping");
+    DebugLog_Flush();
+    u8 param[0x300] = { 0 };
+    u8 hmac[0x20] = { 0 };
+    if (R_SUCCEEDED(APT_PrepareToDoApplicationJump(0, TMC3DS_TITLE_ID, MEDIATYPE_SD)))
+        APT_DoApplicationJump(param, sizeof(param), hmac);
+}
+
 static bool PumpLifecycleAndAudio(void) {
+    if (sRelaunchRequested) {
+        sRelaunchRequested = false;
+        RelaunchSelf();
+        sRunning = false;
+        return false;
+    }
     ++sAptChecks;
     const uint64_t aptStart = svcGetSystemTick();
     const bool alive = sRunning && !Updater_ShouldClose() && aptMainLoop();
@@ -696,6 +746,9 @@ static void PollInput(void) {
     hidScanInput();
     sHeld = hidKeysHeld();
     sDown = hidKeysDown();
+#if TMC3DS_DEBUG_TOOLS
+    DebugLink_Poll(&sHeld, &sDown, sLogicFrames); /* remote buttons and requests (SITE over FTP) */
+#endif
     hidCircleRead(&sCirclePosition);
     if (sIsNew3DS) {
         hidCstickRead(&sCStickPosition);
@@ -953,10 +1006,12 @@ static bool SaveCapturedFramebufferBmp(const char* path, const GSPGPU_CaptureInf
     const uint8_t* framebuffer = (const uint8_t*)capture->framebuf0_vaddr;
     GSPGPU_InvalidateDataCache(framebuffer, capture->framebuf_widthbytesize * (u32)width);
 
-    FILE* file = fopen(path, "wb");
-    if (!file) return false;
     const int rowSize = (width * 3 + 3) & ~3;
     const uint32_t fileSize = 54u + (uint32_t)rowSize * (uint32_t)height;
+    /* Built in RAM and written with one fwrite: row by row, the SD card took
+     * about 5 s for the two screens, with the game frozen meanwhile. */
+    uint8_t* image = calloc(1, fileSize);
+    if (!image) return false;
     const uint8_t header[54] = {
         'B', 'M',
         (uint8_t)fileSize, (uint8_t)(fileSize >> 8), (uint8_t)(fileSize >> 16), (uint8_t)(fileSize >> 24),
@@ -965,10 +1020,9 @@ static bool SaveCapturedFramebufferBmp(const char* path, const GSPGPU_CaptureInf
         (uint8_t)height, (uint8_t)(height >> 8), (uint8_t)(height >> 16), (uint8_t)(height >> 24),
         1, 0, 24, 0,
     };
-    bool ok = fwrite(header, 1, sizeof(header), file) == sizeof(header);
-    uint8_t row[400 * 3];
-    for (int y = height - 1; ok && y >= 0; --y) {
-        memset(row, 0, (size_t)rowSize);
+    memcpy(image, header, sizeof(header));
+    for (int y = height - 1; y >= 0; --y) {
+        uint8_t* row = image + 54 + (size_t)(height - 1 - y) * (size_t)rowSize;
         for (int x = 0; x < width; ++x) {
             const uint8_t* pixel = framebuffer + (size_t)x * capture->framebuf_widthbytesize +
                                    (size_t)(height - 1 - y) * bytesPerPixel;
@@ -978,10 +1032,51 @@ static bool SaveCapturedFramebufferBmp(const char* path, const GSPGPU_CaptureInf
             row[x * 3 + 1] = green;
             row[x * 3 + 2] = red;
         }
-        ok = fwrite(row, 1, (size_t)rowSize, file) == (size_t)rowSize;
     }
-    if (fclose(file) != 0) ok = false;
+    FILE* file = fopen(path, "wb");
+    bool ok = file && fwrite(image, 1, fileSize, file) == fileSize;
+    if (file && fclose(file) != 0) ok = false;
+    free(image);
     return ok;
+}
+
+/* The top screen as shown, scaled to width x height RGB565 (each output pixel
+ * the average of its block), for save-state screenshots. */
+bool Platform3DS_CaptureTopThumbnail(uint16_t* pixels, int width, int height) {
+    GSPGPU_CaptureInfo capture;
+    memset(&capture, 0, sizeof(capture));
+    if (!pixels || width <= 0 || height <= 0 || R_FAILED(GSPGPU_ImportDisplayCaptureInfo(&capture))) return false;
+    const GSPGPU_CaptureInfoEntry* top = &capture.screencapture[GSP_SCREEN_TOP];
+    if (!top->framebuf0_vaddr || top->framebuf_widthbytesize == 0) return false;
+    const GSPGPU_FramebufferFormat format = (GSPGPU_FramebufferFormat)(top->format & 7u);
+    const unsigned bpp = gspGetBytesPerPixel(format);
+    if (bpp < 2 || bpp > 4) return false;
+    const int srcW = 400, srcH = 240;
+    const uint8_t* fb = (const uint8_t*)top->framebuf0_vaddr;
+    GSPGPU_InvalidateDataCache(fb, top->framebuf_widthbytesize * (u32)srcW);
+    const int bw = srcW / width > 0 ? srcW / width : 1, bh = srcH / height > 0 ? srcH / height : 1;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            unsigned r = 0, g = 0, b = 0;
+            for (int dy = 0; dy < bh; ++dy) {
+                for (int dx = 0; dx < bw; ++dx) {
+                    const int sx = x * srcW / width + dx, sy = y * srcH / height + dy;
+                    uint8_t pr, pg, pb;
+                    ReadFramebufferPixel(fb + (size_t)sx * top->framebuf_widthbytesize + (size_t)sy * bpp, format,
+                                         &pr, &pg, &pb);
+                    r += pr;
+                    g += pg;
+                    b += pb;
+                }
+            }
+            const unsigned n = (unsigned)(bw * bh);
+            r /= n;
+            g /= n;
+            b /= n;
+            pixels[y * width + x] = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+        }
+    }
+    return true;
 }
 
 static bool SaveCapturedFramebufferRaw(const char* path, const GSPGPU_CaptureInfoEntry* capture,

@@ -19,6 +19,7 @@ static void UpdateLog(const char *format, ...) {
 }
 
 #include "app_paths_3ds.h"
+#include "net_3ds.h"
 
 #define UPDATE_DIR TMC3DS_APP_DIR "/update"
 #define UPDATE_PART UPDATE_DIR "/download.part"
@@ -224,15 +225,13 @@ static bool install_3dsx(void) {
   remove(backup); return true;
 }
 static void run_job(void *arg) {
-  void *soc_buffer = NULL; bool soc_ready = false, curl_ready = false, ac_ready = false, ssl_ready = false;
+  bool net_ready = false, curl_ready = false, ssl_ready = false;
   bool ok = false; Transfer t = {0};
   UpdateStatus s; Updater_GetStatus(&s);
-  if (R_FAILED(acInit())) goto done;
-  ac_ready = true; u32 wifi = 0;
-  if (R_FAILED(ACU_GetWifiStatus(&wifi)) || !wifi) { publish(UPDATE_ERROR, "NO WI-FI CONNECTION"); goto done; }
-  soc_buffer = memalign(4096, 1024 * 1024);
-  if (!soc_buffer || R_FAILED(socInit(soc_buffer, 1024 * 1024))) goto done;
-  soc_ready = true;
+  /* Shared with the debug FTP server (net_3ds.c). */
+  if (!Net3DS_Acquire()) goto done;
+  net_ready = true;
+  if (!Net3DS_WifiConnected()) { publish(UPDATE_ERROR, "NO WI-FI CONNECTION"); goto done; }
   // The linked mbedTLS entropy callback needs the SSL service on both models.
   if (R_FAILED(sslcInit(0))) { publish(UPDATE_ERROR, "TLS SERVICE FAILED"); goto done; }
   ssl_ready = true;
@@ -281,9 +280,7 @@ done:
   if (download_job) remove(UPDATE_PART);
   if (curl_ready) curl_global_cleanup();
   if (ssl_ready) sslcExit();
-  if (soc_ready) socExit();
-  free(soc_buffer);
-  if (ac_ready) acExit();
+  if (net_ready) Net3DS_Release();
   Updater_GetStatus(&s);
   if (!ok && s.state != UPDATE_ERROR)
     publish(UPDATE_ERROR, cancelled() ? "UPDATE CANCELLED" : "CONNECTION FAILED - RETRY");

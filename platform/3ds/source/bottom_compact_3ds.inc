@@ -172,23 +172,15 @@ static void CColumn(int32_t width, int cols, int col, int span, int32_t* x, int3
  * button, and the clock, Wi-Fi bars and battery on the right. */
 
 static int CompactTabCount(void) {
-    return TMC3DS_DEBUG_TOOLS ? 5 : 4;
+    return TMC3DS_DEBUG_TOOLS ? 6 : 5;
 }
 
-/* Set by the 3DS glue (port_second_screen_3ds.c) while OPTIONS is open from
- * the title screen: there are no game tabs then, only a way back. The BACK
- * box is drawn here, but its tap is the glue's (IsIdleBackTap), so it adds
- * no target. */
-static uint8_t sCompactIdle;
+/* Set by the 3DS glue (port_second_screen_3ds.c) while no game runs (intro,
+ * title, file select): every tab still shows; MAP, ITEMS and QUEST paint
+ * Compact_PaintNoGame instead of reading the (zeroed) snapshot. */
+static uint8_t sCompactNoGame;
 
 enum { CC_TAB_W = 30, CC_TAB_STEP = 34, CC_TAB_X0 = 4 };
-
-static void Compact_IdleBackRect(int32_t h, int32_t* x0, int32_t* y0, int32_t* x1, int32_t* y1) {
-    *x0 = CC_TAB_X0;
-    *y0 = CcTabY(h) + 2;
-    *x1 = CC_TAB_X0 + 64;
-    *y1 = CcTabY(h) + CC_TAB_H - 2;
-}
 
 /* 13x12 pixel-art icons, '#' = ink. */
 static const char* const kIconItems[12] = {
@@ -212,24 +204,17 @@ static const char* const kIconDebug[12] = {
     "####.....####", "...###.###...", ".#.###.###.#.", "#..#######..#", "....#####....", ".............",
 };
 
+static const char* const kIconStates[12] = {
+    "###########..", "#..#####..##.", "#..#####..###", "#..#####..###", "#.........###", "#############",
+    "#...........#", "#.#########.#", "#...........#", "#.#########.#", "#...........#", "#############",
+};
+
 static void CIcon(const SSurf* s, int32_t cx, int32_t cy, const char* const* rows, uint32_t color) {
     for (int y = 0; y < 12; y++) {
         for (int x = 0; x < 13; x++) {
             if (rows[y][x] == '#') {
                 FillRect(s, cx - 6 + x, cy - 6 + y, cx - 5 + x, cy - 5 + y, color);
             }
-        }
-    }
-}
-
-/* The theme button's icon: a ring, its right half filled (the usual day/night
- * contrast glyph). */
-static void CThemeIcon(const SSurf* s, int32_t cx, int32_t cy, uint32_t color) {
-    for (int y = -6; y <= 6; y++) {
-        for (int x = -6; x <= 6; x++) {
-            int d2 = x * x + y * y;
-            if (d2 > 42) continue;
-            if (d2 >= 25 || x >= 0) FillRect(s, cx + x, cy + y, cx + x + 1, cy + y + 1, color);
         }
     }
 }
@@ -303,8 +288,10 @@ static int Compact_ChromeChanged(void) {
 }
 
 static void Compact_PaintTabBar(const SSurf* s, TargetList* tl, int activeTab, int settingsPage) {
-    static const char* const* const kIcons[5] = { kIconMap, kIconItems, kIconQuest, kIconOptions, kIconDebug };
-    static const uint8_t kTabs[5] = { SS_TAB_MAP, SS_TAB_ITEMS, SS_TAB_QUEST, SS_TAB_SETTINGS, SS_TAB_DEBUG };
+    static const char* const* const kIcons[6] = { kIconMap,    kIconItems,   kIconQuest,
+                                                  kIconStates, kIconOptions, kIconDebug };
+    static const uint8_t kTabs[6] = { SS_TAB_MAP,    SS_TAB_ITEMS,    SS_TAB_QUEST,
+                                      SS_TAB_STATES, SS_TAB_SETTINGS, SS_TAB_DEBUG };
     int n = CompactTabCount();
     int32_t ty = CcTabY(s->h);
     FillRect(s, 0, ty, s->w, ty + CC_TAB_H, CC_BAR);
@@ -313,31 +300,16 @@ static void Compact_PaintTabBar(const SSurf* s, TargetList* tl, int activeTab, i
     sCompactChromeKey = CompactChromeKey();
     CStatus(s, ty);
 
-    int32_t themeX;
-    if (sCompactIdle) {
-        if (settingsPage == SS_SETTINGS_ROOT) {
-            int32_t x0, y0, x1, y1;
-            Compact_IdleBackRect(s->h, &x0, &y0, &x1, &y1);
-            CBox(s, x0, y0, x1 - x0, y1 - y0, CC_BTN, CC_BTN_EDGE);
-            CTextCentered(s, (x0 + x1) / 2, y0 + (y1 - y0 - kUiGlyphH) / 2, CC_TEXT, "< BACK");
-        }
-        CText(s, CC_TAB_X0 + 72, ty + (CC_TAB_H - kUiGlyphH) / 2, CC_TEXT, "OPTIONS");
-        themeX = CC_TAB_X0 + 72 + CTextWidth("OPTIONS") + 10;
-    } else {
-        for (int i = 0; i < n; i++) {
-            int32_t x = CC_TAB_X0 + i * CC_TAB_STEP;
-            int on = activeTab == kTabs[i];
-            CBox(s, x, ty + 2, CC_TAB_W, CC_TAB_H - 4, on ? CC_TAB_ON : CC_TAB, on ? CC_TAB_ON_EDGE : CC_TAB_EDGE);
-            CIcon(s, x + CC_TAB_W / 2, ty + CC_TAB_H / 2, kIcons[i], on ? CC_TAB_ON_TEXT : CC_DIM);
-            AddTarget(tl, (float)x, (float)ty, (float)(x + CC_TAB_W + 2), (float)(ty + CC_TAB_H), SS_ACT_TAB,
-                      kTabs[i]);
-        }
-        themeX = CC_TAB_X0 + n * CC_TAB_STEP + 6;
+    (void)settingsPage;
+    for (int i = 0; i < n; i++) {
+        int32_t x = CC_TAB_X0 + i * CC_TAB_STEP;
+        int on = activeTab == kTabs[i];
+        CBox(s, x, ty + 2, CC_TAB_W, CC_TAB_H - 4, on ? CC_TAB_ON : CC_TAB, on ? CC_TAB_ON_EDGE : CC_TAB_EDGE);
+        CIcon(s, x + CC_TAB_W / 2, ty + CC_TAB_H / 2, kIcons[i], on ? CC_TAB_ON_TEXT : CC_DIM);
+        AddTarget(tl, (float)x, (float)ty, (float)(x + CC_TAB_W + 2), (float)(ty + CC_TAB_H), SS_ACT_TAB,
+                  kTabs[i]);
     }
-    /* Theme button: cycles kCcThemes, like a day/night switch. */
-    CBox(s, themeX, ty + 2, CC_TAB_W, CC_TAB_H - 4, CC_TAB, CC_TAB_EDGE);
-    CThemeIcon(s, themeX + CC_TAB_W / 2, ty + CC_TAB_H / 2, CC_ACCENT);
-    AddTarget(tl, (float)themeX, (float)ty, (float)(themeX + CC_TAB_W), (float)(ty + CC_TAB_H), SS_ACT_THEME, 0);
+    /* The theme is picked in OPTIONS (THEME); the tab bar has no shortcut. */
 }
 
 /* The theme picked in the config, and its panel backdrop with it. */
@@ -460,22 +432,336 @@ static void Compact_Toast(const char* fmt, ...) {
 
 static uint8_t sToastOnScreen;
 
+#if TMC3DS_DEBUG_TOOLS
+#include "ftp_server_3ds.h"
+#endif
+
+/* A notice that holds the toast while it lasts: a build arriving over FTP. */
+static const char* Compact_StandingNotice(void) {
+#if TMC3DS_DEBUG_TOOLS
+    return FtpServer_Notice();
+#else
+    return NULL;
+#endif
+}
+
 static int Compact_ToastVisible(void) {
     return sToast[0] && (int32_t)(sToastUntil - sCompactTick) > 0;
 }
 
 /* Paint while it shows, and once more to take it away. */
 static int Compact_ToastNeedsPaint(void) {
-    return Compact_ToastVisible() || sToastOnScreen;
+    return Compact_StandingNotice() || Compact_ToastVisible() || sToastOnScreen;
 }
 
 static void Compact_PaintToast(const SSurf* s) {
+    const char* notice = Compact_StandingNotice();
+    if (notice) Compact_Toast("%s", notice);
     sToastOnScreen = (uint8_t)Compact_ToastVisible();
     if (!sToastOnScreen) return;
     int32_t w = CTextWidth(sToast) + 12, h = 15;
     int32_t x = (s->w - w) / 2, y = CcContentBottom(s->h) - h - 4;
     CBox(s, x, y, w, h, CC_BAR, CC_ACCENT);
     CTextCentered(s, s->w / 2, y + 4, CC_TEXT, sToast);
+}
+
+/* ---- STATES: save states (save_state_3ds.h), as in ../mzm and ../sm-3ds ----
+ * A list of cards, newest first, three rows of two per page; a card opens its
+ * detail: the screenshot, where and when, and LOAD / SAVE OVER / DELETE, each
+ * needing a second tap. Taps run on the main thread, painting on the bottom
+ * worker; the shared values below are single words. */
+
+#include "save_state_3ds.h"
+
+enum {
+    STATES_CMD_NEW = 1,
+    STATES_CMD_PREV,
+    STATES_CMD_NEXT,
+    STATES_CMD_BACK,
+    STATES_CMD_LOAD,
+    STATES_CMD_OVER,
+    STATES_CMD_DELETE,
+    STATES_CMD_CARD0 = 16, /* + the card's place on the page */
+    STATES_PER_PAGE = 6,
+    STATES_CARD_THUMB_W = 80,
+    STATES_CARD_THUMB_H = 48,
+    STATES_ARM_TICKS = 60, /* ~3 s at the ~20 Hz paint rate */
+};
+
+static volatile int sStatesPage;
+static volatile uint32_t sStatesOpenId;   /* 0 = the list */
+static volatile int sStatesArmed;         /* the command waiting for its second tap */
+static volatile uint32_t sStatesArmedAt;
+static volatile uint8_t sStatesThumbPending;
+static uint32_t sStatesToastGen;
+static uint8_t sStatesScanAsked;
+
+/* Screenshots: the open state's at full size, the page's cards scaled down.
+ * Bottom worker only. */
+static uint16_t sStatesBig[SAVE_STATE_THUMB_W * SAVE_STATE_THUMB_H];
+static uint32_t sStatesBigId;
+static uint8_t sStatesBigOk;
+static struct {
+    uint32_t id;
+    uint8_t ok;
+    uint16_t px[STATES_CARD_THUMB_W * STATES_CARD_THUMB_H];
+} sStatesCards[STATES_PER_PAGE];
+static uint32_t sStatesThumbGen = 0xFFFFFFFFu;
+
+static uint32_t Rgb565ToColor(uint16_t v) {
+    const uint32_t r = (v >> 11) & 31u, g = (v >> 5) & 63u, b = v & 31u;
+    return RGB((r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2));
+}
+
+static void BlitRgb565(const SSurf* s, int32_t x, int32_t y, const uint16_t* px, int w, int h) {
+    for (int j = 0; j < h; ++j)
+        for (int i = 0; i < w; ++i) FillRect(s, x + i, y + j, x + i + 1, y + j + 1, Rgb565ToColor(px[j * w + i]));
+}
+
+static void Compact_StatesInvalidateThumbs(void) {
+    const uint32_t gen = SaveState_Generation();
+    if (gen == sStatesThumbGen) return;
+    sStatesThumbGen = gen; /* an overwrite replaces a picture under the same id */
+    sStatesBigId = 0;
+    for (int i = 0; i < STATES_PER_PAGE; ++i) sStatesCards[i].id = 0;
+}
+
+static const uint16_t* Compact_StatesCardThumb(int slot, uint32_t id, int* loads) {
+    if (sStatesCards[slot].id == id) return sStatesCards[slot].ok ? sStatesCards[slot].px : NULL;
+    if (*loads <= 0) {
+        sStatesThumbPending = 1; /* a later paint reads it: one SD read per paint */
+        return NULL;
+    }
+    --*loads;
+    sStatesCards[slot].id = id;
+    sStatesCards[slot].ok = SaveState_ReadThumb(id, sStatesBig) ? 1 : 0;
+    sStatesBigId = 0; /* sStatesBig was borrowed */
+    if (sStatesCards[slot].ok) {
+        for (int y = 0; y < STATES_CARD_THUMB_H; ++y)
+            for (int x = 0; x < STATES_CARD_THUMB_W; ++x)
+                sStatesCards[slot].px[y * STATES_CARD_THUMB_W + x] =
+                    sStatesBig[(y * SAVE_STATE_THUMB_H / STATES_CARD_THUMB_H) * SAVE_STATE_THUMB_W +
+                               x * SAVE_STATE_THUMB_W / STATES_CARD_THUMB_W];
+    }
+    return sStatesCards[slot].ok ? sStatesCards[slot].px : NULL;
+}
+
+static void Compact_StatesWhen(uint32_t savedAt, char* out, size_t cap) {
+    const time_t t = (time_t)savedAt;
+    const struct tm* tm = savedAt ? gmtime(&t) : NULL;
+    if (tm) snprintf(out, cap, "%02d/%02d %02d:%02d", tm->tm_mday, tm->tm_mon + 1, tm->tm_hour, tm->tm_min);
+    else snprintf(out, cap, "--");
+}
+
+static const char* Compact_StatesArea(unsigned area, char* buf, size_t cap) {
+    const char* name = SaveState_AreaName(area);
+    if (!name) {
+        snprintf(buf, cap, "AREA %02X", area);
+        return buf;
+    }
+    return name;
+}
+
+static bool Compact_StatesArmed(int cmd) {
+    return sStatesArmed == cmd && (int32_t)(sCompactTick - sStatesArmedAt) < STATES_ARM_TICKS;
+}
+
+static void Compact_PaintStatesList(const SSurf* s, TargetList* tl) {
+    const int32_t top = CcContentTop() + 2, bottom = CcContentBottom(s->h) - CC_MARGIN;
+    const int count = SaveState_Count();
+    const int pages = count > 0 ? (count + STATES_PER_PAGE - 1) / STATES_PER_PAGE : 1;
+    int page = sStatesPage;
+    if (page >= pages) page = sStatesPage = pages - 1;
+    if (page < 0) page = sStatesPage = 0;
+
+    const bool canSave = SaveState_CanSave() && !SaveState_Busy();
+    CButton(s, tl, CC_MARGIN, top, 96, 20, "+ NEW STATE", canSave ? CC_ACCENT : CC_FAINT, SS_ACT_STATES,
+            STATES_CMD_NEW);
+    char line[40];
+    snprintf(line, sizeof(line), "%d STATE%s  %d/%d", count, count == 1 ? "" : "S", page + 1, pages);
+    CText(s, CC_MARGIN + 104, top + 7, CC_DIM, line);
+    CButton(s, tl, s->w - CC_MARGIN - 62, top, 30, 20, "<", page > 0 ? CC_TEXT : CC_FAINT, SS_ACT_STATES,
+            STATES_CMD_PREV);
+    CButton(s, tl, s->w - CC_MARGIN - 30, top, 30, 20, ">", page + 1 < pages ? CC_TEXT : CC_FAINT, SS_ACT_STATES,
+            STATES_CMD_NEXT);
+
+    if (count == 0) {
+        CTextCentered(s, s->w / 2, (top + bottom) / 2 - 8, CC_DIM, "NO SAVE STATES YET");
+        CTextCentered(s, s->w / 2, (top + bottom) / 2 + 4, CC_FAINT,
+                      SaveState_CanSave() ? "+ NEW STATE SAVES ONE" : "LOAD A GAME TO SAVE ONE");
+        return;
+    }
+    const int32_t gridTop = top + 24;
+    const int32_t cardH = (bottom - gridTop - 2 * CC_GAP) / 3;
+    int loads = 1;
+    for (int k = 0; k < STATES_PER_PAGE; ++k) {
+        SaveStateInfo info;
+        if (!SaveState_InfoAt(page * STATES_PER_PAGE + k, &info)) break;
+        int32_t x, w;
+        CColumn(s->w, 2, k % 2, 1, &x, &w);
+        const int32_t y = gridTop + (k / 2) * (cardH + CC_GAP);
+        CBox(s, x, y, w, cardH, CC_CELL, CC_CELL_EDGE);
+        const int32_t ty = y + (cardH - STATES_CARD_THUMB_H) / 2;
+        const uint16_t* thumb = info.hasThumb ? Compact_StatesCardThumb(k, info.id, &loads) : NULL;
+        if (thumb) BlitRgb565(s, x + 3, ty, thumb, STATES_CARD_THUMB_W, STATES_CARD_THUMB_H);
+        else FillRect(s, x + 3, ty, x + 3 + STATES_CARD_THUMB_W, ty + STATES_CARD_THUMB_H, CC_BG);
+        const int32_t tx = x + STATES_CARD_THUMB_W + 7;
+        char when[16], area[16], buf[24];
+        Compact_StatesWhen(info.savedAt, when, sizeof(when));
+        snprintf(buf, sizeof(buf), "#%d", page * STATES_PER_PAGE + k + 1);
+        CText(s, tx, y + 5, CC_ACCENT, buf);
+        snprintf(area, sizeof(area), "%.11s", Compact_StatesArea(info.area, buf, sizeof(buf)));
+        CText(s, tx, y + 16, info.compatible ? CC_TEXT : CC_BAD, area);
+        snprintf(buf, sizeof(buf), "HP %u/%u", info.health / 8u, info.maxHealth / 8u);
+        CText(s, tx, y + 27, CC_DIM, buf);
+        CText(s, tx, y + 38, CC_FAINT, when + 6); /* the time; the date is in the detail */
+        AddTarget(tl, (float)x, (float)y, (float)(x + w), (float)(y + cardH), SS_ACT_STATES,
+                  (uint8_t)(STATES_CMD_CARD0 + k));
+    }
+}
+
+static void Compact_PaintStatesDetail(const SSurf* s, TargetList* tl, uint32_t id) {
+    SaveStateInfo info;
+    int number = 0;
+    for (int i = 0; i < SaveState_Count(); ++i) {
+        if (SaveState_InfoAt(i, &info) && info.id == id) {
+            number = i + 1;
+            break;
+        }
+    }
+    if (!number) { /* deleted meanwhile */
+        sStatesOpenId = 0;
+        Compact_PaintStatesList(s, tl);
+        return;
+    }
+    const int32_t top = CcContentTop() + 2;
+    if (sStatesBigId != id) {
+        sStatesBigOk = info.hasThumb && SaveState_ReadThumb(id, sStatesBig);
+        sStatesBigId = id;
+    }
+    CBox(s, CC_MARGIN, top, SAVE_STATE_THUMB_W + 2, SAVE_STATE_THUMB_H + 2, CC_CELL, CC_CELL_EDGE);
+    if (sStatesBigOk) BlitRgb565(s, CC_MARGIN + 1, top + 1, sStatesBig, SAVE_STATE_THUMB_W, SAVE_STATE_THUMB_H);
+    else CTextCentered(s, CC_MARGIN + 1 + SAVE_STATE_THUMB_W / 2, top + 56, CC_FAINT, "NO PICTURE");
+
+    const int32_t tx = CC_MARGIN + SAVE_STATE_THUMB_W + 8;
+    int32_t ty = top + 2;
+    char buf[40], area[24];
+    snprintf(buf, sizeof(buf), "STATE %d", number);
+    CText(s, tx, ty, CC_ACCENT, buf);
+    ty += 13;
+    const char* name = Compact_StatesArea(info.area, area, sizeof(area));
+    snprintf(buf, sizeof(buf), "%.17s", name);
+    CText(s, tx, ty, CC_TEXT, buf);
+    if (strlen(name) > 17) {
+        ty += 10;
+        snprintf(buf, sizeof(buf), "%.17s", name + 17);
+        CText(s, tx, ty, CC_TEXT, buf);
+    }
+    ty += 11;
+    snprintf(buf, sizeof(buf), "ROOM %02X", info.room);
+    CText(s, tx, ty, CC_DIM, buf);
+    ty += 11;
+    snprintf(buf, sizeof(buf), "HP %u/%u  R %u", info.health / 8u, info.maxHealth / 8u, info.rupees);
+    CText(s, tx, ty, CC_DIM, buf);
+    ty += 11;
+    Compact_StatesWhen(info.savedAt, buf, sizeof(buf));
+    CText(s, tx, ty, CC_DIM, buf);
+    ty += 11;
+    snprintf(buf, sizeof(buf), "%.17s", info.build);
+    CText(s, tx, ty, CC_FAINT, buf);
+    ty += 13;
+    if (!info.compatible) {
+        CText(s, tx, ty, CC_BAD, "ANOTHER BUILD:");
+        CText(s, tx, ty + 10, CC_BAD, "CANNOT LOAD");
+    }
+
+    const int32_t by = top + SAVE_STATE_THUMB_H + 8;
+    static const char* const kLabels[4] = { "LOAD", "SAVE OVER", "DELETE", "BACK" };
+    static const uint8_t kCmds[4] = { STATES_CMD_LOAD, STATES_CMD_OVER, STATES_CMD_DELETE, STATES_CMD_BACK };
+    const bool busy = SaveState_Busy();
+    for (int i = 0; i < 4; ++i) {
+        int32_t x, w;
+        CColumn(s->w, 4, i, 1, &x, &w);
+        bool enabled = !busy;
+        if (kCmds[i] == STATES_CMD_LOAD) enabled = enabled && info.compatible;
+        if (kCmds[i] == STATES_CMD_OVER) enabled = enabled && SaveState_CanSave();
+        if (kCmds[i] == STATES_CMD_BACK) enabled = true;
+        const bool armed = Compact_StatesArmed(kCmds[i]);
+        CButton(s, tl, x, by, w, 24, armed ? "SURE?" : kLabels[i], armed ? CC_WARN : (enabled ? CC_TEXT : CC_FAINT),
+                SS_ACT_STATES, kCmds[i]);
+    }
+    CText(s, CC_MARGIN + 1, by + 32, CC_FAINT, "TAP TWICE TO CONFIRM");
+}
+
+static void Compact_PaintStates(const SSurf* s, TargetList* tl) {
+    FillRect(s, 0, CcContentTop(), s->w, CcContentBottom(s->h), CC_BG);
+    if (!sStatesScanAsked && SaveState_Request(SAVE_STATE_JOB_SCAN, 0)) sStatesScanAsked = 1;
+    Compact_StatesInvalidateThumbs();
+    sStatesThumbPending = 0;
+    /* The result of a save, load or delete, once. */
+    const uint32_t gen = SaveState_Generation();
+    if (gen != sStatesToastGen) {
+        sStatesToastGen = gen;
+        char message[48];
+        SaveState_LastResult(message, sizeof(message), NULL);
+        if (strcmp(message, "STATES READ")) Compact_Toast("%s", message);
+    }
+    if (SaveState_Busy()) Compact_Toast("PLEASE WAIT");
+    const uint32_t id = sStatesOpenId;
+    if (id) Compact_PaintStatesDetail(s, tl, id);
+    else Compact_PaintStatesList(s, tl);
+}
+
+/* Repaint while a job runs, a result is due or a picture is still to read. */
+static int Compact_StatesNeedsPaint(void) {
+    return SaveState_Busy() || SaveState_Generation() != sStatesToastGen || sStatesThumbPending ||
+           (sStatesArmed && (int32_t)(sCompactTick - sStatesArmedAt) < STATES_ARM_TICKS + 2);
+}
+
+/* SS_ACT_STATES taps (main thread). */
+static void Compact_StatesCommand(int cmd) {
+    const uint32_t id = sStatesOpenId;
+    if (cmd >= STATES_CMD_CARD0 && cmd < STATES_CMD_CARD0 + STATES_PER_PAGE) {
+        SaveStateInfo info;
+        if (SaveState_InfoAt(sStatesPage * STATES_PER_PAGE + (cmd - STATES_CMD_CARD0), &info)) sStatesOpenId = info.id;
+        sStatesArmed = 0;
+        return;
+    }
+    switch (cmd) {
+        case STATES_CMD_NEW:
+            if (!SaveState_CanSave()) Compact_Toast("LOAD A GAME FIRST");
+            else if (SaveState_Request(SAVE_STATE_JOB_SAVE_NEW, 0)) sStatesPage = 0;
+            return;
+        case STATES_CMD_PREV:
+            if (sStatesPage > 0) --sStatesPage;
+            return;
+        case STATES_CMD_NEXT: ++sStatesPage; return;
+        case STATES_CMD_BACK:
+            sStatesOpenId = 0;
+            sStatesArmed = 0;
+            return;
+        default: break;
+    }
+    /* LOAD, SAVE OVER, DELETE: the first tap arms, the second does it. */
+    if (!Compact_StatesArmed(cmd)) {
+        sStatesArmed = cmd;
+        sStatesArmedAt = sCompactTick;
+        return;
+    }
+    sStatesArmed = 0;
+    if (cmd == STATES_CMD_LOAD) SaveState_Request(SAVE_STATE_JOB_LOAD, id);
+    else if (cmd == STATES_CMD_OVER) SaveState_Request(SAVE_STATE_JOB_OVERWRITE, id);
+    else if (cmd == STATES_CMD_DELETE && SaveState_Request(SAVE_STATE_JOB_DELETE, id)) sStatesOpenId = 0;
+}
+
+/* ---- MAP / ITEMS / QUEST without a game ---- */
+
+static void Compact_PaintNoGame(const SSurf* s) {
+    const int32_t top = CcContentTop(), bottom = CcContentBottom(s->h);
+    FillRect(s, 0, top, s->w, bottom, CC_BG);
+    const int32_t y = (top + bottom) / 2 - kUiGlyphH;
+    CTextCentered(s, s->w / 2, y, CC_TEXT, "AVAILABLE ONCE A GAME IS LOADED");
+    CTextCentered(s, s->w / 2, y + kUiGlyphH + 6, CC_DIM, "OPTIONS AND DEBUG WORK NOW");
 }
 
 /* ---- DEBUG (debug-tools builds) ---- */
@@ -485,6 +771,7 @@ static void Compact_PaintToast(const SSurf* s) {
 #include "debug_perf_3ds.h"
 #include "debug_switches_3ds.h"
 #include "port_ppu_gpu_3ds.h"
+#include "ftp_server_3ds.h"
 
 enum { DBG_PAGE_MAIN, DBG_PAGE_SWITCHES };
 static int sDebugPage;
@@ -498,6 +785,7 @@ enum {
     DBG_CMD_LOG_MARK,
     DBG_CMD_PERF_RUN,
     DBG_CMD_GPU_CHECK,
+    DBG_CMD_FTP_RUN,
     DBG_CMD_SWITCH0 = 32, /* + DEBUG_SW_* */
 };
 
@@ -600,6 +888,22 @@ static void Compact_PaintDebugMain(const SSurf* s, TargetList* tl, const SecondS
     PortPpuGpu3DSStats gpu;
     PortPpuGpu3DS_GetStats(&gpu);
     CColumn(s->w, 4, 0, 2, &x, &w);
+    int32_t gpuX = x, gpuW = w;
+    /* FTP: the SD card over the network while the game runs (ftp_server_3ds.h). */
+    {
+        unsigned sent = 0, received = 0;
+        bool connected = false;
+        FtpServer_Stats(&sent, &received, &connected);
+        char address[40];
+        FtpServer_Address(address, sizeof(address));
+        CColumn(s->w, 4, 2, 2, &x, &w);
+        CRunCell(s, tl, x, y, w, connected ? "FTP  CLIENT ON" : "FTP SERVER", address,
+                 FtpServer_Running() ? CC_GOOD : CC_DIM, FtpServer_Running(), DBG_CMD_FTP_RUN, 0);
+        (void)sent;
+        (void)received;
+    }
+    x = gpuX;
+    w = gpuW;
     uint32_t color = CC_ACCENT;
     if (!gpu.initialized) {
         snprintf(value, sizeof(value), "NO GPU RENDERER");
@@ -663,14 +967,19 @@ static void Compact_DebugCommand(int cmd) {
             if (DebugLog_Running()) {
                 int n = DebugLog_FileNumber();
                 DebugLog_Stop();
+                Port_Config_SetDebugLogOn(false);
                 Compact_Toast("LOG %04d SAVED", n);
             } else {
+                Port_Config_SetDebugLogOn(true);
                 DebugLog_Start();
                 if (DebugLog_Running()) Compact_Toast("LOG %04d STARTED", DebugLog_FileNumber());
                 else Compact_Toast("CANNOT WRITE THE LOG");
             }
             break;
-        case DBG_CMD_LOG_MODE: DebugLog_SetDirect(!DebugLog_Direct()); break;
+        case DBG_CMD_LOG_MODE:
+            DebugLog_SetDirect(!DebugLog_Direct());
+            Port_Config_SetDebugLogDirect(DebugLog_Direct());
+            break;
         case DBG_CMD_LOG_MARK:
             if (DebugLog_Running()) Compact_Toast("MARK %d", DebugLog_Mark());
             break;
@@ -684,6 +993,22 @@ static void Compact_DebugCommand(int cmd) {
                 Compact_Toast("RECORDING");
             } else {
                 Compact_Toast("NO MEMORY");
+            }
+            break;
+        case DBG_CMD_FTP_RUN:
+            if (FtpServer_Running() || Port_Config_DebugFtpOn()) {
+                /* Also cancels a restore still waiting for Wi-Fi. */
+                FtpServer_Stop();
+                Port_Config_SetDebugFtpOn(false);
+                Compact_Toast("FTP STOPPED");
+            } else if (Port_Config_SetDebugFtpOn(true), FtpServer_Start()) {
+                char address[40];
+                FtpServer_Address(address, sizeof(address));
+                Compact_Toast("FTP %s", address);
+            } else {
+                char reason[40];
+                FtpServer_Address(reason, sizeof(reason));
+                Compact_Toast("FTP: %s", reason);
             }
             break;
         case DBG_CMD_GPU_CHECK:

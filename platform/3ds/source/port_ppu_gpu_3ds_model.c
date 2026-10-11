@@ -8,8 +8,8 @@
 
 #include <string.h>
 
-/* Phase timing, compiled only into the host benchmark (PPU_GPU3DS_PROFILE).
- * The console build has no timers in the builder at all. */
+/* Phase timing (PPU_GPU3DS_PROFILE): the host benchmark and the console build
+ * both define it; on the console the SD log prints it every 5 s ("build:"). */
 #ifdef PPU_GPU3DS_PROFILE
 double gPpuGpu3DSPhase[PPU_GPU3DS_PHASE_COUNT];
 #ifdef __3DS__
@@ -164,6 +164,13 @@ void PpuGpu3DS_CacheClearDirty(PpuGpu3DSCache* cache) {
     cache->dirtyCount = 0;
 }
 
+void PpuGpu3DS_CacheForgetLookups(PpuGpu3DSCache* cache) {
+    if (++cache->memoEpoch == 0) {
+        memset(cache->memo, 0, sizeof(cache->memo));
+        cache->memoEpoch = 1;
+    }
+}
+
 void PpuGpu3DS_CacheBeginFrame(PpuGpu3DSCache* cache, const uint16_t* bgPalette,
                                const uint16_t* objPalette, uint32_t frame) {
     /* Slots used during this frame are the most recent entries in the LRU
@@ -174,6 +181,7 @@ void PpuGpu3DS_CacheBeginFrame(PpuGpu3DSCache* cache, const uint16_t* bgPalette,
     update_palette(cache->objPalette, cache->objBankGeneration, &cache->obj256Generation,
                    objPalette);
     cache->frame = frame;
+    PpuGpu3DS_CacheForgetLookups(cache);
 }
 
 /* The palette generation a tile's decode depends on: one 4bpp bank, or the
@@ -263,10 +271,18 @@ bool PpuGpu3DS_CacheTile(PpuGpu3DSCache* cache, const uint8_t* vram, PpuGpu3DSTi
         return false;
     }
 
+    const unsigned bucket = cache_bucket(key);
+    const unsigned memoIndex = bucket & (PPU_GPU3DS_MEMO_SIZE - 1u);
+    if (cache->memoEpoch != 0 && cache->memo[memoIndex].epoch == cache->memoEpoch &&
+        keys_equal(cache->memo[memoIndex].key, key)) {
+        ++cache->hits;
+        *outSlot = cache->memo[memoIndex].slot;
+        return true;
+    }
+
     const uint32_t paletteGeneration = tile_palette_generation(cache, key);
     const uint8_t* source = vram + key.vramOffset;
 
-    const unsigned bucket = cache_bucket(key);
     uint16_t selected = PPU_GPU3DS_CACHE_NIL;
     for (uint16_t slot = cache->buckets[bucket]; slot != PPU_GPU3DS_CACHE_NIL;
          slot = cache->entries[slot].hashNext) {
@@ -278,6 +294,9 @@ bool PpuGpu3DS_CacheTile(PpuGpu3DSCache* cache, const uint8_t* vram, PpuGpu3DSTi
             if (!entry->pinned) cache_touch(cache, slot);
             ++cache->hits;
             *outSlot = slot;
+            cache->memo[memoIndex].key = key;
+            cache->memo[memoIndex].slot = slot;
+            cache->memo[memoIndex].epoch = cache->memoEpoch;
             return true;
         }
         /* Same tile address, but its palette or its VRAM bytes moved on since
@@ -318,6 +337,9 @@ bool PpuGpu3DS_CacheTile(PpuGpu3DSCache* cache, const uint8_t* vram, PpuGpu3DSTi
     cache_decode_slot(cache, source, tileBytes, key, selected, atlas,
                       paletteGeneration);
     *outSlot = selected;
+    cache->memo[memoIndex].key = key;
+    cache->memo[memoIndex].slot = selected;
+    cache->memo[memoIndex].epoch = cache->memoEpoch;
     return true;
 }
 
@@ -533,7 +555,8 @@ static bool read_obj(const PpuGpu3DSFrameView* frame, unsigned index,
     };
     obj->boundsWidth = obj->width * (obj->doubleSize ? 2 : 1);
     obj->boundsHeight = obj->height * (obj->doubleSize ? 2 : 1);
-    if (obj->y >= MODE1_GBA_HEIGHT) obj->y -= 256;
+    const int wrap = frame->objYWrap > 0 ? frame->objYWrap : MODE1_GBA_HEIGHT;
+    if (obj->y >= wrap || (frame->objYNegative && frame->objYNegative[index])) obj->y -= 256;
     if (obj->x >= (int)frame->width) obj->x -= 512;
     if (affine) {
         const unsigned group = (attr1 >> 9u) & 0x1fu;
@@ -1082,7 +1105,12 @@ static bool text_bg_sample(const PpuGpu3DSFrameView* frame, unsigned bg,
     const unsigned tileX = sourceX / PPU_GPU3DS_TILE_SIDE;
     const unsigned tileY = sourceY / PPU_GPU3DS_TILE_SIDE;
     uint16_t entry;
-    if (mapWidthTiles == 32u && trueExtension &&
+    if (mapWidthTiles == 32u && frame->wsFullView && frame->wsShadowBaseTile[bg] >= 0) {
+        /* Full View: every column from the shadow, indexed from the left of
+         * the view (mode1.c, mode1_shadow_index_for_x). */
+        const unsigned column = (unsigned)(effectiveX + (int)(scrollX & 7u)) >> 3u;
+        if (!PpuGpu3DS_ShadowEntry(frame, bg, tileY & 31u, column, &entry)) entry = 0;
+    } else if (mapWidthTiles == 32u && trueExtension &&
         frame->wsShadowBaseTile[bg] >= 0) {
         const unsigned column =
                 (unsigned)((int64_t)tileX - frame->wsShadowBaseTile[bg] + 32) &
@@ -1120,6 +1148,142 @@ static bool text_bg_sample(const PpuGpu3DSFrameView* frame, unsigned bg,
     return true;
 }
 
+
+/* One quad for pixels [p0, p1) of a tile row band starting at screen x (whole
+ * tile rows from y; the band's scissor trims the first and last rows). */
+static bool emit_tile_part(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, uint16_t* atlas,
+                           PpuGpu3DSCommandBuffer* cmd, bool emit, uint16_t entry, uint32_t charBase,
+                           bool bpp8, int x, int y, unsigned p0, unsigned p1, size_t* vertexCursor,
+                           size_t* indexCursor) {
+    const uint32_t tileBytes = bpp8 ? 64u : 32u;
+    const uint32_t tileOffset = charBase + (uint32_t)(entry & 0x03ffu) * tileBytes;
+    if (tileOffset > MODE1_VRAM_SIZE - tileBytes) return false;
+    float u0 = 0.0f, u1 = 0.0f, v0 = 0.0f, v1 = 0.0f;
+    if (emit) {
+        uint16_t slot;
+        if (!PpuGpu3DS_CacheTile(cache, frame->memory.vram,
+                                 (PpuGpu3DSTileKey){ .vramOffset = tileOffset,
+                                                     .paletteBank = bpp8 ? 0 : (uint8_t)(entry >> 12u),
+                                                     .bpp8 = bpp8,
+                                                     .domain = PPU_GPU3DS_PALETTE_BG },
+                                 atlas, &slot))
+            return false;
+        const unsigned tilesPerRow = PPU_GPU3DS_ATLAS_SIDE / PPU_GPU3DS_TILE_SIDE;
+        const float slotX = (float)((slot % tilesPerRow) * PPU_GPU3DS_TILE_SIDE);
+        const float slotY = (float)((slot / tilesPerRow) * PPU_GPU3DS_TILE_SIDE);
+        const float invAtlas = 1.0f / PPU_GPU3DS_ATLAS_SIDE;
+        if (entry & (1u << 10u)) {
+            u0 = (slotX + 8.0f - (float)p0) * invAtlas;
+            u1 = (slotX + 8.0f - (float)p1) * invAtlas;
+        } else {
+            u0 = (slotX + (float)p0) * invAtlas;
+            u1 = (slotX + (float)p1) * invAtlas;
+        }
+        v0 = 1.0f - slotY * invAtlas;
+        v1 = 1.0f - (slotY + 8.0f) * invAtlas;
+        if (entry & (1u << 11u)) {
+            const float swap = v0;
+            v0 = v1;
+            v1 = swap;
+        }
+    }
+    emit_uv_quad(frame, cmd, emit, (float)(x + (int)p0), (float)y, (float)(x + (int)p1), (float)(y + 8), 0.0f, u0,
+                 v0, u1, v1, false, vertexCursor, indexCursor);
+    return true;
+}
+
+/* The common Wide case, a tile at a time: a 32-tile map whose columns past
+ * x=240 (or, in Full View, all of them) come from the shadow tilemap, no
+ * mosaic and no HUD or message shift. Reads each map entry once instead of
+ * sampling every pixel; the tile that straddles x=240 is split there, where
+ * mode1.c switches provider. */
+static bool build_wide_tile_geometry(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, uint16_t* atlas,
+                                     PpuGpu3DSCommandBuffer* cmd, const PpuGpu3DSBand* band, uint16_t bgcnt,
+                                     unsigned bg, bool emit, size_t* vertexCursor, size_t* indexCursor) {
+    const uint8_t* io = frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;
+    const uint32_t charBase = ((bgcnt >> 2u) & 3u) * 0x4000u;
+    const bool bpp8 = ((bgcnt >> 7u) & 1u) != 0;
+    const uint32_t screenBase = ((bgcnt >> 8u) & 0x1fu) * 0x800u;
+    const unsigned mapHeightTiles = ((bgcnt >> 14u) & 2u) ? 64u : 32u;
+    const unsigned scrollX = read16(io, MODE1_IO_BG0HOFS + bg * 4u) & 0x1ffu;
+    const unsigned scrollY = read16(io, MODE1_IO_BG0VOFS + bg * 4u) & 0x1ffu;
+    const bool shadow = frame->wsShadowBaseTile[bg] >= 0;
+    const bool fullView = frame->wsFullView && shadow;
+    const unsigned renderWidth =
+            (shadow || (bg == 3u && frame->bg3Repeat)) ? frame->width : MODE1_GBA_BG_CLIP_X;
+    const int fine = (int)(scrollX & 7u);
+    const unsigned firstTileX = scrollX >> 3u;
+    const unsigned bandBottom = band->firstLine + band->lineCount;
+    const unsigned sourceY0 = band->firstLine + scrollY;
+    int y = (int)band->firstLine - (int)(sourceY0 & 7u);
+    for (unsigned row = 0; y < (int)bandBottom; ++row, y += 8) {
+        const unsigned tileY = ((sourceY0 >> 3u) + row) & (mapHeightTiles - 1u);
+        const uint32_t rowBase = screenBase + (tileY / 32u) * 0x800u + (tileY & 31u) * 64u;
+        if (screenBase > MODE1_VRAM_SIZE - 0x800u || rowBase > MODE1_VRAM_SIZE - 64u) return false;
+        for (unsigned c = 0;; ++c) {
+            const int x = (int)c * 8 - fine;
+            if (x >= (int)renderWidth) break;
+            if (build_abandoned(cmd)) return false;
+            const unsigned tileX = (firstTileX + c) & 31u;
+            unsigned p1 = 8u;
+            if (x + 8 > (int)renderWidth) p1 = (unsigned)((int)renderWidth - x);
+            if (fullView) {
+                uint16_t entry;
+                if (!PpuGpu3DS_ShadowEntry(frame, bg, tileY & 31u, c, &entry)) entry = 0;
+                if (!emit_tile_part(frame, cache, atlas, cmd, emit, entry, charBase, bpp8, x, y, 0, p1,
+                                    vertexCursor, indexCursor))
+                    return false;
+                continue;
+            }
+            /* Columns before 240 from VRAM, the rest from the shadow (or the
+             * VRAM wrap for a repeating BG3 without one). */
+            const int split = MODE1_GBA_BG_CLIP_X - x;
+            const unsigned vramEnd = split <= 0 ? 0u : (split >= (int)p1 ? p1 : (unsigned)split);
+            if (vramEnd > 0u) {
+                const uint16_t entry = read16(frame->memory.vram, rowBase + tileX * 2u);
+                if (!emit_tile_part(frame, cache, atlas, cmd, emit, entry, charBase, bpp8, x, y, 0, vramEnd,
+                                    vertexCursor, indexCursor))
+                    return false;
+            }
+            if (vramEnd < p1) {
+                uint16_t entry;
+                if (shadow) {
+                    const unsigned column = (unsigned)((int64_t)tileX - frame->wsShadowBaseTile[bg] + 32) & 31u;
+                    if (!PpuGpu3DS_ShadowEntry(frame, bg, tileY & 31u, column, &entry)) continue;
+                } else {
+                    entry = read16(frame->memory.vram, rowBase + tileX * 2u);
+                }
+                if (!emit_tile_part(frame, cache, atlas, cmd, emit, entry, charBase, bpp8, x, y, vramEnd, p1,
+                                    vertexCursor, indexCursor))
+                    return false;
+            }
+        }
+    }
+    return true;
+}
+
+/* How far a run starting at screen x may go on line y before a column where
+ * text_bg_sample changes its mapping (where a straight run could break). */
+static unsigned widescreen_run_limit(const PpuGpu3DSFrameView* frame, unsigned bg, unsigned y, unsigned x,
+                                     unsigned renderWidth) {
+    unsigned end = renderWidth;
+    int edges[7];
+    int n = 0;
+    edges[n++] = MODE1_GBA_BG_CLIP_X;
+    if (bg == 0) {
+        edges[n++] = frame->wsHudRightNativeX;
+        edges[n++] = (int)frame->width - (MODE1_GBA_BG_CLIP_X - frame->wsHudRightNativeX);
+        if (message_line(frame, bg, y)) {
+            edges[n++] = frame->wsMsgX0;
+            edges[n++] = frame->wsMsgX1;
+            edges[n++] = frame->wsMsgX0 + frame->wsMsgShift;
+            edges[n++] = frame->wsMsgX1 + frame->wsMsgShift;
+        }
+    }
+    for (int i = 0; i < n; ++i)
+        if (edges[i] > (int)x && (unsigned)edges[i] < end) end = (unsigned)edges[i];
+    return end - x;
+}
 
 static bool build_widescreen_bg_geometry(
         const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
@@ -1190,13 +1354,38 @@ static bool build_widescreen_bg_geometry(
             }
             int dx = 0;
             unsigned width = 1;
+            /* Fast path: a run is almost always the rest of one tile, read
+             * straight (dx 1) or flipped (dx -1). Check only its last pixel
+             * against that prediction instead of every pixel; a run that must
+             * not cross a remap edge (x=240, the HUD and message shifts) stops
+             * there. Anything else (mosaic, an edge inside the tile) falls to
+             * the pixel-by-pixel walk below, which is exact. This walk was
+             * ~170k samples a frame in Wide, the whole 10 ms of the build. */
+            if (mosaicWidth == 1u && x + 1u < renderWidth) {
+                const unsigned limit = widescreen_run_limit(frame, bg, y, x, renderWidth);
+                for (int dir = 1; dir >= -1 && width == 1u; dir -= 2) {
+                    const unsigned left = dir > 0 ? PPU_GPU3DS_TILE_SIDE - (unsigned)first.pixelX
+                                                  : (unsigned)first.pixelX + 1u;
+                    const unsigned run = left < limit ? left : limit;
+                    if (run < 2u) break;
+                    PpuGpu3DSTextSample last;
+                    if (!text_bg_sample(frame, bg, charBase, screenBase, bpp8, mapWidthTiles, mapHeightTiles,
+                                        scrollX, scrollY, mosaicWidth, mosaicHeight, x + run - 1u, y, &last))
+                        return false;
+                    if (last.visible && keys_equal(first.key, last.key) && last.pixelY == first.pixelY &&
+                        (int)last.pixelX == (int)first.pixelX + dir * (int)(run - 1u)) {
+                        dx = dir;
+                        width = run;
+                    }
+                }
+            }
             PpuGpu3DSTextSample next;
-            if (x + 1u < renderWidth &&
+            if (width == 1u && x + 1u < renderWidth &&
                 !text_bg_sample(frame, bg, charBase, screenBase, bpp8,
                                 mapWidthTiles, mapHeightTiles, scrollX, scrollY,
                                 mosaicWidth, mosaicHeight, x + 1u, y, &next))
                 return false;
-            if (x + 1u < renderWidth && next.visible &&
+            if (width == 1u && x + 1u < renderWidth && next.visible &&
                 keys_equal(first.key, next.key) &&
                 first.pixelY == next.pixelY) {
                 dx = (int)next.pixelX - first.pixelX;
@@ -1620,6 +1809,11 @@ static bool build_text_bg(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
 
     if (fromMap) {
         /* nothing to emit: the geometry is already in the buffer */
+    } else if (widescreenRules && !mosaicEnabled && mapWidthTiles == 32u &&
+               !(bg == 0 && (frame->wsHudRightAnchor || frame->wsMsgShift != 0))) {
+        if (!build_wide_tile_geometry(frame, cache, atlas, cmd, band, bgcnt, bg, emit, vertexCursor,
+                                      indexCursor))
+            return false;
     } else if (widescreenRules) {
         if (!build_widescreen_bg_geometry(
                     frame, cache, atlas, cmd, band, bgcnt, bg, emit,

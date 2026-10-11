@@ -94,9 +94,10 @@ Minor = milestone, patch = fix round. Ask before a minor bump; never infer one.
 
 ### Releases (installer on GitHub)
 
-`.github/workflows/build-release.yml` builds the CIA and the 3DSX on any `vX.Y.Z`
-tag push (and on manual dispatch) and publishes a GitHub Release with both and a
-QR code. The channel depends on whether `main` can reach the tagged commit:
+`.github/workflows/build-release.yml` builds the CIA on any `vX.Y.Z` tag push (and
+on manual dispatch) and publishes a GitHub Release with it and a QR code. No 3DSX:
+from the Homebrew Launcher the game does not get enough memory (owner, 2026-10-11);
+`build.sh` still makes one locally. The channel depends on whether `main` can reach the tagged commit:
 
 | Built from | Channel |
 |---|---|
@@ -205,6 +206,42 @@ the CIA as `cias/tmc-3ds-<version>.cia`; the last IP is kept in `.3ds_ftp_ip`
 `TMC3DS_DEBUG_TOOLS=1` compiles in the DEBUG tab and its tools
 (`docs/debug-tools.md`); a plain build leaves them out. CI passes 1 for Beta builds
 and 0 for Release ones.
+
+## The console in the loop (for Claude)
+
+A debug build running on the owner's console can be reached from this machine
+(same LAN, 192.168.1.x) once the owner turns on **DEBUG -> FTP SERVER**; the cell
+shows the console's IP. Nothing needs FBI or closing the game:
+
+```sh
+IP=$(cat .3ds_ftp_ip)                       # the last console IP the build assistant used
+./build_3ds.sh --install "$IP"              # build, upload, install over the running game, relaunch
+curl "ftp://$IP:5000/3ds/Minish%20Cap%203DS/debug/"                         # list the debug files
+curl -O "ftp://$IP:5000/3ds/Minish%20Cap%203DS/debug/tmc-perf-0001.csv"     # fetch one
+wget -q -r -nH --cut-dirs=3 -P /tmp/tmc-debug "ftp://$IP:5000/3ds/Minish%20Cap%203DS/debug/"
+tools/perf-csv/analyze.py /tmp/tmc-debug/debug/tmc-perf-0001.csv
+tools/tmc-link/tmc-link.py wait && tools/tmc-link/tmc-link.py run SCRIPT   # drive the game
+```
+
+- `tools/tmc-link/tmc-link.py` (docs/debug-tools.md, "Remote control") presses buttons,
+  taps, saves and loads save states (`savestate`, `loadstate N`; docs/save-states.md),
+  takes screenshots (`shot`, then look at the PNGs), reads state and memory by symbol.
+  A state survives rebuilds that only change the port (renderer, UI, platform), so the
+  loop is: save a state once, then install, `wait`, `loadstate`, play the scenario, measure. Use it to reproduce and check on the console without
+  the owner; say before driving the game while the owner is playing.
+
+- `--install` uploads to `/3ds/Minish Cap 3DS/update/dev.cia` and sends `SITE INSTALL`
+  after the transfer (`curl -Q "-SITE INSTALL <path>"`; the leading `-` means "after").
+  The game refuses a CIA with another title ID, installs over itself
+  (`cia_install_3ds.c`), replies `200` and jumps into the new build
+  (`Platform3DS_RequestRelaunch`). The relaunched game turns the FTP server back on by
+  itself (`debug_ftp` in `tmc3ds.ini`), so installs and fetches can follow one another;
+  give it a few seconds after the relaunch.
+- Any unsaved progress is lost on relaunch: say so before installing while the owner plays.
+- If the IP is unknown or the connection is refused, ask the owner for the address the
+  FTP SERVER cell shows; do not scan the network without need.
+- The protocol and the server are documented in `docs/debug-tools.md` ("FTP server") and
+  `platform/3ds/source/ftp_server_3ds.h`.
 
 Host tests: `platform/3ds/tests/*_test.c` are plain C programs (see each file's
 header for its sources); the updater's are run by

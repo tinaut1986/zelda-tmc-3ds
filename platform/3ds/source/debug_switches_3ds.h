@@ -22,3 +22,13 @@ const char* DebugSwitch_Name(int id);
 void DebugSwitch_Value(int id, char* out, unsigned cap);
 void DebugSwitch_Cycle(int id);
 bool DebugSwitch_IsDefault(int id);
+
+/* DEBUG tab tools that come back at the next launch as they were left: the SD
+ * log (on by default) and its mode, and the FTP server. Saved in tmc3ds.ini by
+ * debug builds only; a production build neither reads nor writes them. */
+bool Port_Config_DebugLogOn(void);
+void Port_Config_SetDebugLogOn(bool on);
+bool Port_Config_DebugLogDirect(void);
+void Port_Config_SetDebugLogDirect(bool direct);
+bool Port_Config_DebugFtpOn(void);
+void Port_Config_SetDebugFtpOn(bool on);

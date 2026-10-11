@@ -138,7 +138,8 @@ static const int8_t kDungeonTopFloor[7] = { 2, 3, 3, 5, 2, 7, 5 };
 /*  UI state shared with the tap handler                               */
 /* ------------------------------------------------------------------ */
 
-enum { SS_TAB_MAP = 0, SS_TAB_ITEMS, SS_TAB_QUEST, SS_TAB_SETTINGS, SS_TAB_DEBUG /* 3DS debug-tools builds */ };
+enum { SS_TAB_MAP = 0, SS_TAB_ITEMS, SS_TAB_QUEST, SS_TAB_SETTINGS, SS_TAB_DEBUG /* 3DS debug-tools builds */,
+       SS_TAB_STATES /* 3DS save states */ };
 
 /* What a tap target does when hit. arg meaning per action: item id,
  * tab id, ring (1 = A, 2 = B), plaque display-floor index, settings row.
@@ -165,8 +166,9 @@ enum {
 #ifdef TMC_3DS
     SS_ACT_UPDATE_CHANNEL, SS_ACT_UPDATE_RELEASE, SS_ACT_UPDATE_ACTION,
     SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT,
-    SS_ACT_THEME, /* the tab bar's theme button (bottom_compact_3ds.inc) */
+    SS_ACT_THEME, /* OPTIONS -> THEME (bottom_compact_3ds.inc) */
     SS_ACT_DEBUG, /* DEBUG tab command, arg = DBG_CMD_* (bottom_compact_3ds.inc) */
+    SS_ACT_STATES, /* STATES tab command, arg = STATES_CMD_* (bottom_compact_3ds.inc) */
 #endif
 };
 
@@ -3037,6 +3039,12 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
 
     TargetList tl = { .n = 0 };
 
+#ifdef TMC_3DS
+    const int noGamePanel = sCompactNoGame && tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && tab != SS_TAB_STATES;
+    if (noGamePanel) {
+        Compact_PaintNoGame(&s);
+    } else
+#endif
     if (tab == SS_TAB_ITEMS) {
         PaintItemsPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, tick, armedRing);
     } else if (tab == SS_TAB_QUEST) {
@@ -3049,6 +3057,10 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
 #endif
         PaintSettingsPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, settingsPage, tick,
                            dumpFlashUntil, loadStateFlashUntil, loadStateResult);
+#ifdef TMC_3DS
+    } else if (tab == SS_TAB_STATES) {
+        Compact_PaintStates(&s, &tl);
+#endif
 #if defined(TMC_3DS) && TMC3DS_DEBUG_TOOLS
     } else if (tab == SS_TAB_DEBUG) {
         Compact_PaintDebug(&s, &tl, snap, tick, dumpFlashUntil, loadStateFlashUntil, loadStateResult);
@@ -3081,7 +3093,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     SS_MARK(SS_PHASE_PANEL);
 
 #ifdef TMC_3DS
-    if (tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG) {
+    if (tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && tab != SS_TAB_STATES && !noGamePanel) {
         PaintSidebar(&s, snap, &tl, width - sideW + 2, my0, sideW - 2 - CC_MARGIN, my1 - my0, u, ts, tick,
                      armedRing);
     }
@@ -3186,6 +3198,9 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             Compact_DebugCommand(hit.arg);
             break;
 #endif
+        case SS_ACT_STATES:
+            Compact_StatesCommand(hit.arg);
+            break;
 #endif
         case SS_ACT_TAB:
             UI_LOCK();

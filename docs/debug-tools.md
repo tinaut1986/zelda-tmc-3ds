@@ -40,6 +40,7 @@ The bug icon in the tab bar (debug builds only).
 | MEM DUMP | writes a quick dump, as L+R+A does (below) |
 | LOAD STATE | loads the game state of the newest dump, after a confirmation |
 | SHOW FPS | the top-screen FPS box |
+| FTP SERVER | an FTP server inside the game (below): the side button starts or stops it, the cell shows the address to connect to |
 | GPU CHECK | upstream's parity check: the next frame is drawn by both renderers and compared; the cell shows the checks done and the pixels that differed. Differing frames are saved next to the last dump, and a difference the blender cannot explain turns the GPU renderer off for the session (`GPU OFF: FAILED`). Old 3DS only (the only model with the GPU renderer) |
 
 Cells for something that runs work as in mzm and sm-3ds: the button on their
@@ -69,15 +70,92 @@ blue: changed). None needs a restart.
 screen red. Upstream's comments on each are in `platform/3ds/source/port_config_3ds.c`.
 Every change is also written to the SD log when it runs.
 
+## FTP server
+
+DEBUG -> FTP SERVER starts a small FTP server inside the game, so files can be
+fetched or dropped while it keeps running: no closing the game, no FBI or ftpd.
+The cell shows `IP:5000` (the same port as FBI and ftpd, so `./build_3ds.sh --ftp`
+and the usual client bookmarks work), a toast says it again, and the cell's title
+changes while a client is connected. It needs Wi-Fi; the cell says why when it
+cannot start (`NO WI-FI`, `PORT 5000 BUSY`).
+
+The DEBUG tab's tools come back at the next launch as they were left (`tmc3ds.ini`:
+`debug_log`, `debug_log_direct`, `debug_ftp`; debug builds only, a production build ignores
+and drops them). An FTP server left on starts again by itself, retrying every ~2 s until
+Wi-Fi is up; tapping its button while it waits cancels it. The perf recorder and GPU CHECK
+are one-shot captures and always start off.
+
+- Anonymous: any user name and password.
+- `/` is the root of the SD card; the game's files are in
+  `/3ds/Minish Cap 3DS/` (`debug/`, `dumps/`, saves, `tmc3ds.ini`).
+- Passive mode only (PASV and EPSV, data ports 5001-5064), one client at a time.
+  FileZilla, WinSCP, lftp and curl work:
+
+```sh
+curl ftp://<3ds-ip>:5000/3ds/Minish%20Cap%203DS/debug/                       # list
+curl -O ftp://<3ds-ip>:5000/3ds/Minish%20Cap%203DS/debug/tmc-perf-0001.csv   # fetch
+wget -r -nH --cut-dirs=3 ftp://<3ds-ip>:5000/3ds/Minish%20Cap%203DS/debug/   # the whole folder
+```
+
+`SITE INSTALL <path>` installs a CIA of this game that is already on the SD card
+over the running game and relaunches into the new build (the FTP server comes back on with it).
+`./build_3ds.sh --install IP` builds, uploads to
+`/3ds/Minish Cap 3DS/update/dev.cia` and installs in one go; the interactive menu
+offers it as "Install into the running game". Any unsaved progress is lost. While a
+`.cia` is being received and while it installs, the bottom screen says so
+(`RECEIVING NEW BUILD...`, then `INSTALLING NEW BUILD - GAME WILL RESTART`) on any tab.
+
+Its thread runs on core 1 below the game's priority and sleeps on the network,
+so it costs nothing while idle; a transfer competes with the game for the SD
+card. It shares the network service with the updater (`net_3ds.c`), so both
+can run together. Transfers are written to the SD log.
+
+## Remote control
+
+While the FTP server runs, the PC can drive the game through SITE commands
+(`platform/3ds/source/debug_link_3ds.h`): hold buttons for N frames, tap the bottom
+screen, take screenshots, save and load save states (docs/save-states.md), take a dump,
+cycle a switch, read the game state and read or write memory. `tools/tmc-link/tmc-link.py` is the
+client (standard-library Python):
+
+```sh
+tools/tmc-link/tmc-link.py wait                 # until the game answers (after an install)
+tools/tmc-link/tmc-link.py state                # frame=... ingame=1 area=03 room=01 x=... y=...
+tools/tmc-link/tmc-link.py press LEFT 120       # hold LEFT 120 logic frames and wait for them
+tools/tmc-link/tmc-link.py keys A+B 2           # buttons by their 3DS names, joined by +
+tools/tmc-link/tmc-link.py touch 160 120        # a bottom-screen tap
+tools/tmc-link/tmc-link.py savestate            # a new save state; `savestate 2` saves over number 2
+tools/tmc-link/tmc-link.py loadstate            # the newest save state; `loadstate 3` loads number 3
+tools/tmc-link/tmc-link.py states               # number=area/room for each
+tools/tmc-link/tmc-link.py shot                 # /tmp/tmc-shot/top.png and bottom.png
+tools/tmc-link/tmc-link.py peek gRoomControls 16    # symbols from build-3ds/game/tmc-3ds.elf
+tools/tmc-link/tmc-link.py switch "FRAME SYNC"
+tools/tmc-link/tmc-link.py gpucheck             # next frame by both renderers: differing=N structural=N
+tools/tmc-link/tmc-link.py log                  # flush (MARK) and fetch the newest SD log
+tools/tmc-link/tmc-link.py run tools/tmc-link/examples/walk-left.txt
+```
+
+Buttons are added to the real ones and counted in logic frames, so a held direction
+moves Link exactly as far each time. Touches, screenshots, dumps,
+switches and writes run on the main thread between frames; the reply waits for them.
+Reads and writes check that the memory is mapped first, so a wrong address answers
+`550` instead of crashing. Together with the FTP server coming back after a relaunch,
+`./build_3ds.sh --install IP && tools/tmc-link/tmc-link.py run SCRIPT` installs a build
+and plays a scenario on it with nobody at the console.
+
 ## SD log
 
 `debug/tmc-log-NNNN.txt` in the data folder. Debug builds start it at boot (one
 file per session; the SD LOG cell stops and restarts it, each start is a new
 file). It holds the version, the console, core 1, kernel and free memory, every
-switch change, the marks, and every 5 s a perf line: frames shown and logic ticks
+setting (`settings:` lines, the keys and values of `tmc3ds.ini`), then each change as
+it is saved (`setting: frame_pacing 0 -> 1`: OPTIONS, the bottom-screen settings and
+the SWITCHES alike), the marks, and every 5 s a perf line: frames shown and logic ticks
 per second, presentations skipped, engine work per logic tick (and its max),
 vblank wait per frame, GPU frames and software fallbacks, tiles decoded, area and
-room, free memory. BUFFERED (default): lines collect in a 16 KB buffer, written when
+room, free memory; with it, while the GPU renderer draws, a `build:` line with the command
+build's phases in ms per GPU frame (`sig` and `retain` are inside `maps`; `decode` is inside
+the phase that needed the tile). BUFFERED (default): lines collect in a 16 KB buffer, written when
 it fills, on a mark, on a mode change, on stop and on exit. DIRECT: each line is
 written and flushed at once, so a hang cannot swallow the last lines.
 

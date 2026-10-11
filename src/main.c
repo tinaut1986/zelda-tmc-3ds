@@ -97,6 +97,14 @@ void AgbMain(void) {
         TRUE
 #endif
     ) {
+#ifdef TMC_3DS
+        /* Save states run here, between frames, where no game function is
+         * half way through (platform/3ds/source/save_state_3ds.c). */
+        {
+            extern void SaveState_Service(void);
+            SaveState_Service();
+        }
+#endif
         ReadKeyInput();
         if (SoftResetKeysPressed()) {
             DoSoftReset();

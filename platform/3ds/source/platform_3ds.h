@@ -83,6 +83,11 @@ uint64_t Platform3DS_LogicFrameCount(void);
 /* Live performance switches (DEBUG -> SWITCHES). */
 void Platform3DS_ApplyCpuLimit(void);
 void Platform3DS_RestartBottomWorker(void);
+/* Jump into a freshly installed build of this title at the next pump (any thread). */
+void Platform3DS_RequestRelaunch(void);
+/* True once the jump into a freshly installed build is armed: the process is
+ * about to end, so shutdown skips anything that waits on the GPU. */
+bool Platform3DS_Relaunching(void);
 uint64_t Platform3DS_EngineWorkLastTicks(void);
 uint64_t Platform3DS_VblankWaitLastTicks(void);
 void Platform3DS_ShowSplash(void);

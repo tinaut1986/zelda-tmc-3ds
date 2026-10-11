@@ -11,7 +11,8 @@
  * cannot draw yet falls back to the software PPU for that frame: the New 3DS
  * Full View layouts (400x240 outdoors, 200x120 at 2x indoors), PLAN P3.4. */
 static inline bool PpuGpu3DS_ShouldUse(bool initialized, bool disabled, bool fullView) {
-    return initialized && !disabled && !fullView;
+    (void)fullView; /* PLAN P3.4: Full View too */
+    return initialized && !disabled;
 }
 
 enum {
@@ -104,8 +105,20 @@ typedef struct PpuGpu3DSRetainedMap {
     bool valid;
 } PpuGpu3DSRetainedMap;
 
+enum { PPU_GPU3DS_MEMO_SIZE = 512 };
+
 typedef struct PpuGpu3DSCache {
     PpuGpu3DSCacheEntry entries[PPU_GPU3DS_SLOT_COUNT];
+    /* Tiles already looked up in this frame: VRAM and the palettes cannot
+     * change within a frame and a slot used in it is never evicted or
+     * refreshed in it, so a repeat lookup can skip the bucket walk, the
+     * 32-byte compare and the LRU move. Valid while memoEpoch matches. */
+    struct {
+        PpuGpu3DSTileKey key;
+        uint16_t slot;
+        uint32_t epoch;
+    } memo[PPU_GPU3DS_MEMO_SIZE];
+    uint32_t memoEpoch;
     uint16_t buckets[PPU_GPU3DS_CACHE_BUCKETS];
     /* Slots decoded since the last upload, so the backend flushes only what
      * changed rather than walking every slot. */
@@ -164,6 +177,14 @@ typedef struct PpuGpu3DSFrameView {
     int wsHudRightAnchor, wsHudRightNativeX;
     int wsMsgShift, wsMsgX0, wsMsgX1, wsMsgY0, wsMsgY1;
     bool bg3Repeat;
+    /* Full View (Wide + Pixel Perfect): the shadow tilemaps cover the whole
+     * view from x=0, not only the columns past 240 (virtuappu_mode1_ws_full_view). */
+    bool wsFullView;
+    /* OAM Y at or past objYWrap, or flagged in objYNegative, is above the top
+     * (y - 256): the frame's logical height, as mode1.c's
+     * mode1_obj_y_wrap_threshold, and the port's per-entry metadata. */
+    int objYWrap;
+    const uint8_t* objYNegative;
     bool objClipEnable;
     const uint8_t* objClipMark;
     int objClipY;
@@ -329,6 +350,10 @@ void PpuGpu3DS_CacheInit(PpuGpu3DSCache* cache);
 void PpuGpu3DS_CacheClearDirty(PpuGpu3DSCache* cache);
 void PpuGpu3DS_CacheBeginFrame(PpuGpu3DSCache* cache, const uint16_t* bgPalette,
                                const uint16_t* objPalette, uint32_t frame);
+/* CacheTile remembers this frame's lookups (PpuGpu3DSCache.memo), which
+ * holds because VRAM and the palettes do not change while a frame is built.
+ * Anything that changes them between two lookups of one frame calls this. */
+void PpuGpu3DS_CacheForgetLookups(PpuGpu3DSCache* cache);
 bool PpuGpu3DS_CacheTile(PpuGpu3DSCache* cache, const uint8_t* vram, PpuGpu3DSTileKey key,
                          uint16_t* atlas, uint16_t* outSlot);
 uint8_t PpuGpu3DS_MortonIndex(unsigned x, unsigned y);

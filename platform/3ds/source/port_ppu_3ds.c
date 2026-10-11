@@ -18,6 +18,8 @@
 #if TMC3DS_DEBUG_TOOLS
 #include "debug_log_3ds.h"
 #include "debug_perf_3ds.h"
+#include "debug_switches_3ds.h"
+#include "ftp_server_3ds.h"
 #endif
 #include "platform_gpu_3ds.h"
 #include "top_view_3ds.h"
@@ -245,6 +247,10 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     view->wsMsgY0 = virtuappu_mode1_ws_msg_y0;
     view->wsMsgY1 = virtuappu_mode1_ws_msg_y1;
     view->bg3Repeat = virtuappu_mode1_bg3_repeat;
+    view->wsFullView = virtuappu_mode1_ws_full_view != 0;
+    view->objYWrap = virtuappu_mode1_frame_height() > MODE1_GBA_NATIVE_HEIGHT ? virtuappu_mode1_frame_height()
+                                                                               : MODE1_GBA_NATIVE_HEIGHT;
+    view->objYNegative = virtuappu_mode1_obj_y_negative;
     view->objClipEnable = virtuappu_mode1_obj_clip_enable;
     view->objClipMark = virtuappu_mode1_obj_clip_mark;
     view->objClipY = virtuappu_mode1_obj_clip_y;
@@ -254,9 +260,22 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
                                                 ? virtuappu_mode1_ws_shadow_base_tile[bg]
                                                 : -1;
         if (virtuappu_mode1_ws_shadow[bg]) {
-            memcpy(&sGpuWsShadow[bg * MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_COLS],
-                   virtuappu_mode1_ws_shadow[bg],
-                   MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_COLS * sizeof(uint16_t));
+            /* The producer packs each BG's rows at its own stride (7 columns for
+             * normal Wide, 54 for Full View: virtuappu_mode1_ws_shadow_stride);
+             * the builder reads at MODE1_WS_SHADOW_COLS. Copying the buffer as
+             * if it were already at that stride fed normal Wide rows 1-31 the
+             * wrong entries: garbage in the right-hand columns past x=240 on
+             * the GPU renderer only. Repack row by row; the columns the BG does
+             * not have are entry 0, as the software PPU reads them. */
+            uint16_t* dst = &sGpuWsShadow[bg * MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_COLS];
+            const unsigned cols = virtuappu_mode1_ws_shadow_cols[bg];
+            const unsigned stride = virtuappu_mode1_ws_shadow_stride[bg];
+            memset(dst, 0, MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_COLS * sizeof(uint16_t));
+            if (cols > 0 && cols <= MODE1_WS_SHADOW_COLS && stride >= cols && stride <= MODE1_WS_SHADOW_COLS) {
+                for (unsigned row = 0; row < MODE1_WS_SHADOW_ROWS; ++row)
+                    memcpy(dst + row * MODE1_WS_SHADOW_COLS, virtuappu_mode1_ws_shadow[bg] + row * stride,
+                           cols * sizeof(uint16_t));
+            }
             anyShadow = true;
         }
     }
@@ -1192,8 +1211,8 @@ void Port_PPU_PresentFrame(void) {
         const uint64_t drawEndTick = Platform3DS_SystemTick();
         sTopDrawTicks += drawEndTick - renderEndTick;
         Platform3DS_SetStage(8);
-        PlatformGpu3DS_DrawTopTexture(PortPpuGpu3DS_OutputTexture(),
-                                      (unsigned)sTopPresentWidth);
+        PlatformGpu3DS_DrawTopTexture(PortPpuGpu3DS_OutputTexture(), (unsigned)sTopPresentWidth,
+                                      (unsigned)sTopPresentHeight, sTopPresentMode, sTopCropX, sTopCropY);
         Platform3DS_SetStage(9);
         sTopBlitTicks += Platform3DS_SystemTick() - drawEndTick;
         if (parityFrame && !PortPpuGpu3DS_QueueParityCopy()) {
@@ -1333,6 +1352,13 @@ void Port_PPU_PresentFrame(void) {
         DebugPerf_Record(&row);
     }
     DebugLog_Tick();
+    /* The FTP server was on when the game last ran (or a start found no
+     * Wi-Fi): try again every ~2 s until it serves or the DEBUG tab stops it. */
+    static unsigned ftpRetry = 120;
+    if (Port_Config_DebugFtpOn() && !FtpServer_Running() && ++ftpRetry >= 120) {
+        ftpRetry = 0;
+        FtpServer_Start();
+    }
 #endif
 
     /* Every third presentation cost 2759 repaints in 8336 frames, each a
@@ -1555,18 +1581,33 @@ void Port_PPU_SetPersistence(bool enabled, float rho) {
 bool Port_PPU_3DS_UsesGpuPresenter(void) {
     return sGpuPresenterReady;
 }
+/* The GPU teardown waits on citro3d's queue at every step. It runs on a thread
+ * with a timeout so that a queue that never drains costs the exit a second and
+ * not the console; the process then ends with the thread stuck (../sm-3ds). */
+static void GpuTeardown(void) {
+    if (sGpuPpuInitialized) PortPpuGpu3DS_Shutdown();
+    if (sGpuPresenterReady) PlatformGpu3DS_Shutdown();
+}
+
 void Port_PPU_Shutdown(void) {
+    if (!sInitialized && !sGpuPpuInitialized && !sGpuPresenterReady) return;
     sInitialized = false;
     Platform3DS_ShutdownBottomWorker();
     virtuappu_mode1_set_output_buffer(NULL, 0);
-    if (sGpuPpuInitialized) {
-        PortPpuGpu3DS_Shutdown();
-        sGpuPpuInitialized = false;
-        sGpuPpuDisabled = false;
+    if (sGpuPpuInitialized || sGpuPresenterReady) {
+        const bool drained = PlatformGpu3DS_DrainQueue();
+        const bool done = PlatformGpu3DS_RunWithTimeout(GpuTeardown, 1000);
+#if TMC3DS_DEBUG_TOOLS
+        DebugLog_Printf("exit: gpu queue %s, teardown %s", drained ? "drained" : "did not drain",
+                        done ? "done" : "timed out");
+        DebugLog_Flush();
+#else
+        (void)drained;
+        (void)done;
+#endif
     }
-    if (!sGpuPresenterReady)
-        return;
-    PlatformGpu3DS_Shutdown();
+    sGpuPpuInitialized = false;
+    sGpuPpuDisabled = false;
     sGpuPresenterReady = false;
 }
 void Port_OpenInGameSettingsModal(void) {

@@ -620,18 +620,32 @@ static void BuildPresentQuad(float drawX, float drawY, float drawW, float drawH,
     sPresentQuadValid = true;
 }
 
-static void DrawTopTexture(C3D_Tex* texture, unsigned width, bool configureAbgr) {
+static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Port3DSFullViewMode mode,
+                           int cropX, int cropY, bool configureAbgr) {
     if (!texture) return;
-    if (width < 240u) width = 240u;
-    if (width > 266u) width = 266u;
+    const bool fullView = mode != PORT_3DS_FULL_VIEW_FALLBACK;
+    if (!fullView) {
+        /* E2: 240 to 266 columns by 160 rows. */
+        if (width < 240u) width = 240u;
+        if (width > 266u) width = 266u;
+        height = 160u;
+        cropX = cropY = 0;
+    }
 
     const int style = Port_Config_Get3DSDisplayStyle();
     TopView3DSPlan plan;
-    TopView3DS_BuildPlan(true, false, Port_Config_Get3DSAspectRatio(), style,
-                         PORT_3DS_FULL_VIEW_FALLBACK, (int)width, 160,
-                         (int)width, 160, 0, 0, &plan);
+    /* Full View frames (400x240 outdoors, 200x120 at 2x indoors) take the
+     * same plan as the software path's DrawTopImage. */
+    TopView3DS_BuildPlan(!fullView, fullView, Port_Config_Get3DSAspectRatio(), style, mode, (int)width,
+                         (int)height, (int)width, (int)height, cropX, cropY, &plan);
     const Port3DSFullViewPresentation* presentation = &plan.source;
     sTopPresentWidth = (unsigned)presentation->renderWidth;
+    sTopPresentHeight = (unsigned)presentation->renderHeight;
+    sTopValidSourceWidth = width;
+    sTopValidSourceHeight = height;
+    sTopPresentMode = plan.mode;
+    sTopCropX = presentation->sourceX;
+    sTopCropY = presentation->sourceY;
 
     sTopSubtexture = (Tex3DS_SubTexture){
         .width = (u16)presentation->sourceWidth,
@@ -894,10 +908,11 @@ PlatformGpu3DSUploadLayout PlatformGpu3DS_SetCompactUpload(bool compact) {
     return sUploadLayout;
 }
 
-void PlatformGpu3DS_DrawTopTexture(void* texturePointer, unsigned width) {
+void PlatformGpu3DS_DrawTopTexture(void* texturePointer, unsigned width, unsigned height,
+                                   Port3DSFullViewMode mode, int cropX, int cropY) {
     C3D_Tex* texture = texturePointer;
     if (!sFrameActive || !texture) return;
-    DrawTopTexture(texture, width, false);
+    DrawTopTexture(texture, width, height, mode, cropX, cropY, false);
 }
 
 bool PlatformGpu3DS_QueueRgba5551Readback(void* texturePointer, uint16_t* pixels) {
@@ -1047,7 +1062,8 @@ void PlatformGpu3DS_ShowDumpSavedOverlay(void* currentTopTexture) {
      * Re-present the live output texture so saving a dump never flashes an
      * older CPU/parity frame. */
     if (currentTopTexture)
-        DrawTopTexture((C3D_Tex*)currentTopTexture, sTopPresentWidth, false);
+        DrawTopTexture((C3D_Tex*)currentTopTexture, sTopValidSourceWidth, sTopValidSourceHeight, sTopPresentMode,
+                       sTopCropX, sTopCropY, false);
     else
         DrawTopImage(sTopUpload, sTopPresentWidth, sTopPresentHeight,
                      sTopValidSourceWidth, sTopValidSourceHeight,
@@ -1099,6 +1115,44 @@ void PlatformGpu3DS_InvalidateBottomTarget(void) {
     sTopPresentMode = PORT_3DS_FULL_VIEW_FALLBACK;
     sTopCropX = 0;
     sTopCropY = 0;
+}
+
+/* citro3d ends a frame asynchronously: the swap is a callback when its GPU
+ * queue finishes. If the GPU is taken away (HOME, the lid, a jump to another
+ * title) with a frame in flight, that frame is never acknowledged: every later
+ * wait on the queue (C3D_RenderTargetDelete, C3D_Fini) never returns, and a
+ * citro3d left half done freezes the next application, which after SITE
+ * INSTALL is this game's new build (issue #2; ../sm-3ds issue #20 found it).
+ * An empty frame drains the queue while the GPU is still ours; on a thread
+ * with a timeout, so a queue that will not drain costs half a second. */
+static void DrainThread(void* arg) {
+    (void)arg;
+    if (C3D_FrameBegin(0)) C3D_FrameEnd(0);
+}
+
+bool PlatformGpu3DS_DrainQueue(void) {
+    if (!sReady || sFrameActive) return true;
+    Thread thread = threadCreate(DrainThread, NULL, 16 * 1024, 0x30, -2, false);
+    if (!thread) return false;
+    /* A timeout is a positive result code: only 0 means the thread ended. */
+    if (threadJoin(thread, 500ull * 1000 * 1000) != 0) return false;
+    threadFree(thread);
+    return true;
+}
+
+static void RunThread(void* arg) {
+    ((void (*)(void))arg)();
+}
+
+bool PlatformGpu3DS_RunWithTimeout(void (*fn)(void), unsigned milliseconds) {
+    Thread thread = threadCreate(RunThread, (void*)fn, 32 * 1024, 0x30, -2, false);
+    if (!thread) {
+        fn();
+        return true;
+    }
+    if (threadJoin(thread, (u64)milliseconds * 1000000ull) != 0) return false; /* left stuck */
+    threadFree(thread);
+    return true;
 }
 
 void PlatformGpu3DS_Shutdown(void) {

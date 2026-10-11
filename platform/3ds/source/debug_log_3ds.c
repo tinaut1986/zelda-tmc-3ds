@@ -3,6 +3,7 @@
 #include "debug_files_3ds.h"
 #include "platform_3ds.h"
 #include "port_ppu_gpu_3ds.h"
+#include "port_ppu_gpu_3ds_model.h"
 #include "port_second_screen_state.h"
 #include "tmc3ds_version.h"
 
@@ -90,8 +91,12 @@ void DebugLog_Printf(const char* fmt, ...) {
     Unlock();
 }
 
+/* port_config_3ds.c: every setting, then each change as it is saved. */
+extern void Port_Config_3DSLogSettings(void);
+
 void DebugLog_Start(void) {
     Lock();
+    const bool opened = !sFile;
     if (!sFile) {
         char path[96];
         sNumber = DebugFiles_Next("log", ".txt", path, sizeof(path));
@@ -112,6 +117,7 @@ void DebugLog_Start(void) {
         }
     }
     Unlock();
+    if (opened && sFile) Port_Config_3DSLogSettings();
 }
 
 void DebugLog_Stop(void) {
@@ -203,6 +209,23 @@ void DebugLog_Tick(void) {
                     (double)rt.engineWorkMaxTicks * msPerTick, vbl, (unsigned long long)gpuShown,
                     (unsigned long long)gpuFallback, (unsigned long long)(gpu.tileDecodes - lastGpu.tileDecodes),
                     snap.area, snap.room, (unsigned long)(rt.applicationMemoryFree / 1024));
+#ifdef PPU_GPU3DS_PROFILE
+    /* Where the GPU command build goes, per GPU frame. sig and retain are
+     * inside maps; decode is inside whichever phase reached it. */
+    static double lastPhase[PPU_GPU3DS_PHASE_COUNT];
+    if (gpuShown) {
+        double ms[PPU_GPU3DS_PHASE_COUNT];
+        for (int i = 0; i < PPU_GPU3DS_PHASE_COUNT; ++i)
+            ms[i] = (gPpuGpu3DSPhase[i] - lastPhase[i]) * msPerTick / (double)gpuShown;
+        DebugLog_Printf("build: bands %.2f merge %.2f maps %.2f (sig %.2f retain %.2f) scene %.2f objwin %.2f "
+                        "regions %.2f bg %.2f obj %.2f decode %.2f ms/frame",
+                        ms[PPU_GPU3DS_PHASE_BANDS], ms[PPU_GPU3DS_PHASE_MERGE], ms[PPU_GPU3DS_PHASE_MAPS],
+                        ms[PPU_GPU3DS_PHASE_MAPSIG], ms[PPU_GPU3DS_PHASE_MAPRETAIN], ms[PPU_GPU3DS_PHASE_SCENE],
+                        ms[PPU_GPU3DS_PHASE_OBJWIN], ms[PPU_GPU3DS_PHASE_REGIONS], ms[PPU_GPU3DS_PHASE_BG],
+                        ms[PPU_GPU3DS_PHASE_OBJ], ms[PPU_GPU3DS_PHASE_DECODE]);
+    }
+    memcpy(lastPhase, gPpuGpu3DSPhase, sizeof(lastPhase));
+#endif
     lastTick = now;
     last = rt;
     lastGpu = gpu;
