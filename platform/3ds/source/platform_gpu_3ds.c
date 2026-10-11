@@ -1117,17 +1117,49 @@ void PlatformGpu3DS_InvalidateBottomTarget(void) {
     sTopCropY = 0;
 }
 
+/* citro3d ends a frame asynchronously: the swap is a callback when its GPU
+ * queue finishes. If the GPU is taken away (HOME, the lid, a jump to another
+ * title) with a frame in flight, that frame is never acknowledged: every later
+ * wait on the queue (C3D_RenderTargetDelete, C3D_Fini) never returns, and a
+ * citro3d left half done freezes the next application, which after SITE
+ * INSTALL is this game's new build (issue #2; ../sm-3ds issue #20 found it).
+ * An empty frame drains the queue while the GPU is still ours; on a thread
+ * with a timeout, so a queue that will not drain costs half a second. */
+static void DrainThread(void* arg) {
+    (void)arg;
+    if (C3D_FrameBegin(0)) C3D_FrameEnd(0);
+}
+
+bool PlatformGpu3DS_DrainQueue(void) {
+    if (!sReady || sFrameActive) return true;
+    Thread thread = threadCreate(DrainThread, NULL, 16 * 1024, 0x30, -2, false);
+    if (!thread) return false;
+    /* A timeout is a positive result code: only 0 means the thread ended. */
+    if (threadJoin(thread, 500ull * 1000 * 1000) != 0) return false;
+    threadFree(thread);
+    return true;
+}
+
+static void RunThread(void* arg) {
+    ((void (*)(void))arg)();
+}
+
+bool PlatformGpu3DS_RunWithTimeout(void (*fn)(void), unsigned milliseconds) {
+    Thread thread = threadCreate(RunThread, (void*)fn, 32 * 1024, 0x30, -2, false);
+    if (!thread) {
+        fn();
+        return true;
+    }
+    if (threadJoin(thread, (u64)milliseconds * 1000000ull) != 0) return false; /* left stuck */
+    threadFree(thread);
+    return true;
+}
+
 void PlatformGpu3DS_Shutdown(void) {
     if (sUpdateReady) C3D_TexDelete(&sUpdateTexture);
     if (sUpdatePixels) linearFree(sUpdatePixels);
     sUpdateReady=false; sUpdatePixels=NULL;
     if (!sReady) return;
-    /* Relaunching into a new build: the process ends right after this, and
-     * every teardown call below waits on the GPU queue. One that never drains
-     * (a frame the parity check left behind) hung the console with the jump
-     * armed. The system frees it all with the process (as ../sm-3ds does at
-     * any exit). */
-    if (Platform3DS_Relaunching()) return;
     if (sFrameActive) {
         C2D_Flush();
         if (sC2dFlushBase && sC2dFlushSize) GSPGPU_FlushDataCache(sC2dFlushBase, sC2dFlushSize);

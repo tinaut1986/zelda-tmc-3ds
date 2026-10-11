@@ -1581,18 +1581,33 @@ void Port_PPU_SetPersistence(bool enabled, float rho) {
 bool Port_PPU_3DS_UsesGpuPresenter(void) {
     return sGpuPresenterReady;
 }
+/* The GPU teardown waits on citro3d's queue at every step. It runs on a thread
+ * with a timeout so that a queue that never drains costs the exit a second and
+ * not the console; the process then ends with the thread stuck (../sm-3ds). */
+static void GpuTeardown(void) {
+    if (sGpuPpuInitialized) PortPpuGpu3DS_Shutdown();
+    if (sGpuPresenterReady) PlatformGpu3DS_Shutdown();
+}
+
 void Port_PPU_Shutdown(void) {
+    if (!sInitialized && !sGpuPpuInitialized && !sGpuPresenterReady) return;
     sInitialized = false;
     Platform3DS_ShutdownBottomWorker();
     virtuappu_mode1_set_output_buffer(NULL, 0);
-    if (sGpuPpuInitialized) {
-        PortPpuGpu3DS_Shutdown();
-        sGpuPpuInitialized = false;
-        sGpuPpuDisabled = false;
+    if (sGpuPpuInitialized || sGpuPresenterReady) {
+        const bool drained = PlatformGpu3DS_DrainQueue();
+        const bool done = PlatformGpu3DS_RunWithTimeout(GpuTeardown, 1000);
+#if TMC3DS_DEBUG_TOOLS
+        DebugLog_Printf("exit: gpu queue %s, teardown %s", drained ? "drained" : "did not drain",
+                        done ? "done" : "timed out");
+        DebugLog_Flush();
+#else
+        (void)drained;
+        (void)done;
+#endif
     }
-    if (!sGpuPresenterReady)
-        return;
-    PlatformGpu3DS_Shutdown();
+    sGpuPpuInitialized = false;
+    sGpuPpuDisabled = false;
     sGpuPresenterReady = false;
 }
 void Port_OpenInGameSettingsModal(void) {

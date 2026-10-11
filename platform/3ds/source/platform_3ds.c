@@ -101,6 +101,9 @@ static void OnAptEvent(APT_HookType hook, void* parameter) {
              * restore callbacks before that boundary coalesce into one resync. */
             Platform3DS_MarkFrameDiscontinuity(OLD3DS_FRAME_PACER_DISCONTINUITY_APT);
             PlatformGpu3DS_InvalidateBottomTarget();
+            /* HOME or the lid is about to take the GPU: drain citro3d's queue
+             * while it is still ours (PlatformGpu3DS_DrainQueue). */
+            if (hook == APTHOOK_ONSUSPEND || hook == APTHOOK_ONSLEEP) PlatformGpu3DS_DrainQueue();
             break;
         default:
             break;
@@ -517,6 +520,14 @@ static void RelaunchSelf(void) {
     DebugLog_Printf("relaunching into the build just installed");
     DebugLog_Flush();
     sRelaunching = true;
+    /* The jump ends this process without running main's exit path, and a GPU
+     * left mid-frame freezes the build it starts (issue #2): put citro3d down
+     * first, the way a normal exit does. */
+    extern void Port_PPU_Shutdown(void);
+    Port_Audio_Shutdown();
+    Port_PPU_Shutdown();
+    DebugLog_Printf("relaunch: gpu down, jumping");
+    DebugLog_Flush();
     u8 param[0x300] = { 0 };
     u8 hmac[0x20] = { 0 };
     if (R_SUCCEEDED(APT_PrepareToDoApplicationJump(0, TMC3DS_TITLE_ID, MEDIATYPE_SD)))

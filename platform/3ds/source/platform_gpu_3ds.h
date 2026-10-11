@@ -93,3 +93,9 @@ void PlatformGpu3DS_InvalidateBottomTarget(void);
 void PlatformGpu3DS_Shutdown(void);
 
 #endif
+/* Drains citro3d's queue with an empty frame (APT suspend/sleep, before a
+ * relaunch): false if it did not drain within half a second. */
+bool PlatformGpu3DS_DrainQueue(void);
+/* Runs fn on a helper thread and waits at most this long: for teardown that
+ * waits on the GPU queue. False when it timed out (the thread stays stuck). */
+bool PlatformGpu3DS_RunWithTimeout(void (*fn)(void), unsigned milliseconds);
