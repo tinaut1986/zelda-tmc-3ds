@@ -152,6 +152,9 @@ add_executable(tmc-3ds
     source/ftp_server_3ds.c
     source/debug_link_3ds.c
     source/save_state_3ds.c
+    source/state_symbols_3ds.c
+    source/state_blob_3ds.c
+    source/state_pointers_3ds.c
     source/cia_install_3ds.c
     source/port_second_screen_sync_3ds.c
     source/port_ppu_3ds.c
@@ -218,6 +221,13 @@ target_link_options(tmc-3ds PRIVATE -O3 -flto -Wl,--gc-sections
     # which lays the game out at fixed addresses for save states (see the file).
     "-B${CMAKE_CURRENT_LIST_DIR}" "-Wl,-Map,${CMAKE_CURRENT_BINARY_DIR}/tmc-3ds.map")
 set_property(TARGET tmc-3ds APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/3dsx.ld")
+# The names of the game's globals and functions go into the ELF after the link
+# (save states that survive a rebuild, tools/gen_state_symbols.py); the 3DSX
+# and the CIA are made from the patched ELF.
+find_program(TMC_PYTHON NAMES python3 python REQUIRED)
+add_custom_command(TARGET tmc-3ds POST_BUILD
+    COMMAND "${TMC_PYTHON}" "${TMC_ROOT}/tools/gen_state_symbols.py" "$<TARGET_FILE:tmc-3ds>"
+    COMMENT "Patching the save state symbol table into the ELF")
 set(UPDATE_DEPS_ROOT "$ENV{DEVKITPRO}/portlibs/3ds" CACHE PATH "3DS updater dependencies")
 target_include_directories(tmc-3ds PRIVATE "${UPDATE_DEPS_ROOT}/include")
 target_link_directories(tmc-3ds PRIVATE "${UPDATE_DEPS_ROOT}/lib")

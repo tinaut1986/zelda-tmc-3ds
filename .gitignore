@@ -44,6 +44,8 @@ tools/binutils
 *.py
 !tools/extract_include_enum.py
 !tools/generate_sounds_embed.py
+!tools/gen_state_symbols.py
+!tools/state-census/census.py
 *.pl
 
 # graphics

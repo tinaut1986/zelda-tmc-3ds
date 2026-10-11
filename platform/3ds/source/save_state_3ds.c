@@ -10,6 +10,8 @@
 #include "sound.h"
 #include "port_config.h"
 #include "port_audio_3ds.h"
+#include "state_pointers_3ds.h"
+#include "state_symbols_3ds.h"
 #include "tmc3ds_version.h"
 
 #include <dirent.h>
@@ -30,7 +32,9 @@ extern bool Platform3DS_CaptureTopThumbnail(uint16_t* pixels, int width, int hei
 
 #define STATES_DIR "states"
 #define STATE_MAGIC "TMC3DSST"
-#define STATE_VERSION 1u
+#define STATE_VERSION 1u /* a raw copy of the game's .data/.bss: loads only into the build that wrote it */
+#define STATE_VERSION_NAMED 2u /* globals by name and pointers as relocations: loads into any build */
+#define STATE_END_MARK 0x21444E45u /* "END!" */
 #define THUMB_MAGIC 0x314D4854u /* "THM1" */
 
 typedef struct StateHeader {
@@ -354,6 +358,7 @@ static uint32_t RomIdentity(void) {
 }
 
 static bool HeaderLoadable(const StateHeader* h) {
+    if (h->version == STATE_VERSION_NAMED) return h->romIdentity == RomIdentity() && StateSymbols_Ready();
     return h->version == STATE_VERSION && h->fingerprint == GameFingerprint() && h->romIdentity == RomIdentity() &&
            h->dataSize == (uint32_t)(__ss_data_end - __ss_data_start) &&
            h->bssSize == (uint32_t)(__ss_bss_end - __ss_bss_start);
@@ -446,6 +451,96 @@ static bool WriteThumb(uint32_t id, const uint16_t* pixels) {
     return ok;
 }
 
+/* ---- the named format (version 2) ----
+ *
+ *   header
+ *   u32 n, then n x { u8 nameLen, name, u32 size, bytes }: the game's globals
+ *   u32 n, then n relocations: u8 kind, u8 len + holder, u32 wordOff, then
+ *       VAR: u8 len + target name, u32 targetOff
+ *       FUNC: u32 hash, u32 targetOff
+ *   u32 END mark
+ *
+ * Nothing in it depends on where a build put things: only on the ROM. */
+
+static bool PutU8(FILE* f, uint8_t v) { return fwrite(&v, 1, 1, f) == 1; }
+static bool PutU32(FILE* f, uint32_t v) { return fwrite(&v, 4, 1, f) == 1; }
+static bool PutName(FILE* f, const char* name) {
+    const size_t n = strlen(name);
+    return n < 256 && PutU8(f, (uint8_t)n) && fwrite(name, 1, n, f) == n;
+}
+
+static bool WriteNamedBody(FILE* f) {
+    uint32_t count = 0;
+    const int nVars = StateVars_Count();
+    for (int i = 0; i < nVars; ++i)
+        if (!StatePointers_Excluded(StateVars_At(i)->name)) ++count;
+    bool ok = PutU32(f, count);
+    for (int i = 0; i < nVars && ok; ++i) {
+        const StateVar* v = StateVars_At(i);
+        if (StatePointers_Excluded(v->name)) continue;
+        ok = PutName(f, v->name) && PutU32(f, v->size) && fwrite(v->ptr, 1, v->size, f) == v->size;
+    }
+    StateReloc* rel = NULL;
+    const int nRel = StatePointers_Collect(&rel);
+    ok = ok && PutU32(f, (uint32_t)nRel);
+    for (int i = 0; i < nRel && ok; ++i) {
+        const StateReloc* r = &rel[i];
+        ok = PutU8(f, r->kind) && PutName(f, r->holder) && PutU32(f, r->wordOff) && PutName(f, r->target) &&
+             PutU32(f, r->targetOff);
+    }
+    free(rel);
+    return ok && PutU32(f, STATE_END_MARK);
+}
+
+typedef struct Cursor {
+    const uint8_t* p;
+    const uint8_t* end;
+    bool bad;
+} Cursor;
+
+static const uint8_t* Take(Cursor* c, size_t n) {
+    if (c->bad || (size_t)(c->end - c->p) < n) {
+        c->bad = true;
+        return NULL;
+    }
+    const uint8_t* r = c->p;
+    c->p += n;
+    return r;
+}
+
+static uint32_t GetU32(Cursor* c) {
+    uint32_t v = 0;
+    const uint8_t* p = Take(c, 4);
+    if (p) memcpy(&v, p, 4);
+    return v;
+}
+
+static uint8_t GetU8(Cursor* c) {
+    const uint8_t* p = Take(c, 1);
+    return p ? *p : 0;
+}
+
+static void GetName(Cursor* c, char* out, size_t cap) {
+    const size_t n = GetU8(c);
+    const uint8_t* p = Take(c, n);
+    if (!p || n >= cap) {
+        c->bad = true;
+        out[0] = 0;
+        return;
+    }
+    memcpy(out, p, n);
+    out[n] = 0;
+}
+
+static void GetReloc(Cursor* c, StateReloc* r) {
+    memset(r, 0, sizeof(*r));
+    r->kind = GetU8(c);
+    GetName(c, r->holder, sizeof(r->holder));
+    r->wordOff = GetU32(c);
+    GetName(c, r->target, sizeof(r->target));
+    r->targetOff = GetU32(c);
+}
+
 /* ---- save, load, delete ---- */
 
 static uint16_t sThumb[SAVE_STATE_THUMB_W * SAVE_STATE_THUMB_H];
@@ -481,6 +576,13 @@ static void Save(uint32_t id, bool isNew) {
     h.rupees = (uint16_t)gSave.stats.rupees;
     snprintf(h.build, sizeof(h.build), "%s", TMC_PORT_VERSION);
 
+    const bool named = StateSymbols_Ready();
+    if (named) {
+        h.version = STATE_VERSION_NAMED;
+        h.fingerprint = 0;
+        h.dataSize = h.bssSize = 0;
+    }
+
     mkdir(STATES_DIR, 0777);
     char path[64], tmp[72];
     StatePath(path, sizeof(path), id);
@@ -490,8 +592,12 @@ static void Save(uint32_t id, bool isNew) {
     /* One buffer per write: the SD card is slow with many small ones. */
     if (ok) setvbuf(f, NULL, _IOFBF, 64 * 1024);
     ok = ok && fwrite(&h, sizeof(h), 1, f) == 1;
-    ok = ok && fwrite(__ss_data_start, 1, h.dataSize, f) == h.dataSize;
-    ok = ok && fwrite(__ss_bss_start, 1, h.bssSize, f) == h.bssSize;
+    if (ok && named) {
+        ok = WriteNamedBody(f);
+    } else if (ok) {
+        ok = fwrite(__ss_data_start, 1, h.dataSize, f) == h.dataSize;
+        ok = ok && fwrite(__ss_bss_start, 1, h.bssSize, f) == h.bssSize;
+    }
     if (f && fclose(f) != 0) ok = false;
     /* Written beside the old file and swapped in: a failed save keeps it. */
     if (ok) {
@@ -527,6 +633,72 @@ static void MoveRomPointers(uintptr_t oldBase) {
     }
 }
 
+/* `f` is positioned after the header. Closes it. */
+static void LoadNamed(FILE* f, const StateHeader* h, uint32_t id) {
+    /* All of it into RAM and parsed before anything is applied: a short or
+     * damaged file must not leave the game half restored. */
+    const long here = ftell(f);
+    fseek(f, 0, SEEK_END);
+    const long end = ftell(f);
+    fseek(f, here, SEEK_SET);
+    if (here < 0 || end <= here) {
+        fclose(f);
+        Finish(false, id, "STATE DAMAGED", 0);
+        return;
+    }
+    const size_t size = (size_t)(end - here);
+    uint8_t* body = malloc(size);
+    const bool read = body && fread(body, 1, size, f) == size;
+    fclose(f);
+    if (!read) {
+        free(body);
+        Finish(false, id, body ? "STATE DAMAGED" : "NO MEMORY", 0);
+        return;
+    }
+    Cursor c = { body, body + size, false };
+    char name[64];
+    StateReloc rel;
+    const uint32_t nVars = GetU32(&c);
+    for (uint32_t i = 0; i < nVars && !c.bad; ++i) {
+        GetName(&c, name, sizeof(name));
+        Take(&c, GetU32(&c));
+    }
+    const uint32_t nRel = GetU32(&c);
+    for (uint32_t i = 0; i < nRel && !c.bad; ++i) GetReloc(&c, &rel);
+    if (c.bad || GetU32(&c) != STATE_END_MARK) {
+        free(body);
+        Finish(false, id, "STATE DAMAGED", 0);
+        return;
+    }
+
+    Port_Audio_3DSSetPaused(true); /* the mixer reads the music players being replaced */
+    c = (Cursor){ body, body + size, false };
+    const uint32_t count = GetU32(&c);
+    for (uint32_t i = 0; i < count; ++i) {
+        GetName(&c, name, sizeof(name));
+        const uint32_t n = GetU32(&c);
+        const uint8_t* data = Take(&c, n);
+        const StateVar* v = StateVars_Find(name);
+        /* A global this build no longer has is dropped, a new one keeps its
+         * live value, one whose size changed gets the part both have. */
+        if (v && !StatePointers_Excluded(name)) memcpy(v->ptr, data, n < v->size ? n : v->size);
+    }
+    MoveRomPointers(h->romBase);
+    const uint32_t relocs = GetU32(&c);
+    for (uint32_t i = 0; i < relocs; ++i) {
+        GetReloc(&c, &rel);
+        StatePointers_Apply(&rel);
+    }
+    free(body);
+    Port_Audio_3DSSetPaused(false);
+    /* The players' state came back with everything else; start the saved
+     * room music afresh so the mixer and the game agree on it. */
+    const u32 bgm = gSoundPlayingInfo.currentBgm;
+    SoundReq(SONG_STOP_ALL);
+    if (bgm) SoundReq(bgm);
+    Finish(true, id, "STATE %u LOADED", Number(id));
+}
+
 static void Load(uint32_t id) {
     char path[64];
     StatePath(path, sizeof(path), id);
@@ -544,6 +716,10 @@ static void Load(uint32_t id) {
     if (!HeaderLoadable(&h)) {
         fclose(f);
         Finish(false, id, h.romIdentity != RomIdentity() ? "STATE OF ANOTHER ROM" : "STATE OF ANOTHER BUILD", 0);
+        return;
+    }
+    if (h.version == STATE_VERSION_NAMED) {
+        LoadNamed(f, &h, id);
         return;
     }
     /* All of it into RAM first: a short file must not leave the game half

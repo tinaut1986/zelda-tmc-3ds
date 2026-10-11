@@ -372,6 +372,13 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   recordings (baseline) put our GPU renderer's build at 10.3 ms per frame on a New 3DS,
   against ~3 ms on a 2DS for sm-3ds's, so mzm's and sm-3ds's renderers are the starting
   point for P3 rather than tuning upstream's.
+- **2026-10-12** Save states are build independent (P1.8b, format 2), as mzm's: the game's globals by
+  name and pointers as relocations, from a symbol table patched into the ELF after the link
+  (`tools/gen_state_symbols.py`). Owner's rule: a state must load whatever the build. The raw
+  copy of 2026-10-11 stays as format 1. Tested by saving, adding a global and a function to the
+  game side (text +0x28, .bss +0x1230), installing and loading: position exact, game goes on.
+  A first attempt crashed in `UpdateBgAnimations`: `gBgAnimations` points into the middle of
+  constants, which only `kConstInner` covers. Only Hyrule Field was checked with the census.
 - **2026-10-11** Save states as a raw copy of the game's `.data`/`.bss` with the game's code,
   constants and data laid out first at pinned addresses (`platform/3ds/3dsx.ld`), instead of
   mzm's globals by name with relocated pointers: far less code, and enough for the loop the
