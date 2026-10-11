@@ -126,6 +126,33 @@ static void Port_MakeFadeBuff256(u8* src, u8* dest, u16 intensity, u8 color) {
 }
 #endif
 
+#ifdef PC_PORT
+/* The colour a pure black pixel has under the fade now (palette slot 0's
+ * intensity and colour, the way FadeVBlank mixes it), as 8-bit RGB. The
+ * presenter fills the bars beside a narrow view with it, so a fade to white
+ * takes the whole screen and not only the game's area. Black when no fade. */
+void Port_FadedBlackRGB(u8* r8, u8* g8, u8* b8) {
+    const struct_020354C0* slot = &gUnk_020354C0[0];
+    u32 intensity = slot->unk2, color = slot->unk1;
+    *r8 = *g8 = *b8 = 0;
+    if (intensity == 0 || color == 0 || gRomData == NULL) return;
+    u8 brightness = gEwram[6];
+    if (brightness >= NUM_FADE_BRIGHTNESS) brightness = 0;
+    u32 region_shift = 0;
+#if defined(MULTI_REGION) || defined(EU)
+    if (REGION_IS_EU) region_shift = 0x48;
+#endif
+    const u16* tableR = (const u16*)(gRomData + sFadeTableOffsets[brightness][0] + region_shift);
+    const u16* tableG = (const u16*)(gRomData + sFadeTableOffsets[brightness][1] + region_shift);
+    const u16* tableB = (const u16*)(gRomData + sFadeTableOffsets[brightness][2] + region_shift);
+    const u32 channel = ((intensity * color) >> 10) & 0x3E;
+    const u16 c = (u16)(tableR[channel >> 1] | tableG[channel >> 1] | tableB[channel >> 1]);
+    *r8 = (u8)((c & 31u) * 255u / 31u);
+    *g8 = (u8)(((c >> 5) & 31u) * 255u / 31u);
+    *b8 = (u8)(((c >> 10) & 31u) * 255u / 31u);
+}
+#endif
+
 void SetBrightness(u32 brightness) {
     gSaveHeader->brightness = brightness;
     gUsedPalettes = 0xffffffff;
