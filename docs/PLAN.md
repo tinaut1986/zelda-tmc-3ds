@@ -239,10 +239,12 @@ The goal is 60 with Wide + Pixel Perfect on **both** models, the Old 3DS/2DS inc
 Reference renderers (owner's other ports, both GPU-only and at 60 on an Old 3DS):
 `../mzm/platform/3ds/source/port_gpu_renderer.c` (a GBA PPU on the PICA, already draws a
 400x240 wide view; its lessons in `../mzm/docs/3ds-renderer-perf-plan.md`) and
-`../sm-3ds/source/gpu_ppu.c` (`../sm-3ds/docs/gpu-ppu-design.md`: whole tilemaps decoded
+`../sm-3ds/source/gpu_ppu.c` (a **SNES** PPU, so its ideas carry over but not its code;
+`../sm-3ds/docs/gpu-ppu-design.md`: whole tilemaps decoded
 into BG textures with dirty tracking, one quad per scroll run, a sprite atlas; ~3 ms of
 build on a 2DS at 268 MHz). Ours (upstream's, per-tile quads) spends 10.3 ms building on a
-New 3DS at 804 MHz (see the baseline): take their design or code before tuning ours.
+New 3DS at 804 MHz (see the baseline): start from mzm's code (same GBA hardware) and
+sm-3ds's techniques before tuning ours.
 
 - [ ] **P3.1** Find where the frame goes on each model (from P0.2): logic vs PPU
   model vs GPU build/submit vs present vs bottom screen vs audio, and how often the
