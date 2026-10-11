@@ -94,9 +94,10 @@ Minor = milestone, patch = fix round. Ask before a minor bump; never infer one.
 
 ### Releases (installer on GitHub)
 
-`.github/workflows/build-release.yml` builds the CIA and the 3DSX on any `vX.Y.Z`
-tag push (and on manual dispatch) and publishes a GitHub Release with both and a
-QR code. The channel depends on whether `main` can reach the tagged commit:
+`.github/workflows/build-release.yml` builds the CIA on any `vX.Y.Z` tag push (and
+on manual dispatch) and publishes a GitHub Release with it and a QR code. No 3DSX:
+from the Homebrew Launcher the game does not get enough memory (owner, 2026-10-11);
+`build.sh` still makes one locally. The channel depends on whether `main` can reach the tagged commit:
 
 | Built from | Channel |
 |---|---|

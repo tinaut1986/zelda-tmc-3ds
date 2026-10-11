@@ -1,7 +1,7 @@
 name: Build 3DS Release
 
 # Same release scheme as ../mzm and ../sm-3ds (CLAUDE.md, "Releases"):
-# a vX.Y.Z tag builds the CIA and the 3DSX and publishes a GitHub Release.
+# a vX.Y.Z tag builds the CIA and publishes a GitHub Release.
 # Only three-component tags are ours: the upstream port's tags (v2.1,
 # v2.2-E1...) live in this repository too and never trigger a build.
 
@@ -94,7 +94,6 @@ jobs:
             TMC3DS_JOBS=$(nproc) ./platform/3ds/build.sh
           V="${{ steps.vars.outputs.version }}"
           test -f "build-3ds/game/tmc-3ds-v${V}.cia"
-          test -f "build-3ds/game/tmc-3ds-v${V}.3dsx"
 
       - name: Generate release notes and QR code
         run: |
@@ -135,7 +134,6 @@ jobs:
             echo "## Downloads"
             echo
             echo "- [tmc-3ds-v${V}.cia](${BASE}/tmc-3ds-v${V}.cia) (install with FBI)"
-            echo "- [tmc-3ds-v${V}.3dsx](${BASE}/tmc-3ds-v${V}.3dsx) (Homebrew Launcher)"
             echo
             echo "Based on [EstebanPdN/zelda-tmc-3ds](https://github.com/EstebanPdN/zelda-tmc-3ds) $(tr -d '\r\n' < platform/3ds/upstream_version.txt)."
             echo "The ROM is not included: put your own USA or European ROM in"
@@ -149,15 +147,15 @@ jobs:
           apt-get update -qq && apt-get install -y -qq qrencode > /dev/null
           qrencode -s 10 -o "QR-${TAG}.png" "${BASE}/tmc-3ds-v${V}.cia"
 
-          cp "build-3ds/game/tmc-3ds-v${V}.cia" "build-3ds/game/tmc-3ds-v${V}.3dsx" .
+          # CIA only: the 3DSX does not get enough memory from the Homebrew
+          # Launcher to run the game (owner, 2026-10-11).
+          cp "build-3ds/game/tmc-3ds-v${V}.cia" .
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: tmc-3ds-build
-          path: |
-            tmc-3ds-v*.cia
-            tmc-3ds-v*.3dsx
+          path: tmc-3ds-v*.cia
 
       - name: Create / update GitHub Release
         uses: softprops/action-gh-release@v2
@@ -172,7 +170,6 @@ jobs:
           body_path: release_notes.md
           files: |
             tmc-3ds-v${{ steps.vars.outputs.version }}.cia
-            tmc-3ds-v${{ steps.vars.outputs.version }}.3dsx
             QR-${{ steps.vars.outputs.tag }}.png
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
