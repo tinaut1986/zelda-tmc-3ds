@@ -165,6 +165,7 @@ enum {
 #ifdef TMC_3DS
     SS_ACT_UPDATE_CHANNEL, SS_ACT_UPDATE_RELEASE, SS_ACT_UPDATE_ACTION,
     SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT,
+    SS_ACT_THEME, /* the tab bar's theme button (bottom_compact_3ds.inc) */
 #endif
 };
 
@@ -1560,6 +1561,12 @@ static void PaintItemsPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
                             int armedRing) {
     Port_SecondScreenTheme_DrawPlate(s->px, s->w, s->h, s->stride, (int32_t)rx0, (int32_t)ry0,
                                      (int32_t)(rx1 - rx0), (int32_t)(ry1 - ry0), ts);
+#ifdef TMC_3DS
+    /* The tab bar already says ITEMS: no header chip, and a thinner rim so
+     * the wells get the room (bottom_compact_3ds.inc). */
+    float inset = 7 * ts;
+    float ix0 = rx0 + inset, iy0 = ry0 + inset, ix1 = rx1 - inset, iy1 = ry1 - inset;
+#else
     float inset = 12 * ts;
     float ix0 = rx0 + inset, iy0 = ry0 + inset, ix1 = rx1 - inset, iy1 = ry1 - inset;
 
@@ -1569,6 +1576,7 @@ static void PaintItemsPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
     if (hms < 1) hms = 1;
     DrawPanelHeaderChip(s, (rx0 + rx1) / 2.0f, iy0, "ITEMS", hms, u);
     iy0 += MENU_TEXT_BOX * hms + 32 * u;
+#endif
 
     const int cols = 4, rows = 4;
     int32_t cellW = (int32_t)(ix1 - ix0) / cols;
@@ -3001,7 +3009,8 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
 
 #ifdef TMC_3DS
     /* Compact chrome (bottom_compact_3ds.inc): the tab bar is a slim strip on
-     * top and the panels get everything under it. */
+     * top (or at the bottom, by theme) and the panels get the rest. */
+    Compact_ApplyThemeFromConfig();
     float sideW = 220 * u;
     float mx0 = CC_MARGIN, my0 = CcContentTop() + 2;
     float mx1 = tab == SS_TAB_SETTINGS ? width - CC_MARGIN : width - sideW - 2;
@@ -3158,6 +3167,11 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
     if (HandleUpdateTap(hit.action, hit.arg)) return;
 #endif
     switch (hit.action) {
+#ifdef TMC_3DS
+        case SS_ACT_THEME:
+            Compact_NextTheme();
+            break;
+#endif
         case SS_ACT_TAB:
             UI_LOCK();
             /* Re-tapping the active panel tab returns to the map — the

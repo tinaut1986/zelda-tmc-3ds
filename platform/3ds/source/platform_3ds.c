@@ -102,6 +102,8 @@ static void RegisterAptHook(void) {
     sAptHookRegistered = true;
 }
 
+static bool sPtmuReady;
+
 int Platform3DS_Init(void) {
     Port_SecondScreen_3DS_SyncInit();
     sHeld = 0;
@@ -137,6 +139,7 @@ int Platform3DS_Init(void) {
     gfxInit(GSP_RGB565_OES, GSP_RGB565_OES, false);
     gfxSet3D(false);
     cfguInit();
+    sPtmuReady = R_SUCCEEDED(ptmuInit());
     romfsInit();
     consoleInit(GFX_BOTTOM, NULL);
 
@@ -194,8 +197,33 @@ void Platform3DS_Shutdown(void) {
     virtuappu_mode1_shutdown_workers();
     Port_Audio_Shutdown();
     romfsExit();
+    if (sPtmuReady) ptmuExit();
+    sPtmuReady = false;
     cfguExit();
     gfxExit();
+}
+
+/* Battery and Wi-Fi for the bottom screen's status icons. The two PTM calls
+ * cost a few ms on the console (../sm-3ds measured 2-3 ms), and the level moves
+ * far slower than anything else, so they are asked at most every 3 s. */
+bool Platform3DS_BatteryStatus(uint8_t* level, uint8_t* charging) {
+    static uint64_t lastTick;
+    static u8 cachedLevel = 5, cachedCharging;
+    if (!sPtmuReady) return false;
+    const uint64_t now = svcGetSystemTick();
+    if (lastTick == 0 || now - lastTick > 3ull * SYSCLOCK_ARM11) {
+        u8 l = 0, c = 0;
+        if (R_SUCCEEDED(PTMU_GetBatteryLevel(&l))) cachedLevel = l > 5 ? 5 : l;
+        if (R_SUCCEEDED(PTMU_GetBatteryChargeState(&c))) cachedCharging = c;
+        lastTick = now;
+    }
+    *level = cachedLevel;
+    *charging = cachedCharging;
+    return true;
+}
+
+int Platform3DS_WifiStrength(void) {
+    return (int)osGetWifiStrength();
 }
 
 bool Platform3DS_IsRunning(void) { return sRunning; }

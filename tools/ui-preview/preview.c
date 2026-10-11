@@ -12,7 +12,7 @@
 
 #include "tmc3ds_build_config.h"
 
-void Port_SecondScreen_3DS_SetUiTheme(int theme);
+void Port_Config_SetUiTheme(int theme);
 int Port_SecondScreen_3DS_UiTabCenterY(int height);
 void Port_Config_SetSecondScreenBackdrop(int style);
 
@@ -78,11 +78,14 @@ int main(int argc, char** argv) {
     FakeSnapshot(&snap);
     const char* theme = getenv("THEME");
     if (theme) {
-        /* Backdrop per theme: PATTERN 0, CREAM 1, DARK 2, DIM 3, STONE 4, SLATE 5, NAVY 6. */
+        /* As the theme button does: the theme and its panel backdrop
+         * (PATTERN 0, CREAM 1, DARK 2, DIM 3, STONE 4, SLATE 5, NAVY 6). */
         static const int kBackdrop[] = { 5, 0, 6, 2 };
         int t = atoi(theme);
-        Port_SecondScreen_3DS_SetUiTheme(t);
+        Port_Config_SetUiTheme(t);
         if (t >= 0 && t < 4) Port_Config_SetSecondScreenBackdrop(kBackdrop[t]);
+    } else {
+        Port_Config_SetSecondScreenBackdrop(5);
     }
     uint32_t tick = 1;
     for (int a = 2; a < argc; a++) {
@@ -97,9 +100,8 @@ int main(int argc, char** argv) {
         for (char* t = taps ? strtok(taps, ";") : NULL; t; t = strtok(NULL, ";")) {
             int x, y, tab;
             if (sscanf(t, "t%d", &tab) == 1) {
-                /* Same split as CColumn in bottom_compact_3ds.inc. */
-                int n = TMC3DS_DEBUG_TOOLS ? 5 : 4, inner = W - 2 * 3 - (n - 1) * 3;
-                x = (3 + inner * tab / n + tab * 3 + 3 + inner * (tab + 1) / n + tab * 3) / 2;
+                /* Same geometry as Compact_PaintTabBar: 30 px tabs every 34 px from x=4. */
+                x = 4 + tab * 34 + 15;
                 y = Port_SecondScreen_3DS_UiTabCenterY(H);
                 Port_SecondScreen_OnTap(x, y, 0);
                 Paint(&snap, tick++);

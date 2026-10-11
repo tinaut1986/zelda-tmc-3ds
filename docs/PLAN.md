@@ -26,7 +26,7 @@ boxes below. History: `git log` and the decisions log.
 | Branch | What | State |
 |---|---|---|
 | `chore/fork-setup` | P0.1: own version scheme, title ID, data folder, updater repo, release CI, build assistant, this plan | waiting for the owner (build, install next to upstream's app, boot, check the version in the boot console) |
-| `feat/compact-ui` (cut from `chore/fork-setup`) | P2.1 UI preview on the host; first part of P2.2 (slim tab bar on top, OPTIONS as a cell grid, 5x7 font at 1x, version + upstream base in the footer) and of P1.1 (DEBUG tab with the old Developer cells) | waiting for the owner: previews approved?, then on the console (tabs, every OPTIONS cell, the title-screen OPTIONS with its BACK, the UPDATES page) |
+| `feat/compact-ui` (cut from `chore/fork-setup`) | P2.1 UI preview on the host; first part of P2.2 (icon tab bar with clock, Wi-Fi and battery, four themes switched by a day/night-style button or the THEME cell and saved as `ui_theme`, OPTIONS as a cell grid, 5x7 font at 1x, version + upstream base in the footer, no ITEMS header chip) and of P1.1 (DEBUG tab with the old Developer cells) | waiting for the owner on the console (tabs, theme button, every OPTIONS cell, the title-screen OPTIONS with its BACK, the UPDATES page); the owner will tune the themes after using them |
 
 **Priority** (owner's order, 2026-10-11): P0.1 → P1 debug tools and P2 bottom UI (so
 that P3 can be measured) → P0.2 baseline → P3 performance → P4 wide modes.
@@ -235,5 +235,11 @@ Empty until P1.4 exists.
 - **2026-10-11** Workflow copied from `../sm-3ds` (spec-driven PLAN, issues for
   bugs, `release/*` + `main`, betas carry debug tools). CMake stays (no switch to
   make); `version.sh` does what sm-3ds's Makefile does.
+- **2026-10-11** Bottom-screen themes: four kept (SLATE, PARCHMENT, NIGHT GOLD, FOREST with
+  the tabs below), switchable on the console; the owner will tune them after using them. Each
+  theme sets its own panel backdrop when picked.
+- **2026-10-11** The repository stays public for now: GitHub does not let a fork of a public
+  repository be made private, and a private repository would break the console's updater and
+  the release QR codes (both download anonymously). Asked the owner before doing anything.
 - **2026-10-11** The updater shows the `<!-- tmc-notes -->` block (our release
   notes) and falls back to upstream's `## Changelog` section.

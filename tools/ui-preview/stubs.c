@@ -20,6 +20,8 @@ unsigned Platform3DS_Core1TimeLimit(void) { return 80; }
 uint64_t Platform3DS_SystemTick(void) { return 0; }
 void Port_SecondScreen_3DS_LockUI(void) {}
 void Port_SecondScreen_3DS_UnlockUI(void) {}
+bool Platform3DS_BatteryStatus(uint8_t* level, uint8_t* charging) { *level = 4; *charging = 0; return true; }
+int Platform3DS_WifiStrength(void) { return 2; }
 double Port_PPU_3DS_CurrentFps(void) { return 59.8; }
 double Port_PPU_3DS_AverageFps(void) { return 58.4; }
 void Port_PPU_3DS_WriteQuickDump(void) {}
@@ -29,6 +31,9 @@ const char* Port_DumpState_ResultLabel(PortDumpStateResult r) { (void)r; return 
 void Port_SecondScreenState_RequestEquip(uint8_t itemId, uint8_t slot) { (void)itemId; (void)slot; }
 
 /* ---- runtime config: plain variables ---- */
+static int sUiTheme = 0;
+int Port_Config_GetUiTheme(void) { return sUiTheme; }
+void Port_Config_SetUiTheme(int theme) { sUiTheme = theme; }
 static int sAspect = 0, sStyle = 2, sBackdrop = 0;
 static bool sColor = true, sHideHud = false, sHold = true, sCrests = true, sFloor = true, sFollow = true;
 static bool sSwap = false, sFps = false, sWide = true, sAuto = true;

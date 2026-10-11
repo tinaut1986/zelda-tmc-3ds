@@ -15,6 +15,8 @@
 #include "ui_font_3ds.h"
 #include "tmc3ds_build_config.h"
 
+#include <time.h>
+
 /* Colours, RGBA_8888 as the compositor stores them (RGB() above). A theme is
  * a palette plus where the tab bar goes; the owner picks one (2026-10-11:
  * proposals rendered with tools/ui-preview, THEME=n). */
@@ -23,25 +25,26 @@ typedef struct CcTheme {
     uint32_t bg, bar, tab, tabEdge, tabOn, tabOnEdge, tabOnText, cell, cellEdge, btn, btnEdge;
     uint32_t text, dim, faint, good, warn, bad, accent;
     uint8_t tabsBottom;
+    uint8_t backdrop; /* SS_BACKDROP_* the map/items/quest panels sit on */
 } CcTheme;
 
 static const CcTheme kCcThemes[] = {
     { "SLATE", RGB(16, 20, 26), RGB(10, 13, 18), RGB(32, 40, 52), RGB(60, 74, 92), RGB(40, 112, 68),
       RGB(110, 200, 130), RGB(232, 236, 240), RGB(26, 32, 42), RGB(64, 80, 100), RGB(22, 56, 42),
       RGB(70, 150, 100), RGB(232, 236, 240), RGB(140, 150, 166), RGB(84, 94, 110), RGB(120, 220, 130),
-      RGB(240, 200, 80), RGB(240, 110, 100), RGB(110, 200, 240), 0 },
+      RGB(240, 200, 80), RGB(240, 110, 100), RGB(110, 200, 240), 0, SS_BACKDROP_SLATE },
     { "PARCHMENT", RGB(226, 212, 172), RGB(88, 60, 36), RGB(196, 176, 128), RGB(120, 92, 60), RGB(54, 112, 56),
       RGB(24, 64, 28), RGB(244, 240, 220), RGB(242, 232, 200), RGB(150, 118, 76), RGB(70, 128, 70),
       RGB(36, 78, 38), RGB(50, 38, 28), RGB(122, 96, 68), RGB(168, 146, 112), RGB(30, 120, 44),
-      RGB(160, 100, 14), RGB(176, 46, 36), RGB(36, 86, 156), 0 },
-    { "NIGHT AND GOLD", RGB(12, 16, 34), RGB(6, 8, 20), RGB(26, 34, 70), RGB(52, 66, 120), RGB(142, 104, 26),
+      RGB(160, 100, 14), RGB(176, 46, 36), RGB(36, 86, 156), 0, SS_BACKDROP_PARCHMENT },
+    { "NIGHT GOLD", RGB(12, 16, 34), RGB(6, 8, 20), RGB(26, 34, 70), RGB(52, 66, 120), RGB(142, 104, 26),
       RGB(240, 200, 90), RGB(255, 246, 220), RGB(20, 26, 54), RGB(56, 70, 124), RGB(40, 50, 100),
       RGB(110, 130, 210), RGB(236, 236, 246), RGB(140, 148, 180), RGB(76, 84, 120), RGB(120, 220, 150),
-      RGB(250, 210, 90), RGB(240, 110, 100), RGB(110, 190, 255), 0 },
-    { "FOREST, TABS BELOW", RGB(14, 26, 18), RGB(8, 16, 10), RGB(28, 48, 32), RGB(56, 90, 60), RGB(60, 140, 70),
+      RGB(250, 210, 90), RGB(240, 110, 100), RGB(110, 190, 255), 0, SS_BACKDROP_NAVY },
+    { "FOREST", RGB(14, 26, 18), RGB(8, 16, 10), RGB(28, 48, 32), RGB(56, 90, 60), RGB(60, 140, 70),
       RGB(150, 220, 140), RGB(240, 246, 230), RGB(22, 38, 26), RGB(60, 100, 66), RGB(40, 90, 50),
       RGB(110, 180, 110), RGB(236, 240, 224), RGB(150, 170, 140), RGB(80, 100, 80), RGB(150, 230, 120),
-      RGB(240, 200, 80), RGB(240, 110, 100), RGB(120, 210, 230), 1 },
+      RGB(240, 200, 80), RGB(240, 110, 100), RGB(120, 210, 230), 1, SS_BACKDROP_DARK },
 };
 enum { CC_THEME_COUNT = (int)(sizeof(kCcThemes) / sizeof(kCcThemes[0])) };
 static const CcTheme* sCc = &kCcThemes[0];
@@ -76,7 +79,7 @@ int Port_SecondScreen_3DS_UiTabCenterY(int height);
 #define CC_ACCENT      (sCc->accent)
 
 enum {
-    CC_TAB_H = 18,     /* tab bar height; the content starts 2 px away from it */
+    CC_TAB_H = 24,     /* tab bar height; the content starts 2 px away from it */
     CC_MARGIN = 3,
     CC_GAP = 3,
     CC_CELL_H = 25,    /* name row + value row */
@@ -84,13 +87,13 @@ enum {
 
 /* Where the tab bar and the content go for the current theme. */
 static int32_t CcTabY(int32_t h) {
-    return sCc->tabsBottom ? h - CC_TAB_H - 1 : 0;
+    return sCc->tabsBottom ? h - CC_TAB_H : 0;
 }
 static int32_t CcContentTop(void) {
-    return sCc->tabsBottom ? 0 : CC_TAB_H + 2;
+    return sCc->tabsBottom ? 0 : CC_TAB_H;
 }
 static int32_t CcContentBottom(int32_t h) {
-    return sCc->tabsBottom ? h - CC_TAB_H - 3 : h;
+    return sCc->tabsBottom ? h - CC_TAB_H : h;
 }
 int Port_SecondScreen_3DS_UiTabCenterY(int height) {
     return CcTabY(height) + CC_TAB_H / 2;
@@ -164,6 +167,8 @@ static void CColumn(int32_t width, int cols, int col, int span, int32_t* x, int3
 }
 
 /* ---- tab bar ---- */
+/* mzm's and sm-3ds's layout: 30x20 icon tabs from the left, then the theme
+ * button, and the clock, Wi-Fi bars and battery on the right. */
 
 static int CompactTabCount(void) {
     return TMC3DS_DEBUG_TOOLS ? 5 : 4;
@@ -175,19 +180,139 @@ static int CompactTabCount(void) {
  * no target. */
 static uint8_t sCompactIdle;
 
+enum { CC_TAB_W = 30, CC_TAB_STEP = 34, CC_TAB_X0 = 4 };
+
 static void Compact_IdleBackRect(int32_t h, int32_t* x0, int32_t* y0, int32_t* x1, int32_t* y1) {
-    *x0 = CC_MARGIN;
-    *y0 = CcTabY(h) + 1;
-    *x1 = CC_MARGIN + 64;
-    *y1 = CcTabY(h) + CC_TAB_H;
+    *x0 = CC_TAB_X0;
+    *y0 = CcTabY(h) + 2;
+    *x1 = CC_TAB_X0 + 64;
+    *y1 = CcTabY(h) + CC_TAB_H - 2;
+}
+
+/* 13x12 pixel-art icons, '#' = ink. */
+static const char* const kIconItems[12] = {
+    "......#......", ".....###.....", ".....###.....", ".....###.....", ".....###.....", ".....###.....",
+    ".....###.....", "..#########..", "..#########..", ".....###.....", ".....###.....", "....#####....",
+};
+static const char* const kIconQuest[12] = {
+    ".............", "..###...###..", ".#####.#####.", "#############", "#############", "#############",
+    ".###########.", "..#########..", "...#######...", "....#####....", ".....###.....", "......#......",
+};
+static const char* const kIconMap[12] = {
+    "####.###.####", "####.###.####", "####.###.####", ".............", "####.....####", "####.....####",
+    "####.....####", ".............", "####.###.####", "####.###.####", "####.###.####", ".............",
+};
+static const char* const kIconOptions[12] = {
+    ".............", "...###.......", "#############", "...###.......", ".............", "........###..",
+    "#############", "........###..", ".............", ".###.........", "#############", ".###.........",
+};
+static const char* const kIconDebug[12] = {
+    "....#...#....", ".....###.....", "....#####....", "#..#######..#", ".#.###.###.#.", "...###.###...",
+    "####.....####", "...###.###...", ".#.###.###.#.", "#..#######..#", "....#####....", ".............",
+};
+
+static void CIcon(const SSurf* s, int32_t cx, int32_t cy, const char* const* rows, uint32_t color) {
+    for (int y = 0; y < 12; y++) {
+        for (int x = 0; x < 13; x++) {
+            if (rows[y][x] == '#') {
+                FillRect(s, cx - 6 + x, cy - 6 + y, cx - 5 + x, cy - 5 + y, color);
+            }
+        }
+    }
+}
+
+/* The theme button's icon: a ring, its right half filled (the usual day/night
+ * contrast glyph). */
+static void CThemeIcon(const SSurf* s, int32_t cx, int32_t cy, uint32_t color) {
+    for (int y = -6; y <= 6; y++) {
+        for (int x = -6; x <= 6; x++) {
+            int d2 = x * x + y * y;
+            if (d2 > 42) continue;
+            if (d2 >= 25 || x >= 0) FillRect(s, cx + x, cy + y, cx + x + 1, cy + y + 1, color);
+        }
+    }
+}
+
+static void CStatus(const SSurf* s, int32_t ty) {
+    const uint32_t frame = CC_DIM, dim = CC_FAINT;
+    const int32_t cy = ty + CC_TAB_H / 2;
+    /* Battery: 15x8 shell and a 2x4 nub, far right. */
+    const int32_t bx = s->w - 21, by = cy - 4;
+    FillRect(s, bx, by, bx + 15, by + 1, frame);
+    FillRect(s, bx, by + 7, bx + 15, by + 8, frame);
+    FillRect(s, bx, by, bx + 1, by + 8, frame);
+    FillRect(s, bx + 14, by, bx + 15, by + 8, frame);
+    FillRect(s, bx + 15, by + 2, bx + 17, by + 6, frame);
+    uint8_t level = 0, charging = 0;
+    if (Platform3DS_BatteryStatus(&level, &charging)) {
+        int32_t w = level * 11 / 5;
+        uint32_t fill = charging ? CC_GOOD : level <= 1 ? CC_BAD : level == 2 ? CC_WARN : CC_GOOD;
+        if (w > 0) FillRect(s, bx + 2, by + 2, bx + 2 + w, by + 6, fill);
+        if (charging) {
+            /* A lightning bolt over the battery, dark edge so it reads on any fill. */
+            static const uint8_t kBolt[8] = { 0x03, 0x06, 0x0C, 0x1E, 0x07, 0x06, 0x0C, 0x18 };
+            for (int pass = 0; pass < 2; pass++) {
+                for (int y = 0; y < 8; y++) {
+                    for (int x = 0; x < 5; x++) {
+                        if (!((kBolt[y] >> (4 - x)) & 1)) continue;
+                        int32_t px = bx + 5 + x, py = by + y;
+                        if (pass == 0) {
+                            FillRect(s, px - 1, py, px + 2, py + 1, CC_BAR);
+                            FillRect(s, px, py - 1, px + 1, py + 2, CC_BAR);
+                        } else {
+                            FillRect(s, px, py, px + 1, py + 1, CC_WARN);
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        FillRect(s, bx + 5, by + 3, bx + 9, by + 5, dim);
+    }
+    /* Wi-Fi: three rising bars on the battery's baseline. */
+    const int wifi = Platform3DS_WifiStrength();
+    const int32_t wx = bx - 16;
+    for (int i = 0; i < 3; i++) {
+        int32_t h = 3 + i * 2;
+        FillRect(s, wx + i * 4, cy + 4 - h, wx + i * 4 + 2, cy + 4, i < wifi ? frame : dim);
+    }
+    /* Clock, left of the bars. The console clock is local time. */
+    char buf[8] = "--:--";
+    time_t t = time(NULL);
+    struct tm* tm = gmtime(&t);
+    if (tm) snprintf(buf, sizeof(buf), "%02d:%02d", tm->tm_hour, tm->tm_min);
+    CText(s, wx - 5 - CTextWidth(buf), cy - 3, CC_TEXT, buf);
+}
+
+/* What the status icons last showed: the tab bar is repainted when they change
+ * (Port_SecondScreen_3DS_NeedsPeriodicRefresh). */
+static int sCompactChromeKey = -1;
+
+static int CompactChromeKey(void) {
+    time_t t = time(NULL);
+    struct tm* tm = gmtime(&t);
+    uint8_t level = 0, charging = 0;
+    Platform3DS_BatteryStatus(&level, &charging);
+    return (tm ? tm->tm_hour * 60 + tm->tm_min : 0) * 1000 + Platform3DS_WifiStrength() * 100 + level * 10 +
+           (charging ? 1 : 0);
+}
+
+static int Compact_ChromeChanged(void) {
+    return CompactChromeKey() != sCompactChromeKey;
 }
 
 static void Compact_PaintTabBar(const SSurf* s, TargetList* tl, int activeTab, int settingsPage) {
-    static const char* const kNames[5] = { "MAP", "ITEMS", "QUEST", "OPTIONS", "DEBUG" };
+    static const char* const* const kIcons[5] = { kIconMap, kIconItems, kIconQuest, kIconOptions, kIconDebug };
     static const uint8_t kTabs[5] = { SS_TAB_MAP, SS_TAB_ITEMS, SS_TAB_QUEST, SS_TAB_SETTINGS, SS_TAB_DEBUG };
     int n = CompactTabCount();
     int32_t ty = CcTabY(s->h);
-    FillRect(s, 0, ty, s->w, ty + CC_TAB_H + 1, CC_BAR);
+    FillRect(s, 0, ty, s->w, ty + CC_TAB_H, CC_BAR);
+    FillRect(s, 0, sCc->tabsBottom ? ty : ty + CC_TAB_H - 1, s->w, sCc->tabsBottom ? ty + 1 : ty + CC_TAB_H,
+             CC_TAB_EDGE);
+    sCompactChromeKey = CompactChromeKey();
+    CStatus(s, ty);
+
+    int32_t themeX;
     if (sCompactIdle) {
         if (settingsPage == SS_SETTINGS_ROOT) {
             int32_t x0, y0, x1, y1;
@@ -195,18 +320,35 @@ static void Compact_PaintTabBar(const SSurf* s, TargetList* tl, int activeTab, i
             CBox(s, x0, y0, x1 - x0, y1 - y0, CC_BTN, CC_BTN_EDGE);
             CTextCentered(s, (x0 + x1) / 2, y0 + (y1 - y0 - kUiGlyphH) / 2, CC_TEXT, "< BACK");
         }
-        CTextCentered(s, s->w / 2, ty + 1 + (CC_TAB_H - 1 - kUiGlyphH) / 2, CC_TEXT, "OPTIONS");
-        return;
+        CText(s, CC_TAB_X0 + 72, ty + (CC_TAB_H - kUiGlyphH) / 2, CC_TEXT, "OPTIONS");
+        themeX = CC_TAB_X0 + 72 + CTextWidth("OPTIONS") + 10;
+    } else {
+        for (int i = 0; i < n; i++) {
+            int32_t x = CC_TAB_X0 + i * CC_TAB_STEP;
+            int on = activeTab == kTabs[i];
+            CBox(s, x, ty + 2, CC_TAB_W, CC_TAB_H - 4, on ? CC_TAB_ON : CC_TAB, on ? CC_TAB_ON_EDGE : CC_TAB_EDGE);
+            CIcon(s, x + CC_TAB_W / 2, ty + CC_TAB_H / 2, kIcons[i], on ? CC_TAB_ON_TEXT : CC_DIM);
+            AddTarget(tl, (float)x, (float)ty, (float)(x + CC_TAB_W + 2), (float)(ty + CC_TAB_H), SS_ACT_TAB,
+                      kTabs[i]);
+        }
+        themeX = CC_TAB_X0 + n * CC_TAB_STEP + 6;
     }
-    for (int i = 0; i < n; i++) {
-        int32_t x, w;
-        CColumn(s->w, n, i, 1, &x, &w);
-        int on = activeTab == kTabs[i];
-        CBox(s, x, ty + 1, w, CC_TAB_H - 1, on ? CC_TAB_ON : CC_TAB, on ? CC_TAB_ON_EDGE : CC_TAB_EDGE);
-        CTextCentered(s, x + w / 2, ty + 1 + (CC_TAB_H - 1 - kUiGlyphH) / 2, on ? CC_TAB_ON_TEXT : CC_DIM,
-                      kNames[i]);
-        AddTarget(tl, (float)x, (float)ty, (float)(x + w), (float)(ty + CC_TAB_H + 1), SS_ACT_TAB, kTabs[i]);
-    }
+    /* Theme button: cycles kCcThemes, like a day/night switch. */
+    CBox(s, themeX, ty + 2, CC_TAB_W, CC_TAB_H - 4, CC_TAB, CC_TAB_EDGE);
+    CThemeIcon(s, themeX + CC_TAB_W / 2, ty + CC_TAB_H / 2, CC_ACCENT);
+    AddTarget(tl, (float)themeX, (float)ty, (float)(themeX + CC_TAB_W), (float)(ty + CC_TAB_H), SS_ACT_THEME, 0);
+}
+
+/* The theme picked in the config, and its panel backdrop with it. */
+static void Compact_ApplyThemeFromConfig(void) {
+    Port_SecondScreen_3DS_SetUiTheme(Port_Config_GetUiTheme());
+}
+
+static void Compact_NextTheme(void) {
+    int next = (int)(sCc - kCcThemes + 1) % CC_THEME_COUNT;
+    Port_Config_SetUiTheme(next);
+    Port_SecondScreen_3DS_SetUiTheme(next);
+    Port_Config_SetSecondScreenBackdrop(sCc->backdrop);
 }
 
 /* ---- OPTIONS ---- */
@@ -271,7 +413,12 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
     CSettingCell(s, tl, 2, 2, 1, "FLOOR BACK", SS_SET_FLOOR_RETURN);
     CSettingCell(s, tl, 2, 3, 1, "SHOW FPS", SS_SET_SHOW_FPS);
     /* Look and system */
-    CSettingCell(s, tl, 3, 0, 2, "PANEL BACKDROP", SS_SET_BACKDROP);
+    {
+        int32_t x, w;
+        CColumn(s->w, 4, 0, 1, &x, &w);
+        CCell(s, tl, x, CRowY(3), w, CC_CELL_H, "THEME", sCc->name, CC_ACCENT, SS_ACT_THEME, 0);
+    }
+    CSettingCell(s, tl, 3, 1, 1, "BACKDROP", SS_SET_BACKDROP);
     {
         int32_t x, w;
         CColumn(s->w, 4, 2, 2, &x, &w);

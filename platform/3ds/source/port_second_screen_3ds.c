@@ -218,6 +218,9 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
         return Platform3DS_IsNew3DS();
     }
 
+    /* The clock, Wi-Fi bars and battery in the tab bar. */
+    if (Compact_ChromeChanged()) return 1;
+
     int tab;
     int settingsPage;
     uint32_t dumpFlashUntil;
@@ -254,6 +257,10 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
     }
     if (tab == SS_TAB_ITEMS) {
         /* The authentic item cursor blinks even when no values change. */
+        return 1;
+    }
+    if (tab == SS_TAB_DEBUG) {
+        /* Live timings and position. */
         return 1;
     }
     if (tab != SS_TAB_SETTINGS) {

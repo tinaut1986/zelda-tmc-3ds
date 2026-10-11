@@ -12,6 +12,7 @@
  * atomic; SaveConfig still performs its file I/O on the main thread and never
  * holds a compositor lock while touching the SD card. */
 static _Atomic bool sShowFps;
+static _Atomic int sUiTheme; /* bottom_compact_3ds.inc kCcThemes index */
 static _Atomic bool sFollow = true;
 static _Atomic bool sCrests = true;
 static _Atomic bool sFloorReturn = true;
@@ -149,6 +150,7 @@ static void SaveConfig(void) {
     fprintf(file, "# Minish Cap 3DS runtime settings\n");
     fprintf(file, "performance_profile_version=%d\n", PERFORMANCE_PROFILE_VERSION);
     fprintf(file, "show_fps=%u\n", sShowFps ? 1u : 0u);
+    fprintf(file, "ui_theme=%d\n", (int)sUiTheme);
     fprintf(file, "follow_cam=%u\n", sFollow ? 1u : 0u);
     fprintf(file, "windcrest_pins=%u\n", sCrests ? 1u : 0u);
     fprintf(file, "floor_auto_return=%u\n", sFloorReturn ? 1u : 0u);
@@ -230,6 +232,7 @@ void Port_Config_Load(const char* path) {
             if (strcmp(key, "performance_profile_version") == 0)
                 sPerformanceProfileVersion = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "show_fps") == 0) sShowFps = ParseBool(value);
+            else if (strcmp(key, "ui_theme") == 0) sUiTheme = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "gpu_renderer") == 0) sGpuRenderer = ParseBool(value);
             else if (strcmp(key, "gpu_frame_sync") == 0) sGpuFrameSync = ParseBool(value);
             else if (strcmp(key, "gpu_viewport_offset") == 0) sGpuViewportOffset = ParseBool(value);
@@ -329,6 +332,8 @@ bool Port_Config_GetDecoupleRender(void) { return false; }
 void Port_Config_SetDecoupleRender(bool on) { (void)on; }
 bool Port_Config_GetShowFps(void) { return sShowFps; }
 void Port_Config_SetShowFps(bool on) { sShowFps = on; SaveConfig(); }
+int Port_Config_GetUiTheme(void) { return sUiTheme; }
+void Port_Config_SetUiTheme(int theme) { sUiTheme = theme; SaveConfig(); }
 bool Port_Config_GetTouchControls(void) { return false; }
 void Port_Config_SetTouchControls(bool on) { (void)on; }
 bool Port_Config_PortSettingsMenuEnabled(void) { return sPortSettings; }
