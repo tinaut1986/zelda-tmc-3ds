@@ -19,8 +19,11 @@
 extern int Port_DumpState3DS_LoadLatest(void);
 extern const char* Port_DumpState_ResultLabel(int result);
 
+/* A request the main thread never takes (game hung). Not an enum: 5e9 does
+ * not fit in an int, and the truncated value gave up after 0.7 s. */
+#define LINK_WAIT_NS 5000000000LL
+
 enum {
-    LINK_WAIT_NS = 5000000000LL, /* a request the main thread never takes (game hung) */
     LINK_PEEK_MAX = 256,
     LINK_RESULT_MAX = 600,
 };
