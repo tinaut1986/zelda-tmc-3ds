@@ -1148,7 +1148,9 @@ static u32 sWsExperimentalCameraRoomKey = 0xffffffffu;
 static int sWsExperimentalCameraSnapArmed = 1;
 static u32 sWsGameplayRoomKey = 0xffffffffu;
 static int sWsRoomLoadTicks; /* UpdateShadows ticks since a door changed the room key, counting down */
+static int sWsRoomLoadGraceTicks; /* past sWsRoomLoadTicks: the hold may go on while Full View is still latching */
 static int sWsFadeRecent;    /* ticks left since a fade was last on: a door, not a border scroll */
+static int sWsChangeRoomTicks; /* UpdateShadows ticks spent in GAMEMAIN_CHANGEROOM so far */
 static Port3DSFullViewMode sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
 static u32 sWsProducerPendingRoomKey = 0xffffffffu;
 static Port3DSFullViewMode sWsProducerPendingMode = PORT_3DS_FULL_VIEW_FALLBACK;
@@ -1270,7 +1272,13 @@ static int Port_WidescreenFullViewUiOverlayActive(void) {
  * What mixes two map generations is the load itself (INITROOM, CHANGEROOM,
  * the reload flags) and the border scroll. */
 static int Port_WidescreenRoomTransitionActive(void) {
-    if (gMain.substate == GAMEMAIN_INITROOM || gMain.substate == GAMEMAIN_CHANGEROOM) return 1;
+    /* CHANGEROOM lasts the whole fade-in of an area change (GameMain_ChangeRoom returns while
+     * the fade is on), but the room is loaded by its first ticks. Counting all of it kept Full
+     * View off until the fade-in had ended, so the top hold swallowed the fade-in and the field
+     * popped in at once. */
+    enum { CHANGEROOM_LOAD_TICKS = 2 };
+    if (gMain.substate == GAMEMAIN_INITROOM) return 1;
+    if (gMain.substate == GAMEMAIN_CHANGEROOM && sWsChangeRoomTicks < CHANGEROOM_LOAD_TICKS) return 1;
     if (gMain.substate == GAMEMAIN_CHANGEAREA && gFadeControl.active == 0) return 1;
     return Port3DSFullViewPolicy_RoomTransitionActive(0, 0, gRoomControls.reload_flags, gRoomControls.scrollAction);
 }
@@ -1460,7 +1468,18 @@ void Port_Widescreen_ResetAfterStateLoad(void) {
 
 int Port_Widescreen_3DSHoldTop(void) {
 #ifdef TMC_3DS
-    if (sWsRoomLoadTicks <= 0 || gMain.task != TASK_GAME) return 0;
+    if (sWsRoomLoadGraceTicks <= 0 || gMain.task != TASK_GAME) return 0;
+    if (sWsRoomLoadTicks <= 0) {
+        /* The load is over, but Full View takes a few more ticks to latch
+         * (FULL_VIEW_ENTER_TICKS, then the shadows): releasing the hold at 16
+         * showed those frames at 266x160 before the 400x240 view. Hold on
+         * while the policy wants Full View and only the latch is missing. */
+        const Port3DSFullViewFallbackReason reason = Port_Widescreen_3DSFallbackReason();
+        if (reason != PORT_3DS_FULL_VIEW_REASON_LATCH_MISMATCH &&
+            reason != PORT_3DS_FULL_VIEW_REASON_ROOM_GENERATION &&
+            reason != PORT_3DS_FULL_VIEW_REASON_SHADOWS_UNAVAILABLE)
+            return 0;
+    }
     if (!Port_Config_3DSFullViewComboEnabled() || Port_WidescreenFixedCanvasSubtask()) return 0;
     if (gRoomControls.area > AREA_98 ||
         !Port3DSFullViewPolicy_AreaIsExterior(gRoomControls.area, gRoomControls.room,
@@ -1937,11 +1956,15 @@ void Port_Widescreen_UpdateShadows(void) {
         sWsExperimentalCameraRoomKey = roomKey;
         sWsExperimentalCameraSnapArmed = 1;
     }
+    if (gMain.substate != GAMEMAIN_CHANGEROOM) sWsChangeRoomTicks = 0;
+    else if (sWsChangeRoomTicks < 255) ++sWsChangeRoomTicks;
     if (sWsRoomLoadTicks > 0) --sWsRoomLoadTicks;
+    if (sWsRoomLoadGraceTicks > 0) --sWsRoomLoadGraceTicks;
     if (gFadeControl.active != 0) sWsFadeRecent = 90;
     else if (sWsFadeRecent > 0) --sWsFadeRecent;
     if (sWsGameplayRoomKey != roomKey) {
         sWsRoomLoadTicks = sWsFadeRecent > 0 ? 16 : 0;
+        sWsRoomLoadGraceTicks = sWsFadeRecent > 0 ? 16 + 24 : 0;
         sWsGameplayRoomKey = roomKey;
         sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
         sWsProducerPendingRoomKey = 0xffffffffu;
