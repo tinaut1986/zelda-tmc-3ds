@@ -11,7 +11,7 @@ enum class CGBType : int { SQ1 = 0, SQ2, WAVE, NOISE };
 enum class EnvState : int { INIT = 0, ATK, DEC, SUS, REL, PSEUDO_ECHO, DIE, DEAD };
 enum class NoisePatt : int { FINE = 0, ROUGH };
 enum class ReverbType : int { NORMAL, GS1, GS2, MGAT, TEST, NONE };
-enum class ResamplerType : int { NEAREST, LINEAR, SINC, BLEP, BLAMP };
+enum class ResamplerType : int { NEAREST, LINEAR, SINC, BLEP, BLAMP, BOX };
 enum class CGBPolyphony { MONO_STRICT, MONO_SMOOTH, POLY };
 
 enum class VoiceFlags : int {
