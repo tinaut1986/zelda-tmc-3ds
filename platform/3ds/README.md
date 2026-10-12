@@ -16,10 +16,16 @@ tmc-3ds-v1.3-E3.cia
 Then create this directory on the SD card:
 
 ```text
-sdmc:/3ds/The Minish Cap 3DS/
+sdmc:/3ds/Minish Cap 3DS/
 ```
 
 Place a legally obtained clean ROM there. Any `.gba` filename is accepted.
+Without a ROM there, the one in the original port's folder
+(`sdmc:/3ds/The Minish Cap 3DS/`) is read in place, so it is not on the SD
+twice. At the first launch with no save of its own, if the original port's
+folder has saves (`*.sav`), the bottom screen asks whether to copy them here
+(A) or not (B); the answer is kept in `upstream-import.txt` and not asked
+again. The original folder is never written to.
 The port detects USA and European game codes at runtime and activates the
 matching internal data profile before boot. Expected SHA-1 values:
 

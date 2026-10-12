@@ -17,6 +17,8 @@
 #include <unistd.h>
 
 #include "app_paths_3ds.h"
+#include "upstream_import_3ds.h"
+#include "boot_text_3ds.h"
 #include "tmc3ds_build_config.h"
 #if TMC3DS_DEBUG_TOOLS
 #include "debug_log_3ds.h"
@@ -27,6 +29,8 @@
 
 #define APP_DIR TMC3DS_APP_DIR
 #define ROM_PATH_SIZE 512
+#define ROM_SHA1_USA "b4bd50e4131b027c334547b4524e2dbbd4227130"
+#define ROM_SHA1_EUROPE "cff199b36ff173fb6faf152653d1bccf87c26fb7"
 
 extern void AgbMain(void);
 
@@ -56,8 +60,10 @@ static int RomIsSupported(const char* path) {
     return ok;
 }
 
-static int FindRom(char* out, size_t outSize) {
-    DIR* dir = opendir(".");
+/* The first supported .gba of `dirPath` into `out`, prefixed with `prefix`
+ * ("" for the working directory). 1 found, -1 only unsupported .gba files, 0 none. */
+static int FindRomIn(const char* dirPath, const char* prefix, char* out, size_t outSize) {
+    DIR* dir = opendir(dirPath);
     if (!dir) return 0;
 
     int foundGba = 0;
@@ -66,17 +72,28 @@ static int FindRom(char* out, size_t outSize) {
         if (entry->d_name[0] == '.') continue;
         if (!HasGbaExtension(entry->d_name)) continue;
 
+        char path[ROM_PATH_SIZE];
+        snprintf(path, sizeof(path), "%s%s", prefix, entry->d_name);
         struct stat info;
-        if (stat(entry->d_name, &info) != 0 || !S_ISREG(info.st_mode)) continue;
+        if (stat(path, &info) != 0 || !S_ISREG(info.st_mode)) continue;
         foundGba = 1;
-        if (!RomIsSupported(entry->d_name)) continue;
-        snprintf(out, outSize, "%s", entry->d_name);
+        if (!RomIsSupported(path)) continue;
+        snprintf(out, outSize, "%s", path);
         closedir(dir);
         return 1;
     }
 
     closedir(dir);
     return foundGba ? -1 : 0;
+}
+
+/* Our folder first; without a ROM there, the upstream port's folder, read in place
+ * so the ROM is not on the SD twice. */
+static int FindRom(char* out, size_t outSize) {
+    const int own = FindRomIn(".", "", out, outSize);
+    if (own > 0) return own;
+    const int upstream = FindRomIn(UPSTREAM_APP_DIR, UPSTREAM_APP_DIR "/", out, outSize);
+    return upstream != 0 ? upstream : own;
 }
 
 int main(int argc, char** argv) {
@@ -89,31 +106,39 @@ int main(int argc, char** argv) {
     Platform3DS_BootAnimStart();
     if (!PrepareStorage()) {
         Platform3DS_BootAnimStop();
-        Platform3DS_ShowFatal("Storage error", "Could not open " APP_DIR ".");
+        char message[256];
+        snprintf(message, sizeof(message), "%s\n%s", BootText_Tr("COULD NOT OPEN THIS FOLDER:"), APP_DIR);
+        Platform3DS_ShowFatal("STORAGE ERROR", message);
         Platform3DS_Shutdown();
         return 1;
+    }
+
+    /* Before the game starts: it reads its saves once, at boot. */
+    if (UpstreamImport_ShouldOffer()) {
+        Platform3DS_BootAnimStop();
+        UpstreamImport_OfferSaves();
+        Platform3DS_BootAnimStart();
     }
 
     char romPath[ROM_PATH_SIZE];
     int romResult = FindRom(romPath, sizeof(romPath));
     if (romResult <= 0) {
-        char message[512];
+        /* In the console's language (port_text_i18n.c); paths and hashes as they are. */
+        char message[768];
         if (romResult < 0) {
-            snprintf(message, sizeof(message),
-                     "None of the .gba files in:\n%s\n"
-                     "is a supported USA (BZME) or Europe (BZMP) ROM.\n\n"
-                     "Expected SHA-1:\nUSA: b4bd50e4131b027c334547b4524e2dbbd4227130\n"
-                     "Europe: cff199b36ff173fb6faf152653d1bccf87c26fb7",
-                     APP_DIR);
+            snprintf(message, sizeof(message), "%s\n\n%s\n%s\n%s\n\n%s\nUSA: %s\n%s %s",
+                     BootText_Tr("NONE OF THE .GBA FILES IS A SUPPORTED USA (BZME) OR EUROPE (BZMP) ROM."),
+                     BootText_Tr("FOLDERS SEARCHED:"), APP_DIR, UPSTREAM_APP_DIR, BootText_Tr("EXPECTED SHA-1:"),
+                     ROM_SHA1_USA, BootText_Tr("EUROPE:"), ROM_SHA1_EUROPE);
         } else {
-            snprintf(message, sizeof(message),
-                     "Copy your clean USA or Europe ROM to:\n%s\n\nAny .gba filename is accepted.\n\n"
-                     "Expected SHA-1:\nUSA: b4bd50e4131b027c334547b4524e2dbbd4227130\n"
-                     "Europe: cff199b36ff173fb6faf152653d1bccf87c26fb7",
-                     APP_DIR);
+            snprintf(message, sizeof(message), "%s\n%s\n%s\n%s\n\n%s\n\n%s\nUSA: %s\n%s %s",
+                     BootText_Tr("COPY YOUR CLEAN USA OR EUROPE ROM TO:"), APP_DIR,
+                     BootText_Tr("THE ORIGINAL PORT'S FOLDER WORKS TOO:"), UPSTREAM_APP_DIR,
+                     BootText_Tr("ANY .GBA FILENAME IS ACCEPTED."), BootText_Tr("EXPECTED SHA-1:"), ROM_SHA1_USA,
+                     BootText_Tr("EUROPE:"), ROM_SHA1_EUROPE);
         }
         Platform3DS_BootAnimStop();
-        Platform3DS_ShowFatal(romResult < 0 ? "Unsupported ROM" : "ROM not found", message);
+        Platform3DS_ShowFatal(romResult < 0 ? "UNSUPPORTED ROM" : "ROM NOT FOUND", message);
         Platform3DS_Shutdown();
         return 1;
     }
@@ -121,7 +146,7 @@ int main(int argc, char** argv) {
     FILE* rom = fopen(romPath, "rb");
     if (!rom) {
         Platform3DS_BootAnimStop();
-        Platform3DS_ShowFatal("ROM error", "Could not open the selected .gba file.");
+        Platform3DS_ShowFatal("ROM ERROR", BootText_Tr("COULD NOT OPEN THE SELECTED .GBA FILE."));
         Platform3DS_Shutdown();
         return 1;
     }

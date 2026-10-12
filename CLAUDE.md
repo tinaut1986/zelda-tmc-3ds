@@ -99,8 +99,10 @@ Minor = milestone, patch = fix round. Ask before a minor bump; never infer one.
   shown next to ours (boot console, dumps, OPTIONS footer).
 - This fork installs as **its own application**: title ID `0x5A22E`
   (`cia/tmc3ds.rsf`; upstream is `0x5A22D`), name "Minish Cap 3DS", data folder
-  `sdmc:/3ds/Minish Cap 3DS/` (`source/app_paths_3ds.h`). It never touches the
-  upstream app's folder, so both can be installed side by side.
+  `sdmc:/3ds/Minish Cap 3DS/` (`source/app_paths_3ds.h`). It never writes to the
+  upstream app's folder (`sdmc:/3ds/The Minish Cap 3DS/`), so both can be installed
+  side by side; it only reads the ROM there when ours has none and offers once to
+  copy its saves (`source/upstream_import_3ds.c`).
 
 ### Releases (installer on GitHub)
 
@@ -185,7 +187,7 @@ git push origin --delete release/v0.1.0
   contains them. `.gitignore` covers `*.gba`, `*.sav`, `baserom.gba`.
 - Supported ROMs: USA (`BZME`, sha1 `b4bd50e4131b027c334547b4524e2dbbd4227130`) and
   Europe (`BZMP`, sha1 `cff199b36ff173fb6faf152653d1bccf87c26fb7`). The ROM is read
-  at runtime from `sdmc:/3ds/Minish Cap 3DS/`.
+  at runtime from `sdmc:/3ds/Minish Cap 3DS/`, or else from the upstream app's folder.
 - License: GPL-3.0 (see `LICENSE`, `COPYRIGHT.md`, `THIRD-PARTY-LICENSES.md`), agbplay
   LGPLv3. Keep the notices; the build copies them into the romfs.
 
