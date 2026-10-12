@@ -91,6 +91,14 @@ extern uint8_t virtuappu_mode1_ws_shadow_cols[MODE1_GBA_BG_COUNT];
 extern uint8_t virtuappu_mode1_ws_shadow_stride[MODE1_GBA_BG_COUNT];
 extern int virtuappu_mode1_ws_full_view;
 extern bool virtuappu_mode1_bg3_hdma_native_bounds;
+/* BG3HOFS as the game wrote it for the frame, before any HBlank DMA step.
+ * In native bounds an HDMA effect (Vaati appearing) is authored so its image is
+ * at HOFS ~ 0 on the native screen; game code computes the register from
+ * gRoomControls.scroll_x, which the wide camera has moved, so the register and
+ * the table lines built from it sit a camera offset away from 0. Lines within
+ * a few pixels of that base are effect lines and are sampled with the base
+ * taken off; the lines that are not (a static frame of the effect, 0) are not. */
+extern int virtuappu_mode1_bg3_hofs_base;
 /* Repeat a known seamless BG3 overlay beyond the native 240px canvas. */
 extern bool virtuappu_mode1_bg3_repeat;
 

@@ -3772,6 +3772,26 @@ static bool build_bg3_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCa
     PpuGpu3DSBand part = *band;
     part.firstLine = (uint16_t)(lo - top);
     part.lineCount = (uint16_t)(hi - lo);
+    /* An HDMA effect's lines carry the wide camera's offset (see mode1.c, the
+     * native-bounds branch of mode1_render_text_bg_compact_tokens). The band's
+     * registers are copied so the scroll can be moved without touching the
+     * snapshot. */
+    uint8_t io[MODE1_IO_MEM_SIZE];
+    memcpy(io, frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE, sizeof(io));
+    {
+        /* Same rule as mode1.c: a line within a few pixels of the frame's base
+         * is an effect line and is sampled with the base taken off. */
+        const int lineHofs = (int)(read16(io, MODE1_IO_BG3HOFS) & 0x1ffu);
+        const int base = frame->bg3HofsBase;
+        const int fromBase = base >= 0 ? (((lineHofs - base) + 256) & 0x1ff) - 256 : 0x7fff;
+        if (base > 0 && fromBase > -32 && fromBase < 32) {
+            const unsigned hofs = (unsigned)(lineHofs - base) & 0x1ffu;
+            io[MODE1_IO_BG3HOFS] = (uint8_t)hofs;
+            io[MODE1_IO_BG3HOFS + 1u] = (uint8_t)(hofs >> 8u);
+        }
+    }
+    native.ioPerLine = io;
+    part.ioRow = 0;
 
     const size_t regionCount = build_regions(&native, oam, &part, regions);
     const size_t firstVertex = *vertexCursor;

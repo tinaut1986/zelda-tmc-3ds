@@ -250,6 +250,8 @@ typedef struct PpuGpu3DSFrameView {
      * centred in the view, sampling source line = line - top
      * (mode1_bg3_native_bounds_active). */
     bool bg3NativeBounds;
+    /* BG3HOFS before any HBlank DMA step (virtuappu_mode1_bg3_hofs_base), -1 unknown. */
+    int bg3HofsBase;
 } PpuGpu3DSFrameView;
 
 typedef struct PpuGpu3DSInterval {

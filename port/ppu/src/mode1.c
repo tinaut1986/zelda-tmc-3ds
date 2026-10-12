@@ -44,6 +44,7 @@ uint8_t virtuappu_mode1_ws_shadow_stride[MODE1_GBA_BG_COUNT] = {
 };
 int virtuappu_mode1_ws_full_view = 0;
 bool virtuappu_mode1_bg3_hdma_native_bounds = false;
+int virtuappu_mode1_bg3_hofs_base = -1;
 bool virtuappu_mode1_bg3_repeat = false;
 int virtuappu_mode1_ws_hud_right_anchor = 0;
 /* Widescreen message-box centering (see mode1.h). All zero = inactive. */
@@ -1040,8 +1041,25 @@ static void mode1_render_text_bg_compact_tokens(int bg_index, int line, uint16_t
     if (!hud_right_anchor && !message_line) {
         if (native_bounds) {
             const int native_width = native_right - native_left;
-            mode1_render_text_bg_native_tokens(bg_index, line - native_top, bgcnt,
-                                               native_width, tokens + native_left);
+            const int hofs = virtuappu_mode1_io_read16(MODE1_IO_BG3HOFS) & 0x1FF;
+            const int base = virtuappu_mode1_bg3_hofs_base;
+            /* signed distance of the line from the base, 9-bit */
+            const int from_base = base >= 0 ? (((hofs - base) + 256) & 0x1FF) - 256 : 0x7FFF;
+            if (base > 0 && from_base > -32 && from_base < 32) {
+                /* An effect line: sample with the base taken off, then restore. */
+                const uint8_t lo = mode1_memory.io_mem[MODE1_IO_BG3HOFS];
+                const uint8_t hi = mode1_memory.io_mem[MODE1_IO_BG3HOFS + 1u];
+                const int adjusted = (hofs - base) & 0x1FF;
+                mode1_memory.io_mem[MODE1_IO_BG3HOFS] = (uint8_t)adjusted;
+                mode1_memory.io_mem[MODE1_IO_BG3HOFS + 1u] = (uint8_t)(adjusted >> 8);
+                mode1_render_text_bg_native_tokens(bg_index, line - native_top, bgcnt, native_width,
+                                                   tokens + native_left);
+                mode1_memory.io_mem[MODE1_IO_BG3HOFS] = lo;
+                mode1_memory.io_mem[MODE1_IO_BG3HOFS + 1u] = hi;
+            } else {
+                mode1_render_text_bg_native_tokens(bg_index, line - native_top, bgcnt,
+                                                   native_width, tokens + native_left);
+            }
         } else {
             mode1_render_text_bg_native_tokens(bg_index, line, bgcnt, render_width, tokens);
         }
