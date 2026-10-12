@@ -64,6 +64,29 @@ int main(void) {
         }
     }
 
+    /* Quarter-width cells of the compact OPTIONS page hold 11 characters of
+     * the 5x7 font (6 px each in ~68 px); a longer word would run into the
+     * next cell. */
+    static const char* const kCellWords[] = {
+        "VIEW", "STYLE", "FRAMES", "TOP HUD", "TURBO", "VOLUME", "AUTOSAVE", "HOLD TEXT", "MAP FOLLOW",
+        "CREST PINS", "FLOOR BACK", "COLOURS", "THEME", "SHOW FPS", "SHOW", "HIDE", "ON", "OFF", "RESTART",
+        "ORIGINAL", "STABLE", "SLATE", "PARCHMENT", "NIGHT GOLD", "FOREST", "PATTERN", "NONE", "BACK",
+        "PREV", "NEXT", "SAVE OVER", "DELETE", "LOAD", "SURE?",
+    };
+    for (size_t i = 0; i < sizeof(kCellWords) / sizeof(kCellWords[0]); i++) {
+        for (int lang = PORT_TEXT_FR; lang < PORT_TEXT_COUNT; lang++) {
+            const char* t = Port_Text_TrFor((PortTextLanguage)lang, kCellWords[i]);
+            int n = 0;
+            for (const char* p = t; *p; n++) {
+                (void)Port_Text_Utf8Next(&p);
+            }
+            if (n > 11) {
+                fprintf(stderr, "too wide for a cell (%d): %s -> %s\n", n, kCellWords[i], t);
+                return 1;
+            }
+        }
+    }
+
     /* UTF-8 -> game charcode (Latin-1 for the accented range). */
     const char* p = "a\xC3\xA9\xC3\x91\xE2\x99\xAA!";
     CHECK(Port_Text_Utf8Next(&p) == 'a');
