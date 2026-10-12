@@ -2744,11 +2744,19 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                         v1 = swap;
                     }
                 }
+                /* A rotated tile's edges can fall exactly on pixel centres, where
+                 * point sampling at u == the slot's last texel edge reads the
+                 * next slot of the atlas: a stray column of another tile's
+                 * pixels along the sprite. The native view clips it at x=240;
+                 * in Wide it shows. One packed UV step is 1/8 texel, so pulling
+                 * the corners in by one keeps every sample inside the slot and
+                 * changes none that was inside. */
+                const int16_t inset = obj->affine ? 1 : 0;
                 const int16_t uv[4][2] = {
-                    { PpuGpu3DS_PackUV(u0), PpuGpu3DS_PackUV(v0) },
-                    { PpuGpu3DS_PackUV(u1), PpuGpu3DS_PackUV(v0) },
-                    { PpuGpu3DS_PackUV(u1), PpuGpu3DS_PackUV(v1) },
-                    { PpuGpu3DS_PackUV(u0), PpuGpu3DS_PackUV(v1) }
+                    { (int16_t)(PpuGpu3DS_PackUV(u0) + inset), (int16_t)(PpuGpu3DS_PackUV(v0) - inset) },
+                    { (int16_t)(PpuGpu3DS_PackUV(u1) - inset), (int16_t)(PpuGpu3DS_PackUV(v0) - inset) },
+                    { (int16_t)(PpuGpu3DS_PackUV(u1) - inset), (int16_t)(PpuGpu3DS_PackUV(v1) + inset) },
+                    { (int16_t)(PpuGpu3DS_PackUV(u0) + inset), (int16_t)(PpuGpu3DS_PackUV(v1) + inset) }
                 };
                 for (unsigned corner = 0; corner < 4; ++corner) {
                     cmd->vertices[*vertexCursor + corner] =
