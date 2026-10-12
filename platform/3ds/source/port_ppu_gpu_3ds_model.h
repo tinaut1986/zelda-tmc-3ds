@@ -399,6 +399,7 @@ extern uint32_t gPpuGpu3DSLastBands, gPpuGpu3DSLastVertices, gPpuGpu3DSLastBatch
 extern uint32_t gPpuGpu3DSRingWhy[4];
 extern uint32_t gPpuGpu3DSRingCells, gPpuGpu3DSRingStale;
 extern volatile uint8_t gPpuGpu3DSRingDisable;
+extern uint32_t gPpuGpu3DSBankChanges[16];
 void PpuGpu3DS_SetMapSpaceEnabled(bool enabled);
 /* Gives view ring `index` (bg * 2 + variant) its storage in `pixels` (256 x 512 RGBA5551, 256 KiB); NULL takes it away. */
 void PpuGpu3DS_RingSetStorage(PpuGpu3DSCache* cache, unsigned index, uint16_t* pixels);

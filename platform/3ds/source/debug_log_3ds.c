@@ -224,6 +224,15 @@ void DebugLog_Tick(void) {
                         ms[PPU_GPU3DS_PHASE_OBJWIN], ms[PPU_GPU3DS_PHASE_REGIONS], ms[PPU_GPU3DS_PHASE_BG],
                         ms[PPU_GPU3DS_PHASE_OBJ], ms[PPU_GPU3DS_PHASE_DECODE], ms[PPU_GPU3DS_PHASE_RINGDIGEST],
                         ms[PPU_GPU3DS_PHASE_RINGCELLS]);
+        {
+            char banks[96];
+            size_t n = 0;
+            for (int b = 0; b < 16; ++b) {
+                n += (size_t)snprintf(banks + n, sizeof(banks) - n, "%u ", (unsigned)gPpuGpu3DSBankChanges[b]);
+                gPpuGpu3DSBankChanges[b] = 0;
+            }
+            DebugLog_Printf("palette banks changed (frames per bank): %s", banks);
+        }
         DebugLog_Printf("scene: last frame %u bands, %u vertices (%u quads), %u batches, ring why %u %u %u %u, cells %u stale chunks %u (total)",
                         gPpuGpu3DSLastBands, gPpuGpu3DSLastVertices, gPpuGpu3DSLastVertices / 4u,
                         gPpuGpu3DSLastBatches, gPpuGpu3DSRingWhy[0], gPpuGpu3DSRingWhy[1],

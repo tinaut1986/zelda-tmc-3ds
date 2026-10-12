@@ -13,6 +13,7 @@
  * `scene:` line prints them. */
 uint32_t gPpuGpu3DSRingWhy[4];
 uint32_t gPpuGpu3DSRingCells, gPpuGpu3DSRingStale;
+uint32_t gPpuGpu3DSBankChanges[16]; /* frames each BG palette bank changed in */
 
 /* Phase timing (PPU_GPU3DS_PROFILE): the host benchmark and the console build
  * both define it; on the console the SD log prints it every 5 s ("build:"). */
@@ -45,6 +46,7 @@ static bool keys_equal(PpuGpu3DSTileKey left, PpuGpu3DSTileKey right) {
            left.bpp8 == right.bpp8 && left.domain == right.domain;
 }
 
+static const uint16_t* sBgPaletteShadowProbe;
 static void update_palette(uint16_t* shadow, uint32_t* bankGenerations,
                            uint32_t* fullGeneration, const uint16_t* palette) {
     bool changed = false;
@@ -55,6 +57,7 @@ static void update_palette(uint16_t* shadow, uint32_t* bankGenerations,
         if (memcmp(shadowBank, paletteBank, 16 * sizeof(*shadowBank)) != 0) {
             memcpy(shadowBank, paletteBank, 16 * sizeof(*shadowBank));
             ++bankGenerations[bank];
+            if (shadow == sBgPaletteShadowProbe) ++gPpuGpu3DSBankChanges[bank];
             changed = true;
         }
     }
@@ -210,6 +213,7 @@ void PpuGpu3DS_CacheBeginFrame(PpuGpu3DSCache* cache, const uint16_t* bgPalette,
         ++cache->bg256Generation;
         ++cache->obj256Generation;
     }
+    sBgPaletteShadowProbe = cache->bgPalette;
     update_palette(cache->bgPalette, cache->bgBankGeneration, &cache->bg256Generation,
                    bgPalette);
     update_palette(cache->objPalette, cache->objBankGeneration, &cache->obj256Generation,
@@ -1973,7 +1977,11 @@ static bool ring_update(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, 
                     bpp8 ? cache->bg256Generation : cache->bgBankGeneration[(entry >> 12u) & 15u];
             const uint32_t key = blank ? 0x40000000u
                                        : (entry | ((generation & 0x3fffu) << 16u) | 0x80000000u);
-            if (ring->key[cell] == key) continue;
+            const uint32_t held = ring->key[cell];
+            if (held == key) continue;
+            /* A tile with no opaque pixel does not depend on the palette: it
+             * stays valid through a fade that changes every bank. */
+            if ((held & 0x20000000u) != 0 && (held & 0xffffu) == entry) continue;
             const uint8_t* source = NULL;
             if (!blank) {
                 const uint32_t tileOffset = charBase + (uint32_t)(entry & 0x03ffu) * tileBytes;
@@ -1987,8 +1995,22 @@ static bool ring_update(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, 
                 source = frame->memory.vram + tileOffset;
             }
             ++gPpuGpu3DSRingCells;
+            uint32_t storedKey = key;
+            if (source != NULL) {
+                /* 4bpp: all 32 bytes zero means nothing is opaque. */
+                bool empty = true;
+                for (uint32_t i = 0; i < tileBytes && empty; i += 4) {
+                    uint32_t word;
+                    memcpy(&word, source + i, sizeof(word));
+                    empty = word == 0;
+                }
+                if (empty) {
+                    source = NULL;
+                    storedKey = entry | 0x20000000u | 0x80000000u;
+                }
+            }
             ring_decode_cell(cache, ring, source, entry, bpp8, cell, generation);
-            ring->key[cell] = key;
+            ring->key[cell] = storedKey;
         }
     }
     PROFILE_END(PPU_GPU3DS_PHASE_RINGCELLS);
