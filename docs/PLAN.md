@@ -469,3 +469,14 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   continuously (3 of 12 alternating taps lost, measured). The tab bar is the same in every
   panel, so a tab tap skips the generation gate and keeps the mode check
   (`Port_SecondScreen_TapIsTab`). Re-tapping the active tab still returns to the map, by design.
+- **2026-10-12** Busy window: a save state job runs between frames and stops the game (save
+  ~2 s, load ~0.3 s), so nothing could be drawn while it ran. `SaveState_Service` waits eight
+  frames after a job is asked (not for the scan) and the bottom screen paints SAVING / LOADING /
+  DELETING STATE over everything, taking every tap (`Compact_PaintBusy`). Only on the bottom
+  screen; the top one keeps its last frame. Not seen on the console yet: the link's SHOT runs on
+  the game thread, so it cannot capture a frame during the job.
+- **2026-10-12** The HUD buttons jumped to the middle of the top edge when they hid (approaching
+  Zelda, Wide / Full View): `HudButtonTargetX` dropped the Wide anchor while `hideFlags` was
+  set, and `Port_UI_PrepareGameplayGeometry` moved them at once. The anchor holds now; they slide
+  up from their corner. Seen and checked with the frame recorder, which now also starts on a
+  change of the hide flags.
