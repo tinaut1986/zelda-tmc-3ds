@@ -14,17 +14,13 @@ change (what goes where: the table in `CLAUDE.md`).
   audio offload, an updater, a quick memory dump (L+R+A) and an experimental New 3DS
   "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors; the 2x indoor zoom is gone, see the decisions log).
 
-## Status (2026-10-12)
+## Status (2026-10-13)
 
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.1.1` (on origin). Published: **`v0.1.0`** (2026-10-11, **beta**,
-not on `main`; GitHub release with the CIA and QR, the 3DSX asset deleted afterwards): the fork
-setup, the compact bottom screen with themes, FRAMES, the DEBUG tab tools and the GPU renderer on
-both models (branches `chore/fork-setup`, `feat/compact-ui`, `feat/debug-tools`, merged into
-`release/v0.1.0` before the tag; none of it checked on the console yet). `main` is still upstream's
-v2.2-E1: nothing stable published.
+**Release line:** `release/v0.1.2` (on origin). Published: **`v0.1.1`** (2026-10-12, **stable**,
+merged into `main`) and `v0.1.0` (2026-10-11, beta).
 
 **Branches:**
 
@@ -46,6 +42,8 @@ v2.2-E1: nothing stable published.
 | `chore/debug-sm3ds-style` (cut from `perf/full-view-old3ds`, needs its c3fbc8f..9dbf7cd for the console) | upstream's debug options out, sm-3ds style in: L+R+A gone (debug builds only now), SCREEN DUMP numbered `debug/tmc-dump-NNNN-*` and deferred to the frame boundary, LOAD STATE and `port_dump_state_3ds.c` out (STATES tab), GPU CHECK writes `tmc-check-NNNN-*`, FRAME LOG and the TMC_3DS_DIAGNOSTICS blocks out, SITE INSTALL refused 15 s after a dump (issue #4) | builds (debug, production, UI preview); not installed on the console yet (installs paused while issue #4 is looked at) | _(merged into `release/v0.1.1` 2026-10-12: checked on the 2DS by Claude, build debug and production)_
 | `perf/palette-anim-tile-cache` (cut from `perf/full-view-old3ds`) | issue #3, the dialogue fade-in in the castle garden (28 fps): ring cells copy an identical cell decoded earlier in the frame; **uniform screen fades on the GPU** (`docs/gpu-fade.md`: unfaded palettes + one blended quad, `src/` untouched so save states survive); perf recorder rows with the builder's counters | on the 2DS by Claude over the link: fade windows 28 -> 47-54 fps, no tile decoded during a fade (cells 0), 387/387 fades recognised; GPU CHECK still shows large structural differences on some fade frames (I=256, cause not found yet: the console went off the network before the new parity log line could be read). Not checked by the owner | _(merged into `release/v0.1.1` 2026-10-12: fade on the GPU checked on the 2DS, with fix/fullscreen-quad-corners)_
 | `feat/port-ui-language` (cut from `release/v0.1.1`) | the port's own text (bottom screen, updater) follows the language chosen in-game: EN/FR/DE/ES/IT, `port/port_text_i18n.c`; accents fall back to the plain letter when the font lacks them | builds; not checked on the console (EU ROM: accents, widths of the longer FR/DE/ES/IT strings) |
+| `fix/fullview-room-hold` (cut from `release/v0.1.2`) | Full View through the fade-in of an area change: no 266x160 frames before the 400x240 view, the fade-in from white visible again | on the 2DS by Claude over the link (castle garden <-> 03/06, both ways, frame recorder and view log); not checked by the owner |
+| `fix/theme-contrast` (cut from `release/v0.1.2`) | bottom-screen themes readable: own colours for what sits on the tab bar (clock, battery, Wi-Fi, toast, busy window), PARCHMENT buttons light; `tools/ui-preview` builds again | on the 2DS by Claude (screenshots of MAP and STATES in PARCHMENT); the other themes only in `tools/ui-preview` |
 
 **Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
 Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
@@ -66,6 +64,11 @@ of each; a holder nobody listed crashes on load into a different build).
   standing still: 59.6-59.9 fps shown, 0 frames skipped, 300 GPU frames / 0 fallback per
   5 s, work 0.85-0.9 ms, **vblank wait only 0.14-1.9 ms per frame**: the normal 240x160 view
   already has almost no margin on the 2DS.
+
+**2026-10-13:** the Old 3DS/2DS answers at `192.168.1.132` now (not in `.3ds_ftp_ip`; pass
+`--ip`). It runs a debug build with both branches above (`0.1.2-dev.8`), Full View
+(`widescreen=1`, `screen_aspect=wide`, `display_style=pixel-perfect`) and the PARCHMENT theme.
+Its third install of the night ended in a kernel panic on the relaunch (issue #4).
 
 **Next after that:** check `perf/full-view-old3ds` on both consoles (the owner), then the
 rest of the 2DS list: Wide (266x160, interiors and map edges) and the location-name banner at
@@ -549,3 +552,10 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   world map's stone frame (crop it inside the frame instead of the jagged edge), the two quest
   sub-lists (kinstones, techniques) still use the game's art, the region zoom, the load-state and
   notice modals are reachable only from dead pages.
+- **2026-10-13** Leaving the castle garden (an area change, white fade) showed ~5 frames at
+  266x160 before Full View, and the fade-in from white was lost: `GameMain_ChangeRoom` lasts the
+  whole fade-in of an area change, and counting all of it as a room transition kept Full View
+  off until the fade had ended, under the top hold. CHANGEROOM counts only for its first two
+  ticks now (the room is loaded by then), and the hold may run 24 ticks past its 16 while the
+  policy wants Full View and only the latch is missing. The first half of the fade-in is still
+  under the hold (white).
