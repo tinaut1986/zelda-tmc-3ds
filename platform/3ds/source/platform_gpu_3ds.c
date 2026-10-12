@@ -98,7 +98,7 @@ static const uint8_t* StatusGlyph(char c) {
         { 14, 16, 16, 30, 17, 17, 14 }, { 31, 1, 2, 4, 8, 8, 8 },
         { 14, 17, 17, 14, 17, 17, 14 }, { 14, 17, 17, 15, 1, 1, 14 },
     };
-    static const uint8_t letters[11][7] = {
+    static const uint8_t letters[12][7] = {
         { 14, 17, 17, 31, 17, 17, 17 }, /* A */
         { 30, 17, 17, 17, 17, 17, 30 }, /* D */
         { 31, 16, 16, 30, 16, 16, 31 }, /* E */
@@ -110,12 +110,15 @@ static const uint8_t* StatusGlyph(char c) {
         { 17, 17, 17, 17, 17, 10, 4 },  /* V */
         { 14, 17, 16, 16, 16, 17, 14 }, /* C */
         { 14, 17, 16, 23, 17, 17, 15 }, /* G */
+        { 16, 16, 16, 16, 16, 16, 31 }, /* L */
     };
     static const uint8_t letterIds[26] = {
         /* A    B    C  D  E  F   G */
-        0,   255,   9, 1, 2, 3, 10, 255, 255, 255, 255, 255, 4,
+        0,   255,   9, 1, 2, 3, 10, 255, 255, 255, 255, 11, 4,
         255, 255, 5, 255, 255, 6, 255, 7, 8, 255, 255, 255, 255,
     };
+    static const uint8_t dot[7] = { 0, 0, 0, 0, 0, 12, 12 };
+    if (c == '.') return dot;
     if (c >= '0' && c <= '9') return digits[c - '0'];
     if (c >= 'A' && c <= 'Z') {
         uint8_t id = letterIds[c - 'A'];
@@ -124,8 +127,7 @@ static const uint8_t* StatusGlyph(char c) {
     return NULL;
 }
 
-static void DrawStatusText(float x, float y, float scale, const char* text) {
-    const uint32_t color = C2D_Color32(255, 255, 255, 255);
+static void DrawStatusTextColor(float x, float y, float scale, const char* text, uint32_t color) {
     for (; *text; ++text, x += 6.0f * scale) {
         const uint8_t* glyph = StatusGlyph(*text);
         if (!glyph) continue;
@@ -144,6 +146,12 @@ static void DrawStatusText(float x, float y, float scale, const char* text) {
         }
     }
 }
+
+static void DrawStatusText(float x, float y, float scale, const char* text) {
+    DrawStatusTextColor(x, y, scale, text, C2D_Color32(255, 255, 255, 255));
+}
+
+static void DrawFpsOverlay(void);
 
 static u32 TextureTransfer(void) {
     return GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(1) |
@@ -269,7 +277,9 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     /* The GPU renderer runs on both models and needs the larger command buffer. */
     if (!C3D_Init(PPU_GPU3DS_COMMAND_BUFFER_BYTES))
         goto fail_linear;
-    if (!C2D_Init(128)) {
+    /* Every rectangle of the numbers box is one object: past the limit citro2d silently drops the
+     * rest of the frame's draws, and the bottom screen went black on the frames with wide digits. */
+    if (!C2D_Init(512)) {
         C3D_Fini();
         goto fail_linear;
     }
@@ -539,17 +549,68 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
         ConfigureAbgrTextureEnv();
         if (plan.useSharpBilinear) ++sStats.sharpBilinearFallbacks;
     }
-    if (Port_Config_GetShowFps()) {
-        char label[28];
-        double fps = Port_PPU_3DS_CurrentFps();
-        unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
-        if (rounded > 999u) rounded = 999u;
-        snprintf(label, sizeof(label), "FPS %u", rounded);
-        const float backgroundWidth = (float)strlen(label) * 12.0f + 8.0f;
-        C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, backgroundWidth, 20.0f,
-                          C2D_Color32(0, 0, 0, 210));
-        DrawStatusText(10.0f, 219.0f, 2.0f, label);
+    if (Port_Config_GetShowFps()) DrawFpsOverlay();
+}
+
+/* The numbers box (SHOW FPS), after ../mzm and ../sm-3ds: four small lines in a dim box at the
+ * bottom-left corner, averaged over the last second. The first is the game's own rate (green from
+ * 59, yellow from 50, red below); L is the logic's ms per tick, G the GPU's ms per presented
+ * frame and S the rate frames reach the screen. Called once per presented frame, inside a C2D
+ * scene with the ABGR texture env, so it is also where the window accumulates. */
+static void DrawFpsOverlay(void) {
+    static struct {
+        uint64_t startMs, logicStart, workStart;
+        double gpuMs;
+        unsigned frames;
+    } win;
+    static float gameFps, logicMs, gpuMs;
+    const uint64_t nowMs = osGetTime();
+    win.gpuMs += sStats.drawingTime > 0.0f ? sStats.drawingTime : 0.0f;
+    ++win.frames;
+    if (win.startMs == 0) {
+        win.startMs = nowMs;
+        win.logicStart = Platform3DS_LogicFrameCount();
+        win.workStart = Platform3DS_EngineWorkTotalTicks();
+    } else if (nowMs - win.startMs >= 1000u) {
+        const uint64_t elapsed = nowMs - win.startMs;
+        const uint64_t logic = Platform3DS_LogicFrameCount();
+        const uint64_t work = Platform3DS_EngineWorkTotalTicks();
+        const uint64_t ticks = logic - win.logicStart;
+        gameFps = (float)ticks * 1000.0f / (float)elapsed;
+        logicMs = ticks ? (float)((double)(work - win.workStart) * 1000.0 /
+                                  (double)Platform3DS_TicksPerSecond() / (double)ticks)
+                        : 0.0f;
+        gpuMs = (float)(win.gpuMs / win.frames);
+        win.startMs = nowMs;
+        win.logicStart = logic;
+        win.workStart = work;
+        win.gpuMs = 0.0;
+        win.frames = 0;
     }
+
+    char line[4][12];
+    snprintf(line[0], sizeof(line[0]), "%.1f", gameFps);
+    snprintf(line[1], sizeof(line[1]), "L%.1f", logicMs);
+    snprintf(line[2], sizeof(line[2]), "G%.1f", gpuMs);
+    snprintf(line[3], sizeof(line[3]), "S%.1f", Port_PPU_3DS_CurrentFps());
+    int chars = 0;
+    for (int i = 0; i < 4; ++i) {
+        const int n = (int)strlen(line[i]);
+        if (n > chars) chars = n;
+    }
+    enum { LINES = 4, PITCH = 10, MARGIN = 2 };
+    const float w = (float)(chars * 6 + 3), h = (float)(LINES * PITCH + 2);
+    const float boxX = (float)MARGIN, boxY = 240.0f - MARGIN - h;
+    C2D_DrawRectSolid(boxX, boxY, 0.7f, w, h, C2D_Color32(0, 0, 0, 150));
+    const uint32_t light = C2D_Color32(230, 232, 240, 255);
+    const uint32_t colors[LINES] = {
+        gameFps >= 59.0f ? C2D_Color32(110, 220, 130, 255)
+                         : (gameFps >= 50.0f ? C2D_Color32(240, 200, 80, 255)
+                                             : C2D_Color32(240, 100, 100, 255)),
+        light, light, C2D_Color32(140, 148, 170, 255),
+    };
+    for (int i = 0; i < LINES; ++i)
+        DrawStatusTextColor(boxX + 2.0f, boxY + 2.0f + (float)(i * PITCH), 1.0f, line[i], colors[i]);
 }
 
 /* The top screen is 400x240 and the game image rarely covers all of it, so the
@@ -826,17 +887,7 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
     }
     if (configureAbgr) ConfigureAbgrTextureEnv();
 
-    if (Port_Config_GetShowFps()) {
-        char label[28];
-        double fps = Port_PPU_3DS_CurrentFps();
-        unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
-        if (rounded > 999u) rounded = 999u;
-        snprintf(label, sizeof(label), "FPS %u", rounded);
-        const float backgroundWidth = (float)strlen(label) * 12.0f + 8.0f;
-        C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, backgroundWidth, 20.0f,
-                          C2D_Color32(0, 0, 0, 210));
-        DrawStatusText(10.0f, 219.0f, 2.0f, label);
-    }
+    if (Port_Config_GetShowFps()) DrawFpsOverlay();
 }
 
 

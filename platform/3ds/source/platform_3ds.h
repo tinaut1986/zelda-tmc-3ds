@@ -89,8 +89,14 @@ void Platform3DS_RequestRelaunch(void);
  * about to end, so shutdown skips anything that waits on the GPU. */
 bool Platform3DS_Relaunching(void);
 uint64_t Platform3DS_EngineWorkLastTicks(void);
+uint64_t Platform3DS_EngineWorkTotalTicks(void);
 uint64_t Platform3DS_VblankWaitLastTicks(void);
 void Platform3DS_ShowSplash(void);
+/* Stops stdout/stderr painting on the bottom screen; call before loading anything. */
+void Platform3DS_SilenceBootConsole(void);
+/* The bottom screen's boot animation; stop it before anything else draws there. */
+void Platform3DS_BootAnimStart(void);
+void Platform3DS_BootAnimStop(void);
 void Platform3DS_EnterGameplayDisplay(void);
 uint16_t Platform3DS_ReadKeyInput(void);
 uint16_t Platform3DS_ReadKeyDownInput(void);
