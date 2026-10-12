@@ -53,6 +53,7 @@
 #include "port_second_screen_state.h"
 #include "port_second_screen_theme.h"
 #include "port_second_screen_worldmap.h"
+#include "port_text_i18n.h"
 
 #include "port_runtime_config.h"
 #include "port_widescreen.h" /* PORT_VIEW_WIDTH: whether this build has a wide path at all */
@@ -604,29 +605,44 @@ static void DrawChar(const SSurf* s, int32_t x, int32_t y, int32_t scale, char c
 /* Text with the 1px-scaled dark outline light glyphs need to read on any
  * backdrop (8-neighbor dark copies underneath, then the fill on top).
  * Returns the advance. */
+/* The 5x7 stand-in has no accents: a UTF-8 letter draws as its plain base
+ * letter (0 = no glyph, e.g. an inverted mark, advance only). */
+static char StandInChar(const char** p) {
+    uint8_t code = Port_Text_Utf8Next(p);
+    if (code >= 0x80) {
+        return Port_Text_BaseLetter(code);
+    }
+    return (char)code;
+}
+
 static int32_t DrawTextStr(const SSurf* s, const char* str, int32_t x, int32_t y, int32_t scale,
                            uint32_t color, uint32_t outline) {
     int32_t cx = x;
-    for (const char* p = str; *p; p++) {
+    for (const char* p = str; *p;) {
+        char c = StandInChar(&p);
         for (int32_t oy = -1; oy <= 1; oy++) {
             for (int32_t ox = -1; ox <= 1; ox++) {
                 if (ox || oy) {
-                    DrawChar(s, cx + ox * scale, y + oy * scale, scale, *p, outline);
+                    DrawChar(s, cx + ox * scale, y + oy * scale, scale, c, outline);
                 }
             }
         }
         cx += 6 * scale;
     }
     cx = x;
-    for (const char* p = str; *p; p++) {
-        DrawChar(s, cx, y, scale, *p, color);
+    for (const char* p = str; *p;) {
+        DrawChar(s, cx, y, scale, StandInChar(&p), color);
         cx += 6 * scale;
     }
     return cx - x;
 }
 
 static int32_t TextWidthPx(const char* str, int32_t scale) {
-    return (int32_t)strlen(str) * 6 * scale - scale;
+    int32_t n = 0;
+    for (const char* p = str; *p; n++) {
+        (void)Port_Text_Utf8Next(&p);
+    }
+    return n * 6 * scale - scale;
 }
 
 /* ------------------------------------------------------------------ */
@@ -647,7 +663,12 @@ static int32_t FallbackScale5x7(int32_t ms) {
     return f < 1 ? 1 : f;
 }
 
+/* Every panel label goes through these three helpers, so this is where
+ * the English literals meet the player's language (port_text_i18n.c).
+ * Strings with no entry — numbers, "B1", values from config — pass
+ * through unchanged. */
 static int32_t MenuTextWidth(const char* str, int32_t ms) {
+    str = Port_Text_Tr(str);
     int32_t w = Port_SecondScreenTheme_BigTextWidth(str, ms);
     if (w == 0 && str != NULL && *str != '\0') {
         w = TextWidthPx(str, FallbackScale5x7(ms));
@@ -658,6 +679,7 @@ static int32_t MenuTextWidth(const char* str, int32_t ms) {
 /* yTop is the glyph-box top. Returns the advance. */
 static int32_t MenuTextDraw(const SSurf* s, const char* str, int32_t x, int32_t yTop, int32_t ms,
                             int style) {
+    str = Port_Text_Tr(str);
     int32_t adv =
         Port_SecondScreenTheme_DrawBigText(s->px, s->w, s->h, s->stride, x, yTop, ms, style, str);
     if (adv == 0 && str != NULL && *str != '\0') {
@@ -2963,6 +2985,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     if (pixels == NULL || width <= 0 || height <= 0) {
         return;
     }
+    Port_Text_SetLanguage(snap->language);
 
 #ifdef TMC_3DS
     UI_LOCK();
@@ -3386,8 +3409,8 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
                 case SS_SET_FRAMES: {
                     int next = (Port_Config_GetFramePacing() + 1) % PORT_3DS_PACING_COUNT;
                     Port_Config_SetFramePacing(next);
-                    if (next == PORT_3DS_PACING_NO_SKIP) Compact_Toast("THE GAME SLOWS DOWN IF IT CANNOT KEEP UP");
-                    else if (next == PORT_3DS_PACING_LOCK30) Compact_Toast("30 FPS SHOWN, GAME AT FULL SPEED");
+                    if (next == PORT_3DS_PACING_NO_SKIP) Compact_Toast("%s", Port_Text_Tr("THE GAME SLOWS DOWN IF IT CANNOT KEEP UP"));
+                    else if (next == PORT_3DS_PACING_LOCK30) Compact_Toast("%s", Port_Text_Tr("30 FPS SHOWN, GAME AT FULL SPEED"));
                     break;
                 }
 #endif

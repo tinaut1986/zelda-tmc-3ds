@@ -105,7 +105,7 @@ static void PaintUpdateNotes(const SSurf* s, TargetList* tl, const UpdateStatus*
 
     char head[80], upper[48];
     UpdateUpper(upper, sizeof(upper), st->version);
-    snprintf(head, sizeof(head), "CHANGELOG %s", upper);
+    snprintf(head, sizeof(head), "%s %s", Port_Text_Tr("CHANGELOG"), upper);
     CBox(s, CC_MARGIN, top + 2, w, 16, CC_BAR, CC_TAB_EDGE);
     CTextCentered(s, s->w / 2, top + 6, CC_TEXT, head);
     CBox(s, CC_MARGIN, listY, w, buttonsY - CC_GAP - listY, CC_CELL, CC_CELL_EDGE);
@@ -115,7 +115,7 @@ static void PaintUpdateNotes(const SSurf* s, TargetList* tl, const UpdateStatus*
     CButton(s, tl, CC_MARGIN + w - 64, buttonsY, 64, 24, "NEXT", page + 1 < pages ? CC_TEXT : CC_FAINT,
             SS_ACT_UPDATE_NEXT, 0);
     char foot[32];
-    snprintf(foot, sizeof(foot), "PAGE %u OF %u", page + 1, pages);
+    snprintf(foot, sizeof(foot), "%s %u %s %u", Port_Text_Tr("PAGE"), page + 1, Port_Text_Tr("OF"), pages);
     CButton(s, tl, CC_MARGIN + 64 + CC_GAP, buttonsY, w - 128 - 2 * CC_GAP, 24, foot, CC_DIM, SS_ACT_UPDATE_RELEASE, 0);
 }
 
@@ -146,14 +146,14 @@ static void PaintUpdatePanel(const SSurf* s, TargetList* tl) {
     CColumn(s->w, 2, 0, 1, &x, &cw);
     CCell(s, tl, x, y, cw, CC_CELL_H, "CHANNEL", st.prerelease ? "+ BETAS" : "STABLE", CC_TEXT, SS_ACT_UPDATE_CHANNEL, 0);
     CColumn(s->w, 2, 1, 1, &x, &cw);
-    UpdateUpper(text, sizeof(text), st.version[0] ? st.version : "NONE");
+    UpdateUpper(text, sizeof(text), st.version[0] ? st.version : Port_Text_Tr("NONE"));
     CCell(s, tl, x, y, cw, CC_CELL_H, "RELEASE", text, notes ? CC_ACCENT : CC_TEXT, SS_ACT_UPDATE_RELEASE, 0);
     y += CC_CELL_H + CC_GAP;
 
     /* Status: what the updater says, or the question while a install waits. */
     const char* message = confirm ? "DOWNLOAD AND INSTALL THIS VERSION?" : st.message;
     if (!message[0]) message = "PRESS CHECK TO LOOK FOR A NEW VERSION";
-    UpdateUpper(text, sizeof(text), message);
+    UpdateUpper(text, sizeof(text), Port_Text_Tr(message));
     char lines[4][64];
     unsigned n = UpdateWrap(text, (unsigned)(w - 10) / kUiAdvance, lines, 3);
     uint32_t color = st.state == UPDATE_ERROR ? CC_BAD : st.state == UPDATE_AVAILABLE || confirm ? CC_WARN

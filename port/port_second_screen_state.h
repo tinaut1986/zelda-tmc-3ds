@@ -161,6 +161,10 @@ typedef struct {
      * name the action itself (the compositor letters the word with the
      * message font while the art path isn't decoded). */
     uint8_t rActionId;
+    /* The game's public Language enum value (LANGUAGE_EN, _FR, ...) the
+     * player picked in the file-select screen, for the port's own UI text.
+     * Published here so the bottom-screen thread never reads EWRAM. */
+    uint8_t language;
     /* Pause-menu item screen contents: menuItems[menuSlot] = item id, 0 if
      * that slot is empty. Bottles report the ITEM_BOTTLE1..4 container id;
      * bottleContents[] carries what's inside for icon display. */

@@ -1,4 +1,5 @@
 #include "port_second_screen_theme.h"
+#include "port_text_i18n.h"
 
 #include "port_rom.h"
 #include "region.h"
@@ -1921,6 +1922,29 @@ static void GlyphMetrics(const u8* glyph, int32_t* outStart, int32_t* outWidth) 
     *outWidth = i - j;
 }
 
+/* True when a glyph cell holds any ink below its metrics row. A font that
+ * lacks a letter (the USA ROM's banks, say, have no accented capitals)
+ * leaves its cell blank, and a blank cell would read as a hole in a word. */
+static int GlyphHasInk(const u8* glyph, size_t bytes) {
+    for (size_t i = 4; i < bytes; i++) {
+        if (glyph[i] != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Next game character code of a UTF-8 panel string. Accented letters the
+ * bank cannot draw fall back to their plain letter; inverted ! and ? marks
+ * are dropped (returns 0 = draw nothing). Plain ASCII is untouched. */
+static u8 NextGlyphCode(const char** p, const u8* bank, size_t cellBytes) {
+    u8 code = Port_Text_Utf8Next(p);
+    if (code >= 0xA0 && !GlyphHasInk(bank + (size_t)code * cellBytes, cellBytes)) {
+        return (u8)Port_Text_BaseLetter(code);
+    }
+    return code;
+}
+
 /* The USA/EU script is plain ASCII in bank 0 (charmap.txt); anything the
  * panel never uses falls back to '?' so a stray string cannot index out
  * of the 256-glyph bank. */
@@ -1937,8 +1961,12 @@ int32_t Port_SecondScreenTheme_TextWidth(const char* str, int32_t scale) {
     if (!sBuilt || !sFontOk || str == NULL) {
         return 0;
     }
-    for (; *str; str++) {
-        GlyphMetrics(GlyphData(*str), &gs, &gw);
+    while (*str) {
+        u8 code = NextGlyphCode(&str, sFontGlyphs, 64);
+        if (code == 0) {
+            continue;
+        }
+        GlyphMetrics(GlyphData((char)code), &gs, &gw);
         w += gw;
     }
     return w * (scale < 1 ? 1 : scale);
@@ -1961,9 +1989,14 @@ int32_t Port_SecondScreenTheme_DrawText(uint32_t* pixels, int32_t bufW, int32_t 
     lutE = &sTextLut[style][0];
     lutO = &sTextLut[style][16];
 
-    for (; *str; str++) {
-        const u8* glyph = GlyphData(*str);
+    while (*str) {
+        u8 code = NextGlyphCode(&str, sFontGlyphs, 64);
+        const u8* glyph;
         int32_t gs, gw, col, row2, ex, ey;
+        if (code == 0) {
+            continue;
+        }
+        glyph = GlyphData((char)code);
         GlyphMetrics(glyph, &gs, &gw);
         /* Rows 1..15 are ink (row 0 is the metrics row); columns clip to
          * the glyph's own [start, start+width) span like sub_0805F820. */
@@ -2024,13 +2057,17 @@ int32_t Port_SecondScreenTheme_BigTextWidth(const char* str, int32_t scale) {
     if (scale < 1) {
         scale = 1;
     }
-    for (; *str; str++) {
-        if (*str == ' ') {
+    while (*str) {
+        u8 code = NextGlyphCode(&str, sBigFontGlyphs, 128);
+        if (code == 0) {
+            continue;
+        }
+        if (code == ' ') {
             w += BIG_SPACE_ADVANCE;
             continue;
         }
         {
-            const u8* g = BigGlyphData(*str);
+            const u8* g = BigGlyphData((char)code);
             GlyphMetrics(g, &gs, &gw);
             adv = gw;
             GlyphMetrics(g + 64, &gs, &gw);
@@ -2057,14 +2094,18 @@ static int32_t DrawBigTextPal(uint32_t* pixels, int32_t bufW, int32_t bufH, int3
         scale = 1;
     }
 
-    for (; *str; str++) {
+    while (*str) {
+        u8 code = NextGlyphCode(&str, sBigFontGlyphs, 128);
         const u8* glyph;
         int32_t cell, adv = 0;
-        if (*str == ' ') {
+        if (code == 0) {
+            continue;
+        }
+        if (code == ' ') {
             x += BIG_SPACE_ADVANCE * scale;
             continue;
         }
-        glyph = BigGlyphData(*str);
+        glyph = BigGlyphData((char)code);
         /* Two 8x16 cells drawn back to back at their own metric spans —
          * the exact double sub_0805F820 call of sub_0805F7DC. Zero-value
          * pixels are skipped (sub_080026F2's transparent merge), which is

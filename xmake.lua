@@ -829,6 +829,7 @@ target("tmc_pc")
     add_files("port/port_softslots.c")   -- Extra item-equip buttons (X/Y/L2/R2)
     add_files("port/port_second_screen.c") -- Second-display panel (AYN Thor); compositor compiles everywhere, surface plumbing is Android-only
     add_files("port/port_second_screen_state.c") -- Thread-safe gSave/gRoomControls snapshot for the second screen
+    add_files("port/port_text_i18n.c") -- Port UI strings in the language selected in-game
     add_files("port/port_second_screen_render.c") -- Item-icon compositor for the second screen (reads ROM/asset data directly)
     add_files("port/port_second_screen_worldmap.c") -- Hyrule map art for the second screen, decoded from ROM at runtime
     add_files("port/port_second_screen_dungeonmap.c") -- Authentic dungeon-map art for the second screen
@@ -1364,7 +1365,7 @@ target("second_screen_charge_test")
         add_ldflags("-Wl,--gc-sections")
     end
     add_files("port/port_second_screen_charge_test.c")
-    add_files("port/port_second_screen.c")
+    add_files("port/port_second_screen.c", "port/port_text_i18n.c")
 target_end()
 
 
@@ -2498,7 +2499,17 @@ target("second_screen_state_test")
     set_targetdir("build/pc")
     add_includedirs(".", "port", "include", "platform/3ds/source")
     add_defines("PC_PORT", "TMC_3DS", "USA", "ENGLISH")
-    add_files("port/port_second_screen_state.c", "port/port_second_screen_state_test.c")
+    add_files("port/port_second_screen_state.c", "port/port_second_screen_state_test.c",
+              "port/port_text_i18n.c")
+target_end()
+
+-- Port UI translations: table shape, UTF-8 to game charcode, accent fallback.
+target("text_i18n_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs("port")
+    add_files("port/port_text_i18n.c", "port/port_text_i18n_test.c")
 target_end()
 
 -- Legacy bomb ownership recovery and the actual bag reward path.

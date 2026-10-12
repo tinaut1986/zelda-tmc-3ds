@@ -87,6 +87,21 @@ static inline s32 RegionPreferredLanguageToSaveSlot(s32 language) {
     return language < NUM_LANGUAGES ? language : -1;
 }
 
+/* Inverse of RegionPreferredLanguageToSaveSlot: the public Language enum
+ * value for a save-header language slot. Unknown slots read as English. */
+static inline u8 RegionSaveSlotToLanguage(u32 slot) {
+    if (REGION_IS_JP) {
+        return LANGUAGE_JP;
+    }
+    if (REGION_IS_EU) {
+        if (slot > EU_LANGUAGE_EN_SLOT && slot <= EU_LANGUAGE_LAST_SLOT) {
+            return (u8)(slot - 1);
+        }
+        return LANGUAGE_EN;
+    }
+    return LANGUAGE_EN;
+}
+
 static inline bool32 RegionSaveLanguageValid(u32 language) {
     if (REGION_IS_JP) {
         return language == LANGUAGE_JP;

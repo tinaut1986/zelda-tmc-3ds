@@ -110,7 +110,7 @@ set(TMC_PORT_SOURCES
     port/port_3ds_full_view_policy.c
     port/port_gba_mem.c port/port_hdma.c port/port_save.c port/port_softslots.c
     port/port_dump_state.c
-    port/port_second_screen_state.c
+    port/port_second_screen_state.c port/port_text_i18n.c
     port/port_second_screen_render.c port/port_second_screen_worldmap.c
     port/port_second_screen_dungeonmap.c port/port_second_screen_quest.c
     port/port_second_screen_theme.c port/port_roll_attack_macro.c
