@@ -40,13 +40,16 @@ void PortPpuGpu3DS_Disable(void);
 bool PortPpuGpu3DS_IsDisabled(void);
 void PortPpuGpu3DS_RecordDisabledFrame(void);
 void PortPpuGpu3DS_GetStats(PortPpuGpu3DSStats* stats);
-/* Directory the last quick dump wrote into, for parity artifacts. */
-const char* Port_PPU_3DS_LastDumpDirectory(void);
+/* debug/tmc-dump-NNNN or debug/tmc-check-NNNN: the file prefix of the last screen
+ * dump or GPU CHECK, for the frame capture and the parity artifacts. */
+const char* Port_PPU_3DS_LastDumpPrefix(void);
+/* GPU CHECK: asks for the next frame to be drawn by both renderers, in a numbered set of its own. */
+void Port_PPU_3DS_RequestGpuCheck(void);
 /* Reads back the frame currently on screen, before anything perturbs it. */
 void PortPpuGpu3DS_RequestFrameCapture(void);
 bool PortPpuGpu3DS_FrameCaptureRequested(void);
 bool PortPpuGpu3DS_QueueFrameCapture(void);
-void PortPpuGpu3DS_WriteFrameCapture(const char* directory);
+void PortPpuGpu3DS_WriteFrameCapture(const char* prefix);
 
 unsigned long long PortPpuGpu3DS_EmptyDrawsSkipped(void);
 void PortPpuGpu3DS_RequestParityCheck(void);

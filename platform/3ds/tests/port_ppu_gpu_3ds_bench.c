@@ -1,12 +1,16 @@
 #define _POSIX_C_SOURCE 200809L
 /* Host-side benchmark for the Old 3DS PICA200 command builder.
  *
- * Feeds a quick-dump memory snapshot (vram.bin / palettes.bin / oam.bin /
- * io-registers.bin, as written by L+R+A on the console) through
+ * Feeds a screen dump's memory snapshot (vram.bin / palettes.bin / oam.bin /
+ * io-registers.bin: the DEBUG tab's SCREEN DUMP writes them as
+ * debug/tmc-dump-NNNN-<name>) through
  * PpuGpu3DS_BuildCommands so the CPU cost of the geometry build can be
  * measured and profiled without a 3DS or an emulator in the loop.
  *
- *   port_ppu_gpu_3ds_bench <dump-dir> [iterations] [width]
+ *   port_ppu_gpu_3ds_bench <dump-dir|dump-prefix> [iterations] [width]
+ *
+ * A directory holds the files by their plain names; anything else is taken as a
+ * prefix (`debug/tmc-dump-0007`, files `<prefix>-vram.bin`, ...).
  */
 
 #include "port_ppu_gpu_3ds_model.h"
@@ -360,6 +364,10 @@ static bool read_file(const char* dir, const char* name, void* out, size_t bytes
     char path[512];
     snprintf(path, sizeof(path), "%s/%s", dir, name);
     FILE* file = fopen(path, "rb");
+    if (!file) {
+        snprintf(path, sizeof(path), "%s-%s", dir, name);
+        file = fopen(path, "rb");
+    }
     if (!file) return false;
     const size_t read = fread(out, 1, bytes, file);
     fclose(file);

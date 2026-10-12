@@ -51,6 +51,9 @@ typedef struct {
  * whatever the real screen animates. `outHot` may be NULL; when given it
  * receives the tappable wells' rects. Returns 1 when the authentic screen was
  * drawn, 0 while its ROM data isn't decodable yet. */
+int Port_SecondScreenQuest_DrawCollectionCell(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                              int idx, int32_t x, int32_t y, int32_t w, int32_t h,
+                                              const SecondScreenSnapshot* snap);
 int Port_SecondScreenQuest_Draw(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
                                 int32_t dstX, int32_t dstY, int32_t dstW, int32_t dstH,
                                 const SecondScreenSnapshot* snap, uint32_t tick,

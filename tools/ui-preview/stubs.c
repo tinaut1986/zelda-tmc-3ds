@@ -26,9 +26,9 @@ bool Platform3DS_BatteryStatus(uint8_t* level, uint8_t* charging) { *level = 4; 
 int Platform3DS_WifiStrength(void) { return 2; }
 double Port_PPU_3DS_CurrentFps(void) { return 59.8; }
 double Port_PPU_3DS_AverageFps(void) { return 58.4; }
-void Port_PPU_3DS_WriteQuickDump(void) {}
+void Platform3DS_RequestScreenDump(void) {}
+void Port_PPU_3DS_RequestGpuCheck(void) {}
 void Port_PPU_SetColorCorrection(bool on) { (void)on; }
-PortDumpStateResult Port_DumpState3DS_LoadLatest(void) { return (PortDumpStateResult)0; }
 const char* Port_DumpState_ResultLabel(PortDumpStateResult r) { (void)r; return "OK"; }
 void Port_SecondScreenState_RequestEquip(uint8_t itemId, uint8_t slot) { (void)itemId; (void)slot; }
 
@@ -43,9 +43,9 @@ static bool sColor = true, sHideHud = false, sHold = true, sCrests = true, sFloo
 static bool sSwap = false, sFps = false, sWide = true, sAuto = true;
 static unsigned sTurbo = 5;
 static float sVolume = 1.0f;
-static const char* const kAspect[] = { "WIDE", "ORIGINAL", "STRETCH" };
+static const char* const kAspect[] = { "WIDE", "ORIGINAL" };
 static const char* const kStyle[] = { "BLUR", "BILINEAR", "PIXEL PERFECT" };
-void Port_Config_Cycle3DSAspectRatio(void) { sAspect = (sAspect + 1) % 3; }
+void Port_Config_Cycle3DSAspectRatio(void) { sAspect = (sAspect + 1) % 2; }
 void Port_Config_Cycle3DSDisplayStyle(void) { sStyle = (sStyle + 1) % 3; }
 const char* Port_Config_Get3DSAspectRatioName(void) { return kAspect[sAspect]; }
 int Port_Config_Get3DSDisplayStyle(void) { return sStyle; }
@@ -137,17 +137,17 @@ int DebugPerf_Stop(void) { sPerf = false; return 3; }
 bool DebugPerf_Running(void) { return sPerf; }
 unsigned DebugPerf_Rows(void) { return sPerf ? 1834 : 0; }
 unsigned DebugPerf_Capacity(void) { return 36000; }
-static int sSw[10] = { 1, 0, 0, 0, 1, 0, -1, -1, 0, 0 };
-static const char* const kSwNames[10] = { "RENDERER", "FRAME SYNC", "VBLANK LOCK", "STATIC QUAD", "MAP SKIP",
-                                          "FRAME LOG", "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT" };
+static int sSw[9] = { 1, 0, 0, 0, 1, -1, -1, 0, 0 };
+static const char* const kSwNames[9] = { "RENDERER", "FRAME SYNC", "VBLANK LOCK", "STATIC QUAD", "MAP SKIP",
+                                         "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT" };
 const char* DebugSwitch_Name(int id) { return kSwNames[id]; }
 void DebugSwitch_Value(int id, char* out, unsigned cap) {
     if (id == 0) snprintf(out, cap, "%s", sSw[0] ? "GPU" : "CPU (TEST)");
-    else if (id == 6 || id == 7) snprintf(out, cap, "%s", sSw[id] < 0 ? "AUTO" : (sSw[id] ? "CORE 1" : "CORE 0"));
-    else if (id == 9) snprintf(out, cap, "AUTO 80%%");
+    else if (id == 5 || id == 6) snprintf(out, cap, "%s", sSw[id] < 0 ? "AUTO" : (sSw[id] ? "CORE 1" : "CORE 0"));
+    else if (id == 8) snprintf(out, cap, "AUTO 80%%");
     else snprintf(out, cap, "%s", sSw[id] ? "ON" : "OFF");
 }
-void DebugSwitch_Cycle(int id) { sSw[id] = sSw[id] == 1 ? (id == 6 || id == 7 ? -1 : 0) : 1; }
+void DebugSwitch_Cycle(int id) { sSw[id] = sSw[id] == 1 ? (id == 5 || id == 6 ? -1 : 0) : 1; }
 bool DebugSwitch_IsDefault(int id) { static const int d[10] = { 1, 0, 0, 0, 1, 0, -1, -1, 0, 0 }; return sSw[id] == d[id]; }
 void PortPpuGpu3DS_GetStats(PortPpuGpu3DSStats* st) { memset(st, 0, sizeof(*st)); st->initialized = true; st->parityChecks = 2; }
 void PortPpuGpu3DS_RequestParityCheck(void) {}
@@ -156,3 +156,29 @@ void FtpServer_Address(char* out, unsigned cap) { snprintf(out, cap, "192.168.1.
 void FtpServer_Stats(unsigned* a, unsigned* b, bool* c) { *a = 3; *b = 1; *c = false; }
 bool FtpServer_Start(void) { return true; }
 void FtpServer_Stop(void) {}
+
+/* ---- save states, FTP and debug switches added since (save_state_3ds.c, ftp_server_3ds.c) ---- */
+#include "save_state_3ds.h"
+static SaveStateInfo sFakeStates[3] = {
+    { .id = 3, .savedAt = 1760000000, .area = 0x03, .room = 1, .health = 72, .maxHealth = 96, .rupees = 120, .compatible = true },
+    { .id = 2, .savedAt = 1759900000, .area = 0x22, .room = 0x10, .health = 80, .maxHealth = 96, .rupees = 300, .compatible = true },
+    { .id = 1, .savedAt = 1759800000, .area = 0x10, .room = 0, .health = 40, .maxHealth = 64, .rupees = 5, .compatible = false },
+};
+bool SaveState_Request(SaveStateJob job, uint32_t id) { (void)job; (void)id; return true; }
+bool SaveState_Busy(void) { return false; }
+SaveStateJob SaveState_PendingJob(void) { return SAVE_STATE_JOB_NONE; }
+uint32_t SaveState_Generation(void) { return 0; }
+bool SaveState_LastResult(char* m, unsigned cap, uint32_t* id) { (void)cap; if (m) m[0] = 0; if (id) *id = 0; return true; }
+bool SaveState_CanSave(void) { return true; }
+int SaveState_Count(void) { return 3; }
+bool SaveState_InfoAt(int i, SaveStateInfo* out) { if (i < 0 || i >= 3) return false; *out = sFakeStates[i]; return true; }
+bool SaveState_ReadThumb(uint32_t id, uint16_t* px) { (void)id; (void)px; return false; }
+const char* SaveState_AreaName(unsigned a) { return a == 3 ? "HYRULE FIELD" : a == 0x22 ? "LINKS HOUSE" : NULL; }
+const char* FtpServer_Notice(void) { return NULL; }
+static bool sDbgLog, sDbgDirect, sDbgFtp;
+bool Port_Config_DebugLogOn(void) { return sDbgLog; }
+void Port_Config_SetDebugLogOn(bool on) { sDbgLog = on; }
+bool Port_Config_DebugLogDirect(void) { return sDbgDirect; }
+void Port_Config_SetDebugLogDirect(bool on) { sDbgDirect = on; }
+bool Port_Config_DebugFtpOn(void) { return sDbgFtp; }
+void Port_Config_SetDebugFtpOn(bool on) { sDbgFtp = on; }

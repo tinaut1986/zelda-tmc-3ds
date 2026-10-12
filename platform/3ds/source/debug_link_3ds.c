@@ -16,10 +16,6 @@
 #include <string.h>
 #include <sys/stat.h>
 
-/* port_dump_state*.h pull in the game's types, which clash with <3ds.h>.
- * PortDumpStateResult is an enum: 0 and 1 are the two kinds of success. */
-extern int Port_DumpState3DS_LoadLatest(void);
-extern const char* Port_DumpState_ResultLabel(int result);
 
 /* A request the main thread never takes (game hung). Not an enum: 5e9 does
  * not fit in an int, and the truncated value gave up after 0.7 s. */
@@ -34,7 +30,6 @@ typedef enum LinkOp {
     LINK_OP_NONE,
     LINK_OP_TOUCH,
     LINK_OP_SHOT,
-    LINK_OP_LOADSTATE,
     LINK_OP_DUMP,
     LINK_OP_SWITCH,
     LINK_OP_POKE,
@@ -247,10 +242,6 @@ bool DebugLink_Command(const char* verb, const char* args, char* reply, unsigned
         RunOnMainThread(LINK_OP_REC, reply, cap);
         return true;
     }
-    if (!strcmp(verb, "LOADDUMP")) {
-        RunOnMainThread(LINK_OP_LOADSTATE, reply, cap);
-        return true;
-    }
     if (!strcmp(verb, "SAVESTATE") || !strcmp(verb, "LOADSTATE") || !strcmp(verb, "DELSTATE") ||
         !strcmp(verb, "STATES")) {
         StateCommand(verb, args, reply, cap);
@@ -284,10 +275,11 @@ bool DebugLink_Command(const char* verb, const char* args, char* reply, unsigned
         return true;
     }
     if (!strcmp(verb, "GPUCHECK")) {
-        /* Upstream's parity check: the next frame drawn both ways, compared. */
+        /* GPU CHECK: the next frame drawn both ways, compared (a differing one is
+         * written as debug/tmc-check-NNNN-*). */
         PortPpuGpu3DSStats before, after;
         PortPpuGpu3DS_GetStats(&before);
-        PortPpuGpu3DS_RequestParityCheck();
+        Port_PPU_3DS_RequestGpuCheck();
         const uint64_t give_up = svcGetSystemTick() + 5ull * SYSCLOCK_ARM11;
         do {
             svcSleepThread(20000000);
@@ -365,17 +357,11 @@ static void RunRequest(LinkOp op) {
             Port_PPU_3DS_ArmFrameRecorder(sResult, sizeof(sResult));
             break;
         }
-        case LINK_OP_LOADSTATE: {
-            const int result = Port_DumpState3DS_LoadLatest();
-            snprintf(sResult, sizeof(sResult), "%s %s", result <= 1 ? "200" : "550",
-                     Port_DumpState_ResultLabel(result));
-            break;
-        }
         case LINK_OP_DUMP: {
-            extern void Port_PPU_3DS_WriteQuickDump(void);
-            extern const char* Port_PPU_3DS_LastDumpDirectory(void);
-            Port_PPU_3DS_WriteQuickDump();
-            snprintf(sResult, sizeof(sResult), "200 %s", Port_PPU_3DS_LastDumpDirectory());
+            /* Written at the next frame boundary; debug/tmc-dump-last.txt then
+             * holds its number (tmc-link.py dump waits for it). */
+            Platform3DS_RequestScreenDump();
+            snprintf(sResult, sizeof(sResult), "202 Screen dump requested.");
             break;
         }
         case LINK_OP_SWITCH: {

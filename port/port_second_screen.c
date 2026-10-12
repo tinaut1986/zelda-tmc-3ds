@@ -66,9 +66,9 @@
 #ifdef TMC_3DS
 #include "platform_3ds.h"
 #include "tmc3ds_version.h"
-#include "port_dump_state_3ds.h"
+#include "port_dump_state.h"
 
-extern void Port_PPU_3DS_WriteQuickDump(void);
+extern void Platform3DS_RequestScreenDump(void);
 extern double Port_PPU_3DS_CurrentFps(void);
 extern double Port_PPU_3DS_AverageFps(void);
 #endif
@@ -1067,7 +1067,15 @@ static void BlitMapRegion(const SSurf* s, const uint32_t* img, int32_t imgW, int
 /* A small dark message chip with a banner-font word — the furniture the
  * game floats over its own map screen. Used for the map's view/back
  * affordance. Returns the rect it covered so callers can make it tappable. */
+#ifdef TMC_3DS
+static void Compact_MapChip(const SSurf* s, const char* label, float cx, float cyBottom, float* out);
+#endif
 static void DrawMapChip(const SSurf* s, const char* label, float cx, float cyBottom, float u, float* out) {
+#ifdef TMC_3DS
+    (void)u;
+    Compact_MapChip(s, label, cx, cyBottom, out);
+    return;
+#endif
     /* Sized as a thumb target rather than as map decoration: this is the only
      * way into a region zoom, and out of the lists the quest tab opens. */
     int32_t ms = (int32_t)(2.6f * u);
@@ -1446,6 +1454,12 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
  * (tap previews that floor; the preview auto-returns to Link's floor after
  * a few seconds when that toggle is on; Link's own plaque keeps a gold
  * edge), and the authentic floor map full-bleed in the remaining space. */
+#ifdef TMC_3DS
+static void Compact_PaintDungeonView(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
+                                     float ry0, float rx1, float ry1, uint32_t tick,
+                                     const SecondScreenDungeonMapInfo* info, int viewFloor);
+static void Compact_PaintNoMap(const SSurf* s, int x0, int y0, int x1, int y1);
+#endif
 static void PaintDungeon(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
                          float ry0, float rx1, float ry1, float u, int32_t ts, uint32_t tick,
                          int returnCfg) {
@@ -1484,6 +1498,11 @@ static void PaintDungeon(const SSurf* s, const SecondScreenSnapshot* snap, Targe
     if (viewFloor < 0) viewFloor = 0;
     if (viewFloor >= info.floorCount) viewFloor = info.floorCount - 1;
 
+#ifdef TMC_3DS
+    Compact_PaintDungeonView(s, snap, tl, rx0, ry0, rx1, ry1, tick, &info, viewFloor);
+    (void)gold;
+    return;
+#endif
     /* Name banner, top center — the pause menu's red header chip. */
     float topY = ry0 + 12 * u;
     const char* name = snap->dungeonIdx < 7 ? kDungeonNames[snap->dungeonIdx] : NULL;
@@ -2197,8 +2216,9 @@ static int GetSettingState(int row, char* out, int outCap) {
  * hierarchy and tap language as the sibling port; Minish Cap's decoded
  * parchment, chips, font, and palette keep it native to this game. */
 #ifdef TMC_3DS
-#include "../platform/3ds/source/update_ui_3ds.inc"
+#include "../platform/3ds/source/updater.h"
 #include "../platform/3ds/source/bottom_compact_3ds.inc"
+#include "../platform/3ds/source/update_ui_3ds.inc"
 #endif
 
 static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
@@ -2241,12 +2261,6 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
         return;
     }
 
-#ifdef TMC_3DS
-    if (page == SS_SETTINGS_UPDATE) {
-        PaintUpdatePanel(s, tl, x0, y0, x1, iy1, u, ts);
-        return;
-    }
-#endif
     if (page == SS_SETTINGS_DEVELOPER) {
         float gap = 10 * u;
         int rowCount = 3;
@@ -2373,6 +2387,14 @@ void Port_SecondScreen_TestUnavailableNoticeLayout(int32_t width, int32_t height
 
 #ifdef TMC_3DS
 static void PaintLoadStateConfirmation(const SSurf* s, TargetList* tl, float u, int32_t ts) {
+#ifdef TMC_3DS
+    static const char* const kLines[] = { "THE LATEST DUMP IN THE DUMPS FOLDER", "WILL REPLACE THE CURRENT GAME STATE.",
+                                          "UNSAVED PROGRESS MAY BE LOST.", "THE GAME WILL RESTART." };
+    (void)u; (void)ts;
+    Compact_PaintModal(s, tl, "LOAD LATEST DUMP?", kLines, 4, "CANCEL", SS_ACT_LOAD_CANCEL, "LOAD",
+                       SS_ACT_LOAD_CONFIRM);
+    return;
+#endif
     const LoadStateConfirmationLayout layout = ComputeLoadStateConfirmationLayout(s->w, s->h, u);
     tl->n = 0;
     Port_SecondScreenTheme_DrawPlate(s->px, s->w, s->h, s->stride, (int32_t)layout.x0,
@@ -2408,6 +2430,12 @@ static void PaintLoadStateConfirmation(const SSurf* s, TargetList* tl, float u, 
 }
 
 static void PaintUnavailableNotice(const SSurf* s, TargetList* tl, float u, int32_t ts) {
+#ifdef TMC_3DS
+    static const char* const kLines[] = { "THIS OPTION IS NOT AVAILABLE YET." };
+    (void)u; (void)ts;
+    Compact_PaintModal(s, tl, "RANDOMIZER", kLines, 1, "OK", SS_ACT_NOTICE_CLOSE, NULL, 0);
+    return;
+#endif
     const LoadStateConfirmationLayout layout = ComputeLoadStateConfirmationLayout(s->w, s->h, u);
     tl->n = 0;
     Port_SecondScreenTheme_DrawPlate(s->px, s->w, s->h, s->stride, (int32_t)layout.x0,
@@ -2906,8 +2934,14 @@ void Port_SecondScreen_PhaseTicks(unsigned long long* totals, unsigned long long
 static void PaintUnavailableWorldMap(const SSurf* s, int x0, int y0, int x1, int y1) {
     /* No terrain, hints, player marker or map hit targets before ITEM_MAP.
      * Keep the other tabs and equipment available during the prologue. */
+#ifdef TMC_3DS
+    Compact_PaintNoMap(s, x0, y0, x1, y1);
+    int32_t w = 0, h = 0;
+    const uint32_t* frame = NULL;
+#else
     int32_t w, h;
     const uint32_t* frame = Port_SecondScreenWorldMap_GetFrameImage(&w, &h);
+#endif
     if (frame) {
         float scale = WholeMapScale(x1-x0, y1-y0);
         float ox = (x0+x1)*0.5f - WholeMapCenterX(x1-x0, scale)*scale;
@@ -3014,7 +3048,12 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
      * scenes — so it all reads as light-on-dark. The two exceptions are
      * handled at their sites: the R prompt's lettered fallback (ink) and
      * the armed ring's breath (blended out of cream). */
+#ifdef TMC_3DS
+    Compact_ApplyThemeFromConfig();
+    FillRect(&s, 0, 0, s.w, s.h, CC_BG);
+#else
     Port_SecondScreenTheme_DrawBackdrop(s.px, s.w, s.h, s.stride, 0, 0, s.w, s.h, ts);
+#endif
     SS_MARK(SS_PHASE_BACKDROP);
 
 #ifdef TMC_3DS
@@ -3046,13 +3085,23 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     } else
 #endif
     if (tab == SS_TAB_ITEMS) {
+#ifdef TMC_3DS
+        Compact_PaintItems(&s, snap, &tl, mx0, my0, mx1, my1, tick, armedRing);
+#else
         PaintItemsPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, tick, armedRing);
+#endif
     } else if (tab == SS_TAB_QUEST) {
+#ifdef TMC_3DS
+        Compact_PaintQuest(&s, snap, &tl, mx0, my0, mx1, my1, questView);
+#else
         PaintQuestPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, tick, questView);
+#endif
     } else if (tab == SS_TAB_SETTINGS) {
 #ifdef TMC_3DS
         if (settingsPage == SS_SETTINGS_ROOT) {
             Compact_PaintOptions(&s, &tl);
+        } else if (settingsPage == SS_SETTINGS_UPDATE) {
+            PaintUpdatePanel(&s, &tl);
         } else
 #endif
         PaintSettingsPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, settingsPage, tick,
@@ -3094,8 +3143,8 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
 
 #ifdef TMC_3DS
     if (tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && tab != SS_TAB_STATES && !noGamePanel) {
-        PaintSidebar(&s, snap, &tl, width - sideW + 2, my0, sideW - 2 - CC_MARGIN, my1 - my0, u, ts, tick,
-                     armedRing);
+        Compact_PaintSidebar(&s, snap, &tl, (int32_t)(width - sideW + 2), (int32_t)my0,
+                             (int32_t)(sideW - 2 - CC_MARGIN), (int32_t)(my1 - my0), tick, armedRing);
     }
     SS_MARK(SS_PHASE_SIDEBAR);
     Compact_PaintTabBar(&s, &tl, tab, settingsPage);
@@ -3255,7 +3304,7 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             sUi.dumpFlashUntil = sUi.lastTick + 40;
             UI_UNLOCK();
 #ifdef TMC_3DS
-            Port_PPU_3DS_WriteQuickDump();
+            Platform3DS_RequestScreenDump(); /* written at the next frame boundary */
 #endif
             break;
         case SS_ACT_DEVELOPER_LOAD:
@@ -3269,20 +3318,11 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             UI_UNLOCK();
             break;
         case SS_ACT_LOAD_CONFIRM:
-#ifdef TMC_3DS
-            {
-                PortDumpStateResult result = Port_DumpState3DS_LoadLatest();
-                UI_LOCK();
-                sUi.loadConfirmActive = 0;
-                sUi.loadStateResult = (uint8_t)result;
-                sUi.loadStateFlashUntil = sUi.lastTick + 80;
-                UI_UNLOCK();
-            }
-#else
+            /* Not reachable from the 3DS compact UI (its STATES tab restores a
+             * game state); the dump's checkpoint loader is the PC build's. */
             UI_LOCK();
             sUi.loadConfirmActive = 0;
             UI_UNLOCK();
-#endif
             break;
         case SS_ACT_NOTICE_CLOSE:
             UI_LOCK();

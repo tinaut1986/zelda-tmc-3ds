@@ -315,6 +315,8 @@ static void Compact_PaintTabBar(const SSurf* s, TargetList* tl, int activeTab, i
 /* The theme picked in the config, and its panel backdrop with it. */
 static void Compact_ApplyThemeFromConfig(void) {
     Port_SecondScreen_3DS_SetUiTheme(Port_Config_GetUiTheme());
+    /* The theme owns the panel backdrop; there is no separate option. */
+    if (Port_Config_GetSecondScreenBackdrop() != sCc->backdrop) Port_Config_SetSecondScreenBackdrop(sCc->backdrop);
 }
 
 static void Compact_NextTheme(void) {
@@ -393,11 +395,10 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
         CColumn(s->w, 4, 0, 1, &x, &w);
         CCell(s, tl, x, CRowY(3), w, CC_CELL_H, "THEME", sCc->name, CC_ACCENT, SS_ACT_THEME, 0);
     }
-    CSettingCell(s, tl, 3, 1, 1, "BACKDROP", SS_SET_BACKDROP);
-    CSettingCell(s, tl, 3, 2, 1, "SHOW FPS", SS_SET_SHOW_FPS);
+    CSettingCell(s, tl, 3, 1, 1, "SHOW FPS", SS_SET_SHOW_FPS);
     {
         int32_t x, w;
-        CColumn(s->w, 4, 3, 1, &x, &w);
+        CColumn(s->w, 4, 2, 2, &x, &w);
         UpdateStatus st;
         Updater_GetStatus(&st);
         const char* value = st.state == UPDATE_AVAILABLE ? "NEW VERSION" : (st.prerelease ? "+ BETAS" : "STABLE");
@@ -908,21 +909,21 @@ static void Compact_PaintDebugMain(const SSurf* s, TargetList* tl, const SecondS
     CColumn(s->w, 4, 0, 1, &x, &w);
     CCell(s, tl, x, y, w, CC_CELL_H, "LOG MARK", DebugLog_Running() ? "WRITE" : "LOG OFF",
           DebugLog_Running() ? CC_ACCENT : CC_FAINT, SS_ACT_DEBUG, DBG_CMD_LOG_MARK);
+    /* SCREEN DUMP: both screens, the memories and the frame's state as numbered
+     * debug/tmc-dump-NNNN-* files, written at the next frame boundary (as
+     * ../sm-3ds and ../mzm do). It replaced upstream's L+R+A and its LOAD STATE;
+     * the STATES tab restores a game state. */
     const int dumped = (int32_t)(dumpFlashUntil - tick) > 0;
-    CColumn(s->w, 4, 1, 1, &x, &w);
-    CCell(s, tl, x, y, w, CC_CELL_H, "MEM DUMP", dumped ? "WRITTEN" : "WRITE", dumped ? CC_GOOD : CC_ACCENT,
+    (void)loadStateFlashUntil;
+    (void)loadStateResult;
+    CColumn(s->w, 4, 1, 2, &x, &w);
+    CCell(s, tl, x, y, w, CC_CELL_H, "SCREEN DUMP", dumped ? "QUEUED" : "TAKE", dumped ? CC_GOOD : CC_ACCENT,
           SS_ACT_DEVELOPER_DUMP, 0);
-    const char* load = (int32_t)(loadStateFlashUntil - tick) > 0
-                           ? Port_DumpState_ResultLabel((PortDumpStateResult)loadStateResult)
-                           : "LAST DUMP";
-    CColumn(s->w, 4, 2, 1, &x, &w);
-    CCell(s, tl, x, y, w, CC_CELL_H, "LOAD STATE", load, CC_ACCENT, SS_ACT_DEVELOPER_LOAD, 0);
     CSettingCellAt(s, tl, y, 3, 1, "SHOW FPS", SS_SET_SHOW_FPS);
 
-    /* GPU CHECK: upstream's parity check, the next frame drawn by both
-     * renderers and compared; differing frames are saved next to the last
-     * dump, and a difference the blender cannot explain turns the GPU
-     * renderer off for the session. */
+    /* GPU CHECK: the next frame drawn by both renderers and compared; a frame
+     * that differs is saved as debug/tmc-check-NNNN-* (a screen dump takes the
+     * check too, into its own set). */
     y += CC_CELL_H + CC_GAP;
     PortPpuGpu3DSStats gpu;
     PortPpuGpu3DS_GetStats(&gpu);
@@ -1051,7 +1052,7 @@ static void Compact_DebugCommand(int cmd) {
             }
             break;
         case DBG_CMD_GPU_CHECK:
-            PortPpuGpu3DS_RequestParityCheck();
+            Port_PPU_3DS_RequestGpuCheck();
             DebugLog_Printf("gpu check requested");
             Compact_Toast("GPU CHECK REQUESTED");
             break;
@@ -1059,3 +1060,322 @@ static void Compact_DebugCommand(int cmd) {
     }
 }
 #endif
+
+/* ---- modal: a titled box over the content with one or two buttons ---- */
+
+/* Dims what is behind, draws the box and its lines, and replaces the frame's
+ * tap targets with its own (a modal takes every tap). `right` may be NULL. */
+static void Compact_PaintModal(const SSurf* s, TargetList* tl, const char* title, const char* const* lines,
+                               int nLines, const char* left, uint8_t leftAction, const char* right,
+                               uint8_t rightAction) {
+    tl->n = 0;
+    for (int32_t y = 0; y < s->h; y += 2) FillRect(s, 0, y, s->w, y + 1, CC_BG);
+    const int32_t w = 260, h = 30 + nLines * 10 + 36;
+    const int32_t x = (s->w - w) / 2, y = (s->h - h) / 2;
+    CBox(s, x, y, w, h, CC_CELL, CC_CELL_EDGE);
+    CTextCentered(s, s->w / 2, y + 8, CC_ACCENT, title);
+    for (int i = 0; i < nLines; ++i) CTextCentered(s, s->w / 2, y + 24 + i * 10, CC_TEXT, lines[i]);
+    const int32_t by = y + h - 28, bw = right ? (w - 12 - CC_GAP) / 2 : w - 8;
+    CButton(s, tl, x + 4, by, bw, 24, left, CC_TEXT, leftAction, 0);
+    if (right) CButton(s, tl, x + 8 + bw + CC_GAP - 4, by, bw, 24, right, CC_WARN, rightAction, 0);
+}
+
+/* ---- sidebar, ITEMS, QUEST and the map's chip in the same style ----
+ * The game's art that stays is sprites: item icons, hearts, the wallet, the
+ * map itself. Every frame, button and cell is drawn here. */
+
+/* A button over the map or a list: label centred in a theme box. */
+static void Compact_MapChip(const SSurf* s, const char* label, float cx, float cyBottom, float* out) {
+    const int32_t w = CTextWidth(label) + 16, h = 18;
+    const int32_t x = (int32_t)cx - w / 2, y = (int32_t)cyBottom - h;
+    CBox(s, x, y, w, h, CC_BTN, CC_BTN_EDGE);
+    CTextCentered(s, x + w / 2, y + (h - kUiGlyphH) / 2, CC_TEXT, label);
+    out[0] = (float)x;
+    out[1] = (float)y;
+    out[2] = (float)(x + w);
+    out[3] = (float)(y + h);
+}
+
+/* The A/B cell: its letter, the equipped item's icon and its ammo; tapping it
+ * arms it for the next item tapped. */
+static void Compact_EquipCell(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, int32_t x,
+                              int32_t y, int32_t w, int32_t h, int isA, int armed, uint32_t tick) {
+    const uint32_t pulse = armed ? ((tick / 12u) & 1u ? CC_WARN : CC_ACCENT) : CC_CELL_EDGE;
+    CBox(s, x, y, w, h, CC_CELL, pulse);
+    if (armed) FillRect(s, x + 1, y + 1, x + w - 1, y + h - 1, MixColor(CC_CELL, CC_WARN, 40));
+    CText(s, x + 4, y + 4, CC_DIM, isA ? "A" : "B");
+    uint8_t itemId = isA ? snap->equippedA : snap->equippedB;
+    if (itemId >= ITEMID_BOTTLE1 && itemId < ITEMID_BOTTLE1 + 4) {
+        const uint8_t content = snap->bottleContents[itemId - ITEMID_BOTTLE1];
+        if (content != 0) itemId = content;
+    }
+    if (itemId != 0) {
+        const int32_t ix = x + w - 36, iy = y + 3;
+        Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, 2, itemId);
+        DrawItemAmmoCount(s, snap, itemId, x + 4, y + h - 11, 1);
+    }
+    AddTarget(tl, (float)x, (float)y, (float)(x + w), (float)(y + h), SS_ACT_RING, (uint8_t)(isA ? 1 : 2));
+}
+
+static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, int32_t x,
+                                 int32_t y, int32_t w, int32_t h, uint32_t tick, int armedRing) {
+    FillRect(s, x - 1, y, x, y + h, CC_CELL_EDGE);
+    const int32_t ix = x + 3, iw = w - 6;
+    int32_t cy = y + 2;
+
+    /* Hearts, eight to a row, the game's own sprites. */
+    int maxHearts = snap->maxHealth / 8;
+    if (maxHearts > 20) maxHearts = 20;
+    if (maxHearts < 1) maxHearts = 1;
+    const int cols = iw / 8 < 8 ? iw / 8 : 8;
+    const int quarters = snap->health == 1 ? 1 : snap->health / 2;
+    const int full = quarters / 4, frac = quarters & 3;
+    for (int i = 0; i < maxHearts; i++) {
+        int state = SST_HEART_EMPTY;
+        if (i < full) state = SST_HEART_FULL;
+        else if (i == full && frac != 0) state = SST_HEART_Q1 + (frac - 1);
+        const SecondScreenThemeSprite* hs = Port_SecondScreenTheme_Get(state);
+        if (hs) BlitSprite(s, hs, ix + (i % cols) * 8, cy + (i / cols) * 8, 1);
+    }
+    cy += ((maxHearts + cols - 1) / cols) * 8 + 4;
+
+    /* The charge meter while the HUD is hidden, else the R prompt. */
+    if (Port_SecondScreenChargeVisible(snap)) {
+        const int steps = Port_SecondScreenChargeSteps(snap);
+        const int32_t cell = (iw - 9) / 10;
+        for (int c = 0; c < 10; c++) {
+            int q = steps - c * 4;
+            q = q < 0 ? 0 : q > 4 ? 4 : q;
+            const int32_t cx = ix + c * (cell + 1);
+            FillRect(s, cx, cy, cx + cell, cy + 8, CC_CELL_EDGE);
+            FillRect(s, cx + 1, cy + 1, cx + cell - 1, cy + 7, CC_BAR);
+            if (q) FillRect(s, cx + 1, cy + 1, cx + 1 + (cell - 2) * q / 4, cy + 7, CC_WARN);
+        }
+    } else if (snap->rActionFrame != 0) {
+        /* Words of ActionRButton (include/player.h). */
+        static const char* const kWords[] = { NULL,    "CANCEL", "DROP", "THROW", "READ", "CHECK", "OPEN",
+                                              "SPEAK", "GRAB",   "LIFT", "GROW",  "SHRINK", "ROLL" };
+        const char* word = snap->rActionId < (uint8_t)(sizeof(kWords) / sizeof(kWords[0]))
+                               ? kWords[snap->rActionId] : NULL;
+        char line[24];
+        snprintf(line, sizeof(line), "R %s", word ? word : "");
+        CBox(s, ix, cy, iw, 14, CC_BTN, CC_BTN_EDGE);
+        CTextCentered(s, ix + iw / 2, cy + 4, CC_TEXT, line);
+    }
+    cy += 18;
+
+    /* A and B, stacked. */
+    const int32_t cellH = 44;
+    Compact_EquipCell(s, snap, tl, ix, cy, iw, cellH, 1, armedRing == 1, tick);
+    Compact_EquipCell(s, snap, tl, ix, cy + cellH + 3, iw, cellH, 0, armedRing == 2, tick);
+
+    /* Rupees, and keys in a dungeon, along the bottom. */
+    const int dungeon = (snap->areaFlags & SECOND_SCREEN_AR_HAS_KEYS) != 0;
+    int32_t by = y + h - (dungeon ? 34 : 17);
+    char num[16];
+    const SecondScreenThemeSprite* wallet = Port_SecondScreenTheme_Get(SST_RUPEE_WALLET0 + (snap->walletType & 3));
+    if (wallet) BlitSprite(s, wallet, ix, by, 1);
+    snprintf(num, sizeof(num), "%u", (unsigned)snap->rupees);
+    CText(s, ix + 20, by + 5, snap->walletMax != 0 && snap->rupees >= snap->walletMax ? CC_GOOD : CC_TEXT, num);
+    if (dungeon) {
+        const SecondScreenThemeSprite* key = Port_SecondScreenTheme_Get(SST_KEY);
+        if (key) BlitSprite(s, key, ix, by + 17, 1);
+        snprintf(num, sizeof(num), "%u", (unsigned)snap->dungeonKeys);
+        CText(s, ix + 20, by + 22, CC_TEXT, num);
+    }
+}
+
+/* A square cell for an item slot. */
+static void Compact_ItemCell(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t edge) {
+    CBox(s, x, y, w, h, CC_CELL, edge);
+}
+
+/* 4 x 4 of cells in the content rectangle; returns the cell size. */
+static int32_t Compact_GridCell(float rx0, float ry0, float rx1, float ry1, int32_t* gx, int32_t* gy) {
+    const int32_t cw = ((int32_t)(rx1 - rx0) - 3 * CC_GAP) / 4, ch = ((int32_t)(ry1 - ry0) - 3 * CC_GAP) / 4;
+    const int32_t cell = cw < ch ? cw : ch;
+    *gx = (int32_t)rx0 + ((int32_t)(rx1 - rx0) - (cell * 4 + 3 * CC_GAP)) / 2;
+    *gy = (int32_t)ry0 + ((int32_t)(ry1 - ry0) - (cell * 4 + 3 * CC_GAP)) / 2;
+    return cell;
+}
+
+static void Compact_PaintItems(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
+                               float ry0, float rx1, float ry1, uint32_t tick, int armedRing) {
+    FillRect(s, (int32_t)rx0 - 1, (int32_t)ry0 - 2, (int32_t)rx1 + 1, (int32_t)ry1 + 2, CC_BG);
+    int32_t gx, gy;
+    const int32_t cell = Compact_GridCell(rx0, ry0, rx1, ry1, &gx, &gy);
+    int pulseSlot = -1;
+    if (armedRing == 1) pulseSlot = snap->equippedSlotA;
+    if (armedRing == 2) pulseSlot = snap->equippedSlotB;
+    for (int slot = 0; slot < SECOND_SCREEN_ITEM_SLOTS; slot++) {
+        const int32_t x = gx + (slot % 4) * (cell + CC_GAP), y = gy + (slot / 4) * (cell + CC_GAP);
+        const bool equippedA = slot == snap->equippedSlotA, equippedB = slot == snap->equippedSlotB;
+        uint32_t edge = CC_TAB;
+        if (equippedA || equippedB) edge = CC_ACCENT;
+        if (slot == pulseSlot) edge = (tick / 12u) & 1u ? CC_WARN : CC_ACCENT;
+        const uint8_t itemId = snap->menuItems[slot];
+        Compact_ItemCell(s, x, y, cell, cell, itemId ? (edge == CC_TAB ? CC_CELL_EDGE : edge) : edge);
+        if (itemId == 0) continue;
+        uint8_t iconId = itemId;
+        if (slot >= 12) {
+            const uint8_t content = snap->bottleContents[slot - 12];
+            if (content != 0) iconId = content;
+        }
+        int32_t scale = (cell - 6) / 16;
+        if (scale < 1) scale = 1;
+        if (scale > 3) scale = 3;
+        const int32_t ix = x + (cell - 16 * scale) / 2, iy = y + (cell - 16 * scale) / 2 - 2;
+        Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, scale, iconId);
+        DrawItemAmmoCount(s, snap, itemId, x + 2, y + cell - 10, 1);
+        if (equippedA || equippedB) {
+            CText(s, x + 3, y + 3, CC_ACCENT, equippedA ? "A" : "B");
+        }
+        AddTarget(tl, (float)x, (float)y, (float)(x + cell), (float)(y + cell), SS_ACT_ITEM, itemId);
+    }
+}
+
+static void Compact_PaintQuestList(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
+                                   float ry0, float rx1, float ry1, int view) {
+    FillRect(s, (int32_t)rx0 - 1, (int32_t)ry0 - 2, (int32_t)rx1 + 1, (int32_t)ry1 + 2, CC_BG);
+    CBox(s, (int32_t)rx0, (int32_t)ry0, (int32_t)(rx1 - rx0), (int32_t)(ry1 - ry0), CC_CELL, CC_CELL_EDGE);
+    const int32_t px = (int32_t)rx0 + 3, py = (int32_t)ry0 + 3, pw = (int32_t)(rx1 - rx0) - 6;
+    const int32_t ph = (int32_t)(ry1 - ry0) - 6 - 22;
+    if (view == SS_QUEST_KINSTONES)
+        Port_SecondScreenQuest_DrawKinstones(s->px, s->w, s->h, s->stride, px, py, pw, ph, snap);
+    else
+        Port_SecondScreenQuest_DrawTechniques(s->px, s->w, s->h, s->stride, px, py, pw, ph, snap);
+    CButton(s, tl, (int32_t)rx0 + 3, (int32_t)ry1 - 21, (int32_t)(rx1 - rx0) - 6, 18, "BACK", CC_TEXT,
+            SS_ACT_QUESTVIEW, SS_QUEST_MAIN);
+}
+
+static void Compact_PaintQuest(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
+                               float ry0, float rx1, float ry1, int questView) {
+    if (questView == SS_QUEST_KINSTONES || questView == SS_QUEST_TECHNIQUES) {
+        Compact_PaintQuestList(s, snap, tl, rx0, ry0, rx1, ry1, questView);
+        return;
+    }
+    FillRect(s, (int32_t)rx0 - 1, (int32_t)ry0 - 2, (int32_t)rx1 + 1, (int32_t)ry1 + 2, CC_BG);
+    int32_t gx, gy;
+    const int32_t cell = Compact_GridCell(rx0, ry0, rx1, ry1, &gx, &gy);
+
+    /* What each of the sixteen cells holds, as the old grid did. */
+    uint8_t icon[16];
+    uint16_t count[16];
+    uint8_t hasCount[16];
+    memset(icon, 0, sizeof(icon));
+    memset(count, 0, sizeof(count));
+    memset(hasCount, 0, sizeof(hasCount));
+    if (snap->tingleTrophy == 1) {
+        icon[0] = ITEMID_QST_TINGLE_TROPHY;
+    } else if (snap->kinstoneBagOwned) {
+        icon[0] = ITEMID_KINSTONE_BAG;
+        count[0] = snap->kinstoneFused;
+        hasCount[0] = 1;
+    }
+    if (snap->swordSkills != 0) {
+        count[2] = snap->swordSkills;
+        hasCount[2] = 1;
+    }
+    if (snap->carlovMedal == 1) {
+        icon[3] = ITEMID_QST_CARLOV_MEDAL;
+    } else if (snap->shellsOwned != 0) {
+        icon[3] = ITEMID_SHELLS;
+        count[3] = snap->shells;
+        hasCount[3] = 1;
+    }
+    for (int i = 0; i < 3; i++) icon[4 + i] = snap->questItems[i];
+    if (snap->figurineCount != 0) {
+        count[7] = snap->figurineCount;
+        hasCount[7] = 1;
+    }
+    for (int i = 0; i < 4; i++)
+        if (snap->elements & (1u << i)) icon[8 + i] = (uint8_t)(ITEMID_EARTH_ELEMENT + i);
+    for (int i = 0; i < 3; i++)
+        if (snap->passives & (1u << i)) icon[12 + i] = (uint8_t)(ITEMID_GRIP_RING + i);
+
+    for (int slot = 0; slot < 16; slot++) {
+        const int32_t x = gx + (slot % 4) * (cell + CC_GAP), y = gy + (slot / 4) * (cell + CC_GAP);
+        const bool tappable = (slot == 0 && icon[0] != 0 && icon[0] == ITEMID_KINSTONE_BAG) ||
+                              (slot == 2 && hasCount[2]);
+        Compact_ItemCell(s, x, y, cell, cell, tappable ? CC_CELL_EDGE : CC_TAB);
+        int32_t scale = (cell - 6) / 16;
+        if (scale < 1) scale = 1;
+        if (scale > 3) scale = 3;
+        const int32_t ix = x + (cell - 16 * scale) / 2, iy = y + (cell - 16 * scale) / 2 - 2;
+        /* Bag, heart pieces (the game's heart with its n/4) and techniques are
+         * the game's own art for those wells. */
+        if (slot <= 2 && Port_SecondScreenQuest_DrawCollectionCell(s->px, s->w, s->h, s->stride, slot, x + 2,
+                                                                  y + 2, cell - 4, cell - 4, snap)) {
+            if (slot == 1) continue;
+            if (slot == 2 || (slot == 0 && snap->tingleTrophy != 1)) {
+                AddTarget(tl, (float)x, (float)y, (float)(x + cell), (float)(y + cell), SS_ACT_QUESTVIEW,
+                          (uint8_t)(slot == 0 ? SS_QUEST_KINSTONES : SS_QUEST_TECHNIQUES));
+            }
+            continue;
+        }
+        if (slot == 1) {
+            const int hp = snap->heartPieces > 3 ? 3 : snap->heartPieces;
+            const SecondScreenThemeSprite* heart = Port_SecondScreenTheme_Get(SST_HEART_EMPTY + hp);
+            if (heart) BlitSprite(s, heart, x + (cell - heart->w * 2) / 2, y + (cell - heart->h * 2) / 2 - 2, 2);
+            char frac[8];
+            snprintf(frac, sizeof(frac), "%d/4", snap->heartPieces);
+            CTextCentered(s, x + cell / 2, y + cell - 11, CC_TEXT, frac);
+            continue;
+        }
+        if (slot == 2 && hasCount[2])
+            Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, scale, ITEMID_SMITH_SWORD);
+        else if (icon[slot] != 0)
+            Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, scale, icon[slot]);
+        if (hasCount[slot]) DrawAmmoCount(s, x + 2, y + cell - 10, 1, count[slot]);
+        if (tappable)
+            AddTarget(tl, (float)x, (float)y, (float)(x + cell), (float)(y + cell), SS_ACT_QUESTVIEW,
+                      (uint8_t)(slot == 0 ? SS_QUEST_KINSTONES : SS_QUEST_TECHNIQUES));
+    }
+}
+
+/* A dungeon: its name, one button per floor, the floor map beside them. */
+static void Compact_PaintDungeonView(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
+                                     float ry0, float rx1, float ry1, uint32_t tick,
+                                     const SecondScreenDungeonMapInfo* info, int viewFloor) {
+    {
+        /* Name strip, floor buttons down the left, the floor map beside them. */
+        FillRect(s, (int32_t)rx0 - 1, (int32_t)ry0 - 2, (int32_t)rx1 + 1, (int32_t)ry1 + 2, CC_BG);
+        const char* dname = snap->dungeonIdx < 7 ? kDungeonNames[snap->dungeonIdx] : NULL;
+        int32_t top = (int32_t)ry0;
+        if (dname) {
+            char up[40];
+            snprintf(up, sizeof(up), "%s", dname);
+            CBox(s, (int32_t)rx0, top, (int32_t)(rx1 - rx0), 16, CC_BAR, CC_TAB_EDGE);
+            CTextCentered(s, (int32_t)(rx0 + rx1) / 2, top + 4, CC_TEXT, up);
+            top += 19;
+        }
+        const int8_t topFloor = snap->dungeonIdx < 7 ? kDungeonTopFloor[snap->dungeonIdx] : 2;
+        const int32_t bw = 38, bh = 24;
+        for (int i = 0; i < info->floorCount && i < 8; i++) {
+            const int fl = topFloor - 2 - i;
+            char label[8];
+            if (fl >= 1) snprintf(label, sizeof(label), "%dF", fl);
+            else snprintf(label, sizeof(label), "B%d", 1 - fl);
+            const int32_t by = top + i * (bh + 3);
+            const bool sel = i == viewFloor;
+            CBox(s, (int32_t)rx0, by, bw, bh, sel ? CC_TAB_ON : CC_CELL, sel ? CC_TAB_ON_EDGE : CC_CELL_EDGE);
+            CTextCentered(s, (int32_t)rx0 + bw / 2, by + 9, sel ? CC_TAB_ON_TEXT : CC_TEXT, label);
+            if (i == info->currentFloor) FillRect(s, (int32_t)rx0 + 3, by + 3, (int32_t)rx0 + 6, by + 6, CC_WARN);
+            AddTarget(tl, rx0, (float)by, rx0 + bw, (float)(by + bh), SS_ACT_PLAQUE, (uint8_t)i);
+        }
+        const int32_t mx0c = (int32_t)rx0 + bw + 4;
+        if (!Port_SecondScreenDungeonMap_Draw(s->px, s->w, s->h, s->stride, mx0c, top, (int32_t)rx1 - mx0c,
+                                              (int32_t)ry1 - top, snap->dungeonIdx, viewFloor, snap->area,
+                                              snap->room, snap->visitedMask, snap->dungeonItemBits,
+                                              snap->playerX, snap->playerY, tick)) {
+            PaintSchematic(s, snap, mx0c, top, (int32_t)rx1, (int32_t)ry1, tick, 1);
+        }
+    }
+}
+
+static void Compact_PaintNoMap(const SSurf* s, int x0, int y0, int x1, int y1) {
+    FillRect(s, x0 - 1, y0 - 2, x1 + 1, y1 + 2, CC_BG);
+    CBox(s, x0, y0, x1 - x0, y1 - y0, CC_CELL, CC_CELL_EDGE);
+    CTextCentered(s, (x0 + x1) / 2, (y0 + y1) / 2 - 8, CC_TEXT, "NO MAP YET");
+    CTextCentered(s, (x0 + x1) / 2, (y0 + y1) / 2 + 4, CC_DIM, "FIND THE HYRULE MAP");
+}

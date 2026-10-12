@@ -115,34 +115,17 @@ Miscellaneous options > Dump DSP firmware
 
 ## Diagnostics
 
-If you encounter a crash, graphical bug, performance problem, or anything unusual, press:
+Debug builds (the Beta releases) have a DEBUG tab on the bottom screen: an SD log, a frame-time
+recorder, GPU CHECK and a SCREEN DUMP. There is no button chord. A screen dump writes
+numbered `debug/tmc-dump-NNNN-*` files (screenshots, memories, runtime state, performance data)
+under:
 
 ```text
-L + R + A
+sdmc:/3ds/Minish Cap 3DS/debug/
 ```
 
-The port will pause and create a diagnostic dump containing screenshots, memory information, runtime state, performance data, and other information that can help identify the problem.
-
-Dumps are saved under:
-
-```text
-sdmc:/3ds/The Minish Cap 3DS/dumps/
-```
-
-Gameplay dumps also include a validated `load-state.bin` checkpoint. To reproduce the most recent dump, open:
-
-```text
-Settings > Developer > Load State
-```
-
-New sessions use `000-dump-YYYYMMDD-HHMMSS`, `001-dump-YYYYMMDD-HHMMSS`, and so on.
-The sequence survives restarts and clock changes; an emptied dumps folder starts again at 000.
-
-The loader asks for confirmation, selects the newest numbered folder (or a legacy `dump-*` folder), and rejects corrupted checkpoints or checkpoints
-created with a different ROM region. Older dumps that only contain `save-state.bin` remain supported, but they resume
-from the saved checkpoint rather than the exact captured position.
-
-Please send the dump when reporting bugs whenever possible.
+To go back to a game state, use the STATES tab. See `docs/debug-tools.md` for everything the
+tab offers and how to read the files.
 
 ## Updates
 

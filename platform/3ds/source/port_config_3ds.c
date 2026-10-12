@@ -107,11 +107,6 @@ static bool sAudioDspInterpLinear = true;
  * f0 relative to its output rate -- tune it by ear, not from a datasheet. */
 static bool sSpeakerEq = false;
 static float sSpeakerEqHz = 280.0f;
-/* Frame-path diagnostics. Off by default: Platform3DS_Debug writes each line
- * to the SD card with fopen/fwrite/fclose on the main thread inside the
- * presentation span. The quick dump reports the same counters without adding
- * intermittent gameplay stalls. */
-static bool sFrameLog = false;
 /* Compact Old 3DS upload surfaces (272x160 top, 320x240 bottom RGBA8 instead of
  * 512x256). Cuts the bottom clean-and-transfer from 491520 to 307200 bytes, and
  * that transfer is synchronous, so it shortens a recurring main-thread block on
@@ -197,7 +192,6 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("audio_dsp_interp_linear=%u\n", sAudioDspInterpLinear ? 1u : 0u);
     APPEND("speaker_eq=%u\n", sSpeakerEq ? 1u : 0u);
     APPEND("speaker_eq_hz=%.1f\n", (double)sSpeakerEqHz);
-    APPEND("frame_log=%u\n", sFrameLog ? 1u : 0u);
     APPEND("compact_upload=%u\n", sCompactUpload ? 1u : 0u);
     APPEND("app_cpu_limit=%d\n", sAppCpuLimit);
     APPEND("gpu_static_quad=%u\n", sGpuStaticQuad ? 1u : 0u);
@@ -362,7 +356,6 @@ void Port_Config_Load(const char* path) {
                 sAudioDspInterpLinear = ParseBool(value);
             else if (strcmp(key, "speaker_eq") == 0) sSpeakerEq = ParseBool(value);
             else if (strcmp(key, "speaker_eq_hz") == 0) sSpeakerEqHz = strtof(value, NULL);
-            else if (strcmp(key, "frame_log") == 0) sFrameLog = ParseBool(value);
             else if (strcmp(key, "compact_upload") == 0) sCompactUpload = ParseBool(value);
             else if (strcmp(key, "app_cpu_limit") == 0) sAppCpuLimit = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "gpu_static_quad") == 0) sGpuStaticQuad = ParseBool(value);
@@ -429,7 +422,6 @@ bool Port_Config_VblankPhaseLock(void) { return sVblankPhaseLock; }
 bool Port_Config_AudioDspInterpLinear(void) { return sAudioDspInterpLinear; }
 bool Port_Config_SpeakerEq(void) { return sSpeakerEq; }
 float Port_Config_SpeakerEqHz(void) { return sSpeakerEqHz; }
-bool Port_Config_FrameLog(void) { return sFrameLog; }
 bool Port_Config_CompactUpload(void) { return sCompactUpload; }
 int Port_Config_AppCpuLimit(void) { return sAppCpuLimit; }
 bool Port_Config_GpuStaticQuad(void) { return sGpuStaticQuad; }
@@ -480,7 +472,6 @@ static int SwitchValue(int id) {
         case DEBUG_SW_VBLANK_LOCK: return sVblankPhaseLock;
         case DEBUG_SW_STATIC_QUAD: return sGpuStaticQuad;
         case DEBUG_SW_MAP_SKIP: return sBottomMapSkip;
-        case DEBUG_SW_FRAME_LOG: return sFrameLog;
         case DEBUG_SW_BOTTOM_CORE: return sBottomCore;
         case DEBUG_SW_AUDIO_CORE: return sAudioCore;
         case DEBUG_SW_COMPACT_UPLOAD: return sCompactUpload;
@@ -492,13 +483,13 @@ static int SwitchValue(int id) {
 const char* DebugSwitch_Name(int id) {
     static const char* const kNames[DEBUG_SW_COUNT] = {
         "RENDERER", "FRAME SYNC", "VBLANK LOCK", "STATIC QUAD", "MAP SKIP",
-        "FRAME LOG", "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT",
+        "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT",
     };
     return id >= 0 && id < DEBUG_SW_COUNT ? kNames[id] : "?";
 }
 
 bool DebugSwitch_IsDefault(int id) {
-    static const int kDefaults[DEBUG_SW_COUNT] = { 1, 0, 0, 0, 1, 0, -1, -1, 0, 0 };
+    static const int kDefaults[DEBUG_SW_COUNT] = { 1, 0, 0, 0, 1, -1, -1, 0, 0 };
     return id >= 0 && id < DEBUG_SW_COUNT && SwitchValue(id) == kDefaults[id];
 }
 
@@ -534,7 +525,6 @@ void DebugSwitch_Cycle(int id) {
         case DEBUG_SW_VBLANK_LOCK: sVblankPhaseLock = !sVblankPhaseLock; break;
         case DEBUG_SW_STATIC_QUAD: sGpuStaticQuad = !sGpuStaticQuad; break;
         case DEBUG_SW_MAP_SKIP: sBottomMapSkip = !sBottomMapSkip; break;
-        case DEBUG_SW_FRAME_LOG: sFrameLog = !sFrameLog; break;
         case DEBUG_SW_BOTTOM_CORE:
             sBottomCore = sBottomCore == 1 ? -1 : 1;
             Platform3DS_RestartBottomWorker();
@@ -735,7 +725,7 @@ void Port_Config_SetTurboMultiplier(unsigned multiplier) {
 
 int Port_Config_Get3DSAspectRatio(void) { return (int)sAspectRatio; }
 const char* Port_Config_Get3DSAspectRatioName(void) {
-    static const char* const names[PORT_3DS_ASPECT_COUNT] = { "WIDE", "ORIGINAL", "STRETCH" };
+    static const char* const names[PORT_3DS_ASPECT_COUNT] = { "WIDE", "ORIGINAL" };
     return names[sAspectRatio];
 }
 void Port_Config_Cycle3DSAspectRatio(void) {
@@ -756,6 +746,5 @@ bool Port_Config_3DSFullViewComboEnabled(void) {
      * the following scene latch before any 400x240 geometry is published. */
     const Port3DSAspectRatio aspect = sAspectRatio;
     const Port3DSDisplayStyle style = sDisplayStyle;
-    return Platform3DS_IsNew3DS() && aspect == PORT_3DS_ASPECT_WIDE &&
-           style == PORT_3DS_DISPLAY_PIXEL_PERFECT;
+    return aspect == PORT_3DS_ASPECT_WIDE && style == PORT_3DS_DISPLAY_PIXEL_PERFECT;
 }

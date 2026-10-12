@@ -8,10 +8,18 @@
 
 #include <string.h>
 
+/* Why each background's view ring was not used this frame (0: it was), and
+ * counts of cells decoded and character chunks found changed; the SD log's
+ * `scene:` line prints them. */
+uint32_t gPpuGpu3DSRingWhy[4];
+uint32_t gPpuGpu3DSRingCells, gPpuGpu3DSRingStale;
+uint32_t gPpuGpu3DSBankChanges[16]; /* frames each BG palette bank changed in */
+
 /* Phase timing (PPU_GPU3DS_PROFILE): the host benchmark and the console build
  * both define it; on the console the SD log prints it every 5 s ("build:"). */
 #ifdef PPU_GPU3DS_PROFILE
 double gPpuGpu3DSPhase[PPU_GPU3DS_PHASE_COUNT];
+uint32_t gPpuGpu3DSLastBands, gPpuGpu3DSLastVertices, gPpuGpu3DSLastBatches;
 #ifdef __3DS__
 #include <3ds.h>
 /* System ticks on the console; the caller converts. */
@@ -38,6 +46,7 @@ static bool keys_equal(PpuGpu3DSTileKey left, PpuGpu3DSTileKey right) {
            left.bpp8 == right.bpp8 && left.domain == right.domain;
 }
 
+static const uint16_t* sBgPaletteShadowProbe;
 static void update_palette(uint16_t* shadow, uint32_t* bankGenerations,
                            uint32_t* fullGeneration, const uint16_t* palette) {
     bool changed = false;
@@ -48,6 +57,7 @@ static void update_palette(uint16_t* shadow, uint32_t* bankGenerations,
         if (memcmp(shadowBank, paletteBank, 16 * sizeof(*shadowBank)) != 0) {
             memcpy(shadowBank, paletteBank, 16 * sizeof(*shadowBank));
             ++bankGenerations[bank];
+            if (shadow == sBgPaletteShadowProbe) ++gPpuGpu3DSBankChanges[bank];
             changed = true;
         }
     }
@@ -74,9 +84,27 @@ static const uint8_t kTileMorton[64] = {
     42, 43, 46, 47, 58, 59, 62, 63
 };
 
+/* The GBA LCD's response (mode1.c's lut, 8-bit): applied per channel when the
+ * COLOURS option is on. Toggling it bumps every palette generation, so the
+ * atlas and the view rings decode again. */
+static const uint8_t kLcdLut[32] = {
+    0, 0, 0, 0, 1, 2, 4, 8, 13, 19, 25, 32, 39, 46, 54, 63,
+    71, 80, 90, 100, 110, 120, 131, 142, 154, 165, 178, 190, 203, 216, 229, 243,
+};
+static bool sColorCorrection, sColorCorrectionApplied;
+
+void PpuGpu3DS_SetColorCorrection(bool enabled) {
+    sColorCorrection = enabled;
+}
+
 uint16_t PpuGpu3DS_PackRgba5551(uint16_t gbaColor, bool opaque) {
-    return (uint16_t)(((gbaColor & 0x001fu) << 11u) | ((gbaColor & 0x03e0u) << 1u) |
-                      ((gbaColor & 0x7c00u) >> 9u) | (opaque ? 1u : 0u));
+    unsigned r = gbaColor & 0x1fu, g = (gbaColor >> 5u) & 0x1fu, b = (gbaColor >> 10u) & 0x1fu;
+    if (sColorCorrection) {
+        r = kLcdLut[r] >> 3u;
+        g = kLcdLut[g] >> 3u;
+        b = kLcdLut[b] >> 3u;
+    }
+    return (uint16_t)((r << 11u) | (g << 6u) | (b << 1u) | (opaque ? 1u : 0u));
 }
 
 uint16_t PpuGpu3DS_PackAbgr8888(uint32_t abgr) {
@@ -176,6 +204,16 @@ void PpuGpu3DS_CacheBeginFrame(PpuGpu3DSCache* cache, const uint16_t* bgPalette,
     /* Slots used during this frame are the most recent entries in the LRU
      * order, so eviction recognizes them by lastUseFrame without a sweep. */
     cache->exhausted = false;
+    if (sColorCorrectionApplied != sColorCorrection) {
+        sColorCorrectionApplied = sColorCorrection;
+        for (unsigned bank = 0; bank < 16u; ++bank) {
+            ++cache->bgBankGeneration[bank];
+            ++cache->objBankGeneration[bank];
+        }
+        ++cache->bg256Generation;
+        ++cache->obj256Generation;
+    }
+    sBgPaletteShadowProbe = cache->bgPalette;
     update_palette(cache->bgPalette, cache->bgBankGeneration, &cache->bg256Generation,
                    bgPalette);
     update_palette(cache->objPalette, cache->objBankGeneration, &cache->obj256Generation,
@@ -1039,6 +1077,18 @@ typedef struct PpuGpu3DSBgMap {
     uint16_t rowLo, colLo, rows, cols;
     uint16_t bgcnt;
     bool valid;
+    /* The layer is drawn from view rings (build_bg_ring): per band, one quad
+     * for each piece below. `source` is how far right of where it is drawn
+     * the piece's pixels sit in the layer's map. */
+    bool ring;
+    uint8_t ringPieces, ringMsgPieces;
+    struct {
+        int16_t left, right, shift;
+        uint8_t variant;
+    } ringPiece[3], ringMsgPiece[5];
+    /* Lines [msgY0, msgY1) draw ringMsgPiece instead (a dialogue's box moved
+     * to the middle of a wide view); ringMsgPieces is 0 without one. */
+    int16_t msgY0, msgY1;
 } PpuGpu3DSBgMap;
 
 
@@ -1168,6 +1218,8 @@ static bool emit_tile_part(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cach
                                                      .domain = PPU_GPU3DS_PALETTE_BG },
                                  atlas, &slot))
             return false;
+        /* Nothing of this tile would survive the alpha test. */
+        if (cache->entries[slot].transparent) return true;
         const unsigned tilesPerRow = PPU_GPU3DS_ATLAS_SIDE / PPU_GPU3DS_TILE_SIDE;
         const float slotX = (float)((slot % tilesPerRow) * PPU_GPU3DS_TILE_SIDE);
         const float slotY = (float)((slot / tilesPerRow) * PPU_GPU3DS_TILE_SIDE);
@@ -1735,6 +1787,412 @@ static bool build_mosaic_bg_geometry(
     return true;
 }
 
+
+/* ---------------------------------------------------------------------------
+ * View rings (Full View backgrounds)
+ *
+ * A Full View layer is 51 x 31 tiles, and building a quad for each of them
+ * every frame is what cost an Old 3DS 18 ms. The tiles of a scrolling view are
+ * almost all the ones of the frame before, so they are kept: each background
+ * owns a texture holding its tile map (64 x 32 cells, wrapping), a cell is
+ * decoded when what it should show differs from what it shows, and the layer
+ * is one quad per band whose UVs carry the scroll. Absolute map columns index
+ * the cells, so scrolling by a tile replaces one column of them.
+ *
+ * Only layers whose every column comes from the shadow tilemap (Full View) and
+ * whose map is 32 x 32 take this path; anything else keeps the quads.
+ * ------------------------------------------------------------------------ */
+
+/* Morton position, in the transposed cell, of each row-major source pixel for
+ * the four flip combinations (bit 0 horizontal, bit 1 vertical). */
+/* Debug: poke 1 over the link (tmc-link.py poke gPpuGpu3DSRingDisable 01) to
+ * draw every layer from quads again, for comparing the two paths. */
+volatile uint8_t gPpuGpu3DSRingDisable;
+static uint8_t sRingMorton[4][64];
+static bool sRingMortonReady;
+
+static void ring_init_tables(void) {
+    if (sRingMortonReady) return;
+    for (unsigned flips = 0; flips < 4u; ++flips) {
+        for (unsigned y = 0; y < 8u; ++y) {
+            for (unsigned x = 0; x < 8u; ++x) {
+                const unsigned dx = (flips & 1u) ? 7u - x : x;
+                const unsigned dy = (flips & 2u) ? 7u - y : y;
+                /* Texture x runs along the map's rows, texture y along its
+                 * columns. */
+                sRingMorton[flips][y * 8u + x] = PpuGpu3DS_MortonIndex(dy, dx);
+            }
+        }
+    }
+    sRingMortonReady = true;
+}
+
+void PpuGpu3DS_RingSetStorage(PpuGpu3DSCache* cache, unsigned index, uint16_t* pixels) {
+    if (!cache || index >= PPU_GPU3DS_RING_COUNT) return;
+    PpuGpu3DSRing* ring = &cache->ring[index];
+    memset(ring, 0, sizeof(*ring));
+    ring->pixels = pixels;
+}
+
+bool PpuGpu3DS_RingTakeDirty(PpuGpu3DSCache* cache, unsigned index, size_t* offset, size_t* bytes) {
+    if (!cache || index >= PPU_GPU3DS_RING_COUNT || !cache->ring[index].dirty) return false;
+    PpuGpu3DSRing* ring = &cache->ring[index];
+    *offset = (size_t)ring->dirtyFirst * 64u * sizeof(uint16_t);
+    *bytes = ((size_t)ring->dirtyLast - ring->dirtyFirst + 1u) * 64u * sizeof(uint16_t);
+    ring->dirty = false;
+    return true;
+}
+
+static uint32_t ring_chunk_digest(PpuGpu3DSCache* cache, const uint8_t* vram, unsigned chunk) {
+    if (cache->chunkDigestStamp[chunk] == cache->ringStamp) return cache->chunkDigest[chunk];
+    const uint8_t* bytes = vram + (size_t)chunk * PPU_GPU3DS_RING_CHUNK;
+    uint32_t hash = 2166136261u;
+    for (unsigned offset = 0; offset < PPU_GPU3DS_RING_CHUNK; offset += 4u) {
+        uint32_t word;
+        memcpy(&word, bytes + offset, sizeof(word));
+        hash = (hash ^ word) * 16777619u;
+    }
+    cache->chunkDigest[chunk] = hash;
+    cache->chunkDigestStamp[chunk] = cache->ringStamp;
+    return hash;
+}
+
+static void ring_decode_cell(PpuGpu3DSCache* cache, PpuGpu3DSRing* ring, const uint8_t* source,
+                             uint16_t entry, bool bpp8, unsigned cell, uint32_t generation) {
+    uint16_t* const dest = ring->pixels + (size_t)cell * 64u;
+    const uint8_t* const order = sRingMorton[(entry >> 10u) & 3u];
+    if (source == NULL) {
+        memset(dest, 0, 64u * sizeof(uint16_t));
+    } else if (!bpp8) {
+        const unsigned bankIndex = (entry >> 12u) & 15u;
+        uint16_t* const lut = cache->bankLut[0][bankIndex];
+        if (!cache->bankLutValid[0][bankIndex] || cache->bankLutGeneration[0][bankIndex] != generation) {
+            const uint16_t* const bank = cache->bgPalette + bankIndex * 16u;
+            lut[0] = 0;
+            for (unsigned index = 1; index < 16u; ++index)
+                lut[index] = PpuGpu3DS_PackRgba5551(bank[index], true);
+            cache->bankLutGeneration[0][bankIndex] = generation;
+            cache->bankLutValid[0][bankIndex] = true;
+        }
+        for (unsigned pixel = 0; pixel < 64u; pixel += 2u) {
+            const uint8_t pair = source[pixel >> 1u];
+            dest[order[pixel]] = lut[pair & 0x0fu];
+            dest[order[pixel + 1u]] = lut[pair >> 4u];
+        }
+    } else {
+        for (unsigned pixel = 0; pixel < 64u; ++pixel) {
+            const uint8_t colorIndex = source[pixel];
+            dest[order[pixel]] = colorIndex ? PpuGpu3DS_PackRgba5551(cache->bgPalette[colorIndex], true) : 0;
+        }
+    }
+    if (!ring->dirty) {
+        ring->dirty = true;
+        ring->dirtyFirst = ring->dirtyLast = cell;
+    } else {
+        if (cell < ring->dirtyFirst) ring->dirtyFirst = cell;
+        if (cell > ring->dirtyLast) ring->dirtyLast = cell;
+    }
+}
+
+/* Brings one ring up to date for the columns [cLo, cHi] (counted from the
+ * view's left tile) of the rows [rowLo, rowHi]. `shadowSource` takes the
+ * entries from the shadow tilemap, `viewRelative` indexing it from the view's
+ * left (Full View) rather than by absolute column. */
+static bool ring_update(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, PpuGpu3DSRing* ring, unsigned bg,
+                        bool shadowSource, bool viewRelative, unsigned firstTileX, unsigned cLo, unsigned cHi,
+                        unsigned rowLo, unsigned rowHi, uint16_t bgcnt) {
+    const bool bpp8 = ((bgcnt >> 7u) & 1u) != 0;
+    const uint32_t charBase = ((bgcnt >> 2u) & 3u) * 0x4000u;
+    const uint32_t screenBase = ((bgcnt >> 8u) & 0x1fu) * 0x800u;
+    if (screenBase > MODE1_VRAM_SIZE - 0x800u) return false;
+    const uint32_t tileBytes = bpp8 ? 64u : 32u;
+    const unsigned chunkFirst = charBase / PPU_GPU3DS_RING_CHUNK;
+
+    /* Character data that changed since its cells were decoded: those cells go
+     * stale, visible or not. Only the chunks the ring has used are watched. */
+    PROFILE_BEGIN(PPU_GPU3DS_PHASE_RINGDIGEST);
+    if (!ring->contextValid || ring->charBase != charBase || ring->bpp8 != bpp8) {
+        memset(ring->key, 0, sizeof(ring->key));
+        ring->charBase = charBase;
+        ring->bpp8 = bpp8;
+        ring->chunkEnd = chunkFirst;
+        ring->contextValid = true;
+    } else if (ring->chunkEnd > chunkFirst) {
+        uint32_t stale[PPU_GPU3DS_RING_CHUNKS / 32u] = { 0 };
+        bool anyStale = false;
+        for (unsigned chunk = chunkFirst; chunk < ring->chunkEnd; ++chunk) {
+            const uint32_t digest = ring_chunk_digest(cache, frame->memory.vram, chunk);
+            if (digest != ring->chunkDigest[chunk]) {
+                ring->chunkDigest[chunk] = digest;
+                stale[chunk / 32u] |= 1u << (chunk % 32u);
+                anyStale = true;
+                ++gPpuGpu3DSRingStale;
+            }
+        }
+        if (anyStale) {
+            for (unsigned cell = 0; cell < PPU_GPU3DS_RING_CELLS; ++cell) {
+                if (ring->key[cell] == 0 || (ring->key[cell] & 0x40000000u) != 0) continue;
+                const unsigned chunk =
+                        (charBase + (uint32_t)(ring->key[cell] & 0x03ffu) * tileBytes) / PPU_GPU3DS_RING_CHUNK;
+                if (chunk < PPU_GPU3DS_RING_CHUNKS && (stale[chunk / 32u] & (1u << (chunk % 32u))) != 0)
+                    ring->key[cell] = 0;
+            }
+        }
+    }
+    PROFILE_END(PPU_GPU3DS_PHASE_RINGDIGEST);
+
+    PROFILE_BEGIN(PPU_GPU3DS_PHASE_RINGCELLS);
+    const unsigned shadowCols = (unsigned)(frame->wsCols > 0 ? frame->wsCols : 0);
+    const int shadowBase = frame->wsShadowBaseTile[bg];
+    for (unsigned R = rowLo; R <= rowHi; ++R) {
+        const unsigned ringRow = R & (PPU_GPU3DS_RING_ROWS - 1u);
+        const uint16_t* shadowRow = NULL;
+        unsigned available = 0;
+        if (shadowSource && frame->wsShadow && frame->wsShadowHalfwords > 0) {
+            const size_t base = ((size_t)bg * 32u + ringRow) * shadowCols;
+            if (base < (size_t)frame->wsShadowHalfwords) {
+                shadowRow = frame->wsShadow + base;
+                const size_t left = (size_t)frame->wsShadowHalfwords - base;
+                available = left < shadowCols ? (unsigned)left : shadowCols;
+            }
+        }
+        const uint8_t* const vramRow = frame->memory.vram + screenBase + ringRow * 64u;
+        for (unsigned c = cLo; c <= cHi; ++c) {
+            const unsigned A = firstTileX + c;
+            uint16_t entry = 0;
+            bool blank = false;
+            if (shadowSource) {
+                const unsigned column =
+                        viewRelative ? c : (unsigned)((int)(A & 31u) - shadowBase + 32) & 31u;
+                if (column < available) {
+                    entry = shadowRow[column];
+                } else if (!viewRelative) {
+                    blank = true;
+                }
+            } else {
+                entry = read16(vramRow, (A & 31u) * 2u);
+            }
+            const unsigned cell = (A & (PPU_GPU3DS_RING_COLS - 1u)) * PPU_GPU3DS_RING_ROWS + ringRow;
+            const uint32_t generation =
+                    bpp8 ? cache->bg256Generation : cache->bgBankGeneration[(entry >> 12u) & 15u];
+            const uint32_t key = blank ? 0x40000000u
+                                       : (entry | ((generation & 0x3fffu) << 16u) | 0x80000000u);
+            const uint32_t held = ring->key[cell];
+            if (held == key) continue;
+            /* A tile with no opaque pixel does not depend on the palette: it
+             * stays valid through a fade that changes every bank. */
+            if ((held & 0x20000000u) != 0 && (held & 0xffffu) == entry) continue;
+            const uint8_t* source = NULL;
+            if (!blank) {
+                const uint32_t tileOffset = charBase + (uint32_t)(entry & 0x03ffu) * tileBytes;
+                if (tileOffset > MODE1_VRAM_SIZE - tileBytes) return false;
+                const unsigned chunk = tileOffset / PPU_GPU3DS_RING_CHUNK;
+                while (ring->chunkEnd <= chunk) {
+                    ring->chunkDigest[ring->chunkEnd] =
+                            ring_chunk_digest(cache, frame->memory.vram, ring->chunkEnd);
+                    ++ring->chunkEnd;
+                }
+                source = frame->memory.vram + tileOffset;
+            }
+            ++gPpuGpu3DSRingCells;
+            uint32_t storedKey = key;
+            if (source != NULL) {
+                /* 4bpp: all 32 bytes zero means nothing is opaque. */
+                bool empty = true;
+                for (uint32_t i = 0; i < tileBytes && empty; i += 4) {
+                    uint32_t word;
+                    memcpy(&word, source + i, sizeof(word));
+                    empty = word == 0;
+                }
+                if (empty) {
+                    source = NULL;
+                    storedKey = entry | 0x20000000u | 0x80000000u;
+                }
+            }
+            ring_decode_cell(cache, ring, source, entry, bpp8, cell, generation);
+            ring->key[cell] = storedKey;
+        }
+    }
+    PROFILE_END(PPU_GPU3DS_PHASE_RINGCELLS);
+    return true;
+}
+
+/* Works out how the layer is drawn from its rings (the pieces of each band)
+ * and brings those rings up to date. False leaves it to the quad paths. */
+static bool build_bg_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, unsigned bg,
+                          const PpuGpu3DSBand* bands, size_t bandCount, PpuGpu3DSBgMap* map) {
+    PpuGpu3DSRing* const native = &cache->ring[bg * 2u];
+    PpuGpu3DSRing* const extension = &cache->ring[bg * 2u + 1u];
+    if (!native->pixels || !extension->pixels || (gPpuGpu3DSRingDisable & (1u << bg)) != 0 || frame->affine ||
+        frame->width <= MODE1_GBA_BG_CLIP_X || frame->width > (PPU_GPU3DS_RING_COLS - 1u) * 8u) {
+        gPpuGpu3DSRingWhy[bg] = 1;
+        return false;
+    }
+    const bool shadow = frame->wsShadowBaseTile[bg] >= 0;
+    const bool fullView = frame->wsFullView && shadow;
+    const bool hudRight = bg == 0u && frame->wsHudRightAnchor;
+    const int width = (int)frame->width;
+    const int shift = width - MODE1_GBA_BG_CLIP_X;
+    /* A dialogue shifts part of BG0 sideways line by line; that keeps the quads. */
+    if (bg == 0u && frame->wsMsgShift != 0 && shadow) {
+        gPpuGpu3DSRingWhy[bg] = 2;
+        return false;
+    }
+    if (hudRight && shadow) {
+        gPpuGpu3DSRingWhy[bg] = 2;
+        return false;
+    }
+    ring_init_tables();
+
+    /* Pieces of a band: [left, right) on screen, drawn from the ring of
+     * `variant` with the source `shift` pixels to the left. The native ring
+     * holds the VRAM map's entries, the extension ring the shadow's. */
+    map->ringPieces = 0;
+#define RING_PIECE(l, r, s, v)                                          \
+    do {                                                                \
+        map->ringPiece[map->ringPieces].left = (int16_t)(l);            \
+        map->ringPiece[map->ringPieces].right = (int16_t)(r);           \
+        map->ringPiece[map->ringPieces].shift = (int16_t)(s);           \
+        map->ringPiece[map->ringPieces].variant = (uint8_t)(v);         \
+        ++map->ringPieces;                                              \
+    } while (0)
+    int nativeEnd = 0;           /* source columns the native ring must hold, in pixels */
+    int extensionFrom = width;   /* first screen x the extension ring draws */
+    if (fullView) {
+        RING_PIECE(0, width, 0, 1);
+        extensionFrom = 0;
+    } else if (shadow) {
+        RING_PIECE(0, MODE1_GBA_BG_CLIP_X, 0, 0);
+        RING_PIECE(MODE1_GBA_BG_CLIP_X, width, 0, 1);
+        nativeEnd = MODE1_GBA_BG_CLIP_X;
+        extensionFrom = MODE1_GBA_BG_CLIP_X;
+    } else if (bg == 3u && frame->bg3Repeat) {
+        RING_PIECE(0, width, 0, 0);
+        nativeEnd = width;
+    } else if (hudRight) {
+        RING_PIECE(0, frame->wsHudRightNativeX, 0, 0);
+        RING_PIECE(frame->wsHudRightNativeX + shift, width, shift, 0);
+        nativeEnd = MODE1_GBA_BG_CLIP_X;
+    } else {
+        RING_PIECE(0, MODE1_GBA_BG_CLIP_X, 0, 0);
+        nativeEnd = MODE1_GBA_BG_CLIP_X;
+    }
+#undef RING_PIECE
+    map->ringMsgPieces = 0;
+    if (bg == 0u && frame->wsMsgShift != 0 && !shadow) {
+        /* destination_sample_x for a message line: the box [X0, X1) moves to
+         * [X0 + shift, X1 + shift), the old place is empty, columns past 240
+         * are empty, everything else is where it was. */
+        const int shiftM = frame->wsMsgShift, x0 = frame->wsMsgX0, x1 = frame->wsMsgX1;
+        const int boxLeft = x0 + shiftM, boxRight = x1 + shiftM;
+        int n = 0;
+#define MSG_PIECE(l, r, sh)                                                        \
+        do {                                                                       \
+            if ((r) > (l) && n < 5) {                                              \
+                map->ringMsgPiece[n].left = (int16_t)(l);                          \
+                map->ringMsgPiece[n].right = (int16_t)(r);                         \
+                map->ringMsgPiece[n].shift = (int16_t)(sh);                        \
+                map->ringMsgPiece[n].variant = 0;                                  \
+                ++n;                                                               \
+            }                                                                      \
+        } while (0)
+        MSG_PIECE(0, x0 < MODE1_GBA_BG_CLIP_X ? x0 : MODE1_GBA_BG_CLIP_X, 0);
+        {
+            const int from = x1 > 0 ? x1 : 0;
+            int to = boxLeft < MODE1_GBA_BG_CLIP_X ? boxLeft : MODE1_GBA_BG_CLIP_X;
+            MSG_PIECE(from, to, 0);
+            MSG_PIECE(boxRight > from ? boxRight : from, MODE1_GBA_BG_CLIP_X, 0);
+        }
+        MSG_PIECE(boxLeft, boxRight < width ? boxRight : width, shiftM);
+#undef MSG_PIECE
+        map->ringMsgPieces = (uint8_t)n;
+        map->msgY0 = (int16_t)frame->wsMsgY0;
+        map->msgY1 = (int16_t)frame->wsMsgY1;
+        if (nativeEnd < MODE1_GBA_BG_CLIP_X) nativeEnd = MODE1_GBA_BG_CLIP_X;
+    }
+
+    uint16_t sharedBgcnt = 0;
+    bool any = false;
+    unsigned firstTileX = 0, fine = 0, rowLo = ~0u, rowHi = 0;
+    for (size_t index = 0; index < bandCount; ++index) {
+        const PpuGpu3DSBand* band = &bands[index];
+        if ((frame->dispcntPerLine[band->firstLine] & (MODE1_DISP_BG0_ON << bg)) == 0) continue;
+        const uint8_t* io = frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;
+        const uint16_t bgcnt = read16(io, MODE1_IO_BG0CNT + bg * 2u);
+        if ((any && (bgcnt & ~3u) != (sharedBgcnt & ~3u)) || ((bgcnt >> 14u) & 3u) != 0 ||
+            ((bgcnt & (1u << 6u)) != 0 && (read16(io, MODE1_IO_MOSAIC) & 0xffu) != 0)) {
+            gPpuGpu3DSRingWhy[bg] = 3;
+            return false;
+        }
+        const unsigned scrollX = read16(io, MODE1_IO_BG0HOFS + bg * 4u) & 0x1ffu;
+        const unsigned scrollY = read16(io, MODE1_IO_BG0VOFS + bg * 4u) & 0x1ffu;
+        /* One set of columns serves every band, so they must agree on it. */
+        if (any && scrollX != (firstTileX << 3u | fine)) {
+            gPpuGpu3DSRingWhy[bg] = 4;
+            return false;
+        }
+        firstTileX = scrollX >> 3u;
+        fine = scrollX & 7u;
+        sharedBgcnt = bgcnt;
+        any = true;
+        const unsigned rTop = (band->firstLine + scrollY) >> 3u;
+        const unsigned rBot = (band->firstLine + band->lineCount - 1u + scrollY) >> 3u;
+        if (rTop < rowLo) rowLo = rTop;
+        if (rBot > rowHi) rowHi = rBot;
+    }
+    if (!any || rowHi - rowLo + 1u > PPU_GPU3DS_RING_ROWS || fine + (unsigned)width > (PPU_GPU3DS_RING_COLS - 1u) * 8u) {
+        gPpuGpu3DSRingWhy[bg] = 5;
+        return false;
+    }
+    if (nativeEnd > 0 &&
+        !ring_update(frame, cache, native, bg, false, false, firstTileX, 0, (fine + (unsigned)nativeEnd - 1u) >> 3u,
+                     rowLo, rowHi, sharedBgcnt)) {
+        gPpuGpu3DSRingWhy[bg] = 6;
+        return false;
+    }
+    if (extensionFrom < width &&
+        !ring_update(frame, cache, extension, bg, true, fullView, firstTileX, (fine + (unsigned)extensionFrom) >> 3u,
+                     (fine + (unsigned)width - 1u) >> 3u, rowLo, rowHi, sharedBgcnt)) {
+        gPpuGpu3DSRingWhy[bg] = 7;
+        return false;
+    }
+    gPpuGpu3DSRingWhy[bg] = 0;
+    return true;
+}
+
+/* A quad over the band's screen columns [left, right), sampling the ring with
+ * the band's scroll; `shift` moves the source right of where it is drawn (the
+ * HUD's right-hand buttons). The texture is transposed: u follows the map's
+ * rows, v its columns. */
+static void emit_ring_quad(const PpuGpu3DSFrameView* frame, PpuGpu3DSCommandBuffer* cmd,
+                           const PpuGpu3DSBand* band, unsigned scrollX, unsigned scrollY,
+                           int left, int right, int shift, size_t* vertexCursor, size_t* indexCursor) {
+    if (quad_room(cmd, vertexCursor, indexCursor)) {
+        const float invWidth = 2.0f / (float)frame->width;
+        const float invHeight = 2.0f / (float)frame->height;
+        const float x0 = (float)left * invWidth - 1.0f;
+        const float x1 = (float)right * invWidth - 1.0f;
+        const float y0 = 1.0f - (float)band->firstLine * invHeight;
+        const float y1 = 1.0f - (float)(band->firstLine + band->lineCount) * invHeight;
+        const float uTop = (float)(band->firstLine + scrollY) * (1.0f / PPU_GPU3DS_RING_TEX_WIDTH);
+        const float uBottom =
+                (float)(band->firstLine + band->lineCount + scrollY) * (1.0f / PPU_GPU3DS_RING_TEX_WIDTH);
+        const float vLeft =
+                1.0f - (float)((int)scrollX + left - shift) * (1.0f / PPU_GPU3DS_RING_TEX_HEIGHT);
+        const float vRight =
+                1.0f - (float)((int)scrollX + right - shift) * (1.0f / PPU_GPU3DS_RING_TEX_HEIGHT);
+        const int16_t pu0 = PpuGpu3DS_PackUV(uTop), pu1 = PpuGpu3DS_PackUV(uBottom);
+        const int16_t pv0 = PpuGpu3DS_PackUV(vLeft), pv1 = PpuGpu3DS_PackUV(vRight);
+        PpuGpu3DSVertex* const vertices = cmd->vertices + *vertexCursor;
+        vertices[0] = (PpuGpu3DSVertex){ x0, y0, 0.0f, pu0, pv0 };
+        vertices[1] = (PpuGpu3DSVertex){ x1, y0, 0.0f, pu0, pv1 };
+        vertices[2] = (PpuGpu3DSVertex){ x1, y1, 0.0f, pu1, pv1 };
+        vertices[3] = (PpuGpu3DSVertex){ x0, y1, 0.0f, pu1, pv0 };
+    }
+    *vertexCursor += 4;
+    *indexCursor += 6;
+}
+
 static bool build_text_bg(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                           uint16_t* atlas, PpuGpu3DSCommandBuffer* cmd,
                           const PpuGpu3DSBand* band, unsigned bg,
@@ -1807,7 +2265,66 @@ static bool build_text_bg(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
         }
     }
 
-    if (fromMap) {
+    const bool fromRing = map && map->ring;
+    if (fromRing) {
+        /* A band is cut at a dialogue's lines; each piece set is one run of
+         * quads per ring, and each run its own batches. */
+        const uint16_t ringBldcnt = read16(io, MODE1_IO_BLDCNT);
+        int segFirst[3], segCount[3];
+        bool segMsg[3];
+        int segs = 0;
+        const int bandTop = band->firstLine, bandEnd = band->firstLine + band->lineCount;
+        if (map->ringMsgPieces == 0) {
+            segFirst[0] = bandTop;
+            segCount[0] = band->lineCount;
+            segMsg[0] = false;
+            segs = 1;
+        } else {
+            const int cuts[4] = { bandTop, map->msgY0 > bandTop ? (map->msgY0 < bandEnd ? map->msgY0 : bandEnd) : bandTop,
+                                  map->msgY1 > bandTop ? (map->msgY1 < bandEnd ? map->msgY1 : bandEnd) : bandTop,
+                                  bandEnd };
+            for (int k = 0; k < 3; ++k) {
+                if (cuts[k + 1] <= cuts[k]) continue;
+                segFirst[segs] = cuts[k];
+                segCount[segs] = cuts[k + 1] - cuts[k];
+                segMsg[segs] = k == 1;
+                ++segs;
+            }
+        }
+        for (int seg = 0; seg < segs; ++seg) {
+            PpuGpu3DSBand part = *band;
+            part.firstLine = (uint16_t)segFirst[seg];
+            part.lineCount = (uint16_t)segCount[seg];
+            const unsigned count = segMsg[seg] ? map->ringMsgPieces : map->ringPieces;
+            for (unsigned variant = 0; variant < 2u; ++variant) {
+                const size_t groupFirst = *indexCursor;
+                for (unsigned piece = 0; piece < count; ++piece) {
+                    const typeof(map->ringPiece[0])* pc =
+                            segMsg[seg] ? (const void*)&map->ringMsgPiece[piece] : &map->ringPiece[piece];
+                    if (pc->variant != variant) continue;
+                    emit_ring_quad(frame, cmd, &part, scrollX, scrollY, pc->left, pc->right, pc->shift,
+                                   vertexCursor, indexCursor);
+                }
+                if (*indexCursor == groupFirst) continue;
+                const PpuGpu3DSBatch ringBase = {
+                    .firstIndex = (uint32_t)groupFirst,
+                    .indexCount = (uint32_t)(*indexCursor - groupFirst),
+                    .firstLine = part.firstLine,
+                    .lineCount = part.lineCount,
+                    .scissorRight = (uint16_t)frame->width,
+                    .layer = (uint8_t)(PPU_GPU3DS_BG0 + bg),
+                    .priority = (uint8_t)priority,
+                    .effect = PPU_GPU3DS_EFFECT_NONE,
+                    .target2 = (uint8_t)((ringBldcnt >> (PPU_GPU3DS_BG0 + bg + 8u)) & 1u),
+                    .objectIndex = UINT8_MAX,
+                    .texture = (uint8_t)(1u + bg * 2u + variant),
+                };
+                append_layer_batches(cmd, &ringBase, regions, regionCount, ringBldcnt,
+                                     read16(io, MODE1_IO_BLDALPHA), read16(io, MODE1_IO_BLDY), emit, batchCursor);
+            }
+        }
+        return true;
+    } else if (fromMap) {
         /* nothing to emit: the geometry is already in the buffer */
     } else if (widescreenRules && !mosaicEnabled && mapWidthTiles == 32u &&
                !(bg == 0 && (frame->wsHudRightAnchor || frame->wsMsgShift != 0))) {
@@ -3225,6 +3742,13 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
         cmd->dynamicFirstVertex = (uint32_t)dynamicVertex;
         cmd->dynamicFirstIndex = (uint32_t)dynamicIndex;
     }
+    ++cache->ringStamp;
+    for (unsigned bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {
+        gPpuGpu3DSRingWhy[bg] = 9;
+        maps[bg].ring = layerBandCount[bg] != 0 &&
+                        build_bg_ring(frame, cache, bg, layerBands[bg], layerBandCount[bg], &maps[bg]);
+        if (maps[bg].ring) maps[bg].valid = false;
+    }
     PROFILE_END(PPU_GPU3DS_PHASE_MAPS);
 
     PROFILE_BEGIN(PPU_GPU3DS_PHASE_OBJWIN);
@@ -3413,6 +3937,11 @@ bool PpuGpu3DS_BuildCommands(const PpuGpu3DSFrameView* frame,
     }
     cmd->requiredVertices = (uint32_t)vertexCursor;
     cmd->requiredBatches = (uint32_t)batchCursor;
+#ifdef PPU_GPU3DS_PROFILE
+    gPpuGpu3DSLastBands = (uint32_t)bandCount;
+    gPpuGpu3DSLastVertices = (uint32_t)(vertexCursor - startVertex);
+    gPpuGpu3DSLastBatches = (uint32_t)(batchCursor - startBatch);
+#endif
     if (cmd->overflow) {
         cmd->failReason = PPU_GPU3DS_BUILD_CAPACITY;
         return false;

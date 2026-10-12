@@ -28,13 +28,9 @@ static unsigned sPresentQuadWidth;
 bool Port_Config_GpuStaticQuad(void);
 bool Port_Config_CompactUpload(void);
 bool Port_Config_BottomRgb565(void);
-bool Port_Config_FrameLog(void);
 
 static C3D_RenderTarget* sTopTarget;
 static C3D_RenderTarget* sBottomTarget;
-static C3D_Tex sUpdateTexture;
-static uint32_t* sUpdatePixels;
-static bool sUpdateReady;
 static C3D_Tex sTopTexture;
 static C3D_Tex sBottomTexture;
 static C3D_Tex sSharpBilinearTexture;
@@ -900,15 +896,6 @@ void PlatformGpu3DS_BeginTop(const uint32_t* pixels, unsigned width, unsigned he
      * fallback. Reuse it so the freshly rendered image is actually uploaded. */
     if (!sFrameActive && !C3D_FrameBegin(frameFlags)) {
         ++sStats.frameBeginFailures;
-        if (Port_Config_FrameLog() &&
-            (sStats.frameBeginFailures <= 3u ||
-             (sStats.frameBeginFailures % 300u) == 0u)) {
-            char line[112];
-            snprintf(line, sizeof(line),
-                     "[tmc3ds] GPU busy, frame begin skipped (%llu total)\n",
-                     (unsigned long long)sStats.frameBeginFailures);
-            Platform3DS_Debug(line);
-        }
         return;
     }
     sFrameActive = true;
@@ -945,15 +932,6 @@ bool PlatformGpu3DS_BeginCustomTop(void) {
     const u8 frameFlags = (u8)(Port_Config_GpuFrameSync() ? C3D_FRAME_SYNCDRAW : 0);
     if (!C3D_FrameBegin(frameFlags)) {
         ++sStats.frameBeginFailures;
-        if (Port_Config_FrameLog() &&
-            (sStats.frameBeginFailures <= 3u ||
-             (sStats.frameBeginFailures % 300u) == 0u)) {
-            char line[112];
-            snprintf(line, sizeof(line),
-                     "[tmc3ds] GPU busy, frame begin skipped (%llu total)\n",
-                     (unsigned long long)sStats.frameBeginFailures);
-            Platform3DS_Debug(line);
-        }
         return false;
     }
     sFrameActive = true;
@@ -1000,47 +978,8 @@ bool PlatformGpu3DS_QueueRgba5551Readback(void* texturePointer, uint16_t* pixels
 }
 
 
-/* The changelog always occupies the physical top screen at 400x240,
- * independent of the gameplay aspect/filter and Full View settings. */
-static void DrawUpdateTop(void) {
-    if (!Port_SecondScreen_3DS_UpdateOpen()) return;
-    /* GX display transfer is not a padded row copy: its output dimensions
-     * describe the transfer extent. Match the 512x256 texture on both sides;
-     * a 400x240 input produces corrupt tiled rows on hardware. Only the
-     * 400x240 viewport is painted and sampled. */
-    const size_t uploadBytes = TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t);
-    if (!sUpdateReady) {
-        sUpdatePixels = linearAlloc(uploadBytes);
-        if (!sUpdatePixels) return;
-        if (!C3D_TexInit(&sUpdateTexture,TOP_TEXTURE_WIDTH,TOP_TEXTURE_HEIGHT,GPU_RGBA8)) {
-            linearFree(sUpdatePixels); sUpdatePixels=NULL; return;
-        }
-        C3D_TexSetFilter(&sUpdateTexture,GPU_NEAREST,GPU_NEAREST);
-        C3D_TexSetWrap(&sUpdateTexture,GPU_CLAMP_TO_EDGE,GPU_CLAMP_TO_EDGE);
-        memset(sUpdatePixels, 0, uploadBytes);
-        sUpdateReady=true;
-    }
-    if (Port_SecondScreen_3DS_PaintUpdateTop(sUpdatePixels,TOP_TEXTURE_WIDTH)) {
-        Platform3DS_CleanDataCache(sUpdatePixels,uploadBytes);
-        C3D_SyncDisplayTransfer(sUpdatePixels,GX_BUFFER_DIM(TOP_TEXTURE_WIDTH,TOP_TEXTURE_HEIGHT),
-            sUpdateTexture.data,GX_BUFFER_DIM(TOP_TEXTURE_WIDTH,TOP_TEXTURE_HEIGHT),
-            TextureTransfer());
-    }
-    C2D_Prepare();
-    C3D_SetScissor(GPU_SCISSOR_DISABLE,0,0,0,0);
-    C2D_TargetClear(sTopTarget,C2D_Color32(0,0,0,255));
-    C2D_SceneBegin(sTopTarget);
-    Tex3DS_SubTexture sub={.width=400,.height=240,.left=0,.top=1,
-        .right=400.f/TOP_TEXTURE_WIDTH,.bottom=1-240.f/TOP_TEXTURE_HEIGHT};
-    C2D_Image image={.tex=&sUpdateTexture,.subtex=&sub};
-    C2D_DrawImageAt(image,0,0,0,NULL,1,1);
-    ConfigureAbgrTextureEnv();
-    PlatformGpu3DS_InvalidateTopBorder();
-}
-
 bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
     if (!sFrameActive || !pixels) return false;
-    DrawUpdateTop();
     if (changed) {
         /* NOT a blocking transfer. citro3d source/renderqueue.c:417-430 shows
          * C3D_SyncDisplayTransfer only blocks when called OUTSIDE a frame:
@@ -1216,9 +1155,6 @@ bool PlatformGpu3DS_RunWithTimeout(void (*fn)(void), unsigned milliseconds) {
 }
 
 void PlatformGpu3DS_Shutdown(void) {
-    if (sUpdateReady) C3D_TexDelete(&sUpdateTexture);
-    if (sUpdatePixels) linearFree(sUpdatePixels);
-    sUpdateReady=false; sUpdatePixels=NULL;
     if (!sReady) return;
     if (sFrameActive) {
         C2D_Flush();

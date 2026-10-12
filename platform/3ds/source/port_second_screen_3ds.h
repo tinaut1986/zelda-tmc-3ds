@@ -12,7 +12,6 @@ extern "C" {
 #endif
 
 bool Port_SecondScreen_3DS_UpdateOpen(void);
-bool Port_SecondScreen_3DS_PaintUpdateTop(uint32_t* pixels, int stride);
 
 uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height, int strideInPixels,
                                         const SecondScreenSnapshot* snap, uint32_t tick);

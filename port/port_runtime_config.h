@@ -114,9 +114,6 @@ bool Port_Config_BottomMapSkip(void);
 bool Port_Config_VblankPhaseLock(void);
 /* 3DS: interpolation for the experimental offloaded NDSP voices. */
 bool Port_Config_AudioDspInterpLinear(void);
-/* 3DS: `frame_log=1` re-enables frame-path SD diagnostics. Off by default;
- * each line costs main-thread SD I/O inside the presentation span. */
-bool Port_Config_FrameLog(void);
 /* 3DS: `compact_upload=1` uses 272x160 / 320x240 upload surfaces instead of
  * 512x256. Every caller of PlatformGpu3DS_GetUploadLayout must gate on this
  * identically or the painter stride and the display transfer disagree. */
@@ -254,7 +251,6 @@ void Port_Config_SetSecondScreenSwap(bool on);
 typedef enum {
     PORT_3DS_ASPECT_WIDE = 0,
     PORT_3DS_ASPECT_ORIGINAL,
-    PORT_3DS_ASPECT_STRETCH,
     PORT_3DS_ASPECT_COUNT,
 } Port3DSAspectRatio;
 
