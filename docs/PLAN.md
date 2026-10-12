@@ -14,7 +14,7 @@ change (what goes where: the table in `CLAUDE.md`).
   audio offload, an updater, a quick memory dump (L+R+A) and an experimental New 3DS
   "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors; the 2x indoor zoom is gone, see the decisions log).
 
-## Status (2026-10-11)
+## Status (2026-10-12)
 
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
@@ -43,17 +43,17 @@ v2.2-E1: nothing stable published.
 | `perf/full-view-gpu` (cut from `perf/wide-bg-tile-runs`) | P3.4 first part: Full View (Wide + Pixel Perfect) drawn by the GPU renderer: whole-view shadow, OBJ Y wrap as mode1.c, presenter takes the Full View geometry | on the console by Claude, Hyrule Field 03/01: Full View 400x240 33.8 -> **59.8 fps** (bg 6.2 ms, vblank margin 9.6 ms; the per-frame tile memo and the per-tile Wide emitter), Wide + Bilinear bg 4.2 ms; GPU CHECK 0 structural pixels everywhere tried. Interiors (200x120 at 2x), BG3 native bounds and the Old 3DS not checked yet |
 | `fix/relaunch-hang` (cut from `perf/full-view-gpu`) | issue #2: no GPU teardown while relaunching, exit steps logged | relaunches checked; the hang itself not reproduced |
 
-**Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` (not pushed).
-Checked on the console by Claude over the link: save states are build independent (P1.8b: a state
-loads after the game side gained a global and a function; both directions); leaving an interior
-into Hyrule Field now switches 266 -> 400 once (it flipped three times), the state thumbnails are
-upright, issues #1 and #2 are closed. Still to check by the owner: the STATES tab itself, and
+**Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
+Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
+triforce turning on the bottom screen, the whole splash on top, no console text, no fixed delay),
+the SHOW FPS box of four lines, save states from older builds (view and crash fixes, see the
+decisions log) and taps on the tab bar. Still to check by the owner: the STATES tab itself, and
 states of other scenes than Hyrule Field and Link's house (run `tools/state-census` on a state
 of each; a holder nobody listed crashes on load into a different build).
 
-**On the owner's console now:** a debug build of `release/v0.1.1`. Save states 1 (Link's house,
-22/10) and 2..4 (Hyrule Field) are format 2; the older ones show "other build" and cannot be
-loaded. Delete them from the STATES tab.
+**On the owner's console now:** a debug build of `release/v0.1.1`. Five save states (Hyrule
+Field 03/01 and Link's house 22/10, format 2); the oldest ones load since the repairs of
+2026-10-12 but may keep other stale words, so re-saving them is the safe thing.
 
 **Next after that:** the Old 3DS/2DS at 60 with Wide + Pixel Perfect (P3.3, P4.1): the Full View
 build is ~6 ms on the New 3DS, ~18 ms expected at 268 MHz, so BG geometry has to be kept across
@@ -442,3 +442,30 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   `src/fade.c`, used for the presenter's clear): a door's white fade now covers the whole
   400x240, so leaving a house is white all over and the field comes out of it at full width.
   Checked with the frame recorder. Black fades are unchanged.
+- **2026-10-12** Boot screen: the bottom screen shows a gold triforce turning (own thread, drawn
+  straight into the gfx framebuffer, stopped before `Port_PPU_Init` where citro3d takes the
+  screen) instead of the console, and stdout/stderr are silenced from the start
+  (`Platform3DS_SilenceBootConsole`): the ROM loader's `fprintf(stderr, ...)` was painted over
+  it. The animation swaps only the bottom screen's buffers (`gfxScreenSwapBuffers(GFX_BOTTOM)`);
+  `gfxSwapBuffers` swapped both and made the top splash flicker. The splash
+  (`romfs/splash.rgb565`) was a cropped logo; it is regenerated from `assets/splash.png` with a
+  margin, written to both top buffers, and the fixed 1.2 s sleep is gone.
+- **2026-10-12** The SHOW FPS box is four lines like mzm's (game rate, `L` logic ms, `G` GPU ms,
+  `S` shown rate). Its rectangles are citro2d objects: with `C2D_Init(128)` the box ran the
+  frame out of objects and citro2d silently dropped later draws, among them the bottom screen's
+  image (a black bottom on the frames with wide digits). `C2D_Init(512)`. Lesson: anything that
+  draws text rectangle by rectangle must be counted against that limit.
+- **2026-10-12** Save states, pointers the rules did not cover: `gMapBottom`/`gMapTop` are 49 KB
+  and were never scanned, but their first word points into `gScreen`; and pointers into the
+  middle of `gScreen` were relocated only from known holders. After a rebuild that moved
+  `gScreen` the view stayed at 240x160 (`latch-mismatch`) and the oldest state crashed
+  `LoadBgAnimationGfx` (stale `gBgAnimations` frame pointers). Rules added (`kHeadOnly`,
+  `kInnerTargets`), old states repaired on load (`RepairScreenPointers`, entries of
+  `gBgAnimations` that did not come back as a relocation end the list) and the widescreen latch
+  is reset after a load (`Port_Widescreen_ResetAfterStateLoad`). Found with the SD log's view
+  lines, `peek` over the link and the Luma crash dump.
+- **2026-10-12** A tap on a tab was lost while another panel's repaint was in flight: the touch
+  gate drops taps until the last repaint is visible, and the DEBUG tab repaints almost
+  continuously (3 of 12 alternating taps lost, measured). The tab bar is the same in every
+  panel, so a tab tap skips the generation gate and keeps the mode check
+  (`Port_SecondScreen_TapIsTab`). Re-tapping the active tab still returns to the map, by design.
