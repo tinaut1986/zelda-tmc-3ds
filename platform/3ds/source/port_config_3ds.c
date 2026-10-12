@@ -7,11 +7,21 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "tmc3ds_build_config.h"
+#if TMC3DS_DEBUG_TOOLS
+#include "debug_log_3ds.h"
+#endif
+
+enum { CONFIG_TEXT_CAP = 3072 };
+
 /* BottomWorkerMain renders the settings panel while the main thread handles
  * taps and persists changes. Keep every value shared by those two threads
  * atomic; SaveConfig still performs its file I/O on the main thread and never
  * holds a compositor lock while touching the SD card. */
 static _Atomic bool sShowFps;
+static _Atomic int sUiTheme; /* bottom_compact_3ds.inc kCcThemes index */
+/* OPTIONS -> FRAMES, as in ../mzm and ../sm-3ds: PORT_3DS_PACING_* */
+static _Atomic int sFramePacing;
 static _Atomic bool sFollow = true;
 static _Atomic bool sCrests = true;
 static _Atomic bool sFloorReturn = true;
@@ -63,6 +73,7 @@ static int sGpuScissorMode = 1;
  * batch unconditionally: windows and blending come out wrong, but if the
  * missing band appears then the stencil is what was rejecting it. */
 static bool sGpuStencil = true;
+static bool sGpuFade = true;
 /* -1 keeps the built-in choice; 0 or 1 pins the audio worker for an A/B. */
 static int sAudioCore = -1;
 /* -1 keeps core 0; 1 moves the bottom-screen painter off the main thread's core. */
@@ -97,11 +108,6 @@ static bool sAudioDspInterpLinear = true;
  * f0 relative to its output rate -- tune it by ear, not from a datasheet. */
 static bool sSpeakerEq = false;
 static float sSpeakerEqHz = 280.0f;
-/* Frame-path diagnostics. Off by default: Platform3DS_Debug writes each line
- * to the SD card with fopen/fwrite/fclose on the main thread inside the
- * presentation span. The quick dump reports the same counters without adding
- * intermittent gameplay stalls. */
-static bool sFrameLog = false;
 /* Compact Old 3DS upload surfaces (272x160 top, 320x240 bottom RGBA8 instead of
  * 512x256). Cuts the bottom clean-and-transfer from 491520 to 307200 bytes, and
  * that transfer is synchronous, so it shortens a recurring main-thread block on
@@ -128,6 +134,12 @@ static bool sAudioDspPcm = false;
  * reverses that migration once so an existing tmc3ds.ini cannot preserve the
  * broken split-timeline mix. */
 static int sPerformanceProfileVersion;
+#if TMC3DS_DEBUG_TOOLS
+/* debug_switches_3ds.h: the DEBUG tab tools restored at launch. */
+static bool sDebugLogOn = true;
+static bool sDebugLogDirect;
+static bool sDebugFtpOn;
+#endif
 
 enum { PERFORMANCE_PROFILE_VERSION = 2 };
 
@@ -136,32 +148,31 @@ static bool ParseBool(const char* value) {
                              value[0] == 'y' || value[0] == 'Y');
 }
 
-static void SaveConfig(void) {
-    if (!sConfigLoaded) return;
-
-    char temp[sizeof(sConfigPath) + 8];
-    char backup[sizeof(sConfigPath) + 8];
-    snprintf(temp, sizeof(temp), "%s.tmp", sConfigPath);
-    snprintf(backup, sizeof(backup), "%s.bak", sConfigPath);
-
-    FILE* file = fopen(temp, "wb");
-    if (!file) return;
-    fprintf(file, "# The Minish Cap 3DS runtime settings\n");
-    fprintf(file, "performance_profile_version=%d\n", PERFORMANCE_PROFILE_VERSION);
-    fprintf(file, "show_fps=%u\n", sShowFps ? 1u : 0u);
-    fprintf(file, "follow_cam=%u\n", sFollow ? 1u : 0u);
-    fprintf(file, "windcrest_pins=%u\n", sCrests ? 1u : 0u);
-    fprintf(file, "floor_auto_return=%u\n", sFloorReturn ? 1u : 0u);
-    fprintf(file, "hide_top_hud=%u\n", sHideHud ? 1u : 0u);
-    fprintf(file, "hold_to_advance_text=%u\n", sHoldText ? 1u : 0u);
-    fprintf(file, "color_correction=%u\n", sColorCorrection ? 1u : 0u);
-    fprintf(file, "autosave=%u\n", sAutosave ? 1u : 0u);
-    fprintf(file, "widescreen=%u\n", sAspectRatio == PORT_3DS_ASPECT_WIDE ? 1u : 0u);
-    fprintf(file, "screen_aspect=%s\n", ConfigValues3DS_AspectName(sAspectRatio));
-    fprintf(file, "display_style=%s\n", ConfigValues3DS_DisplayName(sDisplayStyle));
-    fprintf(file, "master_volume=%.2f\n", (double)sVolume);
-    fprintf(file, "panel_backdrop=%d\n", sBackdrop);
-    fprintf(file, "turbo_multiplier=%u\n", sTurboMultiplier);
+/* Every persisted setting as "key=value\n" lines, the body of tmc3ds.ini. */
+static size_t FormatConfig(char* out, size_t cap) {
+    size_t used = 0;
+#define APPEND(...)                                                                     \
+    do {                                                                                \
+        int n_ = snprintf(out + used, cap - used, __VA_ARGS__);                        \
+        if (n_ > 0) used = used + (size_t)n_ < cap ? used + (size_t)n_ : cap - 1;      \
+    } while (0)
+    APPEND("performance_profile_version=%d\n", PERFORMANCE_PROFILE_VERSION);
+    APPEND("show_fps=%u\n", sShowFps ? 1u : 0u);
+    APPEND("ui_theme=%d\n", (int)sUiTheme);
+    APPEND("frame_pacing=%d\n", (int)sFramePacing);
+    APPEND("follow_cam=%u\n", sFollow ? 1u : 0u);
+    APPEND("windcrest_pins=%u\n", sCrests ? 1u : 0u);
+    APPEND("floor_auto_return=%u\n", sFloorReturn ? 1u : 0u);
+    APPEND("hide_top_hud=%u\n", sHideHud ? 1u : 0u);
+    APPEND("hold_to_advance_text=%u\n", sHoldText ? 1u : 0u);
+    APPEND("color_correction=%u\n", sColorCorrection ? 1u : 0u);
+    APPEND("autosave=%u\n", sAutosave ? 1u : 0u);
+    APPEND("widescreen=%u\n", sAspectRatio == PORT_3DS_ASPECT_WIDE ? 1u : 0u);
+    APPEND("screen_aspect=%s\n", ConfigValues3DS_AspectName(sAspectRatio));
+    APPEND("display_style=%s\n", ConfigValues3DS_DisplayName(sDisplayStyle));
+    APPEND("master_volume=%.2f\n", (double)sVolume);
+    APPEND("panel_backdrop=%d\n", sBackdrop);
+    APPEND("turbo_multiplier=%u\n", sTurboMultiplier);
 
     /* Round-trip the performance/research switches. SaveConfig parses these
      * but used to omit them, so any Settings change -- or any exit that saves
@@ -170,26 +181,128 @@ static void SaveConfig(void) {
      * very run being measured; `dump-20260820-205902` was diagnosed only by
      * reading the offload counters back out of info.txt. Whatever is parsed
      * must be written. */
-    fprintf(file, "gpu_renderer=%u\n", sGpuRenderer ? 1u : 0u);
-    fprintf(file, "gpu_frame_sync=%u\n", sGpuFrameSync ? 1u : 0u);
-    fprintf(file, "gpu_viewport_offset=%u\n", sGpuViewportOffset ? 1u : 0u);
-    fprintf(file, "gpu_scissor_mode=%d\n", sGpuScissorMode);
-    fprintf(file, "gpu_stencil=%u\n", sGpuStencil ? 1u : 0u);
-    fprintf(file, "audio_core=%d\n", sAudioCore);
-    fprintf(file, "bottom_core=%d\n", sBottomCore);
-    fprintf(file, "bottom_map_skip=%u\n", sBottomMapSkip ? 1u : 0u);
-    fprintf(file, "vblank_phase_lock=%u\n", sVblankPhaseLock ? 1u : 0u);
-    fprintf(file, "audio_dsp_interp_linear=%u\n", sAudioDspInterpLinear ? 1u : 0u);
-    fprintf(file, "speaker_eq=%u\n", sSpeakerEq ? 1u : 0u);
-    fprintf(file, "speaker_eq_hz=%.1f\n", (double)sSpeakerEqHz);
-    fprintf(file, "frame_log=%u\n", sFrameLog ? 1u : 0u);
-    fprintf(file, "compact_upload=%u\n", sCompactUpload ? 1u : 0u);
-    fprintf(file, "app_cpu_limit=%d\n", sAppCpuLimit);
-    fprintf(file, "gpu_static_quad=%u\n", sGpuStaticQuad ? 1u : 0u);
-    fprintf(file, "bottom_rgb565=%u\n", sBottomRgb565 ? 1u : 0u);
-    fprintf(file, "gpu_short_vertices=%u\n", sGpuShortVertices ? 1u : 0u);
-    fprintf(file, "audio_dsp=%u\n", sAudioDsp ? 1u : 0u);
-    fprintf(file, "audio_dsp_pcm=%u\n", sAudioDspPcm ? 1u : 0u);
+    APPEND("gpu_renderer=%u\n", sGpuRenderer ? 1u : 0u);
+    APPEND("gpu_frame_sync=%u\n", sGpuFrameSync ? 1u : 0u);
+    APPEND("gpu_viewport_offset=%u\n", sGpuViewportOffset ? 1u : 0u);
+    APPEND("gpu_scissor_mode=%d\n", sGpuScissorMode);
+    APPEND("gpu_stencil=%u\n", sGpuStencil ? 1u : 0u);
+    APPEND("gpu_fade=%u\n", sGpuFade ? 1u : 0u);
+    APPEND("audio_core=%d\n", sAudioCore);
+    APPEND("bottom_core=%d\n", sBottomCore);
+    APPEND("bottom_map_skip=%u\n", sBottomMapSkip ? 1u : 0u);
+    APPEND("vblank_phase_lock=%u\n", sVblankPhaseLock ? 1u : 0u);
+    APPEND("audio_dsp_interp_linear=%u\n", sAudioDspInterpLinear ? 1u : 0u);
+    APPEND("speaker_eq=%u\n", sSpeakerEq ? 1u : 0u);
+    APPEND("speaker_eq_hz=%.1f\n", (double)sSpeakerEqHz);
+    APPEND("compact_upload=%u\n", sCompactUpload ? 1u : 0u);
+    APPEND("app_cpu_limit=%d\n", sAppCpuLimit);
+    APPEND("gpu_static_quad=%u\n", sGpuStaticQuad ? 1u : 0u);
+    APPEND("bottom_rgb565=%u\n", sBottomRgb565 ? 1u : 0u);
+    APPEND("gpu_short_vertices=%u\n", sGpuShortVertices ? 1u : 0u);
+    APPEND("audio_dsp=%u\n", sAudioDsp ? 1u : 0u);
+    APPEND("audio_dsp_pcm=%u\n", sAudioDspPcm ? 1u : 0u);
+#if TMC3DS_DEBUG_TOOLS
+    APPEND("debug_log=%u\n", sDebugLogOn ? 1u : 0u);
+    APPEND("debug_log_direct=%u\n", sDebugLogDirect ? 1u : 0u);
+    APPEND("debug_ftp=%u\n", sDebugFtpOn ? 1u : 0u);
+#endif
+#undef APPEND
+    return used;
+}
+
+#if TMC3DS_DEBUG_TOOLS
+/* The settings as last written to the SD log, to log only what changed. */
+static char sLoggedConfig[CONFIG_TEXT_CAP];
+
+/* Calls fn(key, old, new) for each line of `now` that differs from `before`
+ * (old is NULL for a key `before` lacks). */
+static void ForEachChange(const char* before, const char* now,
+                          void (*fn)(const char* key, int keyLen, const char* oldValue, int oldLen,
+                                     const char* newValue, int newLen)) {
+    for (const char* line = now; *line;) {
+        const char* eol = strchr(line, '\n');
+        if (!eol) eol = line + strlen(line);
+        const char* eq = memchr(line, '=', (size_t)(eol - line));
+        if (eq) {
+            const int keyLen = (int)(eq - line);
+            const char* oldValue = NULL;
+            int oldLen = 0;
+            for (const char* b = before; *b;) {
+                const char* beol = strchr(b, '\n');
+                if (!beol) beol = b + strlen(b);
+                if (beol - b > keyLen && b[keyLen] == '=' && memcmp(b, line, (size_t)keyLen) == 0) {
+                    oldValue = b + keyLen + 1;
+                    oldLen = (int)(beol - oldValue);
+                    break;
+                }
+                b = *beol ? beol + 1 : beol;
+            }
+            const int newLen = (int)(eol - eq - 1);
+            if (!oldValue || oldLen != newLen || memcmp(oldValue, eq + 1, (size_t)newLen) != 0)
+                fn(line, keyLen, oldValue, oldLen, eq + 1, newLen);
+        }
+        line = *eol ? eol + 1 : eol;
+    }
+}
+
+static void LogChange(const char* key, int keyLen, const char* oldValue, int oldLen, const char* newValue,
+                      int newLen) {
+    if (oldValue)
+        DebugLog_Printf("setting: %.*s %.*s -> %.*s", keyLen, key, oldLen, oldValue, newLen, newValue);
+    else
+        DebugLog_Printf("setting: %.*s = %.*s", keyLen, key, newLen, newValue);
+}
+
+void Port_Config_3DSLogSettings(void) {
+    char text[CONFIG_TEXT_CAP];
+    FormatConfig(text, sizeof(text));
+    /* Several keys per line, under the log's 512-byte line limit. */
+    char line[400];
+    size_t used = 0;
+    for (const char* p = text; *p;) {
+        const char* eol = strchr(p, '\n');
+        if (!eol) eol = p + strlen(p);
+        const size_t len = (size_t)(eol - p);
+        if (used && used + len + 2 > sizeof(line)) {
+            DebugLog_Printf("settings: %.*s", (int)used, line);
+            used = 0;
+        }
+        if (len + 2 < sizeof(line)) {
+            if (used) line[used++] = ' ';
+            memcpy(line + used, p, len);
+            used += len;
+        }
+        p = *eol ? eol + 1 : eol;
+    }
+    if (used) DebugLog_Printf("settings: %.*s", (int)used, line);
+    memcpy(sLoggedConfig, text, sizeof(text));
+}
+
+static void LogConfigChanges(const char* text) {
+    if (!DebugLog_Running()) return;
+    ForEachChange(sLoggedConfig, text, LogChange);
+    snprintf(sLoggedConfig, sizeof(sLoggedConfig), "%s", text);
+}
+#endif
+
+static void SaveConfig(void) {
+    if (!sConfigLoaded) return;
+
+    char text[CONFIG_TEXT_CAP];
+    const size_t textLen = FormatConfig(text, sizeof(text));
+#if TMC3DS_DEBUG_TOOLS
+    LogConfigChanges(text);
+#endif
+
+    char temp[sizeof(sConfigPath) + 8];
+    char backup[sizeof(sConfigPath) + 8];
+    snprintf(temp, sizeof(temp), "%s.tmp", sConfigPath);
+    snprintf(backup, sizeof(backup), "%s.bak", sConfigPath);
+
+    FILE* file = fopen(temp, "wb");
+    if (!file) return;
+    fprintf(file, "# Minish Cap 3DS runtime settings\n");
+    fwrite(text, 1, textLen, file);
 
     /* A synchronous SD flush can stall the 3DS main thread for seconds on
      * every Settings change. The temporary file plus close/rename/backup
@@ -230,11 +343,14 @@ void Port_Config_Load(const char* path) {
             if (strcmp(key, "performance_profile_version") == 0)
                 sPerformanceProfileVersion = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "show_fps") == 0) sShowFps = ParseBool(value);
+            else if (strcmp(key, "ui_theme") == 0) sUiTheme = (int)strtol(value, NULL, 10);
+            else if (strcmp(key, "frame_pacing") == 0) sFramePacing = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "gpu_renderer") == 0) sGpuRenderer = ParseBool(value);
             else if (strcmp(key, "gpu_frame_sync") == 0) sGpuFrameSync = ParseBool(value);
             else if (strcmp(key, "gpu_viewport_offset") == 0) sGpuViewportOffset = ParseBool(value);
             else if (strcmp(key, "gpu_scissor_mode") == 0) sGpuScissorMode = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "gpu_stencil") == 0) sGpuStencil = ParseBool(value);
+            else if (strcmp(key, "gpu_fade") == 0) sGpuFade = ParseBool(value);
             else if (strcmp(key, "audio_core") == 0) sAudioCore = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "bottom_core") == 0) sBottomCore = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "bottom_map_skip") == 0) sBottomMapSkip = ParseBool(value);
@@ -243,7 +359,6 @@ void Port_Config_Load(const char* path) {
                 sAudioDspInterpLinear = ParseBool(value);
             else if (strcmp(key, "speaker_eq") == 0) sSpeakerEq = ParseBool(value);
             else if (strcmp(key, "speaker_eq_hz") == 0) sSpeakerEqHz = strtof(value, NULL);
-            else if (strcmp(key, "frame_log") == 0) sFrameLog = ParseBool(value);
             else if (strcmp(key, "compact_upload") == 0) sCompactUpload = ParseBool(value);
             else if (strcmp(key, "app_cpu_limit") == 0) sAppCpuLimit = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "gpu_static_quad") == 0) sGpuStaticQuad = ParseBool(value);
@@ -269,6 +384,11 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "master_volume") == 0) sVolume = strtof(value, NULL);
             else if (strcmp(key, "panel_backdrop") == 0) sBackdrop = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "turbo_multiplier") == 0) sTurboMultiplier = (unsigned)strtoul(value, NULL, 10);
+#if TMC3DS_DEBUG_TOOLS
+            else if (strcmp(key, "debug_log") == 0) sDebugLogOn = ParseBool(value);
+            else if (strcmp(key, "debug_log_direct") == 0) sDebugLogDirect = ParseBool(value);
+            else if (strcmp(key, "debug_ftp") == 0) sDebugFtpOn = ParseBool(value);
+#endif
         }
         fclose(file);
     }
@@ -298,6 +418,7 @@ bool Port_Config_GpuFrameSync(void) { return sGpuFrameSync; }
 bool Port_Config_GpuViewportOffset(void) { return sGpuViewportOffset; }
 int Port_Config_GpuScissorMode(void) { return sGpuScissorMode; }
 bool Port_Config_GpuStencil(void) { return sGpuStencil; }
+bool Port_Config_GpuFade(void) { return sGpuFade; }
 int Port_Config_AudioCore(void) { return sAudioCore; }
 int Port_Config_BottomCore(void) { return sBottomCore; }
 bool Port_Config_BottomMapSkip(void) { return sBottomMapSkip; }
@@ -305,7 +426,6 @@ bool Port_Config_VblankPhaseLock(void) { return sVblankPhaseLock; }
 bool Port_Config_AudioDspInterpLinear(void) { return sAudioDspInterpLinear; }
 bool Port_Config_SpeakerEq(void) { return sSpeakerEq; }
 float Port_Config_SpeakerEqHz(void) { return sSpeakerEqHz; }
-bool Port_Config_FrameLog(void) { return sFrameLog; }
 bool Port_Config_CompactUpload(void) { return sCompactUpload; }
 int Port_Config_AppCpuLimit(void) { return sAppCpuLimit; }
 bool Port_Config_GpuStaticQuad(void) { return sGpuStaticQuad; }
@@ -320,6 +440,121 @@ bool Port_Config_AudioDsp(void) {
 bool Port_Config_AudioDspPcm(void) {
     return false;
 }
+/* ---- Performance switches for the DEBUG tab (debug_switches_3ds.h) ----
+ * The ini-only knobs above, changeable on the console during play. Every
+ * change is saved like any other setting. `bottom_rgb565` is left out: per
+ * its own note above it turns the bottom screen red. */
+#include "debug_switches_3ds.h"
+
+#if TMC3DS_DEBUG_TOOLS
+bool Port_Config_DebugLogOn(void) { return sDebugLogOn; }
+void Port_Config_SetDebugLogOn(bool on) {
+    if (sDebugLogOn == on) return;
+    sDebugLogOn = on;
+    SaveConfig();
+}
+bool Port_Config_DebugLogDirect(void) { return sDebugLogDirect; }
+void Port_Config_SetDebugLogDirect(bool direct) {
+    if (sDebugLogDirect == direct) return;
+    sDebugLogDirect = direct;
+    SaveConfig();
+}
+bool Port_Config_DebugFtpOn(void) { return sDebugFtpOn; }
+void Port_Config_SetDebugFtpOn(bool on) {
+    if (sDebugFtpOn == on) return;
+    sDebugFtpOn = on;
+    SaveConfig();
+}
+#endif
+
+extern void Port_Audio_3DSRestartThread(void);
+
+static int SwitchValue(int id) {
+    switch (id) {
+        case DEBUG_SW_RENDERER: return sGpuRenderer;
+        case DEBUG_SW_FRAME_SYNC: return sGpuFrameSync;
+        case DEBUG_SW_VBLANK_LOCK: return sVblankPhaseLock;
+        case DEBUG_SW_STATIC_QUAD: return sGpuStaticQuad;
+        case DEBUG_SW_MAP_SKIP: return sBottomMapSkip;
+        case DEBUG_SW_BOTTOM_CORE: return sBottomCore;
+        case DEBUG_SW_AUDIO_CORE: return sAudioCore;
+        case DEBUG_SW_COMPACT_UPLOAD: return sCompactUpload;
+        case DEBUG_SW_CPU_LIMIT: return sAppCpuLimit;
+        default: return 0;
+    }
+}
+
+const char* DebugSwitch_Name(int id) {
+    static const char* const kNames[DEBUG_SW_COUNT] = {
+        "RENDERER", "FRAME SYNC", "VBLANK LOCK", "STATIC QUAD", "MAP SKIP",
+        "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT",
+    };
+    return id >= 0 && id < DEBUG_SW_COUNT ? kNames[id] : "?";
+}
+
+bool DebugSwitch_IsDefault(int id) {
+    static const int kDefaults[DEBUG_SW_COUNT] = { 1, 0, 0, 0, 1, -1, -1, 0, 0 };
+    return id >= 0 && id < DEBUG_SW_COUNT && SwitchValue(id) == kDefaults[id];
+}
+
+void DebugSwitch_Value(int id, char* out, unsigned cap) {
+    const int v = SwitchValue(id);
+    switch (id) {
+        case DEBUG_SW_RENDERER:
+            snprintf(out, cap, "%s", v ? "GPU" : "CPU (TEST)");
+            return;
+        case DEBUG_SW_BOTTOM_CORE:
+            snprintf(out, cap, "%s", v == 1 ? "CORE 1" : "CORE 0");
+            return;
+        case DEBUG_SW_AUDIO_CORE:
+            snprintf(out, cap, "%s", v < 0 ? "AUTO" : (v ? "CORE 1" : "CORE 0"));
+            return;
+        case DEBUG_SW_COMPACT_UPLOAD:
+            snprintf(out, cap, "%s", Platform3DS_IsNew3DS() ? "OLD 3DS ONLY" : (v ? "ON" : "OFF"));
+            return;
+        case DEBUG_SW_CPU_LIMIT:
+            if (v <= 0) snprintf(out, cap, "AUTO %u%%", Platform3DS_Core1TimeLimit());
+            else snprintf(out, cap, "%d%% (%u%%)", v, Platform3DS_Core1TimeLimit());
+            return;
+        default:
+            snprintf(out, cap, "%s", v ? "ON" : "OFF");
+            return;
+    }
+}
+
+void DebugSwitch_Cycle(int id) {
+    switch (id) {
+        case DEBUG_SW_RENDERER: sGpuRenderer = !sGpuRenderer; break;
+        case DEBUG_SW_FRAME_SYNC: sGpuFrameSync = !sGpuFrameSync; break;
+        case DEBUG_SW_VBLANK_LOCK: sVblankPhaseLock = !sVblankPhaseLock; break;
+        case DEBUG_SW_STATIC_QUAD: sGpuStaticQuad = !sGpuStaticQuad; break;
+        case DEBUG_SW_MAP_SKIP: sBottomMapSkip = !sBottomMapSkip; break;
+        case DEBUG_SW_BOTTOM_CORE:
+            sBottomCore = sBottomCore == 1 ? -1 : 1;
+            Platform3DS_RestartBottomWorker();
+            break;
+        case DEBUG_SW_AUDIO_CORE:
+            sAudioCore = sAudioCore < 0 ? 0 : (sAudioCore == 0 ? 1 : -1);
+            Port_Audio_3DSRestartThread();
+            break;
+        case DEBUG_SW_COMPACT_UPLOAD:
+            if (Platform3DS_IsNew3DS()) return;
+            sCompactUpload = !sCompactUpload; /* Port_PPU_PresentFrame takes it */
+            break;
+        case DEBUG_SW_CPU_LIMIT: {
+            static const int kSteps[] = { 0, 80, 70, 50, 30 };
+            int next = 0;
+            for (int i = 0; i < 5; i++)
+                if (kSteps[i] == sAppCpuLimit) next = kSteps[(i + 1) % 5];
+            sAppCpuLimit = next;
+            Platform3DS_ApplyCpuLimit();
+            break;
+        }
+        default: return;
+    }
+    SaveConfig();
+}
+
 u8 Port_Config_WindowScale(void) { return 1; }
 const char* Port_Config_UpscaleMethod(void) { return "nearest"; }
 u64 Port_Config_FrameTimeNs(void) { return 16666667ULL; }
@@ -329,6 +564,13 @@ bool Port_Config_GetDecoupleRender(void) { return false; }
 void Port_Config_SetDecoupleRender(bool on) { (void)on; }
 bool Port_Config_GetShowFps(void) { return sShowFps; }
 void Port_Config_SetShowFps(bool on) { sShowFps = on; SaveConfig(); }
+int Port_Config_GetUiTheme(void) { return sUiTheme; }
+void Port_Config_SetUiTheme(int theme) { sUiTheme = theme; SaveConfig(); }
+int Port_Config_GetFramePacing(void) {
+    int v = sFramePacing;
+    return v >= 0 && v < PORT_3DS_PACING_COUNT ? v : PORT_3DS_PACING_AUTO;
+}
+void Port_Config_SetFramePacing(int pacing) { sFramePacing = pacing; SaveConfig(); }
 bool Port_Config_GetTouchControls(void) { return false; }
 void Port_Config_SetTouchControls(bool on) { (void)on; }
 bool Port_Config_PortSettingsMenuEnabled(void) { return sPortSettings; }
@@ -487,7 +729,7 @@ void Port_Config_SetTurboMultiplier(unsigned multiplier) {
 
 int Port_Config_Get3DSAspectRatio(void) { return (int)sAspectRatio; }
 const char* Port_Config_Get3DSAspectRatioName(void) {
-    static const char* const names[PORT_3DS_ASPECT_COUNT] = { "WIDE", "ORIGINAL", "STRETCH" };
+    static const char* const names[PORT_3DS_ASPECT_COUNT] = { "WIDE", "ORIGINAL" };
     return names[sAspectRatio];
 }
 void Port_Config_Cycle3DSAspectRatio(void) {
@@ -508,6 +750,5 @@ bool Port_Config_3DSFullViewComboEnabled(void) {
      * the following scene latch before any 400x240 geometry is published. */
     const Port3DSAspectRatio aspect = sAspectRatio;
     const Port3DSDisplayStyle style = sDisplayStyle;
-    return Platform3DS_IsNew3DS() && aspect == PORT_3DS_ASPECT_WIDE &&
-           style == PORT_3DS_DISPLAY_PIXEL_PERFECT;
+    return aspect == PORT_3DS_ASPECT_WIDE && style == PORT_3DS_DISPLAY_PIXEL_PERFECT;
 }

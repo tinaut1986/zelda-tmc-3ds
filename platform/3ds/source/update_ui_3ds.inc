@@ -1,5 +1,7 @@
-/* Included by the existing compositor: reuse Minish Cap's runtime-decoded
- * stone plate, red header chip, pale buttons and native message fonts. */
+/* The UPDATE page and its changelog window, in the compact style of
+ * bottom_compact_3ds.inc (cells, 5x7 font). It all lives on the bottom screen;
+ * the top one keeps showing the game. Included by port/port_second_screen.c after
+ * bottom_compact_3ds.inc, whose boxes, colours and text it uses. */
 #include "updater.h"
 #include <ctype.h>
 
@@ -20,79 +22,168 @@ bool Port_SecondScreen_3DS_UpdateOpen(void) {
     return open;
 }
 
-static void UpdateSmallText(const SSurf* s, const char* text, int x, int y, int style) {
-    char label[128];
-    snprintf(label,sizeof(label),"%s",text);
-    for (char* c=label;*c;++c) *c=(char)toupper((unsigned char)*c);
-    text=label;
-    if (!Port_SecondScreenTheme_DrawBigText(s->px, s->w, s->h, s->stride, x, y, 1, style, text))
-        DrawTextStr(s, text, x, y + 4, 1, Port_SecondScreenTheme_Color(SSC_MENU_INK), 0);
+static void UpdateUpper(char* out, size_t cap, const char* text) {
+    snprintf(out, cap, "%s", text);
+    for (char* c = out; *c; ++c) *c = (char)toupper((unsigned char)*c);
 }
 
-static int UpdateTextWidth(const char* text) {
-    char label[128];
-    snprintf(label,sizeof(label),"%s",text);
-    for (char* c=label;*c;++c) *c=(char)toupper((unsigned char)*c);
-    text=label;
-    int w = Port_SecondScreenTheme_BigTextWidth(text, 1);
-    return w ? w : TextWidthPx(text, 1);
-}
-
-static void UpdateCenteredText(const SSurf* s, const char* text, int cx, int y) {
-    UpdateSmallText(s, text, cx - UpdateTextWidth(text)/2, y, SS_TEXT_NAVY);
-}
-
-static void UpdateButton(const SSurf* s, TargetList* tl, float x0, float y0,
-                          float x1, float y1, const char* text, int action, bool pressed,
-                          float u, int ts) {
-    DrawMenuButton(s, x0, y0, x1, y1, "", pressed, 0, u, ts);
-    UpdateSmallText(s, text, (int)((x0+x1-UpdateTextWidth(text))/2),
-                    (int)((y0+y1)/2-8), SS_TEXT_NAVY);
-    if (action) AddTarget(tl, x0, y0, x1, y1, action, 0);
-}
-
-static void PaintUpdatePanel(const SSurf* s, TargetList* tl, float x0, float y0,
-                              float x1, float y1, float u, int ts) {
-    UpdateStatus st; Updater_GetStatus(&st);
-    bool confirm, notes;
-    UI_LOCK(); confirm = sUpdateConfirm; notes = sUpdateNotes; UI_UNLOCK();
-    float row = 26, gap = 4;
-    int cx = (int)((x0+x1)/2);
-    char text[96];
-    snprintf(text, sizeof(text), "CHANNEL: %s", st.prerelease ? "PRE-RELEASE" : "STABLE");
-    UpdateButton(s, tl, x0,y0,x1,y0+row,text,SS_ACT_UPDATE_CHANNEL,false,u,ts);
-    UpdateButton(s, tl, x0,y0+row+gap,x1,y0+2*row+gap,
-                 st.version[0] ? st.version : "NO RELEASE SELECTED",SS_ACT_UPDATE_RELEASE,notes,u,ts);
-    const char* message = confirm ? "DOWNLOAD AND INSTALL" : st.message;
-    if (!message[0]) message = "CHECK FOR UPDATE";
-    // Long network errors are split at words inside the actual panel width.
-    char first[80], second[80] = ""; snprintf(first,sizeof(first),"%s",message);
-    if (UpdateTextWidth(first) > x1-x0) {
-        char* split = strrchr(first,' ');
-        while (split && UpdateTextWidth(first) > x1-x0) {
-            *split = 0;
-            snprintf(second,sizeof(second),"%s",message+strlen(first)+1);
-            if (UpdateTextWidth(first) <= x1-x0) break;
-            split = strrchr(first,' ');
+/* Words of `text` broken into lines of at most `cols` characters. */
+static unsigned UpdateWrap(const char* text, unsigned cols, char (*lines)[64], unsigned maxLines) {
+    unsigned n = 0;
+    while (*text && n < maxLines) {
+        while (*text == ' ') ++text;
+        size_t len = strlen(text);
+        size_t take = len < cols ? len : cols;
+        if (take < len) {
+            size_t cut = take;
+            while (cut > 0 && text[cut] != ' ') --cut;
+            if (cut > 0) take = cut;
         }
+        if (take == 0) break;
+        memcpy(lines[n], text, take);
+        lines[n][take] = 0;
+        ++n;
+        text += take;
     }
-    UpdateCenteredText(s,first,cx,(int)(y0+60));
-    if (second[0]) UpdateCenteredText(s,second,cx,(int)(y0+75));
-    else UpdateCenteredText(s,confirm ? "UNSAVED PROGRESS IS LOST" :
-                              notes ? "CHANGELOG ON TOP SCREEN" : "TAP RELEASE FOR CHANGELOG",cx,(int)(y0+78));
-    if (notes && !confirm && !Updater_Busy()) {
-        UpdateButton(s,tl,x0,y0+99,x0+68,y0+120,"PREV",SS_ACT_UPDATE_PREV,false,u,ts);
-        UpdateButton(s,tl,x1-68,y0+99,x1,y0+120,"NEXT",SS_ACT_UPDATE_NEXT,false,u,ts);
+    return n;
+}
+
+enum { UPDATE_NOTE_COLS = 51, UPDATE_NOTE_MAX = 512 };
+static char sNoteLines[UPDATE_NOTE_MAX][UPDATE_NOTE_COLS + 1];
+static unsigned sNoteCount, sNoteRevision = UINT32_MAX;
+static bool sNoteLoaded;
+
+/* The release's notes as wrapped lines (a bullet's continuation indented),
+ * rebuilt when the updater's data changes. */
+static void UpdateLoadNotes(const UpdateStatus* st) {
+    if (sNoteLoaded && sNoteRevision == st->revision) return;
+    static char body[12289], formatted[UPDATE_NOTE_MAX][43];
+    Updater_GetNotes(body, sizeof(body));
+    const unsigned n = Update_FormatNotes(body, formatted, UPDATE_NOTE_MAX);
+    sNoteCount = 0;
+    char para[512];
+    para[0] = 0;
+    for (unsigned i = 0; i <= n && sNoteCount < UPDATE_NOTE_MAX; ++i) {
+        const char* line = i < n ? formatted[i] : "";
+        while (*line == ' ') ++line;
+        const bool bullet = line[0] == '-' && line[1] == ' ';
+        if (para[0] && (!line[0] || bullet)) {
+            UpdateUpper(para, sizeof(para), para);
+            const bool listed = para[0] == '-';
+            char wrapped[24][64];
+            const unsigned m = UpdateWrap(para, UPDATE_NOTE_COLS - (listed ? 2u : 0u), wrapped, 24);
+            for (unsigned k = 0; k < m && sNoteCount < UPDATE_NOTE_MAX; ++k)
+                snprintf(sNoteLines[sNoteCount++], sizeof(sNoteLines[0]), "%s%s", listed && k ? "  " : "", wrapped[k]);
+            para[0] = 0;
+        }
+        if (!line[0]) {
+            if (i < n && sNoteCount < UPDATE_NOTE_MAX) sNoteLines[sNoteCount++][0] = 0;
+            continue;
+        }
+        if (para[0]) strncat(para, " ", sizeof(para) - strlen(para) - 1);
+        strncat(para, line, sizeof(para) - strlen(para) - 1);
     }
-    if (st.state == UPDATE_DOWNLOADING || st.state == UPDATE_VERIFYING || st.state == UPDATE_INSTALLING) {
-        FillRect(s,(int)x0,(int)(y0+103),(int)x1,(int)(y0+111),Port_SecondScreenTheme_Color(SSC_MENU_STONE_DARK));
-        FillRect(s,(int)x0,(int)(y0+103),(int)(x0+(x1-x0)*st.progress/100),(int)(y0+111),
-                 Port_SecondScreenTheme_Color(SSC_RUPEE_GREEN));
+    sNoteRevision = st->revision;
+    sNoteLoaded = true;
+}
+
+/* The changelog window: the lines, paged with PREV / NEXT, CLOSE back to the page. */
+static void PaintUpdateNotes(const SSurf* s, TargetList* tl, const UpdateStatus* st) {
+    const int32_t top = CcContentTop(), bottom = CcContentBottom(s->h), w = s->w - 2 * CC_MARGIN;
+    FillRect(s, 0, top, s->w, bottom, CC_BG);
+    UpdateLoadNotes(st);
+    const int32_t listY = top + 2 + 16 + CC_GAP, buttonsY = bottom - 24 - 2;
+    const unsigned perPage = (unsigned)(buttonsY - CC_GAP - listY - 6) / 10u;
+    unsigned pages = (sNoteCount + perPage - 1) / perPage;
+    if (!pages) pages = 1;
+    unsigned page;
+    UI_LOCK();
+    if (sUpdatePage >= pages) sUpdatePage = pages - 1;
+    page = sUpdatePage;
+    sUpdatePages = pages;
+    UI_UNLOCK();
+
+    char head[80], upper[48];
+    UpdateUpper(upper, sizeof(upper), st->version);
+    snprintf(head, sizeof(head), "%s %s", Port_Text_Tr("CHANGELOG"), upper);
+    CBox(s, CC_MARGIN, top + 2, w, 16, CC_BAR, CC_TAB_EDGE);
+    CTextCentered(s, s->w / 2, top + 6, CC_TEXT, head);
+    CBox(s, CC_MARGIN, listY, w, buttonsY - CC_GAP - listY, CC_CELL, CC_CELL_EDGE);
+    for (unsigned i = page * perPage; i < sNoteCount && i < (page + 1) * perPage; ++i)
+        CText(s, CC_MARGIN + 6, listY + 4 + (int32_t)(i - page * perPage) * 10, CC_TEXT, sNoteLines[i]);
+    CButton(s, tl, CC_MARGIN, buttonsY, 64, 24, "PREV", page ? CC_TEXT : CC_FAINT, SS_ACT_UPDATE_PREV, 0);
+    CButton(s, tl, CC_MARGIN + w - 64, buttonsY, 64, 24, "NEXT", page + 1 < pages ? CC_TEXT : CC_FAINT,
+            SS_ACT_UPDATE_NEXT, 0);
+    char foot[32];
+    snprintf(foot, sizeof(foot), "%s %u %s %u", Port_Text_Tr("PAGE"), page + 1, Port_Text_Tr("OF"), pages);
+    CButton(s, tl, CC_MARGIN + 64 + CC_GAP, buttonsY, w - 128 - 2 * CC_GAP, 24, foot, CC_DIM, SS_ACT_UPDATE_RELEASE, 0);
+}
+
+static void PaintUpdatePanel(const SSurf* s, TargetList* tl) {
+    UpdateStatus st;
+    Updater_GetStatus(&st);
+    bool confirm, notes;
+    unsigned page, pages;
+    UI_LOCK();
+    confirm = sUpdateConfirm;
+    notes = sUpdateNotes;
+    page = sUpdatePage;
+    pages = sUpdatePages;
+    UI_UNLOCK();
+    if (notes && !confirm) {
+        PaintUpdateNotes(s, tl, &st);
+        return;
     }
-    const char* action = confirm ? "INSTALL UPDATE" : st.state == UPDATE_INSTALLING ? "PLEASE WAIT" :
-        Updater_Busy() ? "CANCEL" : st.state == UPDATE_AVAILABLE ? "DOWNLOAD UPDATE" :
-        st.state == UPDATE_DONE ? "UPDATE INSTALLED" : "CHECK FOR UPDATE";
-    UpdateButton(s,tl,x0,y1-26,x1,y1,action,SS_ACT_UPDATE_ACTION,confirm,u,ts);
+    const bool busy = Updater_Busy();
+    const int32_t top = CcContentTop();
+    const int32_t bottom = CcContentBottom(s->h);
+    const int32_t w = s->w - 2 * CC_MARGIN;
+    FillRect(s, 0, top, s->w, bottom, CC_BG);
+
+    int32_t y = top + 2;
+    int32_t x, cw;
+    char text[96];
+    CColumn(s->w, 2, 0, 1, &x, &cw);
+    CCell(s, tl, x, y, cw, CC_CELL_H, "CHANNEL", st.prerelease ? "+ BETAS" : "STABLE", CC_TEXT, SS_ACT_UPDATE_CHANNEL, 0);
+    CColumn(s->w, 2, 1, 1, &x, &cw);
+    UpdateUpper(text, sizeof(text), st.version[0] ? st.version : Port_Text_Tr("NONE"));
+    CCell(s, tl, x, y, cw, CC_CELL_H, "RELEASE", text, notes ? CC_ACCENT : CC_TEXT, SS_ACT_UPDATE_RELEASE, 0);
+    y += CC_CELL_H + CC_GAP;
+
+    /* Status: what the updater says, or the question while a install waits. */
+    const char* message = confirm ? "DOWNLOAD AND INSTALL THIS VERSION?" : st.message;
+    if (!message[0]) message = "PRESS CHECK TO LOOK FOR A NEW VERSION";
+    UpdateUpper(text, sizeof(text), Port_Text_Tr(message));
+    char lines[4][64];
+    unsigned n = UpdateWrap(text, (unsigned)(w - 10) / kUiAdvance, lines, 3);
+    uint32_t color = st.state == UPDATE_ERROR ? CC_BAD : st.state == UPDATE_AVAILABLE || confirm ? CC_WARN
+                     : st.state == UPDATE_DONE || st.state == UPDATE_CURRENT ? CC_GOOD : CC_TEXT;
+    const int32_t statusH = 44;
+    CBox(s, CC_MARGIN, y, w, statusH, CC_CELL, CC_TAB);
+    CText(s, CC_MARGIN + 4, y + 4, CC_DIM, "STATUS");
+    for (unsigned i = 0; i < n; ++i) CText(s, CC_MARGIN + 4, y + 14 + (int32_t)i * 10, color, lines[i]);
+    y += statusH + CC_GAP;
+
+    const bool working = st.state == UPDATE_DOWNLOADING || st.state == UPDATE_VERIFYING || st.state == UPDATE_INSTALLING;
+    if (working) {
+        FillRect(s, CC_MARGIN, y, CC_MARGIN + w, y + 8, CC_CELL_EDGE);
+        FillRect(s, CC_MARGIN + 1, y + 1, CC_MARGIN + w - 1, y + 7, CC_BAR);
+        int32_t fill = (w - 2) * (int32_t)(st.progress > 100 ? 100 : st.progress) / 100;
+        FillRect(s, CC_MARGIN + 1, y + 1, CC_MARGIN + 1 + fill, y + 7, CC_GOOD);
+        y += 8 + CC_GAP;
+    }
+
+    CTextCentered(s, s->w / 2, y + 6, CC_FAINT,
+                  confirm ? "UNSAVED PROGRESS IS LOST" : "TAP RELEASE FOR THE CHANGELOG");
+
+    /* Back and the one action. */
+    const int32_t by = bottom - 26;
+    CButton(s, tl, CC_MARGIN, by, 70, 24, "BACK", CC_TEXT, SS_ACT_SETTINGS_BACK, SS_SETTINGS_ROOT);
+    const char* action = confirm ? "INSTALL UPDATE" : st.state == UPDATE_INSTALLING ? "PLEASE WAIT"
+                         : busy ? "CANCEL" : st.state == UPDATE_AVAILABLE ? "DOWNLOAD UPDATE"
+                         : st.state == UPDATE_DONE ? "UPDATE INSTALLED" : "CHECK FOR UPDATE";
+    CButton(s, tl, CC_MARGIN + 70 + CC_GAP, by, w - 70 - CC_GAP, 24, action,
+            confirm ? CC_WARN : CC_TEXT, SS_ACT_UPDATE_ACTION, 0);
 }
 
 static bool HandleUpdateTap(int action, int arg) {
@@ -101,8 +192,12 @@ static bool HandleUpdateTap(int action, int arg) {
     if (st.state == UPDATE_INSTALLING || st.state == UPDATE_DONE) return true;
     bool busy = Updater_Busy();
     if (action == SS_ACT_SETTINGS_BACK) {
-        UI_LOCK(); bool confirm = sUpdateConfirm; sUpdateConfirm = false; UI_UNLOCK();
-        if (confirm) return true;
+        UI_LOCK();
+        bool confirm = sUpdateConfirm, notes = sUpdateNotes;
+        sUpdateConfirm = false;
+        sUpdateNotes = false;
+        UI_UNLOCK();
+        if (confirm || notes) return true;
         Updater_Cancel();
         if (busy) return true; // Wait for the worker before resuming the game.
         UpdateUI_Reset();
@@ -126,7 +221,10 @@ static bool HandleUpdateTap(int action, int arg) {
         case SS_ACT_UPDATE_CHANNEL:
             UpdateUI_Reset(); Updater_SetChannel(!st.prerelease); break;
         case SS_ACT_UPDATE_RELEASE:
-            if (st.version[0]) { UI_LOCK(); sUpdateNotes = true; sUpdatePage = 0; UI_UNLOCK(); }
+            UI_LOCK();
+            if (sUpdateNotes) sUpdateNotes = false;
+            else if (st.version[0]) { sUpdateNotes = true; sUpdatePage = 0; }
+            UI_UNLOCK();
             break;
         case SS_ACT_UPDATE_PREV:
             UI_LOCK(); if (sUpdatePage) --sUpdatePage; UI_UNLOCK(); break;
@@ -134,65 +232,7 @@ static bool HandleUpdateTap(int action, int arg) {
             UI_LOCK(); if (sUpdatePage+1 < sUpdatePages) ++sUpdatePage; UI_UNLOCK(); break;
         default: return true;
     }
+    (void)arg;
     return true;
 }
 
-/* Main-thread top painter. Theme caches have been initialized before either
- * screen worker starts; the top view reads only their immutable art. */
-bool Port_SecondScreen_3DS_PaintUpdateTop(uint32_t* pixels, int stride) {
-    if (!Port_SecondScreen_3DS_UpdateOpen()) return false;
-    UpdateStatus st; Updater_GetStatus(&st);
-    bool notes; unsigned page;
-    UI_LOCK(); notes = sUpdateNotes; page = sUpdatePage; UI_UNLOCK();
-    static unsigned paintedRevision = UINT32_MAX, paintedPage = UINT32_MAX;
-    static bool paintedNotes;
-    if (paintedRevision == st.revision && paintedPage == page && paintedNotes == notes) return false;
-    paintedRevision=st.revision; paintedPage=page; paintedNotes=notes;
-    static char lines[512][43];
-    static unsigned count, revision = UINT32_MAX;
-    static bool lastNotes;
-    if (revision != st.revision || notes != lastNotes) {
-        static char body[12289], formatted[512][43];
-        if (notes && st.version[0]) Updater_GetNotes(body,sizeof(body));
-        else snprintf(body,sizeof(body),"Installed: v%s\n\n%s\n\nSelect a release below to read its changelog.\nChoose Stable or Pre-release to check that channel.",TMC_PORT_VERSION,st.message);
-        unsigned n = Update_FormatNotes(body,formatted,512);
-        count = 0;
-        for (unsigned i=0; i<n && count<512; i++) {
-            const char* text = formatted[i];
-            do {
-                size_t take = strlen(text);
-                char part[43]; snprintf(part,sizeof(part),"%s",text);
-                while (take && UpdateTextWidth(part)>354) part[--take]=0;
-                if (take<strlen(text)) {
-                    char* space = strrchr(part,' ');
-                    if (space && space!=part) { take = space-part; part[take]=0; }
-                }
-                if (!take && *text) { take=1; part[0]=*text; part[1]=0; }
-                snprintf(lines[count++],43,"%s",part);
-                text += take; while (*text==' ') ++text;
-            } while (*text && count<512);
-        }
-        revision=st.revision; lastNotes=notes;
-    }
-    unsigned pages = (count+8)/9; if (!pages) pages=1;
-    if (page>=pages) page=pages-1;
-    UI_LOCK(); sUpdatePages=pages; sUpdatePage=page; UI_UNLOCK();
-    SSurf s={pixels,400,240,stride};
-    Port_SecondScreenTheme_DrawBackdrop(pixels,400,240,stride,0,0,400,240,2);
-    Port_SecondScreenTheme_DrawPlate(pixels,400,240,stride,4,4,392,232,2);
-    char title[80]; snprintf(title,sizeof(title),notes ? "CHANGELOG %s" : "UPDATE",st.version);
-    for(char* c=title;*c;++c) *c=(char)toupper((unsigned char)*c);
-    DrawPanelHeaderChip(&s,200,14,title,1,1.0f/3);
-    Port_SecondScreenTheme_DrawWell(pixels,400,240,stride,17,47,366,165,1);
-    for (unsigned i=page*9;i<count && i<(page+1)*9;i++)
-        UpdateSmallText(&s,lines[i],23,49+(i-page*9)*18,SS_TEXT_INK);
-    char footer[64]; snprintf(footer,sizeof(footer),"PAGE %u OF %u",page+1,pages);
-    const int footerW=UpdateTextWidth(footer)+24;
-    const int footerY=211, footerH=24;
-    DrawMenuButton(&s,200-footerW/2,footerY,200+(footerW+1)/2,footerY+footerH,"",0,0,1.f/3,1);
-    // The Settings banner font has visible ink on rows 2..14. Center that
-    // thirteen-pixel band, rather than the full sixteen-pixel glyph cell.
-    UpdateSmallText(&s,footer,200-UpdateTextWidth(footer)/2,
-                    footerY+(footerH-13)/2-2,SS_TEXT_NAVY);
-    return true;
-}

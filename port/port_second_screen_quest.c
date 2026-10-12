@@ -827,6 +827,29 @@ static void DrawGroup(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stri
     }
 }
 
+/* One of the collection wells' art (0 bag, 1 heart pieces with its n/4, 2 sword
+ * techniques, 3 medal or shells) stamped into the box, without the well or
+ * the screen around it. 0 when that art is not decoded yet or the well is
+ * empty. */
+int Port_SecondScreenQuest_DrawCollectionCell(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                              int idx, int32_t x, int32_t y, int32_t w, int32_t h,
+                                              const SecondScreenSnapshot* snap) {
+    QuestCell c = CollectionCell(idx, snap);
+    CellInk ink;
+    if (c.skill) {
+        ink = RenderSkillCell(c.frame, c.count);
+    } else if (c.item != 0) {
+        ink = RenderItemCell(c.item);
+    } else if (c.frame != 0) {
+        ink = RenderFrameCell(c.frame);
+    } else {
+        return 0;
+    }
+    if (ink.w <= 0 || ink.h <= 0) return 0;
+    StampCell(pixels, bufW, bufH, stride, ink, x, y, w, h);
+    return 1;
+}
+
 int Port_SecondScreenQuest_Draw(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
                                 int32_t dstX, int32_t dstY, int32_t dstW, int32_t dstH,
                                 const SecondScreenSnapshot* snap, uint32_t tick,

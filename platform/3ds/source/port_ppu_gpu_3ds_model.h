@@ -6,8 +6,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-static inline bool PpuGpu3DS_ShouldUse(bool isNew3DS, bool initialized, bool disabled) {
-    return !isNew3DS && initialized && !disabled;
+/* The GPU renderer draws every frame on both models (owner's rule, 2026-10-11:
+ * everything goes through the GPU). Upstream kept it to the Old 3DS. What it
+ * cannot draw yet falls back to the software PPU for that frame: the New 3DS
+ * Full View layouts (400x240 outdoors, 200x120 at 2x indoors), PLAN P3.4. */
+static inline bool PpuGpu3DS_ShouldUse(bool initialized, bool disabled, bool fullView) {
+    (void)fullView; /* PLAN P3.4: Full View too */
+    return initialized && !disabled;
 }
 
 enum {
@@ -100,8 +105,57 @@ typedef struct PpuGpu3DSRetainedMap {
     bool valid;
 } PpuGpu3DSRetainedMap;
 
+/* A background's view ring: the tiles the view shows, decoded in place into a
+ * texture of their own, so the layer is drawn as one quad per band instead of
+ * one per 8x8 tile. The texture holds the BG's 64 x 32 tile map transposed
+ * (map column = texture row) so a column of cells, the thing a horizontal
+ * scroll replaces, is contiguous in memory; the GPU's REPEAT wrap makes it a
+ * ring in both directions. Cell (column A, row R) lives at
+ * (A & 63) * 32 + (R & 31), 64 pixels each, Morton ordered. */
+enum {
+    PPU_GPU3DS_RING_COLS = 64,
+    PPU_GPU3DS_RING_ROWS = 32,
+    PPU_GPU3DS_RING_CELLS = PPU_GPU3DS_RING_COLS * PPU_GPU3DS_RING_ROWS,
+    PPU_GPU3DS_RING_TEX_WIDTH = PPU_GPU3DS_RING_ROWS * 8,
+    PPU_GPU3DS_RING_TEX_HEIGHT = PPU_GPU3DS_RING_COLS * 8,
+    PPU_GPU3DS_RING_CHUNK = 256,
+    PPU_GPU3DS_RING_CHUNKS = 256,
+};
+
+typedef struct PpuGpu3DSRing {
+    /* Texture memory, owned by the platform layer; NULL leaves the layer on
+     * the per-tile path. */
+    uint16_t* pixels;
+    /* Per cell: the map entry, the low bits of its palette generation and a
+     * valid bit (0 = empty), compared as one word. */
+    uint32_t key[PPU_GPU3DS_RING_CELLS];
+    /* What each 256-byte chunk of character data held when the cells that
+     * sample it were last decoded. */
+    uint32_t chunkDigest[PPU_GPU3DS_RING_CHUNKS];
+    uint32_t charBase;
+    /* Chunks below this (from charBase's) have been sampled by a cell, so
+     * only they are watched for change. */
+    unsigned chunkEnd;
+    bool bpp8, contextValid;
+    /* Cells written since the platform last flushed them. */
+    uint32_t dirtyFirst, dirtyLast;
+    bool dirty;
+} PpuGpu3DSRing;
+
+enum { PPU_GPU3DS_MEMO_SIZE = 512, PPU_GPU3DS_RING_MEMO_SIZE = 1024 };
+
 typedef struct PpuGpu3DSCache {
     PpuGpu3DSCacheEntry entries[PPU_GPU3DS_SLOT_COUNT];
+    /* Tiles already looked up in this frame: VRAM and the palettes cannot
+     * change within a frame and a slot used in it is never evicted or
+     * refreshed in it, so a repeat lookup can skip the bucket walk, the
+     * 32-byte compare and the LRU move. Valid while memoEpoch matches. */
+    struct {
+        PpuGpu3DSTileKey key;
+        uint16_t slot;
+        uint32_t epoch;
+    } memo[PPU_GPU3DS_MEMO_SIZE];
+    uint32_t memoEpoch;
     uint16_t buckets[PPU_GPU3DS_CACHE_BUCKETS];
     /* Slots decoded since the last upload, so the backend flushes only what
      * changed rather than walking every slot. */
@@ -134,6 +188,22 @@ typedef struct PpuGpu3DSCache {
     /* Raised when every slot is already claimed by the frame being built. */
     bool exhausted;
     PpuGpu3DSRetainedMap retained[MODE1_GBA_BG_COUNT];
+    /* Two per background: [bg * 2] holds the entries of its VRAM map, [bg * 2 + 1]
+     * those of the shadow tilemap (columns past x=240, or all of them in Full
+     * View). */
+    PpuGpu3DSRing ring[MODE1_GBA_BG_COUNT * 2];
+    /* Character-data chunk digests of the frame being built, shared by the
+     * rings (VRAM does not change while a frame is built). */
+    uint32_t chunkDigest[PPU_GPU3DS_RING_CHUNKS];
+    uint32_t chunkDigestStamp[PPU_GPU3DS_RING_CHUNKS];
+    uint32_t ringStamp;
+    /* Cells decoded this frame, by what they were decoded from: a screen of
+     * grass names the same few tiles in the same bank over and over, and a
+     * fade (every bank changes every frame) re-decodes them all. A hit copies
+     * the finished cell instead of decoding it again. */
+    struct PpuGpu3DSRingMemo {
+        uint32_t stamp, key, ctx;
+    } ringMemo[PPU_GPU3DS_RING_MEMO_SIZE];
     uint32_t retainedVertices, retainedIndices;
     /* A 64-bit digest of those ranges rather than a copy of them. The compare
      * then reads VRAM only -- half the traffic of matching two buffers -- and
@@ -160,9 +230,28 @@ typedef struct PpuGpu3DSFrameView {
     int wsHudRightAnchor, wsHudRightNativeX;
     int wsMsgShift, wsMsgX0, wsMsgX1, wsMsgY0, wsMsgY1;
     bool bg3Repeat;
+    /* Full View (Wide + Pixel Perfect): the shadow tilemaps cover the whole
+     * view from x=0, not only the columns past 240 (virtuappu_mode1_ws_full_view). */
+    bool wsFullView;
+    /* OAM Y at or past objYWrap, or flagged in objYNegative, is above the top
+     * (y - 256): the frame's logical height, as mode1.c's
+     * mode1_obj_y_wrap_threshold, and the port's per-entry metadata. */
+    int objYWrap;
+    const uint8_t* objYNegative;
     bool objClipEnable;
     const uint8_t* objClipMark;
     int objClipY;
+    /* A uniform screen fade the renderer applies itself (docs/gpu-fade.md):
+     * `memory`'s palettes are then the unfaded ones and the finished picture is
+     * blended toward grey `fadeLevel` by fadeWeight/255. 0 weight: none. */
+    uint8_t fadeWeight, fadeLevel;
+    /* BG3 is driven by HBlank DMA (ripples, dissolves) in a view bigger than the
+     * GBA's 240x160: the software PPU then draws it only in that native canvas,
+     * centred in the view, sampling source line = line - top
+     * (mode1_bg3_native_bounds_active). */
+    bool bg3NativeBounds;
+    /* BG3HOFS before any HBlank DMA step (virtuappu_mode1_bg3_hofs_base), -1 unknown. */
+    int bg3HofsBase;
 } PpuGpu3DSFrameView;
 
 typedef struct PpuGpu3DSInterval {
@@ -217,6 +306,8 @@ typedef struct PpuGpu3DSBatch {
     uint8_t effect, eva, evb, evy, objectIndex;
     uint16_t color;
     bool objWindow, semiTransparent;
+    /* 0 samples the tile atlas; 1 + n samples view ring n (bg * 2 + variant). */
+    uint8_t texture;
     /* Added to every vertex position by the shader. Zero except for
      * background batches that share one map-space copy of the tiles. */
     float offsetX, offsetY;
@@ -314,21 +405,39 @@ typedef enum PpuGpu3DSPhase {
      * re-emitted quads or the re-decoded tiles decides which fix is worth
      * making. */
     PPU_GPU3DS_PHASE_DECODE,
+    PPU_GPU3DS_PHASE_RINGDIGEST,
+    PPU_GPU3DS_PHASE_RINGCELLS,
     PPU_GPU3DS_PHASE_COUNT
 } PpuGpu3DSPhase;
 #ifdef PPU_GPU3DS_PROFILE
 extern double gPpuGpu3DSPhase[PPU_GPU3DS_PHASE_COUNT];
+extern uint32_t gPpuGpu3DSLastBands, gPpuGpu3DSLastVertices, gPpuGpu3DSLastBatches;
 #endif
 
+extern uint32_t gPpuGpu3DSRingWhy[4];
+extern uint32_t gPpuGpu3DSRingCells, gPpuGpu3DSRingStale, gPpuGpu3DSRingMemoHits;
+extern volatile uint8_t gPpuGpu3DSRingDisable, gPpuGpu3DSRingMemoDisable;
+extern uint32_t gPpuGpu3DSBankChanges[16];
 void PpuGpu3DS_SetMapSpaceEnabled(bool enabled);
+/* Gives view ring `index` (bg * 2 + variant) its storage in `pixels` (256 x 512 RGBA5551, 256 KiB); NULL takes it away. */
+void PpuGpu3DS_RingSetStorage(PpuGpu3DSCache* cache, unsigned index, uint16_t* pixels);
+/* The byte range of the ring's pixels written since the last call, for the
+ * platform to flush; false when nothing was. */
+bool PpuGpu3DS_RingTakeDirty(PpuGpu3DSCache* cache, unsigned index, size_t* offset, size_t* bytes);
+enum { PPU_GPU3DS_RING_COUNT = MODE1_GBA_BG_COUNT * 2 };
 void PpuGpu3DS_CacheInit(PpuGpu3DSCache* cache);
 void PpuGpu3DS_CacheClearDirty(PpuGpu3DSCache* cache);
 void PpuGpu3DS_CacheBeginFrame(PpuGpu3DSCache* cache, const uint16_t* bgPalette,
                                const uint16_t* objPalette, uint32_t frame);
+/* CacheTile remembers this frame's lookups (PpuGpu3DSCache.memo), which
+ * holds because VRAM and the palettes do not change while a frame is built.
+ * Anything that changes them between two lookups of one frame calls this. */
+void PpuGpu3DS_CacheForgetLookups(PpuGpu3DSCache* cache);
 bool PpuGpu3DS_CacheTile(PpuGpu3DSCache* cache, const uint8_t* vram, PpuGpu3DSTileKey key,
                          uint16_t* atlas, uint16_t* outSlot);
 uint8_t PpuGpu3DS_MortonIndex(unsigned x, unsigned y);
 uint16_t PpuGpu3DS_PackRgba5551(uint16_t gbaColor, bool opaque);
+void PpuGpu3DS_SetColorCorrection(bool enabled);
 uint16_t PpuGpu3DS_PackAbgr8888(uint32_t abgr);
 int32_t PpuGpu3DS_AffineSample(int32_t reference, int16_t coefficient,
                                int screenCoordinate);

@@ -1,3 +1,14 @@
+# The Minish Cap 3DS (tinaut1986 fork)
+
+> This is a fork of [EstebanPdN/zelda-tmc-3ds](https://github.com/EstebanPdN/zelda-tmc-3ds)
+> with its own version line (`v0.1.0` onwards), aimed at smooth 60 fps on both
+> New 3DS and Old 3DS, a wide mode that fills the top screen, and on-console debug
+> tools. It installs as a separate app, **Minish Cap 3DS**, and reads its ROM and
+> saves from `sdmc:/3ds/Minish Cap 3DS/` (not upstream's `The Minish Cap 3DS`
+> folder), so both can be installed side by side. Downloads are on this
+> repository's [releases](https://github.com/tinaut1986/zelda-tmc-3ds/releases).
+> The rest of this README is upstream's.
+
 # The Minish Cap 3DS
 
 <img width="1672" height="941" alt="The Minish Cap 3DS" src="https://github.com/user-attachments/assets/db99e777-12a2-4222-86c3-7c8f14062586" />
@@ -33,7 +44,7 @@ https://discord.gg/zy8BqH5ss
 * Three display styles: Blur, Bilinear, and Pixel Perfect.
 * On New Nintendo 3DS, the existing Wide + Pixel Perfect combination enables
   experimental Full View: compatible outdoor rooms render at 400x240, while
-  supported interiors use a centered 200x120 view scaled exactly 2x.
+  interiors keep the same 1x pixel size as the rest of the game.
 * In-app updates with Stable and Pre-release channels, top-screen changelogs, and verified CIA/3DSX installation.
 * Native stereo audio, persistent settings, reliable save handling, FPS tools, and diagnostic dumps for bug reports.
 
@@ -104,34 +115,17 @@ Miscellaneous options > Dump DSP firmware
 
 ## Diagnostics
 
-If you encounter a crash, graphical bug, performance problem, or anything unusual, press:
+Debug builds (the Beta releases) have a DEBUG tab on the bottom screen: an SD log, a frame-time
+recorder, GPU CHECK and a SCREEN DUMP. There is no button chord. A screen dump writes
+numbered `debug/tmc-dump-NNNN-*` files (screenshots, memories, runtime state, performance data)
+under:
 
 ```text
-L + R + A
+sdmc:/3ds/Minish Cap 3DS/debug/
 ```
 
-The port will pause and create a diagnostic dump containing screenshots, memory information, runtime state, performance data, and other information that can help identify the problem.
-
-Dumps are saved under:
-
-```text
-sdmc:/3ds/The Minish Cap 3DS/dumps/
-```
-
-Gameplay dumps also include a validated `load-state.bin` checkpoint. To reproduce the most recent dump, open:
-
-```text
-Settings > Developer > Load State
-```
-
-New sessions use `000-dump-YYYYMMDD-HHMMSS`, `001-dump-YYYYMMDD-HHMMSS`, and so on.
-The sequence survives restarts and clock changes; an emptied dumps folder starts again at 000.
-
-The loader asks for confirmation, selects the newest numbered folder (or a legacy `dump-*` folder), and rejects corrupted checkpoints or checkpoints
-created with a different ROM region. Older dumps that only contain `save-state.bin` remain supported, but they resume
-from the saved checkpoint rather than the exact captured position.
-
-Please send the dump when reporting bugs whenever possible.
+To go back to a game state, use the STATES tab. See `docs/debug-tools.md` for everything the
+tab offers and how to read the files.
 
 ## Updates
 

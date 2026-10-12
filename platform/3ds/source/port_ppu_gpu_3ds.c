@@ -58,6 +58,10 @@ static PpuGpu3DSCommandBuffer sCommands;
 static uint16_t* sParityReference;
 static uint16_t* sParityReadback;
 static C3D_Tex sAtlas;
+/* One view ring per background (port_ppu_gpu_3ds_model.h), sampled by the
+ * batches whose `texture` field is 1 + the background. */
+static C3D_Tex sRingTex[PPU_GPU3DS_RING_COUNT];
+static unsigned sBoundTexture;
 static C3D_Tex sOutputTexture;
 static C3D_RenderTarget* sOutputTarget;
 static DVLB_s* sShader;
@@ -80,6 +84,11 @@ static bool sParitySubmitted;
 static bool sParityFinishedThisFrame;
 static unsigned sParityWidth;
 static unsigned sParityHeight;
+/* The prepared frame's screen fade (PpuGpu3DSFrameView::fadeWeight/fadeLevel). */
+static uint8_t sFadeWeight, sFadeLevel;
+/* Debug: poke 1 to skip the fade's full-screen quad (the picture then shows the
+ * unfaded palettes), to time it (tmc-link.py poke gPpuGpu3DSFadeQuadDisable 01). */
+volatile uint8_t gPpuGpu3DSFadeQuadDisable;
 static PortPpuGpu3DSStats sStats;
 
 void PortPpuGpu3DS_Shutdown(void) {
@@ -90,6 +99,8 @@ void PortPpuGpu3DS_Shutdown(void) {
     if (sOutputTexture.data) C3D_TexDelete(&sOutputTexture);
     if (sProgramInitialized) shaderProgramFree(&sProgram);
     if (sShader) DVLB_Free(sShader);
+    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring)
+        if (sRingTex[ring].data) C3D_TexDelete(&sRingTex[ring]);
     if (sAtlas.data) C3D_TexDelete(&sAtlas);
     free(sParityReference);
     if (sParityReadback) linearFree(sParityReadback);
@@ -122,6 +133,7 @@ void PortPpuGpu3DS_Shutdown(void) {
     sStats.enabled = false;
     sStats.disabled = false;
     sAtlas = (C3D_Tex){ 0 };
+    memset(sRingTex, 0, sizeof(sRingTex));
     sOutputTexture = (C3D_Tex){ 0 };
     sProgram = (shaderProgram_s){ 0 };
     sAttributes = (C3D_AttrInfo){ 0 };
@@ -162,9 +174,13 @@ bool PortPpuGpu3DS_Init(void) {
     /* The builder stops short of the reset quad at the end of both buffers. */
     {
         PpuGpu3DSVertex* quad = sVertices + PPU_GPU3DS_CLEAR_FIRST_VERTEX;
-        static const float kX[4] = { -1.0f, 1.0f, -1.0f, 1.0f };
+        /* The static index pattern is 0,1,2, 0,2,3 (PpuGpu3DS_FillStaticIndices), so
+         * the corners go round the perimeter: top-left, top-right, bottom-right,
+         * bottom-left. They used to be in z order (TL, TR, BL, BR), which covers
+         * only three quarters of the screen: the right triangle (top-right,
+         * bottom-right, centre) was never reset. */
+        static const float kX[4] = { -1.0f, 1.0f, 1.0f, -1.0f };
         static const float kY[4] = { 1.0f, 1.0f, -1.0f, -1.0f };
-        static const uint8_t kOrder[6] = { 0, 1, 2, 2, 1, 3 };
         for (unsigned corner = 0; corner < 4u; ++corner) {
             quad[corner].x = kX[corner];
             quad[corner].y = kY[corner];
@@ -172,7 +188,6 @@ bool PortPpuGpu3DS_Init(void) {
             quad[corner].u = 0;
             quad[corner].v = 0;
         }
-        (void)kOrder;  /* the static index pattern already covers this quad */
         Platform3DS_CleanDataCache(quad, 4u * sizeof(*quad));
     }
     PpuGpu3DS_CommandInit(&sCommands, sVertices, PPU_GPU3DS_BUILD_VERTICES, sIndices,
@@ -185,6 +200,20 @@ bool PortPpuGpu3DS_Init(void) {
     C3D_TexFlush(&sAtlas);
     C3D_TexSetFilter(&sAtlas, GPU_NEAREST, GPU_NEAREST);
     C3D_TexSetWrap(&sAtlas, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+
+    /* A layer without a ring just keeps drawing a quad per tile. */
+    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring) {
+        if (!C3D_TexInit(&sRingTex[ring], PPU_GPU3DS_RING_TEX_WIDTH, PPU_GPU3DS_RING_TEX_HEIGHT,
+                         GPU_RGBA5551)) {
+            memset(&sRingTex[ring], 0, sizeof(sRingTex[ring]));
+            continue;
+        }
+        memset(sRingTex[ring].data, 0, sRingTex[ring].size);
+        C3D_TexFlush(&sRingTex[ring]);
+        C3D_TexSetFilter(&sRingTex[ring], GPU_NEAREST, GPU_NEAREST);
+        C3D_TexSetWrap(&sRingTex[ring], GPU_REPEAT, GPU_REPEAT);
+        PpuGpu3DS_RingSetStorage(sCache, ring, (uint16_t*)sRingTex[ring].data);
+    }
 
     if (!C3D_TexInitVRAM(&sOutputTexture, PPU_GPU3DS_OUTPUT_WIDTH,
                          PPU_GPU3DS_OUTPUT_HEIGHT, GPU_RGBA5551))
@@ -392,6 +421,18 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
         PpuGpu3DS_CacheClearDirty(sCache);
     Platform3DS_SetStage(23);
     }
+    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring) {
+        size_t offset, bytes;
+        if (!PpuGpu3DS_RingTakeDirty(sCache, ring, &offset, &bytes)) continue;
+        if (!Platform3DS_CleanDataCache((uint8_t*)sRingTex[ring].data + offset, bytes)) {
+            sCommands.vertexCount = 0;
+            sCommands.indexCount = 0;
+            sCommands.batchCount = 0;
+            return FinishPreflight(false, startTick);
+        }
+        sStats.atlasFlushBytes += bytes;
+        ++sStats.atlasFlushCalls;
+    }
     /* Same economics as the atlas: one call spanning the rebuilt slices and
      * the per-band geometry beats a call per region. A slice that was kept
      * from last frame is only re-flushed when it sits between two that were
@@ -424,6 +465,8 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
     sStats.flushTicks += svcGetSystemTick() - flushStartTick;
     sPreparedWidth = frame->width;
     sPreparedHeight = frame->height;
+    sFadeWeight = frame->fadeWeight;
+    sFadeLevel = frame->fadeLevel;
     sPrepared = true;
     return FinishPreflight(true, startTick);
 }
@@ -606,6 +649,10 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
         ++sEmptyDrawsSkipped;
         return;
     }
+    if (batch->texture != sBoundTexture) {
+        sBoundTexture = batch->texture;
+        C3D_TexBind(0, batch->texture == 0 ? &sAtlas : &sRingTex[batch->texture - 1u]);
+    }
     SetBatchOffset(batch->offsetX, batch->offsetY);
     const u32 yOffset = sViewportOffset;
     u32 top, bottom;
@@ -733,6 +780,7 @@ bool PortPpuGpu3DS_DrawPrepared(void) {
     C3D_TexSetFilter(&sAtlas, GPU_NEAREST, GPU_NEAREST);
     C3D_TexSetWrap(&sAtlas, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     C3D_TexBind(0, &sAtlas);
+    sBoundTexture = 0;
     LogBatchList();
 
     /* Windows and blending read the stencil as though it starts at zero every
@@ -791,6 +839,31 @@ bool PortPpuGpu3DS_DrawPrepared(void) {
         else
             C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_COLOR);
         DrawBatch(batch);
+    }
+
+    /* A uniform screen fade (docs/gpu-fade.md): the picture above was drawn from
+     * the unfaded palettes, so one full-screen quad of the fade's grey, as
+     * opaque as its weight, over the finished frame is the game's fade. Blending
+     * is linear, so it commutes with the alpha blends and the fades the frame
+     * already did; the target's 5-bit channels quantise it as PAL_RAM did. */
+    if (sFadeWeight != 0 && gPpuGpu3DSFadeQuadDisable == 0) {
+        for (int stage = 0; stage < 3; ++stage)
+            C3D_TexEnvInit(C3D_GetTexEnv(stage));
+        C3D_TexEnv* env = C3D_GetTexEnv(0);
+        C3D_TexEnvSrc(env, C3D_Both, GPU_CONSTANT, GPU_CONSTANT, GPU_CONSTANT);
+        C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+        C3D_TexEnvColor(env, (u32)sFadeLevel | ((u32)sFadeLevel << 8u) | ((u32)sFadeLevel << 16u) |
+                                     ((u32)sFadeWeight << 24u));
+        C3D_BlendingColor(0);
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
+                       GPU_ZERO, GPU_ONE);
+        C3D_AlphaTest(false, GPU_ALWAYS, 0);
+        C3D_StencilTest(false, GPU_ALWAYS, 0, 0xff, 0);
+        C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_COLOR);
+        SetBatchOffset(0.0f, 0.0f);
+        SetScissorCached(0, yOffset, sPreparedWidth, yOffset + sPreparedHeight);
+        C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT,
+                         sIndices + PPU_GPU3DS_CLEAR_FIRST_INDEX);
     }
 
     for (int stage = 0; stage < 3; ++stage)
@@ -901,7 +974,8 @@ bool PortPpuGpu3DS_QueueFrameCapture(void) {
     return true;
 }
 
-void PortPpuGpu3DS_WriteFrameCapture(const char* directory) {
+void PortPpuGpu3DS_WriteFrameCapture(const char* prefix) {
+    const char* directory = prefix;
     if (!sCaptureSubmitted || !directory || directory[0] == 0) return;
     sCaptureSubmitted = false;
     if (R_FAILED(GSPGPU_InvalidateDataCache(
@@ -910,13 +984,18 @@ void PortPpuGpu3DS_WriteFrameCapture(const char* directory) {
                                          sizeof(*sParityReadback))))
         return;
     char path[224];
-    snprintf(path, sizeof(path), "%s/gpu-frame.bin", directory);
+    snprintf(path, sizeof(path), "%s-gpu-frame.bin", directory);
     FILE* file = fopen(path, "wb");
     if (!file) return;
     fwrite(sParityReadback, sizeof(*sParityReadback),
            PPU_GPU3DS_OUTPUT_WIDTH * PPU_GPU3DS_OUTPUT_HEIGHT, file);
     fclose(file);
 }
+
+/* The fade the frame last built applied on the GPU (weight 0: none), for the
+ * frame recorder. */
+uint8_t PortPpuGpu3DS_FadeWeight(void) { return sFadeWeight; }
+uint8_t PortPpuGpu3DS_FadeLevel(void) { return sFadeLevel; }
 
 void PortPpuGpu3DS_RequestParityCheck(void) {
     if (sReady && !sDisabled && !sParityRequested && !sParitySubmitted) {
@@ -996,7 +1075,7 @@ static bool ChannelsWithinOneStep(uint16_t reference, uint16_t readback) {
 }
 
 static void WriteParitySurfaces(uint64_t differing) {
-    const char* directory = Port_PPU_3DS_LastDumpDirectory();
+    const char* directory = Port_PPU_3DS_LastDumpPrefix(); /* a prefix: <prefix>-<name> */
     if (!directory || directory[0] == 0) return;
     static const struct {
         const char* name;
@@ -1005,7 +1084,7 @@ static void WriteParitySurfaces(uint64_t differing) {
     const uint16_t* sources[2] = { sParityReference, sParityReadback };
     char path[224];
     for (unsigned index = 0; index < 2; ++index) {
-        snprintf(path, sizeof(path), "%s/%s", directory, surfaces[index].name);
+        snprintf(path, sizeof(path), "%s-%s", directory, surfaces[index].name);
         FILE* file = fopen(path, "wb");
         if (!file) continue;
         fwrite(sources[index], sizeof(uint16_t),
@@ -1013,7 +1092,7 @@ static void WriteParitySurfaces(uint64_t differing) {
         fclose(file);
     }
 
-    snprintf(path, sizeof(path), "%s/parity-diff.txt", directory);
+    snprintf(path, sizeof(path), "%s-parity-diff.txt", directory);
     FILE* report = fopen(path, "w");
     if (!report) return;
     fprintf(report, "differing %llu of %u visible pixels (%ux%u)\n",
@@ -1087,8 +1166,23 @@ void PortPpuGpu3DS_FinishParityCheck(void) {
     sStats.firstDiffX = firstX;
     sStats.firstDiffY = firstY;
     WriteParitySurfaces(differing);
+    if (structural != 0) {
+        /* What the first differing pixels were, and the fade in force: enough
+         * to tell a fade parameter from a renderer defect without a dump. */
+        char line[200];
+        snprintf(line, sizeof(line),
+                 "[tmc3ds] parity: differing=%llu structural=%llu first=%u,%u cpu=%04x gpu=%04x fade=%u/%u\n",
+                 (unsigned long long)differing, (unsigned long long)structural, (unsigned)firstX,
+                 (unsigned)firstY,
+                 sParityReference[(size_t)firstY * PPU_GPU3DS_OUTPUT_WIDTH + firstX],
+                 sParityReadback[(size_t)firstY * PPU_GPU3DS_OUTPUT_WIDTH + firstX], (unsigned)sFadeWeight,
+                 (unsigned)sFadeLevel);
+        Platform3DS_Debug(line);
+    }
     if (structural == 0) return;
-    /* Only a difference the blender cannot explain retires the GPU path. */
+    /* A difference the blender cannot explain is counted and written out, but
+     * it no longer retires the renderer: the check is asked for by a person
+     * (GPU CHECK, the link), and dropping to the software path for the rest of
+     * the session turned a few odd pixels into 25 fps and no wide view. */
     ++sStats.parityFailures;
-    PortPpuGpu3DS_Disable();
 }

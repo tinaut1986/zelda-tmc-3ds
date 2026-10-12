@@ -44,6 +44,12 @@ bool Port_Config_GetDecoupleRender(void);
 void Port_Config_SetDecoupleRender(bool on);
 bool Port_Config_GetShowFps(void);
 void Port_Config_SetShowFps(bool on);
+#ifdef TMC_3DS
+/* Bottom-screen theme (platform/3ds/source/bottom_compact_3ds.inc). */
+int Port_Config_GetUiTheme(void);
+void Port_Config_SetUiTheme(int theme);
+#include "../platform/3ds/source/frame_pacing_3ds.h"
+#endif
 /* Android touch overlay master switch. Off both hides it and stops it
  * claiming touches, so nothing sits between the player and the game. */
 bool Port_Config_GetTouchControls(void);
@@ -99,6 +105,9 @@ bool Port_Config_GpuViewportOffset(void);
 int Port_Config_GpuScissorMode(void);
 /* 3DS: `gpu_stencil=0` draws every batch, ignoring window/blend masking. */
 bool Port_Config_GpuStencil(void);
+/* 3DS: `gpu_fade=0` keeps screen fades on the CPU (the game's palette fade, tiles
+ * decoded again every frame of it) instead of one blend on the GPU. */
+bool Port_Config_GpuFade(void);
 int Port_Config_AudioCore(void);
 int Port_Config_BottomCore(void);
 /* 3DS: `bottom_map_skip=0` restores an unconditional MAP-tab repaint. */
@@ -108,9 +117,6 @@ bool Port_Config_BottomMapSkip(void);
 bool Port_Config_VblankPhaseLock(void);
 /* 3DS: interpolation for the experimental offloaded NDSP voices. */
 bool Port_Config_AudioDspInterpLinear(void);
-/* 3DS: `frame_log=1` re-enables frame-path SD diagnostics. Off by default;
- * each line costs main-thread SD I/O inside the presentation span. */
-bool Port_Config_FrameLog(void);
 /* 3DS: `compact_upload=1` uses 272x160 / 320x240 upload surfaces instead of
  * 512x256. Every caller of PlatformGpu3DS_GetUploadLayout must gate on this
  * identically or the painter stride and the display transfer disagree. */
@@ -248,7 +254,6 @@ void Port_Config_SetSecondScreenSwap(bool on);
 typedef enum {
     PORT_3DS_ASPECT_WIDE = 0,
     PORT_3DS_ASPECT_ORIGINAL,
-    PORT_3DS_ASPECT_STRETCH,
     PORT_3DS_ASPECT_COUNT,
 } Port3DSAspectRatio;
 

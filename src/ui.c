@@ -67,9 +67,12 @@ static s16 HudButtonTargetX(u32 type) {
 #ifdef PC_PORT
 #if defined(MODE1_GBA_WIDTH) && (MODE1_GBA_WIDTH > 240)
     const int targetViewWidth = Port_Widescreen_HudTargetViewWidth();
-    if (gHUD.hideFlags == HUD_HIDE_NONE && targetViewWidth != 240 && x >= 0 && x < 240) {
+    if (targetViewWidth != 240 && x >= 0 && x < 240) {
         /* Prepare experimental positions before their first published frame;
-         * otherwise use the same live-width anchor as established Wide. */
+         * otherwise use the same live-width anchor as established Wide. Also while the
+         * buttons are hidden: they leave by sliding up (ButtonUIElement_Action1), and
+         * dropping the anchor at that moment moved them to the middle of the top edge
+         * first, so they vanished from there instead of from their own corner. */
         x += targetViewWidth - 240;
     }
 #endif

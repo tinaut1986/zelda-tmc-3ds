@@ -75,7 +75,28 @@ bool Platform3DS_IsRunning(void);
 bool Platform3DS_IsNew3DS(void);
 bool Platform3DS_CanUseCore1(void);
 unsigned Platform3DS_Core1TimeLimit(void);
+/* Battery level 0-5 and whether it is charging; false when PTM is unavailable. */
+bool Platform3DS_BatteryStatus(uint8_t* level, uint8_t* charging);
+/* Wi-Fi bars, 0-3. */
+int Platform3DS_WifiStrength(void);
+uint64_t Platform3DS_LogicFrameCount(void);
+/* Live performance switches (DEBUG -> SWITCHES). */
+void Platform3DS_ApplyCpuLimit(void);
+void Platform3DS_RestartBottomWorker(void);
+/* Jump into a freshly installed build of this title at the next pump (any thread). */
+void Platform3DS_RequestRelaunch(void);
+/* True once the jump into a freshly installed build is armed: the process is
+ * about to end, so shutdown skips anything that waits on the GPU. */
+bool Platform3DS_Relaunching(void);
+uint64_t Platform3DS_EngineWorkLastTicks(void);
+uint64_t Platform3DS_EngineWorkTotalTicks(void);
+uint64_t Platform3DS_VblankWaitLastTicks(void);
 void Platform3DS_ShowSplash(void);
+/* Stops stdout/stderr painting on the bottom screen; call before loading anything. */
+void Platform3DS_SilenceBootConsole(void);
+/* The bottom screen's boot animation; stop it before anything else draws there. */
+void Platform3DS_BootAnimStart(void);
+void Platform3DS_BootAnimStop(void);
 void Platform3DS_EnterGameplayDisplay(void);
 uint16_t Platform3DS_ReadKeyInput(void);
 uint16_t Platform3DS_ReadKeyDownInput(void);
@@ -107,7 +128,12 @@ uint64_t Platform3DS_PumpTicks(void);
 uint64_t Platform3DS_PumpMaxTicks(void);
 uint64_t Platform3DS_PostWaitTicks(void);
 uint64_t Platform3DS_PostWaitMaxTicks(void);
-void Platform3DS_RequestQuickDump(void);
+/* DEBUG tab SCREEN DUMP / link DUMP: written at the next frame boundary. */
+void Platform3DS_RequestScreenDump(void);
+/* Seconds since a screen dump finished; 0xffffffff when none was taken. */
+uint32_t Platform3DS_SecondsSinceScreenDump(void);
+/* SITE INSTALL is refused for this long after a screen dump (issue #4). */
+#define SCREEN_DUMP_INSTALL_GRACE_S 15u
 void Platform3DS_WaitForVBlank(void);
 void Platform3DS_ShowFatal(const char* title, const char* message);
 void Platform3DS_Debug(const char* message);

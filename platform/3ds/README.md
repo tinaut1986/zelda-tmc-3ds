@@ -41,8 +41,9 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
   start with Bilinear and Stretch; valid saved choices are restored on later
   launches.
 - Experimental Full View: on New 3DS, selecting Wide + Pixel Perfect renders
-  compatible outdoor rooms at 400x240 and supported interiors at a centered
-  200x120 logical view scaled exactly 2x. Dialogues, transitions and unsupported
+  compatible outdoor rooms at 400x240; interiors keep the 1x Wide view (no
+  zoom). Dialogues keep the 400x240 view (the text box is centred); room-name
+  banners, transitions and unsupported
   effects fall back safely to the established presentation.
 - Bottom screen: 320x240 map, dungeon/status information and touch item UI.
 - Rendering: PICA200/Citro2D presenter fed by the software GBA PPU.
@@ -61,8 +62,10 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
   persistent options, a manual memory-dump command, and a live diagnostics
   overlay.
 - Randomizer: reserved Settings entry showing an unavailable notice.
-- Show FPS: measured presentation cadence in a compact lower-left top-screen
-  box.
+- Show FPS: a compact lower-left top-screen box of four lines, averaged over
+  the last second: the game's rate (green from 59, yellow from 50, red below),
+  `L` the logic's ms per tick, `G` the GPU's ms per presented frame and `S` the
+  rate frames reach the screen.
 - Diagnostics: press `L + R + A` to pause the game, display `DUMP SAVED`, and
   create `dumps/dump-*` with top and bottom physical-framebuffer BMP and raw
   captures, EWRAM, IWRAM, VRAM, palettes, OAM, I/O and game state, frame
@@ -72,8 +75,11 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
   data.
 - System lifecycle: HOME, sleep and application close events are handled by the
   regular 3DS applet loop.
-- Console: the development boot console remains visible during startup. Once
-  gameplay begins, later stdout/stderr logs are detached from the bottom
+- Boot: the top screen shows the logo (`romfs/splash.rgb565`, 400x240, the
+  whole logo inside a margin) and the bottom a gold triforce turning while the
+  ROM loads (`Platform3DS_BootAnimStart`/`Stop`); no boot text and no fixed
+  delay. A fatal message (no ROM, storage) still uses the text console. Once
+  gameplay begins, stdout/stderr logs are detached from the bottom
   framebuffer so they cannot flicker over the map or touch interface.
 
 The CIA metadata uses a stable title ID and requests SD card access for local

@@ -1,10 +1,18 @@
+#include "fade_gpu_3ds.h"
 #include "platform_3ds.h"
+#include <math.h>
 #include "updater.h"
 #include "old3ds_frame_pacer.h"
 #include "platform_gpu_3ds.h"
 #include "port_audio_3ds.h"
 #include "port_second_screen_3ds.h"
 #include "port_second_screen_sync_3ds.h"
+#include "frame_pacing_3ds.h"
+#include "app_paths_3ds.h"
+#include "tmc3ds_build_config.h"
+#if TMC3DS_DEBUG_TOOLS
+#include "debug_link_3ds.h"
+#endif
 
 #include <3ds.h>
 #include <stdbool.h>
@@ -17,8 +25,8 @@ static uint32_t sDown;
 static circlePosition sCirclePosition;
 static circlePosition sCStickPosition;
 static bool sCStickHeld;
-static bool sQuickDumpRequested;
-static bool sQuickDumpComboWasHeld;
+static bool sScreenDumpRequested;
+static uint64_t sScreenDumpTick; /* when the last screen dump finished, 0 if none */
 static bool sRunning;
 static bool sIsNew3DS;
 static unsigned sTurboMultiplier = 5;
@@ -56,6 +64,11 @@ static uint64_t sAptChecks;
 static uint64_t sFrameBoundaryEndTick;
 static Old3DSFramePacer sOld3DSFramePacer;
 static uint64_t sOld3DSSkippedTickSleep;
+/* FRAMES pacing state (Platform3DS_BeginFrameBoundary). */
+static int sLastPacing = -1;
+static bool sSkipWaitsVBlank;   /* LOCK 30 skipped this tick: wait one vblank anyway */
+static bool sPacerSkipped;      /* the adaptive pacer skipped this tick (sleep, then poll) */
+static uint64_t sLock30SkippedPresentations;
 static PrintConsole sGameplayLogSink;
 static bool sGameplayDisplayActive;
 static uintptr_t sStackRegionBase;
@@ -90,6 +103,9 @@ static void OnAptEvent(APT_HookType hook, void* parameter) {
              * restore callbacks before that boundary coalesce into one resync. */
             Platform3DS_MarkFrameDiscontinuity(OLD3DS_FRAME_PACER_DISCONTINUITY_APT);
             PlatformGpu3DS_InvalidateBottomTarget();
+            /* HOME or the lid is about to take the GPU: drain citro3d's queue
+             * while it is still ours (PlatformGpu3DS_DrainQueue). */
+            if (hook == APTHOOK_ONSUSPEND || hook == APTHOOK_ONSLEEP) PlatformGpu3DS_DrainQueue();
             break;
         default:
             break;
@@ -102,6 +118,8 @@ static void RegisterAptHook(void) {
     sAptHookRegistered = true;
 }
 
+static bool sPtmuReady;
+
 int Platform3DS_Init(void) {
     Port_SecondScreen_3DS_SyncInit();
     sHeld = 0;
@@ -109,8 +127,8 @@ int Platform3DS_Init(void) {
     memset(&sCirclePosition, 0, sizeof(sCirclePosition));
     memset(&sCStickPosition, 0, sizeof(sCStickPosition));
     sCStickHeld = false;
-    sQuickDumpRequested = false;
-    sQuickDumpComboWasHeld = false;
+    sScreenDumpRequested = false;
+    sScreenDumpTick = 0;
     sCore1Available = false;
     sCore1TimeLimit = 0;
     sSpeedupRequested = false;
@@ -137,6 +155,7 @@ int Platform3DS_Init(void) {
     gfxInit(GSP_RGB565_OES, GSP_RGB565_OES, false);
     gfxSet3D(false);
     cfguInit();
+    sPtmuReady = R_SUCCEEDED(ptmuInit());
     romfsInit();
     consoleInit(GFX_BOTTOM, NULL);
 
@@ -160,19 +179,7 @@ int Platform3DS_Init(void) {
      * question, so it is a knob rather than a new default.
      *
      * `app_cpu_limit=0` (default) keeps the original preference order. */
-    extern int Port_Config_AppCpuLimit(void);
-    const int limitCap = Port_Config_AppCpuLimit();
-    static const u32 core1Candidates[] = { 80, 70, 50, 30 };
-    for (size_t i = 0; i < sizeof(core1Candidates) / sizeof(core1Candidates[0]); ++i) {
-        if (limitCap > 0 && core1Candidates[i] > (u32)limitCap) continue;
-        if (R_FAILED(APT_SetAppCpuTimeLimit(core1Candidates[i]))) continue;
-        u32 actual = 0;
-        if (R_SUCCEEDED(APT_GetAppCpuTimeLimit(&actual)) && actual > 0) {
-            sCore1Available = true;
-            sCore1TimeLimit = actual;
-            break;
-        }
-    }
+    Platform3DS_ApplyCpuLimit();
 
     sRunning = true;
     hidScanInput();
@@ -194,13 +201,63 @@ void Platform3DS_Shutdown(void) {
     virtuappu_mode1_shutdown_workers();
     Port_Audio_Shutdown();
     romfsExit();
+    if (sPtmuReady) ptmuExit();
+    sPtmuReady = false;
     cfguExit();
     gfxExit();
+}
+
+/* Battery and Wi-Fi for the bottom screen's status icons. The two PTM calls
+ * cost a few ms on the console (../sm-3ds measured 2-3 ms), and the level moves
+ * far slower than anything else, so they are asked at most every 3 s. */
+bool Platform3DS_BatteryStatus(uint8_t* level, uint8_t* charging) {
+    static uint64_t lastTick;
+    static u8 cachedLevel = 5, cachedCharging;
+    if (!sPtmuReady) return false;
+    const uint64_t now = svcGetSystemTick();
+    if (lastTick == 0 || now - lastTick > 3ull * SYSCLOCK_ARM11) {
+        u8 l = 0, c = 0;
+        if (R_SUCCEEDED(PTMU_GetBatteryLevel(&l))) cachedLevel = l > 5 ? 5 : l;
+        if (R_SUCCEEDED(PTMU_GetBatteryChargeState(&c))) cachedCharging = c;
+        lastTick = now;
+    }
+    *level = cachedLevel;
+    *charging = cachedCharging;
+    return true;
+}
+
+/* Cheap per-frame reads for the perf recorder (Platform3DS_GetRuntimeStats
+ * also queries the kernel for memory, too slow to call every frame). */
+uint64_t Platform3DS_LogicFrameCount(void) { return sLogicFrames; }
+uint64_t Platform3DS_EngineWorkLastTicks(void) { return sEngineWorkLastTicks; }
+uint64_t Platform3DS_EngineWorkTotalTicks(void) { return sEngineWorkTicks; }
+uint64_t Platform3DS_VblankWaitLastTicks(void) { return sVblankWaitLastTicks; }
+
+int Platform3DS_WifiStrength(void) {
+    return (int)osGetWifiStrength();
 }
 
 bool Platform3DS_IsRunning(void) { return sRunning; }
 bool Platform3DS_IsNew3DS(void) { return sIsNew3DS; }
 bool Platform3DS_CanUseCore1(void) { return sCore1Available; }
+
+/* The app's share of core 1 (`app_cpu_limit`, DEBUG -> SWITCHES -> CPU LIMIT).
+ * APT accepts a new limit at any time, so the switch applies at once. */
+void Platform3DS_ApplyCpuLimit(void) {
+    extern int Port_Config_AppCpuLimit(void);
+    const int limitCap = Port_Config_AppCpuLimit();
+    static const u32 core1Candidates[] = { 80, 70, 50, 30 };
+    for (size_t i = 0; i < sizeof(core1Candidates) / sizeof(core1Candidates[0]); ++i) {
+        if (limitCap > 0 && core1Candidates[i] > (u32)limitCap) continue;
+        if (R_FAILED(APT_SetAppCpuTimeLimit(core1Candidates[i]))) continue;
+        u32 actual = 0;
+        if (R_SUCCEEDED(APT_GetAppCpuTimeLimit(&actual)) && actual > 0) {
+            sCore1Available = true;
+            sCore1TimeLimit = actual;
+            break;
+        }
+    }
+}
 unsigned Platform3DS_Core1TimeLimit(void) { return sCore1TimeLimit; }
 bool Platform3DS_TurboHeld(void) { return sIsNew3DS && sCStickHeld; }
 unsigned Platform3DS_TurboMultiplier(void) { return sTurboMultiplier; }
@@ -223,19 +280,93 @@ void Platform3DS_ShowSplash(void) {
 
     uint16_t width = 0;
     uint16_t height = 0;
-    uint16_t* top = (uint16_t*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &width, &height);
-    if (top) {
+    /* Into both buffers of the swap chain, so no later swap shows a black one. */
+    for (int pass = 0; pass < 2; ++pass) {
+        uint16_t* top = (uint16_t*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &width, &height);
+        if (!top) break;
         for (int y = 0; y < 240; ++y) {
             for (int x = 0; x < 400; ++x) {
                 top[(239 - y) + x * 240] = pixels[y * 400 + x];
             }
         }
         gfxFlushBuffers();
-        gfxSwapBuffers();
+        gfxScreenSwapBuffers(GFX_TOP, false);
         gspWaitForVBlank();
-        svcSleepThread(1200000000LL);
     }
     free(pixels);
+}
+
+/* Boot animation on the bottom screen: a gold triforce turning about its vertical axis while
+ * the ROM and tables load, in place of the console's text. It draws straight into the gfx
+ * framebuffer from its own thread, so it must be stopped before anything else uses the bottom
+ * screen (a fatal message's console, or citro3d in Port_PPU_Init). */
+static Thread sBootAnimThread;
+static volatile bool sBootAnimStop;
+
+static void BootAnimMain(void* arg) {
+    (void)arg;
+    enum { SIZE = 56, CX = 160, CY = 120 };
+    const int x0 = CX - SIZE / 2, y0 = CY - SIZE / 2;
+    const float tipH = 0.5f;
+    for (unsigned frame = 0; !sBootAnimStop; ++frame) {
+        uint16_t w = 0, h = 0;
+        uint16_t* fb = (uint16_t*)gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, &w, &h);
+        if (!fb) break;
+        const float c = fabsf(cosf((float)frame * 0.07f));
+        const float scale = c < 0.04f ? 0.04f : c;
+        const float halfW = (SIZE / 2) * scale;
+        for (int y = 0; y < SIZE; ++y) {
+            const float v = (y + 0.5f) / SIZE;
+            for (int x = 0; x < SIZE; ++x) {
+                uint16_t color = 0;
+                const float dx = (x + 0.5f) - SIZE / 2;
+                if (fabsf(dx) <= halfW) {
+                    const float u = 0.5f + dx / (halfW * 2.0f);
+                    /* Three upright triangles: the top one and the two at the bottom corners. */
+                    bool in;
+                    if (v < tipH) {
+                        const float half = v * 0.5f / tipH * 0.5f + 0.0f; /* 0..0.25 */
+                        in = fabsf(u - 0.5f) <= half;
+                    } else {
+                        const float t = (v - tipH) / (1.0f - tipH); /* 0..1 down the bottom row */
+                        const float half = 0.25f * t;
+                        in = fabsf(u - 0.25f) <= half || fabsf(u - 0.75f) <= half;
+                    }
+                    if (in) {
+                        const int shade = 255 - (int)(v * 70.0f);
+                        const int r = shade, g = shade * 205 / 255, b = shade * 40 / 255;
+                        color = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+                    }
+                }
+                fb[(239 - (y0 + y)) + (x0 + x) * 240] = color;
+            }
+        }
+        gfxFlushBuffers();
+        gfxScreenSwapBuffers(GFX_BOTTOM, false);
+        gspWaitForVBlank();
+    }
+}
+
+void Platform3DS_BootAnimStart(void) {
+    if (sBootAnimThread) return;
+    /* Both buffers of the swap chain start black. */
+    for (int i = 0; i < 2; ++i) {
+        uint16_t w = 0, h = 0;
+        uint16_t* fb = (uint16_t*)gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, &w, &h);
+        if (fb) memset(fb, 0, 320u * 240u * sizeof(uint16_t));
+        gfxFlushBuffers();
+        gfxScreenSwapBuffers(GFX_BOTTOM, false);
+    }
+    sBootAnimStop = false;
+    sBootAnimThread = threadCreate(BootAnimMain, NULL, 16 * 1024, 0x30, -2, false);
+}
+
+void Platform3DS_BootAnimStop(void) {
+    if (!sBootAnimThread) return;
+    sBootAnimStop = true;
+    threadJoin(sBootAnimThread, U64_MAX);
+    threadFree(sBootAnimThread);
+    sBootAnimThread = NULL;
 }
 
 static bool GameplayLogSinkPrint(void* console, int character) {
@@ -244,13 +375,12 @@ static bool GameplayLogSinkPrint(void* console, int character) {
     return true;
 }
 
-void Platform3DS_EnterGameplayDisplay(void) {
-    if (sGameplayDisplayActive) return;
-
-    /* Keep the visible console throughout boot, then prevent stdout from ever
-     * writing into the bottom framebuffer owned by Citro3D. stderr remains
-     * available to an attached debugger through SVC instead of being painted
-     * over the live map/touch UI. */
+/* From here on stdout and stderr go nowhere: the ROM loader's stderr notes would otherwise be
+ * painted on the bottom screen by the boot console, over the boot animation and then over the
+ * live UI. stderr stays available to an attached debugger through SVC. */
+static void SilenceLogSink(void) {
+    static bool done;
+    if (done) return;
     fflush(stdout);
     fflush(stderr);
     sGameplayLogSink = *consoleGetDefault();
@@ -259,6 +389,14 @@ void Platform3DS_EnterGameplayDisplay(void) {
     sGameplayLogSink.consoleInitialised = true;
     consoleSelect(&sGameplayLogSink);
     consoleDebugInit(debugDevice_SVC);
+    done = true;
+}
+
+void Platform3DS_SilenceBootConsole(void) { SilenceLogSink(); }
+
+void Platform3DS_EnterGameplayDisplay(void) {
+    if (sGameplayDisplayActive) return;
+    SilenceLogSink();
     sGameplayDisplayActive = true;
 }
 
@@ -275,9 +413,8 @@ static uint16_t MapKeysToGba(uint32_t keys) {
         GBA_R = 1u << 8,
         GBA_L = 1u << 9,
     };
-    const bool quickDumpCombo = (keys & (KEY_L | KEY_R | KEY_A)) == (KEY_L | KEY_R | KEY_A);
     uint16_t input = 0x03ff;
-    if ((keys & KEY_A) && !quickDumpCombo) input &= ~GBA_A;
+    if (keys & KEY_A) input &= ~GBA_A;
     if (keys & KEY_B) input &= ~GBA_B;
     if (keys & KEY_SELECT) input &= ~GBA_SELECT;
     if (keys & KEY_START) input &= ~GBA_START;
@@ -285,8 +422,8 @@ static uint16_t MapKeysToGba(uint32_t keys) {
     if (keys & (KEY_DLEFT | KEY_CPAD_LEFT)) input &= ~GBA_LEFT;
     if (keys & (KEY_DUP | KEY_CPAD_UP)) input &= ~GBA_UP;
     if (keys & (KEY_DDOWN | KEY_CPAD_DOWN)) input &= ~GBA_DOWN;
-    if ((keys & KEY_R) && !quickDumpCombo) input &= ~GBA_R;
-    if ((keys & KEY_L) && !quickDumpCombo) input &= ~GBA_L;
+    if (keys & KEY_R) input &= ~GBA_R;
+    if (keys & KEY_L) input &= ~GBA_L;
     return input;
 }
 
@@ -374,32 +511,56 @@ bool Platform3DS_BeginFrameBoundary(void) {
     }
 
     ++sLogicFrames;
-    if (sIsNew3DS && sLogicLastTick != 0) {
-        /* The New 3DS does not use adaptive presentation skipping, but its
-         * diagnostic cadence still needs the pacer's HOME/sleep/dump filter. */
+    /* One snapshot of the palette buffer and fade parameters per logic frame,
+     * for the GPU fade (fade_gpu_3ds.c). */
+    FadeGpu3DS_OnFrameBoundary();
+    /* OPTIONS -> FRAMES (Port_Config_GetFramePacing). A change resyncs the
+     * pacer so time spent in another mode is not taken as debt. */
+    const int pacing = Port_Config_GetFramePacing();
+    if (pacing != sLastPacing) {
+        if (sLastPacing >= 0) Old3DSFramePacer_MarkDiscontinuity(&sOld3DSFramePacer, OLD3DS_FRAME_PACER_DISCONTINUITY_APT);
+        sLastPacing = pacing;
+    }
+    const bool pacerRuns = !sIsNew3DS || pacing == PORT_3DS_PACING_AUTO;
+    if (sIsNew3DS && !pacerRuns && sLogicLastTick != 0) {
+        /* The pacer is not ticking, but its diagnostic cadence still needs
+         * the HOME/sleep/dump filter. */
         Old3DSFramePacer_RecordActiveInterval(&sOld3DSFramePacer, now - sLogicLastTick);
     }
     sLogicLastTick = now;
-    if (!sIsNew3DS) {
-        const bool present = Old3DSFramePacer_BeginTick(&sOld3DSFramePacer, now, &sOld3DSSkippedTickSleep);
-        if (present) ++sPresentedFrames;
-        return present;
-    }
 
-    if (!Platform3DS_TurboHeld()) {
-        sTurboPhase = 0;
-        ++sPresentedFrames;
-        return true;
+    if (sIsNew3DS && Platform3DS_TurboHeld()) {
+        ++sTurboLogicFrames;
+        if (++sTurboPhase >= Platform3DS_TurboMultiplier()) {
+            sTurboPhase = 0;
+            ++sPresentedFrames;
+            return true;
+        }
+        ++sTurboSkippedPresentations;
+        return false;
     }
+    sTurboPhase = 0;
 
-    ++sTurboLogicFrames;
-    if (++sTurboPhase >= Platform3DS_TurboMultiplier()) {
-        sTurboPhase = 0;
-        ++sPresentedFrames;
-        return true;
+    switch (pacing) {
+        case PORT_3DS_PACING_NO_SKIP:
+            ++sPresentedFrames;
+            return true;
+        case PORT_3DS_PACING_LOCK30:
+            if (sLogicFrames & 1u) {
+                /* Not drawn, but still one vblank long: the game stays at 60 Hz. */
+                sSkipWaitsVBlank = true;
+                ++sLock30SkippedPresentations;
+                return false;
+            }
+            ++sPresentedFrames;
+            return true;
+        default: {
+            const bool present = Old3DSFramePacer_BeginTick(&sOld3DSFramePacer, now, &sOld3DSSkippedTickSleep);
+            if (present) ++sPresentedFrames;
+            else sPacerSkipped = true;
+            return present;
+        }
     }
-    ++sTurboSkippedPresentations;
-    return false;
 }
 
 void Platform3DS_EndFrameBoundary(void) {
@@ -423,7 +584,46 @@ static uint64_t sAptMaxTicks;
 static uint64_t sAudioPumpTicks;
 static uint64_t sAudioPumpMaxTicks;
 
+/* SITE INSTALL (ftp_server_3ds.c) installed a new build of this title: jump
+ * into it from the main thread, then let the game close as on HOME -> close. */
+static volatile bool sRelaunchRequested;
+
+static bool sRelaunching;
+
+void Platform3DS_RequestRelaunch(void) {
+    sRelaunchRequested = true;
+}
+
+bool Platform3DS_Relaunching(void) {
+    return sRelaunching;
+}
+
+static void RelaunchSelf(void) {
+    extern void DebugLog_Printf(const char* fmt, ...);
+    extern void DebugLog_Flush(void);
+    /* The log stays open: main's exit path writes each shutdown step, so a
+     * relaunch that never completes shows where it stopped. */
+    DebugLog_Printf("relaunching into the build just installed");
+    DebugLog_Flush();
+    sRelaunching = true;
+    /* The jump is requested with the GPU still ours, and the game then closes
+     * through main's normal exit path (the APT hook drains citro3d's queue,
+     * the teardown runs on a thread with a timeout), exactly as HOME -> close
+     * and as ../sm-3ds does after SITE INSTALL (its #20). Tearing citro3d down
+     * *before* the jump hung the console on one relaunch in two (issue #2). */
+    u8 param[0x300] = { 0 };
+    u8 hmac[0x20] = { 0 };
+    if (R_SUCCEEDED(APT_PrepareToDoApplicationJump(0, TMC3DS_TITLE_ID, MEDIATYPE_SD)))
+        APT_DoApplicationJump(param, sizeof(param), hmac);
+}
+
 static bool PumpLifecycleAndAudio(void) {
+    if (sRelaunchRequested) {
+        sRelaunchRequested = false;
+        RelaunchSelf();
+        sRunning = false;
+        return false;
+    }
     ++sAptChecks;
     const uint64_t aptStart = svcGetSystemTick();
     const bool alive = sRunning && !Updater_ShouldClose() && aptMainLoop();
@@ -452,7 +652,17 @@ uint64_t Platform3DS_VblankWaitOverTwoPeriods(void) { return sVblankWaitOverTwoP
 
 void Platform3DS_PumpWithoutVBlank(void) {
     if (!PumpLifecycleAndAudio()) return;
-    if (sIsNew3DS) return;
+    if (sSkipWaitsVBlank) {
+        /* LOCK 30: nothing new to show, so no swap; the presenter keeps the
+         * last picture while the game ticks on the vblank. */
+        sSkipWaitsVBlank = false;
+        gspWaitForEvent(GSPGPU_EVENT_VBlank0, false);
+        PollInput();
+        return;
+    }
+    /* New 3DS turbo skips run as fast as they can; only a pacer skip sleeps. */
+    if (sIsNew3DS && !sPacerSkipped) return;
+    sPacerSkipped = false;
 
     if (sOld3DSSkippedTickSleep != 0) {
         const uint64_t sleepNs = sOld3DSSkippedTickSleep * 1000000000ULL / SYSCLOCK_ARM11;
@@ -570,8 +780,24 @@ static bool EnsureBottomWorker(void) {
     return sBottomWorkerThread != NULL;
 }
 
+/* DEBUG -> SWITCHES -> BOTTOM CORE: the painter thread is recreated on the
+ * other core before its next paint. Only between paints: a thread stopped
+ * mid-paint would leave its done event to a fresh LightEvent_Init. */
+static volatile bool sBottomWorkerRestart;
+
+void Platform3DS_RestartBottomWorker(void) {
+    sBottomWorkerRestart = true;
+}
+
 bool Platform3DS_SubmitBottomWorker(void) {
-    if (sBottomWorkerBusy || !EnsureBottomWorker()) return false;
+    if (sBottomWorkerBusy) return false;
+    if (sBottomWorkerRestart) {
+        sBottomWorkerRestart = false;
+        Platform3DS_ShutdownBottomWorker();
+        sBottomWorkerAttempts = 0;
+        sBottomWorkerRetryIn = 0;
+    }
+    if (!EnsureBottomWorker()) return false;
     __atomic_thread_fence(__ATOMIC_RELEASE);
     sBottomWorkerBusy = true;
     LightEvent_Signal(&sBottomWorkerStart);
@@ -603,6 +829,9 @@ static void PollInput(void) {
     hidScanInput();
     sHeld = hidKeysHeld();
     sDown = hidKeysDown();
+#if TMC3DS_DEBUG_TOOLS
+    DebugLink_Poll(&sHeld, &sDown, sLogicFrames); /* remote buttons and requests (SITE over FTP) */
+#endif
     hidCircleRead(&sCirclePosition);
     if (sIsNew3DS) {
         hidCstickRead(&sCStickPosition);
@@ -617,9 +846,6 @@ static void PollInput(void) {
         hidTouchRead(&touch);
         Port_SecondScreen_3DS_OnTap(touch.px, touch.py, 0);
     }
-    const bool quickDumpCombo = (sHeld & (KEY_L | KEY_R | KEY_A)) == (KEY_L | KEY_R | KEY_A);
-    if (quickDumpCombo && !sQuickDumpComboWasHeld) sQuickDumpRequested = true;
-    sQuickDumpComboWasHeld = quickDumpCombo;
 }
 
 /* The main thread can stop advancing while audio keeps playing -- both screens
@@ -696,7 +922,20 @@ const char* Platform3DS_CacheCleanPath(void) {
                                   : "unprobed";
 }
 
-void Platform3DS_RequestQuickDump(void) { sQuickDumpRequested = true; }
+#if TMC3DS_DEBUG_TOOLS
+/* The DEBUG tab's SCREEN DUMP and the link's DUMP only ask; the dump itself
+ * runs at the frame boundary (WaitForVBlank, below), where nothing of the frame
+ * is half done. There is no button chord any more (it was upstream's L+R+A, in
+ * every build). */
+void Platform3DS_RequestScreenDump(void) { sScreenDumpRequested = true; }
+#else
+void Platform3DS_RequestScreenDump(void) {}
+#endif
+
+uint32_t Platform3DS_SecondsSinceScreenDump(void) {
+    if (sScreenDumpTick == 0) return 0xffffffffu;
+    return (uint32_t)((svcGetSystemTick() - sScreenDumpTick) / Platform3DS_TicksPerSecond());
+}
 
 /* Render and engine work together account for 12.7 ms of a 20.4 ms frame, and
  * the VBlank wait is 7.7 ms where about 4 would be expected -- so a few
@@ -770,10 +1009,11 @@ void Platform3DS_WaitForVBlank(void) {
      * targets a CPU-painted buffer that has not reached a presentation. */
     const uint64_t postStart = svcGetSystemTick();
     Port_SecondScreen_3DS_PromoteSubmitted();
-    if (sQuickDumpRequested) {
-        extern void Port_PPU_3DS_WriteQuickDump(void);
-        sQuickDumpRequested = false;
-        Port_PPU_3DS_WriteQuickDump();
+    if (sScreenDumpRequested) {
+        extern void Port_PPU_3DS_WriteScreenDump(void);
+        sScreenDumpRequested = false;
+        Port_PPU_3DS_WriteScreenDump();
+        sScreenDumpTick = svcGetSystemTick();
     }
     PollInput();
     const uint64_t postTicks = svcGetSystemTick() - postStart;
@@ -860,10 +1100,12 @@ static bool SaveCapturedFramebufferBmp(const char* path, const GSPGPU_CaptureInf
     const uint8_t* framebuffer = (const uint8_t*)capture->framebuf0_vaddr;
     GSPGPU_InvalidateDataCache(framebuffer, capture->framebuf_widthbytesize * (u32)width);
 
-    FILE* file = fopen(path, "wb");
-    if (!file) return false;
     const int rowSize = (width * 3 + 3) & ~3;
     const uint32_t fileSize = 54u + (uint32_t)rowSize * (uint32_t)height;
+    /* Built in RAM and written with one fwrite: row by row, the SD card took
+     * about 5 s for the two screens, with the game frozen meanwhile. */
+    uint8_t* image = calloc(1, fileSize);
+    if (!image) return false;
     const uint8_t header[54] = {
         'B', 'M',
         (uint8_t)fileSize, (uint8_t)(fileSize >> 8), (uint8_t)(fileSize >> 16), (uint8_t)(fileSize >> 24),
@@ -872,10 +1114,9 @@ static bool SaveCapturedFramebufferBmp(const char* path, const GSPGPU_CaptureInf
         (uint8_t)height, (uint8_t)(height >> 8), (uint8_t)(height >> 16), (uint8_t)(height >> 24),
         1, 0, 24, 0,
     };
-    bool ok = fwrite(header, 1, sizeof(header), file) == sizeof(header);
-    uint8_t row[400 * 3];
-    for (int y = height - 1; ok && y >= 0; --y) {
-        memset(row, 0, (size_t)rowSize);
+    memcpy(image, header, sizeof(header));
+    for (int y = height - 1; y >= 0; --y) {
+        uint8_t* row = image + 54 + (size_t)(height - 1 - y) * (size_t)rowSize;
         for (int x = 0; x < width; ++x) {
             const uint8_t* pixel = framebuffer + (size_t)x * capture->framebuf_widthbytesize +
                                    (size_t)(height - 1 - y) * bytesPerPixel;
@@ -885,10 +1126,51 @@ static bool SaveCapturedFramebufferBmp(const char* path, const GSPGPU_CaptureInf
             row[x * 3 + 1] = green;
             row[x * 3 + 2] = red;
         }
-        ok = fwrite(row, 1, (size_t)rowSize, file) == (size_t)rowSize;
     }
-    if (fclose(file) != 0) ok = false;
+    FILE* file = fopen(path, "wb");
+    bool ok = file && fwrite(image, 1, fileSize, file) == fileSize;
+    if (file && fclose(file) != 0) ok = false;
+    free(image);
     return ok;
+}
+
+/* The top screen as shown, scaled to width x height RGB565 (each output pixel
+ * the average of its block), for save-state screenshots. */
+bool Platform3DS_CaptureTopThumbnail(uint16_t* pixels, int width, int height) {
+    GSPGPU_CaptureInfo capture;
+    memset(&capture, 0, sizeof(capture));
+    if (!pixels || width <= 0 || height <= 0 || R_FAILED(GSPGPU_ImportDisplayCaptureInfo(&capture))) return false;
+    const GSPGPU_CaptureInfoEntry* top = &capture.screencapture[GSP_SCREEN_TOP];
+    if (!top->framebuf0_vaddr || top->framebuf_widthbytesize == 0) return false;
+    const GSPGPU_FramebufferFormat format = (GSPGPU_FramebufferFormat)(top->format & 7u);
+    const unsigned bpp = gspGetBytesPerPixel(format);
+    if (bpp < 2 || bpp > 4) return false;
+    const int srcW = 400, srcH = 240;
+    const uint8_t* fb = (const uint8_t*)top->framebuf0_vaddr; /* column-major, origin bottom-left */
+    GSPGPU_InvalidateDataCache(fb, top->framebuf_widthbytesize * (u32)srcW);
+    const int bw = srcW / width > 0 ? srcW / width : 1, bh = srcH / height > 0 ? srcH / height : 1;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            unsigned r = 0, g = 0, b = 0;
+            for (int dy = 0; dy < bh; ++dy) {
+                for (int dx = 0; dx < bw; ++dx) {
+                    const int sx = x * srcW / width + dx, sy = srcH - 1 - (y * srcH / height + dy);
+                    uint8_t pr, pg, pb;
+                    ReadFramebufferPixel(fb + (size_t)sx * top->framebuf_widthbytesize + (size_t)sy * bpp, format,
+                                         &pr, &pg, &pb);
+                    r += pr;
+                    g += pg;
+                    b += pb;
+                }
+            }
+            const unsigned n = (unsigned)(bw * bh);
+            r /= n;
+            g /= n;
+            b /= n;
+            pixels[y * width + x] = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+        }
+    }
+    return true;
 }
 
 static bool SaveCapturedFramebufferRaw(const char* path, const GSPGPU_CaptureInfoEntry* capture,

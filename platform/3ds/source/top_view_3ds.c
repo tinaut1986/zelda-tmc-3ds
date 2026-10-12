@@ -51,9 +51,6 @@ void TopView3DS_BuildPlan(int old3DS, int fullViewComboEnabled,
     } else {
         result.drawHeight = 240;
         switch (aspect) {
-            case TOP_VIEW_3DS_ASPECT_STRETCH:
-                result.drawWidth = 400;
-                break;
             case TOP_VIEW_3DS_ASPECT_ORIGINAL:
                 result.drawWidth = 360;
                 break;

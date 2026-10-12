@@ -1147,6 +1147,8 @@ static volatile int sWsExperimentalMode = PORT_3DS_FULL_VIEW_FALLBACK;
 static u32 sWsExperimentalCameraRoomKey = 0xffffffffu;
 static int sWsExperimentalCameraSnapArmed = 1;
 static u32 sWsGameplayRoomKey = 0xffffffffu;
+static int sWsRoomLoadTicks; /* UpdateShadows ticks since a door changed the room key, counting down */
+static int sWsFadeRecent;    /* ticks left since a fade was last on: a door, not a border scroll */
 static Port3DSFullViewMode sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
 static u32 sWsProducerPendingRoomKey = 0xffffffffu;
 static Port3DSFullViewMode sWsProducerPendingMode = PORT_3DS_FULL_VIEW_FALLBACK;
@@ -1254,15 +1256,23 @@ static int Port_WidescreenFixedCanvasSubtask(void) {
 }
 
 static int Port_WidescreenFullViewUiOverlayActive(void) {
-    if ((gMessage.state & MESSAGE_ACTIVE) != 0) {
-        return 1;
-    }
-    if (Port3DSFullViewPolicy_NativeWindowActive(gScreen.lcd.displayControl)) {
-        return 1;
-    }
-    return Port_WidescreenBannerState_IsActive(
-        &sWsEnterRoomBanner, gMain.task == TASK_GAME,
-        gRoomControls.area, gRoomControls.room);
+    /* The location-name banner is not here: like a dialogue it is a band of BG0 that
+     * Port_Widescreen_UpdateShadows centres with ws_msg_shift at any view width. Counting it
+     * as an overlay dropped Full View to E2 for the whole banner (about four seconds) and the
+     * camera then snapped to the 400-wide rest position when it ended. */
+    return Port3DSFullViewPolicy_NativeWindowActive(gScreen.lcd.displayControl);
+}
+
+/* A room change whose data is being replaced. The fades are not part of it:
+ * on the way out the old room is still drawn and fading (the player walks
+ * through the door in GAMEMAIN_UPDATE), so Full View stays until the screen is
+ * dark and the load begins; on the way in the new room is already loaded.
+ * What mixes two map generations is the load itself (INITROOM, CHANGEROOM,
+ * the reload flags) and the border scroll. */
+static int Port_WidescreenRoomTransitionActive(void) {
+    if (gMain.substate == GAMEMAIN_INITROOM || gMain.substate == GAMEMAIN_CHANGEROOM) return 1;
+    if (gMain.substate == GAMEMAIN_CHANGEAREA && gFadeControl.active == 0) return 1;
+    return Port3DSFullViewPolicy_RoomTransitionActive(0, 0, gRoomControls.reload_flags, gRoomControls.scrollAction);
 }
 
 static Port3DSFullViewInputs Port_WidescreenFullViewInputs(void) {
@@ -1278,10 +1288,7 @@ static Port3DSFullViewInputs Port_WidescreenFullViewInputs(void) {
     inputs.gameTask = gMain.task == TASK_GAME;
     inputs.fixedCanvas = Port_WidescreenFixedCanvasSubtask();
     inputs.uiOverlay = Port_WidescreenFullViewUiOverlayActive();
-    inputs.transitioning = Port3DSFullViewPolicy_RoomTransitionActive(
-        gRoomTransition.transitioningOut != 0 || gRoomTransition.field_0x4[1] != 0,
-        gFadeControl.active != 0,
-        gRoomControls.reload_flags, gRoomControls.scrollAction);
+    inputs.transitioning = Port_WidescreenRoomTransitionActive();
     inputs.playerValid = gPlayerEntity.base.kind == PLAYER && gRoomControls.camera_target != NULL;
     /* Mt. Crenel room 2 uses a non-tileable 32x32 static BG3 landscape.
      * Repeating it across 400 pixels creates a visible seam; keep the entire
@@ -1431,6 +1438,40 @@ Port3DSFullViewMode Port_Widescreen_3DSViewMode(void) {
         return PORT_3DS_FULL_VIEW_FALLBACK;
     }
     return publishedMode;
+}
+
+/* After a save state is loaded: the view's latch (which room and which geometry the game
+ * produced for) came back with the game's globals, but the shadows and the PPU's flags it
+ * stands for belong to the live session and were not saved. Take it back to "a room just
+ * loaded" so the geometry is staged again from the policy, as after a door. */
+void Port_Widescreen_ResetAfterStateLoad(void) {
+    sWsGameplayRoomKey = 0xffffffffu;
+    sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
+    sWsProducerPendingRoomKey = 0xffffffffu;
+    sWsProducerPendingMode = PORT_3DS_FULL_VIEW_FALLBACK;
+    sWsContentKey = 0xffffffffu;
+    sWsContentPx = 0;
+    sWsContentHeightPx = 0;
+    sWsExperimentalCameraRoomKey = 0xffffffffu;
+    sWsExperimentalCameraSnapArmed = 1;
+    Port_WidescreenPublish3DSView(0xffffffffu, PORT_3DS_FULL_VIEW_FALLBACK);
+    virtuappu_mode1_ws_full_view = 0;
+}
+
+int Port_Widescreen_3DSHoldTop(void) {
+#ifdef TMC_3DS
+    if (sWsRoomLoadTicks <= 0 || gMain.task != TASK_GAME) return 0;
+    if (!Port_Config_3DSFullViewComboEnabled() || Port_WidescreenFixedCanvasSubtask()) return 0;
+    if (gRoomControls.area > AREA_98 ||
+        !Port3DSFullViewPolicy_AreaIsExterior(gRoomControls.area, gRoomControls.room,
+                                              gAreaMetadata[gRoomControls.area].flags))
+        return 0;
+    Port3DSFullViewMode published = PORT_3DS_FULL_VIEW_FALLBACK;
+    (void)Port_WidescreenRead3DSView(NULL, &published);
+    return published == PORT_3DS_FULL_VIEW_FALLBACK;
+#else
+    return 0;
+#endif
 }
 
 Port3DSFullViewFallbackReason Port_Widescreen_3DSFallbackReason(void) {
@@ -1888,10 +1929,7 @@ void Port_Widescreen_UpdateShadows(void) {
     int fullViewOutdoor;
     int requiredMapShadows = 0;
     int preparedMapShadows = 0;
-    const int transitionActive = Port3DSFullViewPolicy_RoomTransitionActive(
-        gRoomTransition.transitioningOut != 0 || gRoomTransition.field_0x4[1] != 0,
-        gFadeControl.active != 0,
-        gRoomControls.reload_flags, gRoomControls.scrollAction);
+    const int transitionActive = Port_WidescreenRoomTransitionActive();
 
     (void)Port_WidescreenRead3DSView(&previousRoomKey, &previousMode);
     if (previousRoomKey != roomKey) previousMode = PORT_3DS_FULL_VIEW_FALLBACK;
@@ -1899,7 +1937,11 @@ void Port_Widescreen_UpdateShadows(void) {
         sWsExperimentalCameraRoomKey = roomKey;
         sWsExperimentalCameraSnapArmed = 1;
     }
+    if (sWsRoomLoadTicks > 0) --sWsRoomLoadTicks;
+    if (gFadeControl.active != 0) sWsFadeRecent = 90;
+    else if (sWsFadeRecent > 0) --sWsFadeRecent;
     if (sWsGameplayRoomKey != roomKey) {
+        sWsRoomLoadTicks = sWsFadeRecent > 0 ? 16 : 0;
         sWsGameplayRoomKey = roomKey;
         sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
         sWsProducerPendingRoomKey = 0xffffffffu;
@@ -1957,6 +1999,25 @@ void Port_Widescreen_UpdateShadows(void) {
         desiredMode = PORT_3DS_FULL_VIEW_FALLBACK;
     }
 
+#ifdef TMC_3DS
+    {
+        /* Entering Full View needs the policy to hold for a while. Leaving an
+         * interior runs through a fade, a scroll, the room banner and the
+         * content scan, and the raw policy flipped open for two to four ticks
+         * between those phases: 266 -> 400 -> 266 -> 400 with a camera snap
+         * each time (a flashing screen). Dropping out stays immediate. */
+        enum { FULL_VIEW_ENTER_TICKS = 4 };
+        static unsigned stableTicks;
+        if (desiredMode == PORT_3DS_FULL_VIEW_FALLBACK) {
+            stableTicks = 0;
+        } else if (stableTicks < FULL_VIEW_ENTER_TICKS) {
+            ++stableTicks;
+            const Port3DSFullViewMode currentlyProducing =
+                sWsGameplayRoomKey == roomKey ? sWsGameplayMode : PORT_3DS_FULL_VIEW_FALLBACK;
+            if (currentlyProducing == PORT_3DS_FULL_VIEW_FALLBACK) desiredMode = PORT_3DS_FULL_VIEW_FALLBACK;
+        }
+    }
+#endif
     /* Commit the geometry this tick actually used to produce BG/OAM. Policy
      * only schedules the following tick. This is what prevents a late fade,
      * message or settings tap from reinterpreting a completed 200/400 frame
@@ -2118,6 +2179,9 @@ Port3DSFullViewMode Port_Widescreen_3DSViewMode(void) {
 }
 Port3DSFullViewFallbackReason Port_Widescreen_3DSFallbackReason(void) {
     return PORT_3DS_FULL_VIEW_REASON_COMBO_DISABLED;
+}
+int Port_Widescreen_3DSHoldTop(void) {
+    return 0;
 }
 int Port_Widescreen_HudRightAnchor(void) {
     return 0;

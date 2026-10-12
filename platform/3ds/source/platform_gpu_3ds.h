@@ -39,6 +39,12 @@ static inline PlatformGpu3DSUploadLayout PlatformGpu3DS_GetUploadLayout(bool com
     return (PlatformGpu3DSUploadLayout){ 512u, 256u, 512u, 256u };
 }
 
+/* Switches the upload layout during play (DEBUG -> SWITCHES -> COMPACT UP; Old
+ * 3DS only, the New 3DS keeps the full layout). The caller must hand the new
+ * pitches to the painter and VirtuaPPU in the same frame, with no bottom paint
+ * in flight (Port_PPU_PresentFrame does). */
+PlatformGpu3DSUploadLayout PlatformGpu3DS_SetCompactUpload(bool compact);
+
 typedef struct PlatformGpu3DSStats {
     uint64_t frames;
     uint64_t frameBeginFailures;
@@ -75,7 +81,8 @@ void PlatformGpu3DS_BeginTop(const uint32_t* pixels, unsigned width, unsigned he
 bool PlatformGpu3DS_BeginCustomTop(void);
 /* Repaint the black borders around the game image on the next few frames. */
 void PlatformGpu3DS_InvalidateTopBorder(void);
-void PlatformGpu3DS_DrawTopTexture(void* texture, unsigned width);
+void PlatformGpu3DS_DrawTopTexture(void* texture, unsigned width, unsigned height, Port3DSFullViewMode mode,
+                                   int cropX, int cropY);
 bool PlatformGpu3DS_QueueRgba5551Readback(void* texture, uint16_t* pixels);
 /* Returns true only when a Citro3D frame was active and submitted. */
 bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed);
@@ -86,3 +93,9 @@ void PlatformGpu3DS_InvalidateBottomTarget(void);
 void PlatformGpu3DS_Shutdown(void);
 
 #endif
+/* Drains citro3d's queue with an empty frame (APT suspend/sleep, before a
+ * relaunch): false if it did not drain within half a second. */
+bool PlatformGpu3DS_DrainQueue(void);
+/* Runs fn on a helper thread and waits at most this long: for teardown that
+ * waits on the GPU queue. False when it timed out (the thread stays stuck). */
+bool PlatformGpu3DS_RunWithTimeout(void (*fn)(void), unsigned milliseconds);

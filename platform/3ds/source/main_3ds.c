@@ -1,4 +1,5 @@
 #include "platform_3ds.h"
+#include "tmc3ds_version.h"
 #include "updater.h"
 #include "port_second_screen_theme.h"
 
@@ -15,7 +16,16 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define APP_DIR "sdmc:/3ds/The Minish Cap 3DS"
+#include "app_paths_3ds.h"
+#include "tmc3ds_build_config.h"
+#if TMC3DS_DEBUG_TOOLS
+#include "debug_log_3ds.h"
+#include "debug_perf_3ds.h"
+#include "ftp_server_3ds.h"
+#include "debug_switches_3ds.h"
+#endif
+
+#define APP_DIR TMC3DS_APP_DIR
 #define ROM_PATH_SIZE 512
 
 extern void AgbMain(void);
@@ -73,18 +83,12 @@ int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
     if (!Platform3DS_Init()) return 1;
+    Platform3DS_SilenceBootConsole();
     Platform3DS_ShowSplash();
 
-    printf("The Minish Cap 3DS v" TMC_PORT_VERSION "\n\n");
-    printf("agbplay: ipatix and contributors (LGPLv3).\nLicenses: romfs:/licenses/\n\n");
-    printf("System: %s\n", Platform3DS_IsNew3DS() ? "New Nintendo 3DS" : "Nintendo 3DS");
-    printf("Performance: %s\n",
-           Platform3DS_IsNew3DS() ? "New 3DS full presentation"
-                                  : "Old 3DS adaptive presentation skip (max 3)");
-    printf("PPU worker core 1: %u%%\n", Platform3DS_Core1TimeLimit());
-    printf("Extra New 3DS core: %s\n\n", Platform3DS_IsNew3DS() ? "enabled" : "unavailable");
-    printf("Preparing storage...\n");
+    Platform3DS_BootAnimStart();
     if (!PrepareStorage()) {
+        Platform3DS_BootAnimStop();
         Platform3DS_ShowFatal("Storage error", "Could not open " APP_DIR ".");
         Platform3DS_Shutdown();
         return 1;
@@ -108,6 +112,7 @@ int main(int argc, char** argv) {
                      "Europe: cff199b36ff173fb6faf152653d1bccf87c26fb7",
                      APP_DIR);
         }
+        Platform3DS_BootAnimStop();
         Platform3DS_ShowFatal(romResult < 0 ? "Unsupported ROM" : "ROM not found", message);
         Platform3DS_Shutdown();
         return 1;
@@ -115,28 +120,56 @@ int main(int argc, char** argv) {
 
     FILE* rom = fopen(romPath, "rb");
     if (!rom) {
+        Platform3DS_BootAnimStop();
         Platform3DS_ShowFatal("ROM error", "Could not open the selected .gba file.");
         Platform3DS_Shutdown();
         return 1;
     }
     fclose(rom);
 
-    printf("Loading ROM and tables...\n");
     Port_Config_Load("tmc3ds.ini");
+#if TMC3DS_DEBUG_TOOLS
+    /* Debug builds log from boot unless the DEBUG tab left it off; the FTP
+     * server comes back on its own once Wi-Fi is up (port_ppu_3ds.c). */
+    if (Port_Config_DebugLogOn()) {
+        DebugLog_SetDirect(Port_Config_DebugLogDirect());
+        DebugLog_Start();
+    }
+#endif
     Port_LoadRom(romPath);
     Port_SecondScreenTheme_Ready();
+    Platform3DS_BootAnimStop();
     Port_PPU_Init(NULL);
     if (!Port_Audio_Init()) {
-        printf("Warning: audio is unavailable.\n");
+#if TMC3DS_DEBUG_TOOLS
+        DebugLog_Printf("audio is unavailable");
+#endif
     }
 
-    printf("Starting engine...\n");
     Platform3DS_EnterGameplayDisplay();
     Updater_Init(argc > 0 ? argv[0] : NULL);
     AgbMain();
+#if TMC3DS_DEBUG_TOOLS
+    /* Each step is flushed: if one never returns, the log says which. */
+#define EXIT_STEP(name)                         \
+    do {                                        \
+        DebugLog_Printf("exit: %s", name);      \
+        DebugLog_Flush();                       \
+    } while (0)
+    EXIT_STEP("engine returned");
+    if (FtpServer_Running()) FtpServer_Stop();
+    EXIT_STEP("ftp stopped");
+    if (DebugPerf_Running()) DebugPerf_Stop();
+#else
+#define EXIT_STEP(name) ((void)0)
+#endif
     Updater_Shutdown();
-
+    EXIT_STEP("updater stopped");
     Port_PPU_Shutdown();
+    EXIT_STEP("ppu stopped");
+#if TMC3DS_DEBUG_TOOLS
+    DebugLog_Stop();
+#endif
     Platform3DS_Shutdown();
     return 0;
 }

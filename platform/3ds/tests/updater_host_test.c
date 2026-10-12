@@ -8,6 +8,7 @@ static int test_sd_close(FILE *file);
 #define write test_sd_write
 #define fclose test_sd_close
 #include "updater.c"
+#include "net_3ds.c"
 #undef write
 #undef fclose
 static unsigned sd_writes;
@@ -82,7 +83,7 @@ void Platform3DS_Debug(const char*f){(void)f;}
 Result FSUSER_GetSdmcArchiveResource(FS_ArchiveResource*r){r->freeClusters=no_space?0:100000;r->clusterSize=4096;return 0;}
 Result amInit(void){return 0;}void amExit(void){}
 Result FSUSER_OpenFileDirectly(Handle*h,int a,FS_Path b,FS_Path c,int d,int e){input_file=fopen(UPDATE_PART,"rb");*h=1;return input_file?0:-1;}
-Result AM_GetCiaFileInfo(int a,AM_TitleInfo*i,Handle h){i->titleID=wrong_title?123:0x0004000005a22d00ull;return 0;}
+Result AM_GetCiaFileInfo(int a,AM_TitleInfo*i,Handle h){i->titleID=wrong_title?123:0x0004000005a22e00ull;return 0;}
 Result AM_GetCiaRequiredSpace(u64*r,int a,Handle h){*r=5000000;return 0;}
 Result AM_StartCiaInstallOverwrite(Handle*h,int a){starts++;*h=2;return 0;}
 Result FSFILE_Read(Handle h,u32*n,u64 off,void*b,u32 s){fseek(input_file,off,SEEK_SET);*n=fread(b,1,s,input_file);return 0;}

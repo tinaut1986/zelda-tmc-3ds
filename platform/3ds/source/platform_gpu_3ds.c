@@ -28,13 +28,9 @@ static unsigned sPresentQuadWidth;
 bool Port_Config_GpuStaticQuad(void);
 bool Port_Config_CompactUpload(void);
 bool Port_Config_BottomRgb565(void);
-bool Port_Config_FrameLog(void);
 
 static C3D_RenderTarget* sTopTarget;
 static C3D_RenderTarget* sBottomTarget;
-static C3D_Tex sUpdateTexture;
-static uint32_t* sUpdatePixels;
-static bool sUpdateReady;
 static C3D_Tex sTopTexture;
 static C3D_Tex sBottomTexture;
 static C3D_Tex sSharpBilinearTexture;
@@ -75,6 +71,15 @@ _Static_assert(SHARP_BILINEAR_TEXTURE_HEIGHT >= 160 * 2 + 1,
 extern u32 __ctru_linear_heap;
 extern u32 __ctru_linear_heap_size;
 extern bool Port_Config_GetShowFps(void);
+extern void Port_FadedBlackRGB(uint8_t* r, uint8_t* g, uint8_t* b); /* src/fade.c */
+
+/* What the bars beside a narrow view are filled with: black, or the fade's
+ * colour while the game fades (a door's white fade takes the whole screen). */
+static u32 TopClearColor(void) {
+    uint8_t r, g, b;
+    Port_FadedBlackRGB(&r, &g, &b);
+    return C2D_Color32(r, g, b, 255);
+}
 extern int Port_Config_Get3DSAspectRatio(void);
 extern int Port_Config_Get3DSDisplayStyle(void);
 extern bool Port_Config_3DSFullViewComboEnabled(void);
@@ -89,7 +94,7 @@ static const uint8_t* StatusGlyph(char c) {
         { 14, 16, 16, 30, 17, 17, 14 }, { 31, 1, 2, 4, 8, 8, 8 },
         { 14, 17, 17, 14, 17, 17, 14 }, { 14, 17, 17, 15, 1, 1, 14 },
     };
-    static const uint8_t letters[11][7] = {
+    static const uint8_t letters[12][7] = {
         { 14, 17, 17, 31, 17, 17, 17 }, /* A */
         { 30, 17, 17, 17, 17, 17, 30 }, /* D */
         { 31, 16, 16, 30, 16, 16, 31 }, /* E */
@@ -101,12 +106,15 @@ static const uint8_t* StatusGlyph(char c) {
         { 17, 17, 17, 17, 17, 10, 4 },  /* V */
         { 14, 17, 16, 16, 16, 17, 14 }, /* C */
         { 14, 17, 16, 23, 17, 17, 15 }, /* G */
+        { 16, 16, 16, 16, 16, 16, 31 }, /* L */
     };
     static const uint8_t letterIds[26] = {
         /* A    B    C  D  E  F   G */
-        0,   255,   9, 1, 2, 3, 10, 255, 255, 255, 255, 255, 4,
+        0,   255,   9, 1, 2, 3, 10, 255, 255, 255, 255, 11, 4,
         255, 255, 5, 255, 255, 6, 255, 7, 8, 255, 255, 255, 255,
     };
+    static const uint8_t dot[7] = { 0, 0, 0, 0, 0, 12, 12 };
+    if (c == '.') return dot;
     if (c >= '0' && c <= '9') return digits[c - '0'];
     if (c >= 'A' && c <= 'Z') {
         uint8_t id = letterIds[c - 'A'];
@@ -115,8 +123,7 @@ static const uint8_t* StatusGlyph(char c) {
     return NULL;
 }
 
-static void DrawStatusText(float x, float y, float scale, const char* text) {
-    const uint32_t color = C2D_Color32(255, 255, 255, 255);
+static void DrawStatusTextColor(float x, float y, float scale, const char* text, uint32_t color) {
     for (; *text; ++text, x += 6.0f * scale) {
         const uint8_t* glyph = StatusGlyph(*text);
         if (!glyph) continue;
@@ -135,6 +142,12 @@ static void DrawStatusText(float x, float y, float scale, const char* text) {
         }
     }
 }
+
+static void DrawStatusText(float x, float y, float scale, const char* text) {
+    DrawStatusTextColor(x, y, scale, text, C2D_Color32(255, 255, 255, 255));
+}
+
+static void DrawFpsOverlay(void);
 
 static u32 TextureTransfer(void) {
     return GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(1) |
@@ -232,10 +245,14 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     /* MUST match the expression in Port_PPU_Init exactly: that one gives the
      * pitch to the painter, this one sizes the allocation and the transfer. */
     sUploadLayout = PlatformGpu3DS_GetUploadLayout(old3dsProfile && Port_Config_CompactUpload());
+    /* Allocated at the full size whatever the layout, so COMPACT UP can be
+     * switched during play (PlatformGpu3DS_SetCompactUpload): the compact
+     * layout only uses less of the same buffers. */
+    const PlatformGpu3DSUploadLayout fullLayout = PlatformGpu3DS_GetUploadLayout(false);
     const size_t topBytes =
-        (size_t)sUploadLayout.topPitch * sUploadLayout.topRows * sizeof(uint32_t);
+        (size_t)fullLayout.topPitch * fullLayout.topRows * sizeof(uint32_t);
     const size_t bottomBytes =
-        (size_t)sUploadLayout.bottomPitch * sUploadLayout.bottomRows * sizeof(uint32_t);
+        (size_t)fullLayout.bottomPitch * fullLayout.bottomRows * sizeof(uint32_t);
     sBottomTargetValid = false;
     sSharpBilinearTarget = NULL;
     sC2dFlushBase = NULL;
@@ -253,9 +270,12 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     GSPGPU_FlushDataCache(sTopUpload, topBytes);
     GSPGPU_FlushDataCache(sBottomUploads[0], bottomBytes);
     GSPGPU_FlushDataCache(sBottomUploads[1], bottomBytes);
-    if (!C3D_Init(old3dsProfile ? PPU_GPU3DS_COMMAND_BUFFER_BYTES : C3D_DEFAULT_CMDBUF_SIZE))
+    /* The GPU renderer runs on both models and needs the larger command buffer. */
+    if (!C3D_Init(PPU_GPU3DS_COMMAND_BUFFER_BYTES))
         goto fail_linear;
-    if (!C2D_Init(128)) {
+    /* Every rectangle of the numbers box is one object: past the limit citro2d silently drops the
+     * rest of the frame's draws, and the bottom screen went black on the frames with wide digits. */
+    if (!C2D_Init(512)) {
         C3D_Fini();
         goto fail_linear;
     }
@@ -409,7 +429,7 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
                  .w = (float)plan.drawWidth, .h = (float)plan.drawHeight },
         .center = { 0.0f, 0.0f }, .depth = 0.0f, .angle = 0.0f,
     };
-    C2D_TargetClear(sTopTarget, C2D_Color32(0, 0, 0, 255));
+    C2D_TargetClear(sTopTarget, TopClearColor());
     const unsigned intermediateScale = (unsigned)plan.sharpBilinearScale;
     const bool validSharpBilinearScale = intermediateScale == 2u;
     const unsigned intermediateWidth = validSharpBilinearScale
@@ -525,17 +545,68 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
         ConfigureAbgrTextureEnv();
         if (plan.useSharpBilinear) ++sStats.sharpBilinearFallbacks;
     }
-    if (Port_Config_GetShowFps()) {
-        char label[28];
-        double fps = Port_PPU_3DS_CurrentFps();
-        unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
-        if (rounded > 999u) rounded = 999u;
-        snprintf(label, sizeof(label), "FPS %u", rounded);
-        const float backgroundWidth = (float)strlen(label) * 12.0f + 8.0f;
-        C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, backgroundWidth, 20.0f,
-                          C2D_Color32(0, 0, 0, 210));
-        DrawStatusText(10.0f, 219.0f, 2.0f, label);
+    if (Port_Config_GetShowFps()) DrawFpsOverlay();
+}
+
+/* The numbers box (SHOW FPS), after ../mzm and ../sm-3ds: four small lines in a dim box at the
+ * bottom-left corner, averaged over the last second. The first is the game's own rate (green from
+ * 59, yellow from 50, red below); L is the logic's ms per tick, G the GPU's ms per presented
+ * frame and S the rate frames reach the screen. Called once per presented frame, inside a C2D
+ * scene with the ABGR texture env, so it is also where the window accumulates. */
+static void DrawFpsOverlay(void) {
+    static struct {
+        uint64_t startMs, logicStart, workStart;
+        double gpuMs;
+        unsigned frames;
+    } win;
+    static float gameFps, logicMs, gpuMs;
+    const uint64_t nowMs = osGetTime();
+    win.gpuMs += sStats.drawingTime > 0.0f ? sStats.drawingTime : 0.0f;
+    ++win.frames;
+    if (win.startMs == 0) {
+        win.startMs = nowMs;
+        win.logicStart = Platform3DS_LogicFrameCount();
+        win.workStart = Platform3DS_EngineWorkTotalTicks();
+    } else if (nowMs - win.startMs >= 1000u) {
+        const uint64_t elapsed = nowMs - win.startMs;
+        const uint64_t logic = Platform3DS_LogicFrameCount();
+        const uint64_t work = Platform3DS_EngineWorkTotalTicks();
+        const uint64_t ticks = logic - win.logicStart;
+        gameFps = (float)ticks * 1000.0f / (float)elapsed;
+        logicMs = ticks ? (float)((double)(work - win.workStart) * 1000.0 /
+                                  (double)Platform3DS_TicksPerSecond() / (double)ticks)
+                        : 0.0f;
+        gpuMs = (float)(win.gpuMs / win.frames);
+        win.startMs = nowMs;
+        win.logicStart = logic;
+        win.workStart = work;
+        win.gpuMs = 0.0;
+        win.frames = 0;
     }
+
+    char line[4][12];
+    snprintf(line[0], sizeof(line[0]), "%.1f", gameFps);
+    snprintf(line[1], sizeof(line[1]), "L%.1f", logicMs);
+    snprintf(line[2], sizeof(line[2]), "G%.1f", gpuMs);
+    snprintf(line[3], sizeof(line[3]), "S%.1f", Port_PPU_3DS_CurrentFps());
+    int chars = 0;
+    for (int i = 0; i < 4; ++i) {
+        const int n = (int)strlen(line[i]);
+        if (n > chars) chars = n;
+    }
+    enum { LINES = 4, PITCH = 10, MARGIN = 2 };
+    const float w = (float)(chars * 6 + 3), h = (float)(LINES * PITCH + 2);
+    const float boxX = (float)MARGIN, boxY = 240.0f - MARGIN - h;
+    C2D_DrawRectSolid(boxX, boxY, 0.7f, w, h, C2D_Color32(0, 0, 0, 150));
+    const uint32_t light = C2D_Color32(230, 232, 240, 255);
+    const uint32_t colors[LINES] = {
+        gameFps >= 59.0f ? C2D_Color32(110, 220, 130, 255)
+                         : (gameFps >= 50.0f ? C2D_Color32(240, 200, 80, 255)
+                                             : C2D_Color32(240, 100, 100, 255)),
+        light, light, C2D_Color32(140, 148, 170, 255),
+    };
+    for (int i = 0; i < LINES; ++i)
+        DrawStatusTextColor(boxX + 2.0f, boxY + 2.0f + (float)(i * PITCH), 1.0f, line[i], colors[i]);
 }
 
 /* The top screen is 400x240 and the game image rarely covers all of it, so the
@@ -615,18 +686,32 @@ static void BuildPresentQuad(float drawX, float drawY, float drawW, float drawH,
     sPresentQuadValid = true;
 }
 
-static void DrawTopTexture(C3D_Tex* texture, unsigned width, bool configureAbgr) {
+static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Port3DSFullViewMode mode,
+                           int cropX, int cropY, bool configureAbgr) {
     if (!texture) return;
-    if (width < 240u) width = 240u;
-    if (width > 266u) width = 266u;
+    const bool fullView = mode != PORT_3DS_FULL_VIEW_FALLBACK;
+    if (!fullView) {
+        /* E2: 240 to 266 columns by 160 rows. */
+        if (width < 240u) width = 240u;
+        if (width > 266u) width = 266u;
+        height = 160u;
+        cropX = cropY = 0;
+    }
 
     const int style = Port_Config_Get3DSDisplayStyle();
     TopView3DSPlan plan;
-    TopView3DS_BuildPlan(true, false, Port_Config_Get3DSAspectRatio(), style,
-                         PORT_3DS_FULL_VIEW_FALLBACK, (int)width, 160,
-                         (int)width, 160, 0, 0, &plan);
+    /* Full View frames (400x240 outdoors, 200x120 at 2x indoors) take the
+     * same plan as the software path's DrawTopImage. */
+    TopView3DS_BuildPlan(!fullView, fullView, Port_Config_Get3DSAspectRatio(), style, mode, (int)width,
+                         (int)height, (int)width, (int)height, cropX, cropY, &plan);
     const Port3DSFullViewPresentation* presentation = &plan.source;
     sTopPresentWidth = (unsigned)presentation->renderWidth;
+    sTopPresentHeight = (unsigned)presentation->renderHeight;
+    sTopValidSourceWidth = width;
+    sTopValidSourceHeight = height;
+    sTopPresentMode = plan.mode;
+    sTopCropX = presentation->sourceX;
+    sTopCropY = presentation->sourceY;
 
     sTopSubtexture = (Tex3DS_SubTexture){
         .width = (u16)presentation->sourceWidth,
@@ -651,7 +736,7 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, bool configureAbgr)
     /* Keep the clear as the render-to-texture submission boundary between
      * the PICA200 PPU target and its physical-screen sampling pass. */
     if (sTopClearFrames != 0) --sTopClearFrames;
-    C2D_TargetClear(sTopTarget, C2D_Color32(0, 0, 0, 255));
+    C2D_TargetClear(sTopTarget, TopClearColor());
     const unsigned intermediateScale = (unsigned)plan.sharpBilinearScale;
     const unsigned intermediateWidth =
         intermediateScale == 2u ? (unsigned)presentation->sourceWidth * 2u : 0u;
@@ -798,17 +883,7 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, bool configureAbgr)
     }
     if (configureAbgr) ConfigureAbgrTextureEnv();
 
-    if (Port_Config_GetShowFps()) {
-        char label[28];
-        double fps = Port_PPU_3DS_CurrentFps();
-        unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
-        if (rounded > 999u) rounded = 999u;
-        snprintf(label, sizeof(label), "FPS %u", rounded);
-        const float backgroundWidth = (float)strlen(label) * 12.0f + 8.0f;
-        C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, backgroundWidth, 20.0f,
-                          C2D_Color32(0, 0, 0, 210));
-        DrawStatusText(10.0f, 219.0f, 2.0f, label);
-    }
+    if (Port_Config_GetShowFps()) DrawFpsOverlay();
 }
 
 
@@ -821,15 +896,6 @@ void PlatformGpu3DS_BeginTop(const uint32_t* pixels, unsigned width, unsigned he
      * fallback. Reuse it so the freshly rendered image is actually uploaded. */
     if (!sFrameActive && !C3D_FrameBegin(frameFlags)) {
         ++sStats.frameBeginFailures;
-        if (Port_Config_FrameLog() &&
-            (sStats.frameBeginFailures <= 3u ||
-             (sStats.frameBeginFailures % 300u) == 0u)) {
-            char line[112];
-            snprintf(line, sizeof(line),
-                     "[tmc3ds] GPU busy, frame begin skipped (%llu total)\n",
-                     (unsigned long long)sStats.frameBeginFailures);
-            Platform3DS_Debug(line);
-        }
         return;
     }
     sFrameActive = true;
@@ -866,25 +932,25 @@ bool PlatformGpu3DS_BeginCustomTop(void) {
     const u8 frameFlags = (u8)(Port_Config_GpuFrameSync() ? C3D_FRAME_SYNCDRAW : 0);
     if (!C3D_FrameBegin(frameFlags)) {
         ++sStats.frameBeginFailures;
-        if (Port_Config_FrameLog() &&
-            (sStats.frameBeginFailures <= 3u ||
-             (sStats.frameBeginFailures % 300u) == 0u)) {
-            char line[112];
-            snprintf(line, sizeof(line),
-                     "[tmc3ds] GPU busy, frame begin skipped (%llu total)\n",
-                     (unsigned long long)sStats.frameBeginFailures);
-            Platform3DS_Debug(line);
-        }
         return false;
     }
     sFrameActive = true;
     return true;
 }
 
-void PlatformGpu3DS_DrawTopTexture(void* texturePointer, unsigned width) {
+PlatformGpu3DSUploadLayout PlatformGpu3DS_SetCompactUpload(bool compact) {
+    sUploadLayout = PlatformGpu3DS_GetUploadLayout(sOld3DSProfile && compact);
+    sStats.topUploadPitch = sUploadLayout.topPitch;
+    sStats.bottomUploadPitch = sUploadLayout.bottomPitch;
+    sBottomTargetValid = false; /* redraw the bottom from the new stride */
+    return sUploadLayout;
+}
+
+void PlatformGpu3DS_DrawTopTexture(void* texturePointer, unsigned width, unsigned height,
+                                   Port3DSFullViewMode mode, int cropX, int cropY) {
     C3D_Tex* texture = texturePointer;
     if (!sFrameActive || !texture) return;
-    DrawTopTexture(texture, width, false);
+    DrawTopTexture(texture, width, height, mode, cropX, cropY, false);
 }
 
 bool PlatformGpu3DS_QueueRgba5551Readback(void* texturePointer, uint16_t* pixels) {
@@ -912,47 +978,8 @@ bool PlatformGpu3DS_QueueRgba5551Readback(void* texturePointer, uint16_t* pixels
 }
 
 
-/* The changelog always occupies the physical top screen at 400x240,
- * independent of the gameplay aspect/filter and Full View settings. */
-static void DrawUpdateTop(void) {
-    if (!Port_SecondScreen_3DS_UpdateOpen()) return;
-    /* GX display transfer is not a padded row copy: its output dimensions
-     * describe the transfer extent. Match the 512x256 texture on both sides;
-     * a 400x240 input produces corrupt tiled rows on hardware. Only the
-     * 400x240 viewport is painted and sampled. */
-    const size_t uploadBytes = TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t);
-    if (!sUpdateReady) {
-        sUpdatePixels = linearAlloc(uploadBytes);
-        if (!sUpdatePixels) return;
-        if (!C3D_TexInit(&sUpdateTexture,TOP_TEXTURE_WIDTH,TOP_TEXTURE_HEIGHT,GPU_RGBA8)) {
-            linearFree(sUpdatePixels); sUpdatePixels=NULL; return;
-        }
-        C3D_TexSetFilter(&sUpdateTexture,GPU_NEAREST,GPU_NEAREST);
-        C3D_TexSetWrap(&sUpdateTexture,GPU_CLAMP_TO_EDGE,GPU_CLAMP_TO_EDGE);
-        memset(sUpdatePixels, 0, uploadBytes);
-        sUpdateReady=true;
-    }
-    if (Port_SecondScreen_3DS_PaintUpdateTop(sUpdatePixels,TOP_TEXTURE_WIDTH)) {
-        Platform3DS_CleanDataCache(sUpdatePixels,uploadBytes);
-        C3D_SyncDisplayTransfer(sUpdatePixels,GX_BUFFER_DIM(TOP_TEXTURE_WIDTH,TOP_TEXTURE_HEIGHT),
-            sUpdateTexture.data,GX_BUFFER_DIM(TOP_TEXTURE_WIDTH,TOP_TEXTURE_HEIGHT),
-            TextureTransfer());
-    }
-    C2D_Prepare();
-    C3D_SetScissor(GPU_SCISSOR_DISABLE,0,0,0,0);
-    C2D_TargetClear(sTopTarget,C2D_Color32(0,0,0,255));
-    C2D_SceneBegin(sTopTarget);
-    Tex3DS_SubTexture sub={.width=400,.height=240,.left=0,.top=1,
-        .right=400.f/TOP_TEXTURE_WIDTH,.bottom=1-240.f/TOP_TEXTURE_HEIGHT};
-    C2D_Image image={.tex=&sUpdateTexture,.subtex=&sub};
-    C2D_DrawImageAt(image,0,0,0,NULL,1,1);
-    ConfigureAbgrTextureEnv();
-    PlatformGpu3DS_InvalidateTopBorder();
-}
-
 bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
     if (!sFrameActive || !pixels) return false;
-    DrawUpdateTop();
     if (changed) {
         /* NOT a blocking transfer. citro3d source/renderqueue.c:417-430 shows
          * C3D_SyncDisplayTransfer only blocks when called OUTSIDE a frame:
@@ -1034,7 +1061,8 @@ void PlatformGpu3DS_ShowDumpSavedOverlay(void* currentTopTexture) {
      * Re-present the live output texture so saving a dump never flashes an
      * older CPU/parity frame. */
     if (currentTopTexture)
-        DrawTopTexture((C3D_Tex*)currentTopTexture, sTopPresentWidth, false);
+        DrawTopTexture((C3D_Tex*)currentTopTexture, sTopValidSourceWidth, sTopValidSourceHeight, sTopPresentMode,
+                       sTopCropX, sTopCropY, false);
     else
         DrawTopImage(sTopUpload, sTopPresentWidth, sTopPresentHeight,
                      sTopValidSourceWidth, sTopValidSourceHeight,
@@ -1088,10 +1116,45 @@ void PlatformGpu3DS_InvalidateBottomTarget(void) {
     sTopCropY = 0;
 }
 
+/* citro3d ends a frame asynchronously: the swap is a callback when its GPU
+ * queue finishes. If the GPU is taken away (HOME, the lid, a jump to another
+ * title) with a frame in flight, that frame is never acknowledged: every later
+ * wait on the queue (C3D_RenderTargetDelete, C3D_Fini) never returns, and a
+ * citro3d left half done freezes the next application, which after SITE
+ * INSTALL is this game's new build (issue #2; ../sm-3ds issue #20 found it).
+ * An empty frame drains the queue while the GPU is still ours; on a thread
+ * with a timeout, so a queue that will not drain costs half a second. */
+static void DrainThread(void* arg) {
+    (void)arg;
+    if (C3D_FrameBegin(0)) C3D_FrameEnd(0);
+}
+
+bool PlatformGpu3DS_DrainQueue(void) {
+    if (!sReady || sFrameActive) return true;
+    Thread thread = threadCreate(DrainThread, NULL, 16 * 1024, 0x30, -2, false);
+    if (!thread) return false;
+    /* A timeout is a positive result code: only 0 means the thread ended. */
+    if (threadJoin(thread, 500ull * 1000 * 1000) != 0) return false;
+    threadFree(thread);
+    return true;
+}
+
+static void RunThread(void* arg) {
+    ((void (*)(void))arg)();
+}
+
+bool PlatformGpu3DS_RunWithTimeout(void (*fn)(void), unsigned milliseconds) {
+    Thread thread = threadCreate(RunThread, (void*)fn, 32 * 1024, 0x30, -2, false);
+    if (!thread) {
+        fn();
+        return true;
+    }
+    if (threadJoin(thread, (u64)milliseconds * 1000000ull) != 0) return false; /* left stuck */
+    threadFree(thread);
+    return true;
+}
+
 void PlatformGpu3DS_Shutdown(void) {
-    if (sUpdateReady) C3D_TexDelete(&sUpdateTexture);
-    if (sUpdatePixels) linearFree(sUpdatePixels);
-    sUpdateReady=false; sUpdatePixels=NULL;
     if (!sReady) return;
     if (sFrameActive) {
         C2D_Flush();

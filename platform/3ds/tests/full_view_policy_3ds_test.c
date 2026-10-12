@@ -89,10 +89,11 @@ int main(void) {
     CHECK(!Port3DSFullViewPolicy_AreaIsExterior(AREA_LAKE_WOODS_CAVE, 0, AR_IS_MOLE_CAVE));
     CHECK(!Port3DSFullViewPolicy_AreaIsExterior(AREA_98 + 1, 0, AR_IS_OVERWORLD));
     CHECK(!Port3DSFullViewPolicy_AreaIsExterior(AREA_MINISH_VILLAGE, -1, 0));
-    CHECK(Port3DSFullViewPolicy_Desired(&inputs) == PORT_3DS_FULL_VIEW_INTERIOR_2X);
-    inputs.contentWidth = 199;
+    /* Interiors are never zoomed: fallback at 1x whatever the room size. */
     CHECK(Port3DSFullViewPolicy_Decide(&inputs, &reason) == PORT_3DS_FULL_VIEW_FALLBACK);
-    CHECK(reason == PORT_3DS_FULL_VIEW_REASON_INTERIOR_BOUNDS);
+    CHECK(reason == PORT_3DS_FULL_VIEW_REASON_INTERIOR_NO_ZOOM);
+    inputs.contentWidth = 199;
+    CHECK(Port3DSFullViewPolicy_Desired(&inputs) == PORT_3DS_FULL_VIEW_FALLBACK);
     inputs.contentWidth = 240;
     inputs.contentHeight = 119;
     CHECK(Port3DSFullViewPolicy_Desired(&inputs) == PORT_3DS_FULL_VIEW_FALLBACK);
