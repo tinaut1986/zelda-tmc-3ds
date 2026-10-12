@@ -308,6 +308,11 @@ bool SaveState_Busy(void) {
     return __atomic_load_n(&sPending, __ATOMIC_ACQUIRE) != SAVE_STATE_JOB_NONE;
 }
 
+SaveStateJob SaveState_PendingJob(void) {
+    const uint32_t job = __atomic_load_n(&sPending, __ATOMIC_ACQUIRE);
+    return job == JOB_CLAIMED ? SAVE_STATE_JOB_NONE : (SaveStateJob)job;
+}
+
 uint32_t SaveState_Generation(void) {
     return __atomic_load_n(&sGeneration, __ATOMIC_ACQUIRE);
 }
@@ -803,6 +808,14 @@ static void Delete(uint32_t id) {
 void SaveState_Service(void) {
     const uint32_t job = __atomic_load_n(&sPending, __ATOMIC_ACQUIRE);
     if (job == SAVE_STATE_JOB_NONE || job == JOB_CLAIMED) return;
+    /* A job that stops the game for a while waits for the bottom screen's notice to be shown:
+     * the game is not drawing while it runs. About a tenth of a second. */
+    static unsigned sPreroll;
+    if (job != SAVE_STATE_JOB_SCAN && sPreroll < 8u) {
+        ++sPreroll;
+        return;
+    }
+    sPreroll = 0;
     const uint32_t id = sPendingId;
     if (!sScanned || job == SAVE_STATE_JOB_SCAN) Scan();
     switch (job) {
