@@ -1126,7 +1126,9 @@ void PortPpuGpu3DS_FinishParityCheck(void) {
     sStats.firstDiffY = firstY;
     WriteParitySurfaces(differing);
     if (structural == 0) return;
-    /* Only a difference the blender cannot explain retires the GPU path. */
+    /* A difference the blender cannot explain is counted and written out, but
+     * it no longer retires the renderer: the check is asked for by a person
+     * (GPU CHECK, the link), and dropping to the software path for the rest of
+     * the session turned a few odd pixels into 25 fps and no wide view. */
     ++sStats.parityFailures;
-    PortPpuGpu3DS_Disable();
 }
