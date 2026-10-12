@@ -241,6 +241,10 @@ typedef struct PpuGpu3DSFrameView {
     bool objClipEnable;
     const uint8_t* objClipMark;
     int objClipY;
+    /* A uniform screen fade the renderer applies itself (docs/gpu-fade.md):
+     * `memory`'s palettes are then the unfaded ones and the finished picture is
+     * blended toward grey `fadeLevel` by fadeWeight/255. 0 weight: none. */
+    uint8_t fadeWeight, fadeLevel;
 } PpuGpu3DSFrameView;
 
 typedef struct PpuGpu3DSInterval {

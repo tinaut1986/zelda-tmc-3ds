@@ -84,6 +84,11 @@ static bool sParitySubmitted;
 static bool sParityFinishedThisFrame;
 static unsigned sParityWidth;
 static unsigned sParityHeight;
+/* The prepared frame's screen fade (PpuGpu3DSFrameView::fadeWeight/fadeLevel). */
+static uint8_t sFadeWeight, sFadeLevel;
+/* Debug: poke 1 to skip the fade's full-screen quad (the picture then shows the
+ * unfaded palettes), to time it (tmc-link.py poke gPpuGpu3DSFadeQuadDisable 01). */
+volatile uint8_t gPpuGpu3DSFadeQuadDisable;
 static PortPpuGpu3DSStats sStats;
 
 void PortPpuGpu3DS_Shutdown(void) {
@@ -457,6 +462,8 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
     sStats.flushTicks += svcGetSystemTick() - flushStartTick;
     sPreparedWidth = frame->width;
     sPreparedHeight = frame->height;
+    sFadeWeight = frame->fadeWeight;
+    sFadeLevel = frame->fadeLevel;
     sPrepared = true;
     return FinishPreflight(true, startTick);
 }
@@ -831,6 +838,31 @@ bool PortPpuGpu3DS_DrawPrepared(void) {
         DrawBatch(batch);
     }
 
+    /* A uniform screen fade (docs/gpu-fade.md): the picture above was drawn from
+     * the unfaded palettes, so one full-screen quad of the fade's grey, as
+     * opaque as its weight, over the finished frame is the game's fade. Blending
+     * is linear, so it commutes with the alpha blends and the fades the frame
+     * already did; the target's 5-bit channels quantise it as PAL_RAM did. */
+    if (sFadeWeight != 0 && gPpuGpu3DSFadeQuadDisable == 0) {
+        for (int stage = 0; stage < 3; ++stage)
+            C3D_TexEnvInit(C3D_GetTexEnv(stage));
+        C3D_TexEnv* env = C3D_GetTexEnv(0);
+        C3D_TexEnvSrc(env, C3D_Both, GPU_CONSTANT, GPU_CONSTANT, GPU_CONSTANT);
+        C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+        C3D_TexEnvColor(env, (u32)sFadeLevel | ((u32)sFadeLevel << 8u) | ((u32)sFadeLevel << 16u) |
+                                     ((u32)sFadeWeight << 24u));
+        C3D_BlendingColor(0);
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
+                       GPU_ZERO, GPU_ONE);
+        C3D_AlphaTest(false, GPU_ALWAYS, 0);
+        C3D_StencilTest(false, GPU_ALWAYS, 0, 0xff, 0);
+        C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_COLOR);
+        SetBatchOffset(0.0f, 0.0f);
+        SetScissorCached(0, yOffset, sPreparedWidth, yOffset + sPreparedHeight);
+        C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT,
+                         sIndices + PPU_GPU3DS_CLEAR_FIRST_INDEX);
+    }
+
     for (int stage = 0; stage < 3; ++stage)
         C3D_TexEnvInit(C3D_GetTexEnv(stage));
     C3D_BlendingColor(0);
@@ -1125,6 +1157,19 @@ void PortPpuGpu3DS_FinishParityCheck(void) {
     sStats.firstDiffX = firstX;
     sStats.firstDiffY = firstY;
     WriteParitySurfaces(differing);
+    if (structural != 0) {
+        /* What the first differing pixels were, and the fade in force: enough
+         * to tell a fade parameter from a renderer defect without a dump. */
+        char line[200];
+        snprintf(line, sizeof(line),
+                 "[tmc3ds] parity: differing=%llu structural=%llu first=%u,%u cpu=%04x gpu=%04x fade=%u/%u\n",
+                 (unsigned long long)differing, (unsigned long long)structural, (unsigned)firstX,
+                 (unsigned)firstY,
+                 sParityReference[(size_t)firstY * PPU_GPU3DS_OUTPUT_WIDTH + firstX],
+                 sParityReadback[(size_t)firstY * PPU_GPU3DS_OUTPUT_WIDTH + firstX], (unsigned)sFadeWeight,
+                 (unsigned)sFadeLevel);
+        Platform3DS_Debug(line);
+    }
     if (structural == 0) return;
     /* A difference the blender cannot explain is counted and written out, but
      * it no longer retires the renderer: the check is asked for by a person

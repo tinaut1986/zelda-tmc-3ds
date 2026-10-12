@@ -221,3 +221,10 @@ Without a ROM the map and item art take their fallbacks; the OPTIONS and DEBUG
 tabs draw exactly as on the console (with stand-in values for the log, recorder
 and switches). `THEME=n` picks the theme. The shots and the taps that reach them are
 the `SHOTS` list in the script.
+
+## Screen fades
+
+A uniform fade is applied by the GPU as one blend over the finished picture (`docs/gpu-fade.md`);
+`gpu_fade=0` in `tmc3ds.ini` turns it off. Over the link: `peek gFadeGpu3DSStats 64`
+(counters, 16 words) and `poke gPpuGpu3DSFadeQuadDisable 01` (skip the blend, to time it).
+Parity failures print `parity: ... fade=<weight>/<level>` to the SD log.

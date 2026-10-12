@@ -73,6 +73,7 @@ static int sGpuScissorMode = 1;
  * batch unconditionally: windows and blending come out wrong, but if the
  * missing band appears then the stencil is what was rejecting it. */
 static bool sGpuStencil = true;
+static bool sGpuFade = true;
 /* -1 keeps the built-in choice; 0 or 1 pins the audio worker for an A/B. */
 static int sAudioCore = -1;
 /* -1 keeps core 0; 1 moves the bottom-screen painter off the main thread's core. */
@@ -190,6 +191,7 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("gpu_viewport_offset=%u\n", sGpuViewportOffset ? 1u : 0u);
     APPEND("gpu_scissor_mode=%d\n", sGpuScissorMode);
     APPEND("gpu_stencil=%u\n", sGpuStencil ? 1u : 0u);
+    APPEND("gpu_fade=%u\n", sGpuFade ? 1u : 0u);
     APPEND("audio_core=%d\n", sAudioCore);
     APPEND("bottom_core=%d\n", sBottomCore);
     APPEND("bottom_map_skip=%u\n", sBottomMapSkip ? 1u : 0u);
@@ -354,6 +356,7 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "gpu_viewport_offset") == 0) sGpuViewportOffset = ParseBool(value);
             else if (strcmp(key, "gpu_scissor_mode") == 0) sGpuScissorMode = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "gpu_stencil") == 0) sGpuStencil = ParseBool(value);
+            else if (strcmp(key, "gpu_fade") == 0) sGpuFade = ParseBool(value);
             else if (strcmp(key, "audio_core") == 0) sAudioCore = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "bottom_core") == 0) sBottomCore = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "bottom_map_skip") == 0) sBottomMapSkip = ParseBool(value);
@@ -422,6 +425,7 @@ bool Port_Config_GpuFrameSync(void) { return sGpuFrameSync; }
 bool Port_Config_GpuViewportOffset(void) { return sGpuViewportOffset; }
 int Port_Config_GpuScissorMode(void) { return sGpuScissorMode; }
 bool Port_Config_GpuStencil(void) { return sGpuStencil; }
+bool Port_Config_GpuFade(void) { return sGpuFade; }
 int Port_Config_AudioCore(void) { return sAudioCore; }
 int Port_Config_BottomCore(void) { return sBottomCore; }
 bool Port_Config_BottomMapSkip(void) { return sBottomMapSkip; }

@@ -16,6 +16,7 @@
 #include "tmc3ds_version.h"
 #include "tmc3ds_build_config.h"
 #if TMC3DS_DEBUG_TOOLS
+#include "fade_gpu_3ds.h"
 #include "debug_log_3ds.h"
 #include "debug_perf_3ds.h"
 #include "debug_switches_3ds.h"
@@ -235,6 +236,22 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
      * that was built actually saw. */
     sGpuIoUniform = view->ioUniform;
     virtuappu_mode1_get_bound_gba_memory(&view->memory);
+    /* A screen fade the GPU can apply as one blend: draw from the unfaded
+     * palettes (PAL_RAM is what the software renderer, and the fallback below,
+     * still read) so the cells and tiles stay decoded while it runs. */
+    {
+        const uint16_t* bgPalette;
+        const uint16_t* objPalette;
+        uint8_t weight, level;
+        if (Port_Config_GpuFade() &&
+            FadeGpu3DS_State(view->memory.bg_palette, view->memory.obj_palette, &bgPalette, &objPalette, &weight,
+                             &level)) {
+            view->memory.bg_palette = (uint16_t*)bgPalette;
+            view->memory.obj_palette = (uint16_t*)objPalette;
+            view->fadeWeight = weight;
+            view->fadeLevel = level;
+        }
+    }
     view->ioPerLine = &sGpuIoPerLine[0][0];
     view->dispcntPerLine = sGpuDispcntPerLine;
     view->affineRefX = sGpuAffRefX;
