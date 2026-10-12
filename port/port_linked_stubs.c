@@ -1256,12 +1256,11 @@ static int Port_WidescreenFixedCanvasSubtask(void) {
 }
 
 static int Port_WidescreenFullViewUiOverlayActive(void) {
-    if (Port3DSFullViewPolicy_NativeWindowActive(gScreen.lcd.displayControl)) {
-        return 1;
-    }
-    return Port_WidescreenBannerState_IsActive(
-        &sWsEnterRoomBanner, gMain.task == TASK_GAME,
-        gRoomControls.area, gRoomControls.room);
+    /* The location-name banner is not here: like a dialogue it is a band of BG0 that
+     * Port_Widescreen_UpdateShadows centres with ws_msg_shift at any view width. Counting it
+     * as an overlay dropped Full View to E2 for the whole banner (about four seconds) and the
+     * camera then snapped to the 400-wide rest position when it ended. */
+    return Port3DSFullViewPolicy_NativeWindowActive(gScreen.lcd.displayControl);
 }
 
 /* A room change whose data is being replaced. The fades are not part of it:
