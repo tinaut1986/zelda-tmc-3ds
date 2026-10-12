@@ -267,6 +267,10 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     view->wsMsgY1 = virtuappu_mode1_ws_msg_y1;
     view->bg3Repeat = virtuappu_mode1_bg3_repeat;
     view->wsFullView = virtuappu_mode1_ws_full_view != 0;
+    /* The software PPU's rule (mode1_bg3_native_bounds_active). */
+    view->bg3NativeBounds = virtuappu_mode1_ws_full_view != 0 && virtuappu_mode1_bg3_hdma_native_bounds &&
+                            (view->width > MODE1_GBA_BG_CLIP_X ||
+                             (unsigned)virtuappu_mode1_frame_height() > MODE1_GBA_NATIVE_HEIGHT);
     view->objYWrap = virtuappu_mode1_frame_height() > MODE1_GBA_NATIVE_HEIGHT ? virtuappu_mode1_frame_height()
                                                                                : MODE1_GBA_NATIVE_HEIGHT;
     view->objYNegative = virtuappu_mode1_obj_y_negative;

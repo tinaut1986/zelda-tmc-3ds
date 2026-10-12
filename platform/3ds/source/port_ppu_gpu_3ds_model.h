@@ -245,6 +245,11 @@ typedef struct PpuGpu3DSFrameView {
      * `memory`'s palettes are then the unfaded ones and the finished picture is
      * blended toward grey `fadeLevel` by fadeWeight/255. 0 weight: none. */
     uint8_t fadeWeight, fadeLevel;
+    /* BG3 is driven by HBlank DMA (ripples, dissolves) in a view bigger than the
+     * GBA's 240x160: the software PPU then draws it only in that native canvas,
+     * centred in the view, sampling source line = line - top
+     * (mode1_bg3_native_bounds_active). */
+    bool bg3NativeBounds;
 } PpuGpu3DSFrameView;
 
 typedef struct PpuGpu3DSInterval {
