@@ -244,6 +244,8 @@ bool DebugLink_Command(const char* verb, const char* args, char* reply, unsigned
         return true;
     }
     if (!strcmp(verb, "REC")) {
+        /* REC NOW: record the next frames without waiting for a trigger. */
+        sArgA = args && (args[0] == 'n' || args[0] == 'N') ? 1 : 0;
         RunOnMainThread(LINK_OP_REC, reply, cap);
         return true;
     }
@@ -361,8 +363,8 @@ static void RunRequest(LinkOp op) {
             break;
         }
         case LINK_OP_REC: {
-            extern bool Port_PPU_3DS_ArmFrameRecorder(char* reply, unsigned cap);
-            Port_PPU_3DS_ArmFrameRecorder(sResult, sizeof(sResult));
+            extern bool Port_PPU_3DS_ArmFrameRecorder(bool now, char* reply, unsigned cap);
+            Port_PPU_3DS_ArmFrameRecorder(sArgA != 0, sResult, sizeof(sResult));
             break;
         }
         case LINK_OP_LOADSTATE: {
