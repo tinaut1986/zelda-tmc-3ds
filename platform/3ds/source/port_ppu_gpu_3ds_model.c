@@ -3734,6 +3734,106 @@ static size_t merge_layer_bands(const PpuGpu3DSFrameView* frame, unsigned layer,
     return count;
 }
 
+/* BG3 in native bounds (PpuGpu3DSFrameView::bg3NativeBounds): the layer is a
+ * 240x160 canvas centred in the view, its scanline registers those of source
+ * line = line - top. It is built as a native-sized frame at the origin, then
+ * its vertices and batches are moved to the canvas. */
+static bool build_bg3_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
+                                    uint16_t* atlas, PpuGpu3DSCommandBuffer* cmd,
+                                    const PpuGpu3DSOamSet* oam, const PpuGpu3DSBand* band,
+                                    PpuGpu3DSRegion* regions, bool emit, size_t* vertexCursor,
+                                    size_t* indexCursor, size_t* batchCursor) {
+    const int nativeW = (int)frame->width < MODE1_GBA_BG_CLIP_X ? (int)frame->width : MODE1_GBA_BG_CLIP_X;
+    const int nativeH = (int)frame->height < MODE1_GBA_NATIVE_HEIGHT ? (int)frame->height : MODE1_GBA_NATIVE_HEIGHT;
+    const int left = (int)frame->width > MODE1_GBA_BG_CLIP_X ? ((int)frame->width - MODE1_GBA_BG_CLIP_X) / 2 : 0;
+    const int top = (int)frame->height > MODE1_GBA_NATIVE_HEIGHT
+                            ? ((int)frame->height - MODE1_GBA_NATIVE_HEIGHT) / 2
+                            : 0;
+    const int lo = (int)band->firstLine > top ? (int)band->firstLine : top;
+    const int hi = (int)band->firstLine + (int)band->lineCount < top + nativeH
+                           ? (int)band->firstLine + (int)band->lineCount
+                           : top + nativeH;
+    if (lo >= hi) return true;
+
+    PpuGpu3DSFrameView native = *frame;
+    native.width = (unsigned)nativeW;
+    native.height = (unsigned)nativeH;
+    native.dispcntPerLine = frame->dispcntPerLine + top;
+    if (frame->affineRefX) native.affineRefX = frame->affineRefX + top;
+    if (frame->affineRefY) native.affineRefY = frame->affineRefY + top;
+    native.wsFullView = false;
+    native.wsShadow = NULL;
+    native.wsShadowHalfwords = 0;
+    for (unsigned layer = 0; layer < MODE1_GBA_BG_COUNT; ++layer) native.wsShadowBaseTile[layer] = -1;
+    native.wsHudRightAnchor = 0;
+    native.wsMsgShift = 0;
+    native.bg3Repeat = false;
+    native.bg3NativeBounds = false;
+    PpuGpu3DSBand part = *band;
+    part.firstLine = (uint16_t)(lo - top);
+    part.lineCount = (uint16_t)(hi - lo);
+    /* An HDMA effect's lines carry the wide camera's offset (see mode1.c, the
+     * native-bounds branch of mode1_render_text_bg_compact_tokens). The band's
+     * registers are copied so the scroll can be moved without touching the
+     * snapshot. */
+    uint8_t io[MODE1_IO_MEM_SIZE];
+    memcpy(io, frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE, sizeof(io));
+    {
+        /* Same rule as mode1.c (mode1_render_text_bg_compact_tokens, native
+         * bounds): with the base register off the 0 the effect is authored
+         * around, what the game would have written natively is base + left; an
+         * effect line (near the base) keeps its sine on top of that, a static
+         * frame of the effect (0) gets it as is. */
+        const int lineHofs = (int)(read16(io, MODE1_IO_BG3HOFS) & 0x1ffu);
+        const int base = frame->bg3HofsBase;
+        int adjusted = lineHofs;
+        if (base > 0) {
+            const int signedBase = base >= 256 ? base - 512 : base;
+            const int nativeBase = signedBase + left;
+            const int fromBase = (((lineHofs - base) + 256) & 0x1ff) - 256;
+            adjusted = (fromBase > -32 && fromBase < 32) ? lineHofs - base + nativeBase : lineHofs + nativeBase;
+        }
+        const unsigned hofs = (unsigned)adjusted & 0x1ffu;
+        io[MODE1_IO_BG3HOFS] = (uint8_t)hofs;
+        io[MODE1_IO_BG3HOFS + 1u] = (uint8_t)(hofs >> 8u);
+    }
+    {
+        /* Rows are sampled at the view's y, as mode1.c does (`line`, not
+         * `line - native_top`): the effect's VOFS is relative to the view too. */
+        const unsigned vofs = (read16(io, MODE1_IO_BG3VOFS) + (unsigned)top) & 0x1ffu;
+        io[MODE1_IO_BG3VOFS] = (uint8_t)vofs;
+        io[MODE1_IO_BG3VOFS + 1u] = (uint8_t)(vofs >> 8u);
+    }
+    native.ioPerLine = io;
+    part.ioRow = 0;
+
+    const size_t regionCount = build_regions(&native, oam, &part, regions);
+    const size_t firstVertex = *vertexCursor;
+    const size_t firstBatch = *batchCursor;
+    if (!build_text_bg(&native, cache, atlas, cmd, &part, 3u, NULL, regions, regionCount, emit,
+                       vertexCursor, indexCursor, batchCursor))
+        return false;
+
+    /* Native-canvas pixels to view pixels: the NDC scale changes with the
+     * frame size, so rebuild it from the pixel position. */
+    const float sx = (float)nativeW / (float)frame->width;
+    const float sy = (float)nativeH / (float)frame->height;
+    const float ox = 2.0f * (float)left / (float)frame->width - 1.0f;
+    const float oy = 1.0f - 2.0f * (float)top / (float)frame->height;
+    for (size_t index = firstVertex; index < *vertexCursor; ++index) {
+        PpuGpu3DSVertex* vertex = &cmd->vertices[index];
+        vertex->x = (vertex->x + 1.0f) * sx + ox;
+        vertex->y = oy - (1.0f - vertex->y) * sy;
+    }
+    for (size_t index = firstBatch; index < *batchCursor; ++index) {
+        PpuGpu3DSBatch* batch = &cmd->batches[index];
+        batch->firstLine = (uint16_t)(batch->firstLine + top);
+        batch->scissorLeft = (uint16_t)(batch->scissorLeft + left);
+        batch->scissorRight = (uint16_t)(batch->scissorRight + left);
+    }
+    return true;
+}
+
 static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                         uint16_t* atlas, PpuGpu3DSCommandBuffer* cmd,
                         const PpuGpu3DSOamSet* oam, const PpuGpu3DSBand* bands,
@@ -3781,6 +3881,7 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
         const size_t dynamicIndex =
                 (size_t)MODE1_GBA_BG_COUNT * PPU_GPU3DS_MAP_SLICE_INDICES;
         for (unsigned bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {
+            if (bg == 3u && frame->bg3NativeBounds) continue;
             const bool affineLayer = frame->affine && bg == 2u;
             if (affineLayer
                         ? !build_affine_map(frame, cache, atlas, cmd,
@@ -3801,7 +3902,7 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     ++cache->ringStamp;
     for (unsigned bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {
         gPpuGpu3DSRingWhy[bg] = 9;
-        maps[bg].ring = layerBandCount[bg] != 0 &&
+        maps[bg].ring = layerBandCount[bg] != 0 && !(bg == 3u && frame->bg3NativeBounds) &&
                         build_bg_ring(frame, cache, bg, layerBands[bg], layerBandCount[bg], &maps[bg]);
         if (maps[bg].ring) maps[bg].valid = false;
     }
@@ -3860,6 +3961,12 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                 if ((dispcnt & (MODE1_DISP_BG0_ON << bg)) == 0 ||
                     (bgcnt & 3u) != (unsigned)priority)
                     continue;
+                if (bg == 3 && frame->bg3NativeBounds) {
+                    if (!build_bg3_native_bounds(frame, cache, atlas, cmd, oam, band, regions, emit,
+                                                 vertexCursor, indexCursor, batchCursor))
+                        return false;
+                    continue;
+                }
                 PROFILE_BEGIN(PPU_GPU3DS_PHASE_REGIONS);
                 const size_t regionCount =
                         build_regions(frame, oam, band, regions);

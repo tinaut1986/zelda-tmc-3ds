@@ -267,6 +267,11 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     view->wsMsgY1 = virtuappu_mode1_ws_msg_y1;
     view->bg3Repeat = virtuappu_mode1_bg3_repeat;
     view->wsFullView = virtuappu_mode1_ws_full_view != 0;
+    /* The software PPU's rule (mode1_bg3_native_bounds_active). */
+    view->bg3HofsBase = virtuappu_mode1_bg3_hofs_base;
+    view->bg3NativeBounds = virtuappu_mode1_ws_full_view != 0 && virtuappu_mode1_bg3_hdma_native_bounds &&
+                            (view->width > MODE1_GBA_BG_CLIP_X ||
+                             (unsigned)virtuappu_mode1_frame_height() > MODE1_GBA_NATIVE_HEIGHT);
     view->objYWrap = virtuappu_mode1_frame_height() > MODE1_GBA_NATIVE_HEIGHT ? virtuappu_mode1_frame_height()
                                                                                : MODE1_GBA_NATIVE_HEIGHT;
     view->objYNegative = virtuappu_mode1_obj_y_negative;
@@ -1100,7 +1105,8 @@ static void RecTick(int viewW, int viewH, bool hold, int mode) {
     RecFrame* slot = &sRec[sRecHead];
     slot->viewW = (uint16_t)viewW;
     slot->viewH = (uint16_t)viewH;
-    slot->hold = hold;
+    /* bit 0: the top screen was being held; bit 1: BG3 is HDMA-driven (native bounds). */
+    slot->hold = (uint8_t)((hold ? 1u : 0u) | (virtuappu_mode1_bg3_hdma_native_bounds ? 2u : 0u));
     slot->mode = (uint8_t)mode;
     slot->gfx = PortPpuGpu3DS_FadeWeight();
     slot->pad = PortPpuGpu3DS_FadeLevel();
@@ -1206,6 +1212,8 @@ void Port_PPU_PresentFrame(void) {
         gRoomControls.area == AREA_HYRULE_FIELD && gScreen.bg3.control == 0x1e05;
     virtuappu_mode1_bg3_hdma_native_bounds =
         port_hdma_dest_overlaps(gIoMem + MODE1_IO_BG3HOFS, gIoMem + MODE1_IO_BG3VOFS + 2) != 0;
+    /* BG3HOFS before any HBlank DMA step of this frame. */
+    virtuappu_mode1_bg3_hofs_base = (int)((gIoMem[MODE1_IO_BG3HOFS] | (gIoMem[MODE1_IO_BG3HOFS + 1] << 8)) & 0x1ff);
 
     Platform3DS_Heartbeat();
     Platform3DS_SetStage(1);

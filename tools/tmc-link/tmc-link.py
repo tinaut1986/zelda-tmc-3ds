@@ -155,7 +155,7 @@ def frames_to_png(data, path, columns=6):
     for i in range(count):
         o = 16 + i * size
         vw, vh, hold, mode, fade_w, fade_l, frame = struct.unpack_from('<HHBBBBI', data, o)
-        lines.append('%2d frame %6d view %dx%d mode %d%s%s' % (i, frame, vw, vh, mode, ' HOLD' if hold else '',
+        lines.append('%2d frame %6d view %dx%d mode %d%s%s' % (i, frame, vw, vh, mode, (' HOLD' if hold & 1 else '') + (' BG3-NATIVE' if hold & 2 else ''),
                                                               ' fade %d/%d' % (fade_w, fade_l) if fade_w else ''))
         cx, cy = (i % columns) * (w + 2), (i // columns) * (h + 2)
         for y in range(h):

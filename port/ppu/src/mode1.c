@@ -44,6 +44,7 @@ uint8_t virtuappu_mode1_ws_shadow_stride[MODE1_GBA_BG_COUNT] = {
 };
 int virtuappu_mode1_ws_full_view = 0;
 bool virtuappu_mode1_bg3_hdma_native_bounds = false;
+int virtuappu_mode1_bg3_hofs_base = -1;
 bool virtuappu_mode1_bg3_repeat = false;
 int virtuappu_mode1_ws_hud_right_anchor = 0;
 /* Widescreen message-box centering (see mode1.h). All zero = inactive. */
@@ -1040,8 +1041,34 @@ static void mode1_render_text_bg_compact_tokens(int bg_index, int line, uint16_t
     if (!hud_right_anchor && !message_line) {
         if (native_bounds) {
             const int native_width = native_right - native_left;
-            mode1_render_text_bg_native_tokens(bg_index, line - native_top, bgcnt,
-                                               native_width, tokens + native_left);
+            const int hofs = virtuappu_mode1_io_read16(MODE1_IO_BG3HOFS) & 0x1FF;
+            const int base = virtuappu_mode1_bg3_hofs_base;
+            int adjusted = hofs;
+            if (base > 0) {
+                /* BG3's HDMA effect (Vaati appearing) is authored so its image sits
+                 * on the native screen at HOFS = 0x80 - (v - scroll_x). In Wide the
+                 * game computed `base` against the wide camera, `native_left` pixels
+                 * (less what the camera has already moved) off, so what it would
+                 * have written natively is base + native_left. An effect line (near
+                 * the base) is that plus its sine; a static frame of the effect
+                 * writes 0 and gets the native value. */
+                const int signed_base = base >= 256 ? base - 512 : base;
+                const int native_base = signed_base + native_left;
+                const int from_base = (((hofs - base) + 256) & 0x1FF) - 256;
+                adjusted = (from_base > -32 && from_base < 32) ? hofs - base + native_base : hofs + native_base;
+                adjusted &= 0x1FF;
+            }
+            if (adjusted != hofs) {
+                const uint8_t lo = mode1_memory.io_mem[MODE1_IO_BG3HOFS];
+                const uint8_t hi = mode1_memory.io_mem[MODE1_IO_BG3HOFS + 1u];
+                mode1_memory.io_mem[MODE1_IO_BG3HOFS] = (uint8_t)adjusted;
+                mode1_memory.io_mem[MODE1_IO_BG3HOFS + 1u] = (uint8_t)(adjusted >> 8);
+                mode1_render_text_bg_native_tokens(bg_index, line, bgcnt, native_width, tokens + native_left);
+                mode1_memory.io_mem[MODE1_IO_BG3HOFS] = lo;
+                mode1_memory.io_mem[MODE1_IO_BG3HOFS + 1u] = hi;
+            } else {
+                mode1_render_text_bg_native_tokens(bg_index, line, bgcnt, native_width, tokens + native_left);
+            }
         } else {
             mode1_render_text_bg_native_tokens(bg_index, line, bgcnt, render_width, tokens);
         }
