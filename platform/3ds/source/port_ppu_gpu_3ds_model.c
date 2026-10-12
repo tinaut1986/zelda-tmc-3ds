@@ -3779,19 +3779,27 @@ static bool build_bg3_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCa
     uint8_t io[MODE1_IO_MEM_SIZE];
     memcpy(io, frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE, sizeof(io));
     {
-        /* Same rule as mode1.c: a line within a few pixels of the frame's base
-         * is an effect line and is sampled with the base taken off. */
+        /* Same rule as mode1.c (mode1_render_text_bg_compact_tokens, native
+         * bounds): with the base register off the 0 the effect is authored
+         * around, what the game would have written natively is base + left; an
+         * effect line (near the base) keeps its sine on top of that, a static
+         * frame of the effect (0) gets it as is. */
         const int lineHofs = (int)(read16(io, MODE1_IO_BG3HOFS) & 0x1ffu);
         const int base = frame->bg3HofsBase;
-        const int fromBase = base >= 0 ? (((lineHofs - base) + 256) & 0x1ff) - 256 : 0x7fff;
-        if (base > 0 && fromBase > -32 && fromBase < 32) {
-            const unsigned hofs = (unsigned)(lineHofs - base) & 0x1ffu;
-            io[MODE1_IO_BG3HOFS] = (uint8_t)hofs;
-            io[MODE1_IO_BG3HOFS + 1u] = (uint8_t)(hofs >> 8u);
+        int adjusted = lineHofs;
+        if (base > 0) {
+            const int signedBase = base >= 256 ? base - 512 : base;
+            const int nativeBase = signedBase + left;
+            const int fromBase = (((lineHofs - base) + 256) & 0x1ff) - 256;
+            adjusted = (fromBase > -32 && fromBase < 32) ? lineHofs - base + nativeBase : lineHofs + nativeBase;
         }
+        const unsigned hofs = (unsigned)adjusted & 0x1ffu;
+        io[MODE1_IO_BG3HOFS] = (uint8_t)hofs;
+        io[MODE1_IO_BG3HOFS + 1u] = (uint8_t)(hofs >> 8u);
     }
     {
-        /* EXPERIMENT: rows sampled at the view's y (line), not the canvas's. */
+        /* Rows are sampled at the view's y, as mode1.c does (`line`, not
+         * `line - native_top`): the effect's VOFS is relative to the view too. */
         const unsigned vofs = (read16(io, MODE1_IO_BG3VOFS) + (unsigned)top) & 0x1ffu;
         io[MODE1_IO_BG3VOFS] = (uint8_t)vofs;
         io[MODE1_IO_BG3VOFS + 1u] = (uint8_t)(vofs >> 8u);
