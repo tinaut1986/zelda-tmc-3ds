@@ -87,6 +87,14 @@ visit to an area hit.
 - Re-save the older states (see the decisions log of 2026-10-12): repaired on load, but they
   may keep other stale words.
 
+**Open investigation (2026-10-12):** the enemy's dissolve in the castle garden is wrong in Wide
+(BG3 under HDMA, "native bounds"): issue #5 and
+[`docs/investigations/bg3-dissolve-wide.md`](investigations/bg3-dissolve-wide.md) (reproduction,
+findings, images, branches). Read it before touching BG3 / `mode1_bg3_native_bounds_active`.
+Branches not in the release: `fix/affine-obj-uv-inset` (sword, checked), `fix/bg3-native-bounds-gpu`
+(partial), `wip/bg3-vertical-experiment` (experiment, not a fix). The 2DS at 192.168.1.139 runs the
+experiment build, FRAMES = SIN SALTOS, VISTA = ANCHO.
+
 **Priority** (owner's order, 2026-10-11): P0.1 → P1 debug tools and P2 bottom UI (so
 that P3 can be measured) → P0.2 baseline → P3.4 Full View on the GPU, and Full View on the
 Old 3DS (P4.1) → the rest of P3 → P4.2.
