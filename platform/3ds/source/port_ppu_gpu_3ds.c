@@ -162,9 +162,13 @@ bool PortPpuGpu3DS_Init(void) {
     /* The builder stops short of the reset quad at the end of both buffers. */
     {
         PpuGpu3DSVertex* quad = sVertices + PPU_GPU3DS_CLEAR_FIRST_VERTEX;
-        static const float kX[4] = { -1.0f, 1.0f, -1.0f, 1.0f };
+        /* The static index pattern is 0,1,2, 0,2,3 (PpuGpu3DS_FillStaticIndices), so
+         * the corners go round the perimeter: top-left, top-right, bottom-right,
+         * bottom-left. They used to be in z order (TL, TR, BL, BR), which covers
+         * only three quarters of the screen: the right triangle (top-right,
+         * bottom-right, centre) was never reset. */
+        static const float kX[4] = { -1.0f, 1.0f, 1.0f, -1.0f };
         static const float kY[4] = { 1.0f, 1.0f, -1.0f, -1.0f };
-        static const uint8_t kOrder[6] = { 0, 1, 2, 2, 1, 3 };
         for (unsigned corner = 0; corner < 4u; ++corner) {
             quad[corner].x = kX[corner];
             quad[corner].y = kY[corner];
@@ -172,7 +176,6 @@ bool PortPpuGpu3DS_Init(void) {
             quad[corner].u = 0;
             quad[corner].v = 0;
         }
-        (void)kOrder;  /* the static index pattern already covers this quad */
         Platform3DS_CleanDataCache(quad, 4u * sizeof(*quad));
     }
     PpuGpu3DS_CommandInit(&sCommands, sVertices, PPU_GPU3DS_BUILD_VERTICES, sIndices,
