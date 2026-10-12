@@ -909,21 +909,21 @@ static void Compact_PaintDebugMain(const SSurf* s, TargetList* tl, const SecondS
     CColumn(s->w, 4, 0, 1, &x, &w);
     CCell(s, tl, x, y, w, CC_CELL_H, "LOG MARK", DebugLog_Running() ? "WRITE" : "LOG OFF",
           DebugLog_Running() ? CC_ACCENT : CC_FAINT, SS_ACT_DEBUG, DBG_CMD_LOG_MARK);
+    /* SCREEN DUMP: both screens, the memories and the frame's state as numbered
+     * debug/tmc-dump-NNNN-* files, written at the next frame boundary (as
+     * ../sm-3ds and ../mzm do). It replaced upstream's L+R+A and its LOAD STATE;
+     * the STATES tab restores a game state. */
     const int dumped = (int32_t)(dumpFlashUntil - tick) > 0;
-    CColumn(s->w, 4, 1, 1, &x, &w);
-    CCell(s, tl, x, y, w, CC_CELL_H, "MEM DUMP", dumped ? "WRITTEN" : "WRITE", dumped ? CC_GOOD : CC_ACCENT,
+    (void)loadStateFlashUntil;
+    (void)loadStateResult;
+    CColumn(s->w, 4, 1, 2, &x, &w);
+    CCell(s, tl, x, y, w, CC_CELL_H, "SCREEN DUMP", dumped ? "QUEUED" : "TAKE", dumped ? CC_GOOD : CC_ACCENT,
           SS_ACT_DEVELOPER_DUMP, 0);
-    const char* load = (int32_t)(loadStateFlashUntil - tick) > 0
-                           ? Port_DumpState_ResultLabel((PortDumpStateResult)loadStateResult)
-                           : "LAST DUMP";
-    CColumn(s->w, 4, 2, 1, &x, &w);
-    CCell(s, tl, x, y, w, CC_CELL_H, "LOAD STATE", load, CC_ACCENT, SS_ACT_DEVELOPER_LOAD, 0);
     CSettingCellAt(s, tl, y, 3, 1, "SHOW FPS", SS_SET_SHOW_FPS);
 
-    /* GPU CHECK: upstream's parity check, the next frame drawn by both
-     * renderers and compared; differing frames are saved next to the last
-     * dump, and a difference the blender cannot explain turns the GPU
-     * renderer off for the session. */
+    /* GPU CHECK: the next frame drawn by both renderers and compared; a frame
+     * that differs is saved as debug/tmc-check-NNNN-* (a screen dump takes the
+     * check too, into its own set). */
     y += CC_CELL_H + CC_GAP;
     PortPpuGpu3DSStats gpu;
     PortPpuGpu3DS_GetStats(&gpu);
@@ -1052,7 +1052,7 @@ static void Compact_DebugCommand(int cmd) {
             }
             break;
         case DBG_CMD_GPU_CHECK:
-            PortPpuGpu3DS_RequestParityCheck();
+            Port_PPU_3DS_RequestGpuCheck();
             DebugLog_Printf("gpu check requested");
             Compact_Toast("GPU CHECK REQUESTED");
             break;

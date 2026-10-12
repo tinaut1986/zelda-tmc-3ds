@@ -3,7 +3,6 @@
 #include "port_gba_mem.h"
 #include "port_config.h"
 #include "port_collision_diagnostics.h"
-#include "port_dump_state_3ds.h"
 #include "port_hdma.h"
 #include "port_runtime_config.h"
 #include "port_audio_3ds.h"
@@ -16,6 +15,7 @@
 #include "tmc3ds_version.h"
 #include "tmc3ds_build_config.h"
 #if TMC3DS_DEBUG_TOOLS
+#include "debug_files_3ds.h"
 #include "debug_log_3ds.h"
 #include "debug_perf_3ds.h"
 #include "debug_switches_3ds.h"
@@ -284,26 +284,6 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
         anyShadow ? (int)(sizeof(sGpuWsShadow) / sizeof(sGpuWsShadow[0])) : 0;
 }
 
-#ifdef TMC_3DS_DIAGNOSTICS
-static unsigned sDiagnosticFrames;
-static uint64_t sDiagnosticStartMs;
-
-static void DumpPpuSnapshot(const char* path) {
-    FILE* file = fopen(path, "wb");
-    if (!file)
-        return;
-    static const char magic[4] = { 'P', 'P', 'U', '1' };
-    static const uint32_t sizes[5] = { 0x400u, 0x18000u, 0x200u, 0x200u, 0x400u };
-    fwrite(magic, 1, sizeof(magic), file);
-    fwrite(sizes, sizeof(uint32_t), 5, file);
-    fwrite(gIoMem, 1, 0x400u, file);
-    fwrite(gVram, 1, 0x18000u, file);
-    fwrite(gBgPltt, 1, 0x200u, file);
-    fwrite(gObjPltt, 1, 0x200u, file);
-    fwrite(gOamMem, 1, 0x400u, file);
-    fclose(file);
-}
-#endif
 
 static bool WriteBlob(const char* path, const void* data, size_t size) {
     FILE* file = fopen(path, "wb");
@@ -326,67 +306,84 @@ static bool WritePalettes(const char* path) {
     return ok;
 }
 
-static char sLastDumpDirectory[128];
+#if TMC3DS_DEBUG_TOOLS
+/* debug/tmc-dump-NNNN (a screen dump) or debug/tmc-check-NNNN (a GPU CHECK):
+ * the files of one capture are `<prefix>-<name>`, numbered like the perf and
+ * log files (debug_files_3ds.h), never overwritten. */
+static char sLastDumpPrefix[128];
 
-const char* Port_PPU_3DS_LastDumpDirectory(void) {
-    return sLastDumpDirectory;
+const char* Port_PPU_3DS_LastDumpPrefix(void) {
+    return sLastDumpPrefix;
 }
 
-static bool CreateDumpDirectory(char* out, size_t outSize) {
-    if (!Port_DumpState_CreateDirectory("dumps", out, outSize)) return false;
-    snprintf(sLastDumpDirectory, sizeof(sLastDumpDirectory), "%s", out);
+static bool NewCapturePrefix(const char* kind, char* out, size_t outSize) {
+    char path[sizeof(sLastDumpPrefix)];
+    if (DebugFiles_Next(kind, ".txt", path, sizeof(path)) < 0) return false;
+    char* dot = strrchr(path, '.');
+    if (dot) *dot = 0;
+    snprintf(out, outSize, "%s", path);
+    snprintf(sLastDumpPrefix, sizeof(sLastDumpPrefix), "%s", path);
     return true;
+}
+
+/* GPU CHECK (DEBUG tab, link): the next frame drawn by both renderers; a frame
+ * that differs is written as its own numbered tmc-check set. */
+void Port_PPU_3DS_RequestGpuCheck(void) {
+    char prefix[sizeof(sLastDumpPrefix)];
+    if (!sGpuPpuInitialized || !NewCapturePrefix("check", prefix, sizeof(prefix))) return;
+    PortPpuGpu3DS_RequestParityCheck();
 }
 
 static double TicksToMilliseconds(uint64_t ticks) {
     return (double)ticks * 1000.0 / (double)Platform3DS_TicksPerSecond();
 }
 
-void Port_PPU_3DS_WriteQuickDump(void) {
+void Port_PPU_3DS_WriteScreenDump(void) {
     if (!sInitialized)
         return;
     /* The dump and its confirmation overlay deliberately pause for SD I/O.
      * Do not let that pause become the next measured gameplay frame when a
      * retired renderer cannot arm the parity-frame reset below. */
     sPerfLastFrameTick = 0;
-    /* Capture what is on screen now, before the parity path re-renders it. */
-    if (sGpuPpuInitialized) PortPpuGpu3DS_RequestFrameCapture();
-    if (sGpuPpuInitialized) PortPpuGpu3DS_RequestParityCheck();
     /* This synchronous SD capture and its confirmation overlay intentionally
      * pause gameplay. Mark it before any fallible I/O so the next cadence
      * boundary excludes the whole operation, including an early failure. */
     Platform3DS_MarkFrameDiscontinuity(OLD3DS_FRAME_PACER_DISCONTINUITY_DUMP);
     Port_Audio_3DSSetPaused(true);
     char dir[128];
-    if (!CreateDumpDirectory(dir, sizeof(dir))) {
+    if (!NewCapturePrefix("dump", dir, sizeof(dir))) {
         Port_Audio_3DSSetPaused(false);
         return;
     }
+    /* Capture what is on screen now, before the parity path re-renders it; the
+     * differing frames of the check land in this dump's numbered set. */
+    if (sGpuPpuInitialized) PortPpuGpu3DS_RequestFrameCapture();
+    if (sGpuPpuInitialized) PortPpuGpu3DS_RequestParityCheck();
 
     char topPath[192];
     char bottomPath[192];
     char topRawPath[192];
     char bottomRawPath[192];
-    snprintf(topPath, sizeof(topPath), "%s/top-screen.bmp", dir);
-    snprintf(bottomPath, sizeof(bottomPath), "%s/bottom-screen.bmp", dir);
-    snprintf(topRawPath, sizeof(topRawPath), "%s/top-screen.raw", dir);
-    snprintf(bottomRawPath, sizeof(bottomRawPath), "%s/bottom-screen.raw", dir);
+    snprintf(topPath, sizeof(topPath), "%s-top-screen.bmp", dir);
+    snprintf(bottomPath, sizeof(bottomPath), "%s-bottom-screen.bmp", dir);
+    snprintf(topRawPath, sizeof(topRawPath), "%s-top-screen.raw", dir);
+    snprintf(bottomRawPath, sizeof(bottomRawPath), "%s-bottom-screen.raw", dir);
     Platform3DSCaptureStats captureStats;
     memset(&captureStats, 0, sizeof(captureStats));
     const bool screensOk =
         Platform3DS_SaveDisplayedScreensDetailed(topPath, bottomPath, topRawPath, bottomRawPath, &captureStats);
     char path[192];
-    snprintf(path, sizeof(path), "%s/ewram.bin", dir);
+    snprintf(path, sizeof(path), "%s-ewram.bin", dir);
     WriteBlob(path, gEwram, sizeof(gEwram));
-    snprintf(path, sizeof(path), "%s/iwram.bin", dir);
+    snprintf(path, sizeof(path), "%s-iwram.bin", dir);
     WriteBlob(path, gIwram, sizeof(gIwram));
-    snprintf(path, sizeof(path), "%s/vram.bin", dir);
+    snprintf(path, sizeof(path), "%s-vram.bin", dir);
     WriteBlob(path, gVram, sizeof(gVram));
-    snprintf(path, sizeof(path), "%s/io-registers.bin", dir);
+    snprintf(path, sizeof(path), "%s-io-registers.bin", dir);
     WriteBlob(path, gIoMem, sizeof(gIoMem));
-    snprintf(path, sizeof(path), "%s/palettes.bin", dir);
+    snprintf(path, sizeof(path), "%s-palettes.bin", dir);
     WritePalettes(path);
-    snprintf(path, sizeof(path), "%s/oam.bin", dir);
+    snprintf(path, sizeof(path), "%s-oam.bin", dir);
     WriteBlob(path, gOamMem, sizeof(gOamMem));
     /* CPU-only frames have no GPU register snapshot. Do not publish stale
      * or zero-filled arrays as evidence of the displayed frame. */
@@ -402,11 +399,11 @@ void Port_PPU_3DS_WriteQuickDump(void) {
                 sGpuDispcntPerLine[line] = sGpuDispcntPerLine[0];
             }
         }
-        snprintf(path, sizeof(path), "%s/io-per-line.bin", dir);
+        snprintf(path, sizeof(path), "%s-io-per-line.bin", dir);
         WriteBlob(path, sGpuIoPerLine, sizeof(sGpuIoPerLine));
-        snprintf(path, sizeof(path), "%s/dispcnt-per-line.bin", dir);
+        snprintf(path, sizeof(path), "%s-dispcnt-per-line.bin", dir);
         WriteBlob(path, sGpuDispcntPerLine, sizeof(sGpuDispcntPerLine));
-        snprintf(path, sizeof(path), "%s/affine-ref.bin", dir);
+        snprintf(path, sizeof(path), "%s-affine-ref.bin", dir);
         {
             FILE* file = fopen(path, "wb");
             if (file) {
@@ -416,31 +413,29 @@ void Port_PPU_3DS_WriteQuickDump(void) {
             }
         }
     }
-    snprintf(path, sizeof(path), "%s/main-state.bin", dir);
+    snprintf(path, sizeof(path), "%s-main-state.bin", dir);
     WriteBlob(path, &gMain, sizeof(gMain));
-    snprintf(path, sizeof(path), "%s/room-controls.bin", dir);
+    snprintf(path, sizeof(path), "%s-room-controls.bin", dir);
     WriteBlob(path, &gRoomControls, sizeof(gRoomControls));
-    snprintf(path, sizeof(path), "%s/map-bottom-layer.bin", dir);
+    snprintf(path, sizeof(path), "%s-map-bottom-layer.bin", dir);
     WriteBlob(path, &gMapBottom, sizeof(gMapBottom));
-    snprintf(path, sizeof(path), "%s/map-top-layer.bin", dir);
+    snprintf(path, sizeof(path), "%s-map-top-layer.bin", dir);
     WriteBlob(path, &gMapTop, sizeof(gMapTop));
-    snprintf(path, sizeof(path), "%s/map-bottom-special.bin", dir);
+    snprintf(path, sizeof(path), "%s-map-bottom-special.bin", dir);
     WriteBlob(path, gMapDataBottomSpecial, sizeof(gMapDataBottomSpecial));
-    snprintf(path, sizeof(path), "%s/map-top-special.bin", dir);
+    snprintf(path, sizeof(path), "%s-map-top-special.bin", dir);
     WriteBlob(path, gMapDataTopSpecial, sizeof(gMapDataTopSpecial));
-    snprintf(path, sizeof(path), "%s/bg0-buffer.bin", dir);
+    snprintf(path, sizeof(path), "%s-bg0-buffer.bin", dir);
     WriteBlob(path, gBG0Buffer, sizeof(gBG0Buffer));
-    snprintf(path, sizeof(path), "%s/bg1-buffer.bin", dir);
+    snprintf(path, sizeof(path), "%s-bg1-buffer.bin", dir);
     WriteBlob(path, gBG1Buffer, sizeof(gBG1Buffer));
-    snprintf(path, sizeof(path), "%s/bg2-buffer.bin", dir);
+    snprintf(path, sizeof(path), "%s-bg2-buffer.bin", dir);
     WriteBlob(path, gBG2Buffer, sizeof(gBG2Buffer));
-    snprintf(path, sizeof(path), "%s/bg3-buffer.bin", dir);
+    snprintf(path, sizeof(path), "%s-bg3-buffer.bin", dir);
     WriteBlob(path, gBG3Buffer, sizeof(gBG3Buffer));
-    snprintf(path, sizeof(path), "%s/save-state.bin", dir);
+    snprintf(path, sizeof(path), "%s-save-state.bin", dir);
     WriteBlob(path, &gSave, sizeof(gSave));
-    const bool loadStateOk = Port_DumpState3DS_Write(dir);
-
-    snprintf(path, sizeof(path), "%s/info.txt", dir);
+    snprintf(path, sizeof(path), "%s-info.txt", dir);
     FILE* info = fopen(path, "wb");
     if (info) {
         const double sampleCount = sPerfSamples ? (double)sPerfSamples : 1.0;
@@ -872,13 +867,10 @@ void Port_PPU_3DS_WriteQuickDump(void) {
         fprintf(info, "GPU per-line snapshot: %s\n",
                 sGpuSnapshotValid ? "available (io-per-line.bin, dispcnt-per-line.bin, affine-ref.bin)" :
                                     "unavailable (CPU frame; files omitted)");
-        fprintf(info, "room-controls.bin, map-bottom-layer.bin, map-top-layer.bin\n");
+        fprintf(info, "(files are tmc-dump-NNNN-<name>)\nroom-controls.bin, map-bottom-layer.bin, map-top-layer.bin\n");
         fprintf(info, "map-bottom-special.bin, map-top-special.bin, bg0-buffer.bin, bg1-buffer.bin, "
                       "bg2-buffer.bin, bg3-buffer.bin, save-state.bin (active SaveFile, 0x500 bytes)\n");
-        fprintf(info, "load-state.bin: %s\n",
-                loadStateOk ? "validated Developer > Load State checkpoint"
-                            : "unavailable (checkpoint capture requires active gameplay)");
-        fprintf(info, "Trigger: L + R + A\n");
+        fprintf(info, "Trigger: DEBUG tab SCREEN DUMP or the link's DUMP\n");
         fclose(info);
     }
 
@@ -892,6 +884,13 @@ void Port_PPU_3DS_WriteQuickDump(void) {
     PlatformGpu3DS_ShowDumpSavedOverlay(currentTopTexture);
     Port_Audio_3DSSetPaused(false);
 }
+
+#else
+/* Production builds have no screen dump and no GPU CHECK. */
+const char* Port_PPU_3DS_LastDumpPrefix(void) { return ""; }
+void Port_PPU_3DS_RequestGpuCheck(void) {}
+void Port_PPU_3DS_WriteScreenDump(void) {}
+#endif
 
 void Port_PPU_3DS_RenderBottomWorker(void) {
     const uint64_t startTick = Platform3DS_SystemTick();
@@ -1095,7 +1094,7 @@ void Port_PPU_PresentFrame(void) {
         return;
     ApplyUploadLayoutSwitch();
     PortPpuGpu3DS_FinishParityCheck();
-    PortPpuGpu3DS_WriteFrameCapture(Port_PPU_3DS_LastDumpDirectory());
+    PortPpuGpu3DS_WriteFrameCapture(Port_PPU_3DS_LastDumpPrefix());
     /* Before this frame draws over it, the output texture still holds the
      * frame the screen is showing. */
     if (PortPpuGpu3DS_FrameCaptureRequested() && sGpuPpuInitialized &&
@@ -1110,9 +1109,6 @@ void Port_PPU_PresentFrame(void) {
     const uint64_t frameStartTick = Platform3DS_SystemTick();
     uint64_t perfBeginTicks = 0, perfPreflightTicks = 0; /* DEBUG tab perf recorder */
 
-#ifdef TMC_3DS_DIAGNOSTICS
-    const uint64_t frameStart = Platform3DS_Milliseconds();
-#endif
     const uint16_t dispcnt = (uint16_t)(gIoMem[0] | (gIoMem[1] << 8));
     const uint8_t mode = (uint8_t)(dispcnt & 7);
     TopFrameState topFrame = SelectTopFrame();
@@ -1261,25 +1257,6 @@ void Port_PPU_PresentFrame(void) {
     else if (!gpuReady) virtuappu_render_frame();
     Platform3DS_SetStage(5);
     const uint64_t renderEndTick = Platform3DS_SystemTick();
-#ifdef TMC_3DS_DIAGNOSTICS
-    const uint64_t renderEnd = Platform3DS_Milliseconds();
-
-    const unsigned diagnosticFrame = sDiagnosticFrames++;
-    if (diagnosticFrame == 0)
-        sDiagnosticStartMs = frameStart;
-    if (diagnosticFrame < 3 || diagnosticFrame == 60 || diagnosticFrame == 180 || diagnosticFrame == 360) {
-        char message[256];
-        snprintf(message, sizeof(message),
-                 "[tmc3ds] frame=%u dispcnt=%04x io=%02x%02x vram=%02x%02x%02x%02x pal=%04x,%04x out=%08lx,%08lx\n",
-                 diagnosticFrame, dispcnt, gIoMem[0], gIoMem[1], gVram[0], gVram[1], gVram[2], gVram[3], gBgPltt[0],
-                 gBgPltt[1], (unsigned long)sTopUpload[0], (unsigned long)sTopUpload[1]);
-        Platform3DS_Debug(message);
-    }
-    if (diagnosticFrame == 2)
-        DumpPpuSnapshot("tmc3ds-frame2.ppu1");
-    if (diagnosticFrame == 60)
-        DumpPpuSnapshot("tmc3ds-frame60.ppu1");
-#endif
 
     /* Presentation is the largest remaining cost on an Old 3DS and the
      * emulator reports it as nearly free, which means it is a GPU wait rather
@@ -1330,103 +1307,7 @@ void Port_PPU_PresentFrame(void) {
 #if TMC3DS_DEBUG_TOOLS
     RecTick(topFrame.width, topFrame.height, holdTop, (int)topFrame.mode);
 #endif
-    /* A screen that stays black means neither render path drew anything, and
-     * the counters that say why are otherwise only visible in a quick dump --
-     * which is hard to take when the screen is blank. Report the first frames
-     * to the log so the state can be read straight off the SD card. */
-    if (Port_Config_FrameLog() && sFrameNumber == 1u) {
-        /* Stamp the run with the switches in effect, so a log read later says
-         * which configuration produced it. */
-        char config[160];
-        snprintf(config, sizeof(config),
-                 "[tmc3ds] run config: gpu_renderer=%d frame_sync=%d "
-                 "viewport_offset=%d scissor_mode=%d\n",
-                 (int)Port_Config_GpuRenderer(), (int)Port_Config_GpuFrameSync(),
-                 (int)Port_Config_GpuViewportOffset(),
-                 Port_Config_GpuScissorMode());
-        Platform3DS_Debug(config);
-    }
-    /* Platform3DS_Debug does fopen/fwrite/fclose per call, so this is a full SD
-     * open-write-close on the main thread, inside the timed presentation span.
-     * FS is a core-1 sysmodule holding the app's 20% quota, so the cycle costs
-     * tens of milliseconds: amortised over 120 frames that is a few tenths of a
-     * millisecond per frame, and the stall itself lands in the presentation
-     * span, which is where the unexplained ~196 ms maximum shows up.
-     *
-     * The first-frame forensics and the periodic line are both opt-in.  They
-     * are useful for a black-screen investigation, but release gameplay must
-     * not pay for synchronous SD opens during its first animation frames. */
-    if (Port_Config_FrameLog() &&
-        (sFrameNumber <= 8u || (sFrameNumber % 120u) == 0u)) {
-        PlatformGpu3DSStats presenter;
-        PortPpuGpu3DSStats gpu;
-        PlatformGpu3DS_GetStats(&presenter);
-        PortPpuGpu3DS_GetStats(&gpu);
-        char line[224];
-        snprintf(line, sizeof(line),
-                 "[tmc3ds] emptyDraws=%llu busyDrops=%llu\n"
-                 "[tmc3ds] f=%lu gpuReady=%d init=%d disabled=%d beginFail=%llu "
-                 "topXfer=%llu att=%llu rend=%llu fb=%llu dispcnt=%04x\n",
-                 PortPpuGpu3DS_EmptyDrawsSkipped(), sGpuBusyFrameDrops,
-                 (unsigned long)sFrameNumber, (int)gpuReady,
-                 (int)sGpuPpuInitialized, (int)sGpuPpuDisabled,
-                 (unsigned long long)presenter.frameBeginFailures,
-                 (unsigned long long)presenter.topTransfers,
-                 (unsigned long long)gpu.attemptedFrames,
-                 (unsigned long long)gpu.renderedFrames,
-                 (unsigned long long)gpu.fallbackFrames, dispcnt);
-        Platform3DS_Debug(line);
-    }
-
-    /* Cadence summary in the log, so a run reports itself without a quick dump.
-     *
-     * The quick dump has all of this and more, but it needs L+R+A at the end of
-     * a session -- and a run reaching frame 11160 has already happened with no
-     * dump written, which cost that whole session's data. One SD write every
-     * 1800 frames is ~30 s apart: even at 30 ms per open-write-close that is
-     * 0.017 ms/frame, three orders below the per-120-frame line this replaces.
-     *
-     * Deliberately after frame 1800 only, and behind frame_log, so normal
-     * gameplay performs no periodic SD write. */
-    if (Port_Config_FrameLog() && sFrameNumber >= 1800u &&
-        (sFrameNumber % 1800u) == 0u && sPerfIntervalSamples > 0u &&
-        sPerfSamples > 0u) {
-        PlatformGpu3DSStats gpuCadence;
-        PlatformGpu3DS_GetStats(&gpuCadence);
-        Platform3DSRuntimeStats rt;
-        Platform3DS_GetRuntimeStats(&rt);
-        extern uint64_t Platform3DS_VblankWaitSamples(void);
-        extern uint64_t Platform3DS_VblankWaitOverOnePeriod(void);
-        const uint64_t waits = Platform3DS_VblankWaitSamples();
-        const uint64_t over1 = Platform3DS_VblankWaitOverOnePeriod();
-        char cadence[352];
-        snprintf(cadence, sizeof(cadence),
-                 "[tmc3ds] CADENCE f=%lu fps=%.2f logic=%.2f interval=%.3fms "
-                 "skips=%llu clamps=%llu lostVblank=%llu/%llu over1=%llu over2=%llu "
-                 "xfer=%.3f/%.3fms n=%llu\n",
-                 (unsigned long)sFrameNumber,
-                 (double)__atomic_load_n(&sAverageFpsX100, __ATOMIC_RELAXED) / 100.0,
-                 rt.logicElapsedTicks
-                         ? (double)rt.logicFrames * (double)Platform3DS_TicksPerSecond() /
-                                   (double)rt.logicElapsedTicks
-                         : 0.0,
-                 TicksToMilliseconds(sPerfIntervalTicks) / (double)sPerfIntervalSamples,
-                 (unsigned long long)rt.old3dsSkippedPresentations,
-                 (unsigned long long)rt.old3dsDebtClampEvents, (unsigned long long)over1,
-                 (unsigned long long)waits, (unsigned long long)sPerfFramesOver16ms,
-                 (unsigned long long)sPerfFramesOver33ms,
-                 gpuCadence.bottomTransfers
-                         ? TicksToMilliseconds(gpuCadence.bottomTransferTicks) /
-                                   (double)gpuCadence.bottomTransfers
-                         : 0.0,
-                 TicksToMilliseconds(gpuCadence.bottomTransferMaxTicks),
-                 (unsigned long long)gpuCadence.bottomTransfers);
-        Platform3DS_Debug(cadence);
-    }
     const uint64_t topEndTick = Platform3DS_SystemTick();
-#ifdef TMC_3DS_DIAGNOSTICS
-    const uint64_t topEnd = Platform3DS_Milliseconds();
-#endif
 
     bool bottomChanged = false;
     if (sBottomWorkerPending && Platform3DS_TryFinishBottomWorker()) {
@@ -1609,22 +1490,6 @@ void Port_PPU_PresentFrame(void) {
             __atomic_store_n(&sAverageFpsX100, (uint32_t)average, __ATOMIC_RELAXED);
         }
     }
-#ifdef TMC_3DS_DIAGNOSTICS
-    if (diagnosticFrame < 8 || diagnosticFrame == 60) {
-        char message[160];
-        const uint64_t frameEnd = Platform3DS_Milliseconds();
-        snprintf(message, sizeof(message),
-                 "[tmc3ds] timing frame=%u render=%llums top=%llums bottom=%llums total=%llums\n", diagnosticFrame,
-                 (unsigned long long)(renderEnd - frameStart), (unsigned long long)(topEnd - renderEnd),
-                 (unsigned long long)(frameEnd - topEnd), (unsigned long long)(frameEnd - frameStart));
-        Platform3DS_Debug(message);
-        if (diagnosticFrame == 60) {
-            snprintf(message, sizeof(message), "[tmc3ds] cadence 60_frames=%llums\n",
-                     (unsigned long long)(frameEnd - sDiagnosticStartMs));
-            Platform3DS_Debug(message);
-        }
-    }
-#endif
 }
 
 void Port_PPU_SetPresentIsFirstOfTick(bool first) {

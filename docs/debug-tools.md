@@ -6,9 +6,9 @@ the plan for the rest is PLAN phase 1.
 
 ## Builds
 
-Everything below except L+R+A exists only in a debug-tools build (the SD log
-and perf recorder code is compiled into every build, but nothing reaches it
-without the DEBUG tab):
+Everything below exists only in a debug-tools build (the SD log and perf recorder
+code is compiled into every build, but nothing reaches it without the DEBUG tab;
+there is no button chord any more: upstream's L+R+A is gone):
 
 ```sh
 ./build_3ds.sh                                 # asks; debug is the default
@@ -37,11 +37,10 @@ The bug icon in the tab bar (debug builds only).
 | SD LOG | the SD log (below): the square button on the right starts or stops it, the rest of the cell switches BUFFERED / DIRECT |
 | PERF RECORDER | the frame-time recorder (below): the side button starts and stops it; while it runs the cell shows the rows held and how full the buffer is |
 | LOG MARK | writes `--- MARK n ---` into the log and flushes it: tap it when the problem shows, then find it in the file |
-| MEM DUMP | writes a quick dump, as L+R+A does (below) |
-| LOAD STATE | loads the game state of the newest dump, after a confirmation |
+| SCREEN DUMP | both screens, the memories and the frame's state as numbered `debug/tmc-dump-NNNN-*` files, written at the next frame boundary (below) |
 | SHOW FPS | the top-screen numbers box: game rate, `L` logic ms, `G` GPU ms, `S` presented rate |
 | FTP SERVER | an FTP server inside the game (below): the side button starts or stops it, the cell shows the address to connect to |
-| GPU CHECK | upstream's parity check: the next frame is drawn by both renderers and compared; the cell shows the checks done and the pixels that differed. Differing frames are saved next to the last dump, and a difference the blender cannot explain turns the GPU renderer off for the session (`GPU OFF: FAILED`). Old 3DS only (the only model with the GPU renderer) |
+| GPU CHECK | the next frame is drawn by both renderers and compared (as in sm-3ds); the cell shows the checks done and the pixels that differed. A frame that differs is saved as `debug/tmc-check-NNNN-*` (CPU and GPU surfaces, the first differing pixels). A difference the blender cannot explain is counted and logged, it no longer retires the renderer. Old 3DS only (the only model with the GPU renderer) |
 
 Cells for something that runs work as in mzm and sm-3ds: the button on their
 right starts it (green triangle) or stops it (red square). A toast at the bottom
@@ -60,7 +59,6 @@ blue: changed). None needs a restart.
 | VBLANK LOCK | `vblank_phase_lock` | ON / OFF | lock the presentation to the next vblank instead of a pending one |
 | STATIC QUAD | `gpu_static_quad` | ON / OFF | reuse the presenter's quad |
 | MAP SKIP | `bottom_map_skip` | ON / OFF | skip MAP-tab repaints that would draw the same picture |
-| FRAME LOG | `frame_log` | ON / OFF | upstream's per-line `tmc3ds.log` (opens and closes the file per line: slow, it causes stalls) |
 | BOTTOM CORE | `bottom_core` | CORE 0 / CORE 1 | where the bottom-screen painter runs; its thread is recreated before the next paint |
 | AUDIO CORE | `audio_core` | AUTO / CORE 0 / CORE 1 | where the audio refill thread runs; it is recreated at once (the queued buffers cover the gap) |
 | COMPACT UP | `compact_upload` | ON / OFF | smaller upload surfaces, Old 3DS only; taken at the start of the next frame |
@@ -87,7 +85,7 @@ are one-shot captures and always start off.
 
 - Anonymous: any user name and password.
 - `/` is the root of the SD card; the game's files are in
-  `/3ds/Minish Cap 3DS/` (`debug/`, `dumps/`, saves, `tmc3ds.ini`).
+  `/3ds/Minish Cap 3DS/` (`debug/`, saves, `tmc3ds.ini`).
 - Passive mode only (PASV and EPSV, data ports 5001-5064), one client at a time.
   FileZilla, WinSCP, lftp and curl work:
 
@@ -199,13 +197,30 @@ it on the console and writes `DIR/frames.png`, a contact sheet of the 60 frames,
 each frame's view size, Full View mode and whether the top screen was being held. Read the
 sheet left to right, top to bottom.
 
-## L+R+A: quick dump (all builds)
+## Screen dump
 
-Pauses the game, shows `DUMP SAVED` and writes `dumps/dump-*` in the data folder
-(`sdmc:/3ds/Minish Cap 3DS/`): top and bottom framebuffers (BMP and raw), EWRAM,
-IWRAM, VRAM, palettes, OAM, I/O, game state, frame cadence, adaptive-skip data,
-per-core PPU timings, GPU work, audio buffer health, save state, memory and input.
-Upstream's feature; fetch the folder over FTP.
+DEBUG -> SCREEN DUMP, or `tmc-link.py dump`. It does not write at once: the request is
+taken at the next frame boundary (`Platform3DS_BeginFrameBoundary`'s wait), where the game
+is paused for the SD writes and `DUMP SAVED` shows, as in ../sm-3ds and ../mzm. Each dump
+takes the number after the last one (`debug/tmc-dump-last.txt`), is never overwritten and
+has no limit; clear them out by hand. Files, all `debug/tmc-dump-NNNN-<name>`:
+
+| Name | What |
+|---|---|
+| `top-screen.bmp/.raw`, `bottom-screen.bmp/.raw` | what both screens show |
+| `ewram.bin`, `iwram.bin`, `vram.bin`, `palettes.bin`, `oam.bin`, `io-registers.bin` | the GBA memories |
+| `io-per-line.bin`, `dispcnt-per-line.bin`, `affine-ref.bin` | the GPU builder's per-scanline registers (GPU frames) |
+| `main-state.bin`, `room-controls.bin`, `map-*.bin`, `bg*-buffer.bin`, `save-state.bin` | the game's state |
+| `gpu-frame.bin`, `parity-cpu.bin`, `parity-gpu.bin`, `parity-diff.txt` | the frame as the GPU drew it and, if it differs from the CPU's, both surfaces |
+| `info.txt` | build, view and Full View state, frame cadence, per-core PPU timings, GPU work, audio, memory, input |
+
+A dump pauses audio and writes a few MB. `SITE INSTALL` is refused for 15 s after one
+(`450`): relaunching right after it made the system loader crash once (issue #4).
+
+Upstream's L+R+A and its LOAD STATE of the last dump are gone. A game state is restored by
+the STATES tab (docs/save-states.md); `tmc-link.py shot/peek/poke/state` cover the rest.
+The files' content is what `tools/` and `platform/3ds/tests/port_ppu_gpu_3ds_bench.c` read;
+the bench takes a dump's files by their old unprefixed names, rename or copy them.
 
 ## On the PC
 

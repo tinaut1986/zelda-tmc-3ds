@@ -26,9 +26,9 @@ bool Platform3DS_BatteryStatus(uint8_t* level, uint8_t* charging) { *level = 4; 
 int Platform3DS_WifiStrength(void) { return 2; }
 double Port_PPU_3DS_CurrentFps(void) { return 59.8; }
 double Port_PPU_3DS_AverageFps(void) { return 58.4; }
-void Port_PPU_3DS_WriteQuickDump(void) {}
+void Platform3DS_RequestScreenDump(void) {}
+void Port_PPU_3DS_RequestGpuCheck(void) {}
 void Port_PPU_SetColorCorrection(bool on) { (void)on; }
-PortDumpStateResult Port_DumpState3DS_LoadLatest(void) { return (PortDumpStateResult)0; }
 const char* Port_DumpState_ResultLabel(PortDumpStateResult r) { (void)r; return "OK"; }
 void Port_SecondScreenState_RequestEquip(uint8_t itemId, uint8_t slot) { (void)itemId; (void)slot; }
 
@@ -137,17 +137,17 @@ int DebugPerf_Stop(void) { sPerf = false; return 3; }
 bool DebugPerf_Running(void) { return sPerf; }
 unsigned DebugPerf_Rows(void) { return sPerf ? 1834 : 0; }
 unsigned DebugPerf_Capacity(void) { return 36000; }
-static int sSw[10] = { 1, 0, 0, 0, 1, 0, -1, -1, 0, 0 };
-static const char* const kSwNames[10] = { "RENDERER", "FRAME SYNC", "VBLANK LOCK", "STATIC QUAD", "MAP SKIP",
-                                          "FRAME LOG", "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT" };
+static int sSw[9] = { 1, 0, 0, 0, 1, -1, -1, 0, 0 };
+static const char* const kSwNames[9] = { "RENDERER", "FRAME SYNC", "VBLANK LOCK", "STATIC QUAD", "MAP SKIP",
+                                         "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT" };
 const char* DebugSwitch_Name(int id) { return kSwNames[id]; }
 void DebugSwitch_Value(int id, char* out, unsigned cap) {
     if (id == 0) snprintf(out, cap, "%s", sSw[0] ? "GPU" : "CPU (TEST)");
-    else if (id == 6 || id == 7) snprintf(out, cap, "%s", sSw[id] < 0 ? "AUTO" : (sSw[id] ? "CORE 1" : "CORE 0"));
-    else if (id == 9) snprintf(out, cap, "AUTO 80%%");
+    else if (id == 5 || id == 6) snprintf(out, cap, "%s", sSw[id] < 0 ? "AUTO" : (sSw[id] ? "CORE 1" : "CORE 0"));
+    else if (id == 8) snprintf(out, cap, "AUTO 80%%");
     else snprintf(out, cap, "%s", sSw[id] ? "ON" : "OFF");
 }
-void DebugSwitch_Cycle(int id) { sSw[id] = sSw[id] == 1 ? (id == 6 || id == 7 ? -1 : 0) : 1; }
+void DebugSwitch_Cycle(int id) { sSw[id] = sSw[id] == 1 ? (id == 5 || id == 6 ? -1 : 0) : 1; }
 bool DebugSwitch_IsDefault(int id) { static const int d[10] = { 1, 0, 0, 0, 1, 0, -1, -1, 0, 0 }; return sSw[id] == d[id]; }
 void PortPpuGpu3DS_GetStats(PortPpuGpu3DSStats* st) { memset(st, 0, sizeof(*st)); st->initialized = true; st->parityChecks = 2; }
 void PortPpuGpu3DS_RequestParityCheck(void) {}

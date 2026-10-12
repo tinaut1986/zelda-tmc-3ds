@@ -24,8 +24,8 @@ static uint32_t sDown;
 static circlePosition sCirclePosition;
 static circlePosition sCStickPosition;
 static bool sCStickHeld;
-static bool sQuickDumpRequested;
-static bool sQuickDumpComboWasHeld;
+static bool sScreenDumpRequested;
+static uint64_t sScreenDumpTick; /* when the last screen dump finished, 0 if none */
 static bool sRunning;
 static bool sIsNew3DS;
 static unsigned sTurboMultiplier = 5;
@@ -126,8 +126,8 @@ int Platform3DS_Init(void) {
     memset(&sCirclePosition, 0, sizeof(sCirclePosition));
     memset(&sCStickPosition, 0, sizeof(sCStickPosition));
     sCStickHeld = false;
-    sQuickDumpRequested = false;
-    sQuickDumpComboWasHeld = false;
+    sScreenDumpRequested = false;
+    sScreenDumpTick = 0;
     sCore1Available = false;
     sCore1TimeLimit = 0;
     sSpeedupRequested = false;
@@ -412,9 +412,8 @@ static uint16_t MapKeysToGba(uint32_t keys) {
         GBA_R = 1u << 8,
         GBA_L = 1u << 9,
     };
-    const bool quickDumpCombo = (keys & (KEY_L | KEY_R | KEY_A)) == (KEY_L | KEY_R | KEY_A);
     uint16_t input = 0x03ff;
-    if ((keys & KEY_A) && !quickDumpCombo) input &= ~GBA_A;
+    if (keys & KEY_A) input &= ~GBA_A;
     if (keys & KEY_B) input &= ~GBA_B;
     if (keys & KEY_SELECT) input &= ~GBA_SELECT;
     if (keys & KEY_START) input &= ~GBA_START;
@@ -422,8 +421,8 @@ static uint16_t MapKeysToGba(uint32_t keys) {
     if (keys & (KEY_DLEFT | KEY_CPAD_LEFT)) input &= ~GBA_LEFT;
     if (keys & (KEY_DUP | KEY_CPAD_UP)) input &= ~GBA_UP;
     if (keys & (KEY_DDOWN | KEY_CPAD_DOWN)) input &= ~GBA_DOWN;
-    if ((keys & KEY_R) && !quickDumpCombo) input &= ~GBA_R;
-    if ((keys & KEY_L) && !quickDumpCombo) input &= ~GBA_L;
+    if (keys & KEY_R) input &= ~GBA_R;
+    if (keys & KEY_L) input &= ~GBA_L;
     return input;
 }
 
@@ -843,9 +842,6 @@ static void PollInput(void) {
         hidTouchRead(&touch);
         Port_SecondScreen_3DS_OnTap(touch.px, touch.py, 0);
     }
-    const bool quickDumpCombo = (sHeld & (KEY_L | KEY_R | KEY_A)) == (KEY_L | KEY_R | KEY_A);
-    if (quickDumpCombo && !sQuickDumpComboWasHeld) sQuickDumpRequested = true;
-    sQuickDumpComboWasHeld = quickDumpCombo;
 }
 
 /* The main thread can stop advancing while audio keeps playing -- both screens
@@ -922,7 +918,20 @@ const char* Platform3DS_CacheCleanPath(void) {
                                   : "unprobed";
 }
 
-void Platform3DS_RequestQuickDump(void) { sQuickDumpRequested = true; }
+#if TMC3DS_DEBUG_TOOLS
+/* The DEBUG tab's SCREEN DUMP and the link's DUMP only ask; the dump itself
+ * runs at the frame boundary (WaitForVBlank, below), where nothing of the frame
+ * is half done. There is no button chord any more (it was upstream's L+R+A, in
+ * every build). */
+void Platform3DS_RequestScreenDump(void) { sScreenDumpRequested = true; }
+#else
+void Platform3DS_RequestScreenDump(void) {}
+#endif
+
+uint32_t Platform3DS_SecondsSinceScreenDump(void) {
+    if (sScreenDumpTick == 0) return 0xffffffffu;
+    return (uint32_t)((svcGetSystemTick() - sScreenDumpTick) / Platform3DS_TicksPerSecond());
+}
 
 /* Render and engine work together account for 12.7 ms of a 20.4 ms frame, and
  * the VBlank wait is 7.7 ms where about 4 would be expected -- so a few
@@ -996,10 +1005,11 @@ void Platform3DS_WaitForVBlank(void) {
      * targets a CPU-painted buffer that has not reached a presentation. */
     const uint64_t postStart = svcGetSystemTick();
     Port_SecondScreen_3DS_PromoteSubmitted();
-    if (sQuickDumpRequested) {
-        extern void Port_PPU_3DS_WriteQuickDump(void);
-        sQuickDumpRequested = false;
-        Port_PPU_3DS_WriteQuickDump();
+    if (sScreenDumpRequested) {
+        extern void Port_PPU_3DS_WriteScreenDump(void);
+        sScreenDumpRequested = false;
+        Port_PPU_3DS_WriteScreenDump();
+        sScreenDumpTick = svcGetSystemTick();
     }
     PollInput();
     const uint64_t postTicks = svcGetSystemTick() - postStart;

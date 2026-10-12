@@ -10,7 +10,6 @@ enum {
     DEBUG_SW_VBLANK_LOCK,   /* vblank_phase_lock */
     DEBUG_SW_STATIC_QUAD,   /* gpu_static_quad */
     DEBUG_SW_MAP_SKIP,      /* bottom_map_skip */
-    DEBUG_SW_FRAME_LOG,     /* frame_log: upstream's per-line tmc3ds.log (slow) */
     DEBUG_SW_BOTTOM_CORE,   /* bottom_core: the painter thread is recreated before its next paint */
     DEBUG_SW_AUDIO_CORE,    /* audio_core: the refill thread is recreated at once */
     DEBUG_SW_COMPACT_UPLOAD,/* compact_upload (Old 3DS): taken at the start of the next frame */

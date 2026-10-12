@@ -28,7 +28,6 @@ static unsigned sPresentQuadWidth;
 bool Port_Config_GpuStaticQuad(void);
 bool Port_Config_CompactUpload(void);
 bool Port_Config_BottomRgb565(void);
-bool Port_Config_FrameLog(void);
 
 static C3D_RenderTarget* sTopTarget;
 static C3D_RenderTarget* sBottomTarget;
@@ -897,15 +896,6 @@ void PlatformGpu3DS_BeginTop(const uint32_t* pixels, unsigned width, unsigned he
      * fallback. Reuse it so the freshly rendered image is actually uploaded. */
     if (!sFrameActive && !C3D_FrameBegin(frameFlags)) {
         ++sStats.frameBeginFailures;
-        if (Port_Config_FrameLog() &&
-            (sStats.frameBeginFailures <= 3u ||
-             (sStats.frameBeginFailures % 300u) == 0u)) {
-            char line[112];
-            snprintf(line, sizeof(line),
-                     "[tmc3ds] GPU busy, frame begin skipped (%llu total)\n",
-                     (unsigned long long)sStats.frameBeginFailures);
-            Platform3DS_Debug(line);
-        }
         return;
     }
     sFrameActive = true;
@@ -942,15 +932,6 @@ bool PlatformGpu3DS_BeginCustomTop(void) {
     const u8 frameFlags = (u8)(Port_Config_GpuFrameSync() ? C3D_FRAME_SYNCDRAW : 0);
     if (!C3D_FrameBegin(frameFlags)) {
         ++sStats.frameBeginFailures;
-        if (Port_Config_FrameLog() &&
-            (sStats.frameBeginFailures <= 3u ||
-             (sStats.frameBeginFailures % 300u) == 0u)) {
-            char line[112];
-            snprintf(line, sizeof(line),
-                     "[tmc3ds] GPU busy, frame begin skipped (%llu total)\n",
-                     (unsigned long long)sStats.frameBeginFailures);
-            Platform3DS_Debug(line);
-        }
         return false;
     }
     sFrameActive = true;

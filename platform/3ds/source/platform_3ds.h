@@ -128,7 +128,12 @@ uint64_t Platform3DS_PumpTicks(void);
 uint64_t Platform3DS_PumpMaxTicks(void);
 uint64_t Platform3DS_PostWaitTicks(void);
 uint64_t Platform3DS_PostWaitMaxTicks(void);
-void Platform3DS_RequestQuickDump(void);
+/* DEBUG tab SCREEN DUMP / link DUMP: written at the next frame boundary. */
+void Platform3DS_RequestScreenDump(void);
+/* Seconds since a screen dump finished; 0xffffffff when none was taken. */
+uint32_t Platform3DS_SecondsSinceScreenDump(void);
+/* SITE INSTALL is refused for this long after a screen dump (issue #4). */
+#define SCREEN_DUMP_INSTALL_GRACE_S 15u
 void Platform3DS_WaitForVBlank(void);
 void Platform3DS_ShowFatal(const char* title, const char* message);
 void Platform3DS_Debug(const char* message);

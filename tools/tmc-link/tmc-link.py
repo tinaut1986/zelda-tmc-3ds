@@ -17,8 +17,7 @@ SITE commands of platform/3ds/source/debug_link_3ds.h. Standard library only.
     loadstate [N]             load save state N (1 = newest, the default)
     delstate N                delete save state N
     states                    the save states: number=area/room
-    loaddump                  load the newest quick dump's save (upstream's LOAD STATE)
-    dump                      take a quick dump (as L+R+A)
+    dump                      screen dump: debug/tmc-dump-NNNN-* (written at the next frame)
     switch NAME               cycle a DEBUG -> SWITCHES value ("FRAME SYNC")
     shot [DIR]                screenshots of both screens as PNG, default /tmp/tmc-shot
     rec                       record the top screen around the next room change
@@ -205,10 +204,15 @@ def run(link, argv):
         print(link.site((cmd.upper() + ' ' + ' '.join(args)).strip()))
     elif cmd == 'states':
         print(link.site('STATES'))
-    elif cmd == 'loaddump':
-        print(link.site('LOADDUMP'))
     elif cmd == 'dump':
         print(link.site('DUMP'))
+        link.wait_frames(3)
+        buf = io.BytesIO()
+        try:
+            link.connect().retrbinary('RETR %s/debug/tmc-dump-last.txt' % DATA, buf.write)
+            print('set %s: debug/tmc-dump-%04d-*' % (buf.getvalue().decode().strip(), int(buf.getvalue())))
+        except Exception as exc:  # the number file may not have been written yet
+            print('dump requested (%s)' % exc)
     elif cmd == 'switch':
         print(link.site('SWITCH ' + ' '.join(args)))
     elif cmd == 'shot':

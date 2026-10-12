@@ -66,9 +66,9 @@
 #ifdef TMC_3DS
 #include "platform_3ds.h"
 #include "tmc3ds_version.h"
-#include "port_dump_state_3ds.h"
+#include "port_dump_state.h"
 
-extern void Port_PPU_3DS_WriteQuickDump(void);
+extern void Platform3DS_RequestScreenDump(void);
 extern double Port_PPU_3DS_CurrentFps(void);
 extern double Port_PPU_3DS_AverageFps(void);
 #endif
@@ -3304,7 +3304,7 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             sUi.dumpFlashUntil = sUi.lastTick + 40;
             UI_UNLOCK();
 #ifdef TMC_3DS
-            Port_PPU_3DS_WriteQuickDump();
+            Platform3DS_RequestScreenDump(); /* written at the next frame boundary */
 #endif
             break;
         case SS_ACT_DEVELOPER_LOAD:
@@ -3318,20 +3318,11 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             UI_UNLOCK();
             break;
         case SS_ACT_LOAD_CONFIRM:
-#ifdef TMC_3DS
-            {
-                PortDumpStateResult result = Port_DumpState3DS_LoadLatest();
-                UI_LOCK();
-                sUi.loadConfirmActive = 0;
-                sUi.loadStateResult = (uint8_t)result;
-                sUi.loadStateFlashUntil = sUi.lastTick + 80;
-                UI_UNLOCK();
-            }
-#else
+            /* Not reachable from the 3DS compact UI (its STATES tab restores a
+             * game state); the dump's checkpoint loader is the PC build's. */
             UI_LOCK();
             sUi.loadConfirmActive = 0;
             UI_UNLOCK();
-#endif
             break;
         case SS_ACT_NOTICE_CLOSE:
             UI_LOCK();

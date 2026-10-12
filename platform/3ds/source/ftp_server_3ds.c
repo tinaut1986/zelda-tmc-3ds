@@ -416,7 +416,14 @@ static void HandleSession(int ctrl) {
             if (path) *path++ = 0;
             for (char* c = sub; *c; c++)
                 if (*c >= 'a' && *c <= 'z') *c = (char)(*c - 32);
-            if (!strcmp(sub, "INSTALL") && path && *path) {
+            if (!strcmp(sub, "INSTALL") && path && *path &&
+                Platform3DS_SecondsSinceScreenDump() < SCREEN_DUMP_INSTALL_GRACE_S) {
+                /* A relaunch right after a screen dump (a few MB written to the SD
+                 * card in one go) is what the loader crashed on once (issue #4):
+                 * make the caller wait the grace period out instead. */
+                Reply(s, "450 A screen dump was written %u s ago; install after %u s.",
+                      (unsigned)Platform3DS_SecondsSinceScreenDump(), (unsigned)SCREEN_DUMP_INSTALL_GRACE_S);
+            } else if (!strcmp(sub, "INSTALL") && path && *path) {
                 ResolvePath(s, path, vpath, sizeof(vpath));
                 char error[96];
                 sNotice = "INSTALLING NEW BUILD - GAME WILL RESTART";

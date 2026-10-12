@@ -939,7 +939,8 @@ bool PortPpuGpu3DS_QueueFrameCapture(void) {
     return true;
 }
 
-void PortPpuGpu3DS_WriteFrameCapture(const char* directory) {
+void PortPpuGpu3DS_WriteFrameCapture(const char* prefix) {
+    const char* directory = prefix;
     if (!sCaptureSubmitted || !directory || directory[0] == 0) return;
     sCaptureSubmitted = false;
     if (R_FAILED(GSPGPU_InvalidateDataCache(
@@ -948,7 +949,7 @@ void PortPpuGpu3DS_WriteFrameCapture(const char* directory) {
                                          sizeof(*sParityReadback))))
         return;
     char path[224];
-    snprintf(path, sizeof(path), "%s/gpu-frame.bin", directory);
+    snprintf(path, sizeof(path), "%s-gpu-frame.bin", directory);
     FILE* file = fopen(path, "wb");
     if (!file) return;
     fwrite(sParityReadback, sizeof(*sParityReadback),
@@ -1034,7 +1035,7 @@ static bool ChannelsWithinOneStep(uint16_t reference, uint16_t readback) {
 }
 
 static void WriteParitySurfaces(uint64_t differing) {
-    const char* directory = Port_PPU_3DS_LastDumpDirectory();
+    const char* directory = Port_PPU_3DS_LastDumpPrefix(); /* a prefix: <prefix>-<name> */
     if (!directory || directory[0] == 0) return;
     static const struct {
         const char* name;
@@ -1043,7 +1044,7 @@ static void WriteParitySurfaces(uint64_t differing) {
     const uint16_t* sources[2] = { sParityReference, sParityReadback };
     char path[224];
     for (unsigned index = 0; index < 2; ++index) {
-        snprintf(path, sizeof(path), "%s/%s", directory, surfaces[index].name);
+        snprintf(path, sizeof(path), "%s-%s", directory, surfaces[index].name);
         FILE* file = fopen(path, "wb");
         if (!file) continue;
         fwrite(sources[index], sizeof(uint16_t),
@@ -1051,7 +1052,7 @@ static void WriteParitySurfaces(uint64_t differing) {
         fclose(file);
     }
 
-    snprintf(path, sizeof(path), "%s/parity-diff.txt", directory);
+    snprintf(path, sizeof(path), "%s-parity-diff.txt", directory);
     FILE* report = fopen(path, "w");
     if (!report) return;
     fprintf(report, "differing %llu of %u visible pixels (%ux%u)\n",
