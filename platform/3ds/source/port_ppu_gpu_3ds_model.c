@@ -3790,6 +3790,12 @@ static bool build_bg3_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCa
             io[MODE1_IO_BG3HOFS + 1u] = (uint8_t)(hofs >> 8u);
         }
     }
+    {
+        /* EXPERIMENT: rows sampled at the view's y (line), not the canvas's. */
+        const unsigned vofs = (read16(io, MODE1_IO_BG3VOFS) + (unsigned)top) & 0x1ffu;
+        io[MODE1_IO_BG3VOFS] = (uint8_t)vofs;
+        io[MODE1_IO_BG3VOFS + 1u] = (uint8_t)(vofs >> 8u);
+    }
     native.ioPerLine = io;
     part.ioRow = 0;
 

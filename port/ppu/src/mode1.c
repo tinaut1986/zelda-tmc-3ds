@@ -1052,12 +1052,12 @@ static void mode1_render_text_bg_compact_tokens(int bg_index, int line, uint16_t
                 const int adjusted = (hofs - base) & 0x1FF;
                 mode1_memory.io_mem[MODE1_IO_BG3HOFS] = (uint8_t)adjusted;
                 mode1_memory.io_mem[MODE1_IO_BG3HOFS + 1u] = (uint8_t)(adjusted >> 8);
-                mode1_render_text_bg_native_tokens(bg_index, line - native_top, bgcnt, native_width,
+                mode1_render_text_bg_native_tokens(bg_index, line, bgcnt, native_width,
                                                    tokens + native_left);
                 mode1_memory.io_mem[MODE1_IO_BG3HOFS] = lo;
                 mode1_memory.io_mem[MODE1_IO_BG3HOFS + 1u] = hi;
             } else {
-                mode1_render_text_bg_native_tokens(bg_index, line - native_top, bgcnt,
+                mode1_render_text_bg_native_tokens(bg_index, line, bgcnt,
                                                    native_width, tokens + native_left);
             }
         } else {
