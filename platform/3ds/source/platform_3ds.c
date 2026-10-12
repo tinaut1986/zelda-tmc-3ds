@@ -1,3 +1,4 @@
+#include "fade_gpu_3ds.h"
 #include "platform_3ds.h"
 #include <math.h>
 #include "updater.h"
@@ -510,6 +511,9 @@ bool Platform3DS_BeginFrameBoundary(void) {
     }
 
     ++sLogicFrames;
+    /* One snapshot of the palette buffer and fade parameters per logic frame,
+     * for the GPU fade (fade_gpu_3ds.c). */
+    FadeGpu3DS_OnFrameBoundary();
     /* OPTIONS -> FRAMES (Port_Config_GetFramePacing). A change resyncs the
      * pacer so time spent in another mode is not taken as debt. */
     const int pacing = Port_Config_GetFramePacing();

@@ -142,7 +142,7 @@ typedef struct PpuGpu3DSRing {
     bool dirty;
 } PpuGpu3DSRing;
 
-enum { PPU_GPU3DS_MEMO_SIZE = 512 };
+enum { PPU_GPU3DS_MEMO_SIZE = 512, PPU_GPU3DS_RING_MEMO_SIZE = 1024 };
 
 typedef struct PpuGpu3DSCache {
     PpuGpu3DSCacheEntry entries[PPU_GPU3DS_SLOT_COUNT];
@@ -197,6 +197,13 @@ typedef struct PpuGpu3DSCache {
     uint32_t chunkDigest[PPU_GPU3DS_RING_CHUNKS];
     uint32_t chunkDigestStamp[PPU_GPU3DS_RING_CHUNKS];
     uint32_t ringStamp;
+    /* Cells decoded this frame, by what they were decoded from: a screen of
+     * grass names the same few tiles in the same bank over and over, and a
+     * fade (every bank changes every frame) re-decodes them all. A hit copies
+     * the finished cell instead of decoding it again. */
+    struct PpuGpu3DSRingMemo {
+        uint32_t stamp, key, ctx;
+    } ringMemo[PPU_GPU3DS_RING_MEMO_SIZE];
     uint32_t retainedVertices, retainedIndices;
     /* A 64-bit digest of those ranges rather than a copy of them. The compare
      * then reads VRAM only -- half the traffic of matching two buffers -- and
@@ -234,6 +241,10 @@ typedef struct PpuGpu3DSFrameView {
     bool objClipEnable;
     const uint8_t* objClipMark;
     int objClipY;
+    /* A uniform screen fade the renderer applies itself (docs/gpu-fade.md):
+     * `memory`'s palettes are then the unfaded ones and the finished picture is
+     * blended toward grey `fadeLevel` by fadeWeight/255. 0 weight: none. */
+    uint8_t fadeWeight, fadeLevel;
 } PpuGpu3DSFrameView;
 
 typedef struct PpuGpu3DSInterval {
@@ -397,8 +408,8 @@ extern uint32_t gPpuGpu3DSLastBands, gPpuGpu3DSLastVertices, gPpuGpu3DSLastBatch
 #endif
 
 extern uint32_t gPpuGpu3DSRingWhy[4];
-extern uint32_t gPpuGpu3DSRingCells, gPpuGpu3DSRingStale;
-extern volatile uint8_t gPpuGpu3DSRingDisable;
+extern uint32_t gPpuGpu3DSRingCells, gPpuGpu3DSRingStale, gPpuGpu3DSRingMemoHits;
+extern volatile uint8_t gPpuGpu3DSRingDisable, gPpuGpu3DSRingMemoDisable;
 extern uint32_t gPpuGpu3DSBankChanges[16];
 void PpuGpu3DS_SetMapSpaceEnabled(bool enabled);
 /* Gives view ring `index` (bg * 2 + variant) its storage in `pixels` (256 x 512 RGBA5551, 256 KiB); NULL takes it away. */

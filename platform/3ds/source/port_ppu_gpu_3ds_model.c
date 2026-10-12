@@ -12,7 +12,7 @@
  * counts of cells decoded and character chunks found changed; the SD log's
  * `scene:` line prints them. */
 uint32_t gPpuGpu3DSRingWhy[4];
-uint32_t gPpuGpu3DSRingCells, gPpuGpu3DSRingStale;
+uint32_t gPpuGpu3DSRingCells, gPpuGpu3DSRingStale, gPpuGpu3DSRingMemoHits;
 uint32_t gPpuGpu3DSBankChanges[16]; /* frames each BG palette bank changed in */
 
 /* Phase timing (PPU_GPU3DS_PROFILE): the host benchmark and the console build
@@ -1808,6 +1808,9 @@ static bool build_mosaic_bg_geometry(
 /* Debug: poke 1 over the link (tmc-link.py poke gPpuGpu3DSRingDisable 01) to
  * draw every layer from quads again, for comparing the two paths. */
 volatile uint8_t gPpuGpu3DSRingDisable;
+/* Debug: poke 1 to decode every ring cell instead of copying repeats, to tell a
+ * memo fault from a ring one (tmc-link.py poke gPpuGpu3DSRingMemoDisable 01). */
+volatile uint8_t gPpuGpu3DSRingMemoDisable;
 static uint8_t sRingMorton[4][64];
 static bool sRingMortonReady;
 
@@ -1857,9 +1860,36 @@ static uint32_t ring_chunk_digest(PpuGpu3DSCache* cache, const uint8_t* vram, un
     return hash;
 }
 
+static void ring_mark_dirty(PpuGpu3DSRing* ring, unsigned cell) {
+    if (!ring->dirty) {
+        ring->dirty = true;
+        ring->dirtyFirst = ring->dirtyLast = cell;
+    } else {
+        if (cell < ring->dirtyFirst) ring->dirtyFirst = cell;
+        if (cell > ring->dirtyLast) ring->dirtyLast = cell;
+    }
+}
+
+/* Decoded cells of this frame, in ordinary cached memory: the memo copies from
+ * here, not from the ring's texture memory. Indexed like cache->ringMemo. */
+static uint16_t sRingMemoPixels[PPU_GPU3DS_RING_MEMO_SIZE][64];
+
+static void ring_copy_cell(uint16_t* dest, const uint16_t* src) {
+    uint32_t* d = (uint32_t*)dest;
+    const uint32_t* s = (const uint32_t*)src;
+    for (unsigned i = 0; i < 32u; i += 4u) {
+        const uint32_t a = s[i], b = s[i + 1u], c = s[i + 2u], e = s[i + 3u];
+        d[i] = a;
+        d[i + 1u] = b;
+        d[i + 2u] = c;
+        d[i + 3u] = e;
+    }
+}
+
 static void ring_decode_cell(PpuGpu3DSCache* cache, PpuGpu3DSRing* ring, const uint8_t* source,
-                             uint16_t entry, bool bpp8, unsigned cell, uint32_t generation) {
-    uint16_t* const dest = ring->pixels + (size_t)cell * 64u;
+                             uint16_t entry, bool bpp8, unsigned cell, uint32_t generation,
+                             uint16_t* destOverride) {
+    uint16_t* const dest = destOverride ? destOverride : ring->pixels + (size_t)cell * 64u;
     const uint8_t* const order = sRingMorton[(entry >> 10u) & 3u];
     if (source == NULL) {
         memset(dest, 0, 64u * sizeof(uint16_t));
@@ -1885,13 +1915,7 @@ static void ring_decode_cell(PpuGpu3DSCache* cache, PpuGpu3DSRing* ring, const u
             dest[order[pixel]] = colorIndex ? PpuGpu3DS_PackRgba5551(cache->bgPalette[colorIndex], true) : 0;
         }
     }
-    if (!ring->dirty) {
-        ring->dirty = true;
-        ring->dirtyFirst = ring->dirtyLast = cell;
-    } else {
-        if (cell < ring->dirtyFirst) ring->dirtyFirst = cell;
-        if (cell > ring->dirtyLast) ring->dirtyLast = cell;
-    }
+    ring_mark_dirty(ring, cell);
 }
 
 /* Brings one ring up to date for the columns [cLo, cHi] (counted from the
@@ -1997,6 +2021,22 @@ static bool ring_update(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, 
             ++gPpuGpu3DSRingCells;
             uint32_t storedKey = key;
             if (source != NULL) {
+                /* Same tile, flips, bank generation and character base as a
+                 * cell already decoded this frame: copy it. Asked before the
+                 * emptiness scan below, which is the dearer test; a tile with
+                 * no opaque pixel is never entered here. */
+                const uint32_t ctx = (charBase >> 14u) | (bpp8 ? 4u : 0u);
+                const unsigned slot = (key * 0x9e3779b1u >> 22u) & (PPU_GPU3DS_RING_MEMO_SIZE - 1u);
+                struct PpuGpu3DSRingMemo* const memo = &cache->ringMemo[slot];
+                uint16_t* const pooled = sRingMemoPixels[slot];
+                if (memo->stamp == cache->ringStamp && memo->key == key && memo->ctx == ctx &&
+                    gPpuGpu3DSRingMemoDisable == 0) {
+                    ring_copy_cell(ring->pixels + (size_t)cell * 64u, pooled);
+                    ring_mark_dirty(ring, cell);
+                    ring->key[cell] = key;
+                    ++gPpuGpu3DSRingMemoHits;
+                    continue;
+                }
                 /* 4bpp: all 32 bytes zero means nothing is opaque. */
                 bool empty = true;
                 for (uint32_t i = 0; i < tileBytes && empty; i += 4) {
@@ -2007,9 +2047,17 @@ static bool ring_update(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, 
                 if (empty) {
                     source = NULL;
                     storedKey = entry | 0x20000000u | 0x80000000u;
+                } else {
+                    ring_decode_cell(cache, ring, source, entry, bpp8, cell, generation, pooled);
+                    ring_copy_cell(ring->pixels + (size_t)cell * 64u, pooled);
+                    ring->key[cell] = key;
+                    memo->stamp = cache->ringStamp;
+                    memo->key = key;
+                    memo->ctx = ctx;
+                    continue;
                 }
             }
-            ring_decode_cell(cache, ring, source, entry, bpp8, cell, generation);
+            ring_decode_cell(cache, ring, source, entry, bpp8, cell, generation, NULL);
             ring->key[cell] = storedKey;
         }
     }

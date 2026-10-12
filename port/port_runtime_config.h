@@ -105,6 +105,9 @@ bool Port_Config_GpuViewportOffset(void);
 int Port_Config_GpuScissorMode(void);
 /* 3DS: `gpu_stencil=0` draws every batch, ignoring window/blend masking. */
 bool Port_Config_GpuStencil(void);
+/* 3DS: `gpu_fade=0` keeps screen fades on the CPU (the game's palette fade, tiles
+ * decoded again every frame of it) instead of one blend on the GPU. */
+bool Port_Config_GpuFade(void);
 int Port_Config_AudioCore(void);
 int Port_Config_BottomCore(void);
 /* 3DS: `bottom_map_skip=0` restores an unconditional MAP-tab repaint. */

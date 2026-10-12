@@ -182,6 +182,12 @@ at 60 fps, ~2 MB); nothing is written until it is stopped, when the rows become
 | `logic_frames` | logic ticks since the previous row: more than 1 means presentations were skipped |
 | `gpu` | 1 when the GPU renderer drew the frame |
 | `area`, `room` | where the game was (FF outside gameplay) |
+| `decodes`, `map_rebuilds`, `map_refreshes` | GPU path, this frame only: tiles decoded into the atlas, BG layers whose quads were re-emitted, BG layers kept with their tiles re-decoded in place |
+| `why_new` .. `why_window` | the map rebuilds above by reason (new, tilemap, palette, tiles, window) |
+| `vertices` | vertices emitted for the frame |
+| `ph_*_ms` | the builder's phase timers (maps, map signature, map retain, bg, obj, tile decode, ring digest, ring cells), as the SD log's `build:` line but per frame; the build has `PPU_GPU3DS_PROFILE` |
+| `ring_why0..3` | per BG: why its view ring was not used this frame (0: it was; 1 unavailable, 2 dialogue shift or right-anchored HUD) |
+| `ring_cells`, `ring_memo_hits` | ring cells brought up to date this frame, and how many of them were copied from an identical cell decoded earlier in the frame instead of decoded |
 
 On the PC: `tools/perf-csv/analyze.py FILE.csv [--worst N] [--by-room]` prints the
 frame rate, interval percentiles, missed vblanks, the mean / p95 / max of each part
@@ -230,3 +236,10 @@ Without a ROM the map and item art take their fallbacks; the OPTIONS and DEBUG
 tabs draw exactly as on the console (with stand-in values for the log, recorder
 and switches). `THEME=n` picks the theme. The shots and the taps that reach them are
 the `SHOTS` list in the script.
+
+## Screen fades
+
+A uniform fade is applied by the GPU as one blend over the finished picture (`docs/gpu-fade.md`);
+`gpu_fade=0` in `tmc3ds.ini` turns it off. Over the link: `peek gFadeGpu3DSStats 64`
+(counters, 16 words) and `poke gPpuGpu3DSFadeQuadDisable 01` (skip the blend, to time it).
+Parity failures print `parity: ... fade=<weight>/<level>` to the SD log.
