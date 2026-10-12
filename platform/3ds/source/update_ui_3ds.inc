@@ -22,7 +22,7 @@ bool Port_SecondScreen_3DS_UpdateOpen(void) {
 
 static void UpdateSmallText(const SSurf* s, const char* text, int x, int y, int style) {
     char label[128];
-    snprintf(label,sizeof(label),"%s",text);
+    snprintf(label,sizeof(label),"%s",Port_Text_Tr(text));
     for (char* c=label;*c;++c) *c=(char)toupper((unsigned char)*c);
     text=label;
     if (!Port_SecondScreenTheme_DrawBigText(s->px, s->w, s->h, s->stride, x, y, 1, style, text))
@@ -31,7 +31,7 @@ static void UpdateSmallText(const SSurf* s, const char* text, int x, int y, int 
 
 static int UpdateTextWidth(const char* text) {
     char label[128];
-    snprintf(label,sizeof(label),"%s",text);
+    snprintf(label,sizeof(label),"%s",Port_Text_Tr(text));
     for (char* c=label;*c;++c) *c=(char)toupper((unsigned char)*c);
     text=label;
     int w = Port_SecondScreenTheme_BigTextWidth(text, 1);
@@ -59,12 +59,14 @@ static void PaintUpdatePanel(const SSurf* s, TargetList* tl, float x0, float y0,
     float row = 26, gap = 4;
     int cx = (int)((x0+x1)/2);
     char text[96];
-    snprintf(text, sizeof(text), "CHANNEL: %s", st.prerelease ? "PRE-RELEASE" : "STABLE");
+    snprintf(text, sizeof(text), "%s: %s", Port_Text_Tr("CHANNEL"),
+             Port_Text_Tr(st.prerelease ? "PRE-RELEASE" : "STABLE"));
     UpdateButton(s, tl, x0,y0,x1,y0+row,text,SS_ACT_UPDATE_CHANNEL,false,u,ts);
     UpdateButton(s, tl, x0,y0+row+gap,x1,y0+2*row+gap,
                  st.version[0] ? st.version : "NO RELEASE SELECTED",SS_ACT_UPDATE_RELEASE,notes,u,ts);
     const char* message = confirm ? "DOWNLOAD AND INSTALL" : st.message;
     if (!message[0]) message = "CHECK FOR UPDATE";
+    message = Port_Text_Tr(message);
     // Long network errors are split at words inside the actual panel width.
     char first[80], second[80] = ""; snprintf(first,sizeof(first),"%s",message);
     if (UpdateTextWidth(first) > x1-x0) {
@@ -154,7 +156,9 @@ bool Port_SecondScreen_3DS_PaintUpdateTop(uint32_t* pixels, int stride) {
     if (revision != st.revision || notes != lastNotes) {
         static char body[12289], formatted[512][43];
         if (notes && st.version[0]) Updater_GetNotes(body,sizeof(body));
-        else snprintf(body,sizeof(body),"Installed: v%s\n\n%s\n\nSelect a release below to read its changelog.\nChoose Stable or Pre-release to check that channel.",TMC_PORT_VERSION_LABEL,st.message);
+        else snprintf(body,sizeof(body),"%s: v%s\n\n%s\n\n%s\n%s",Port_Text_Tr("INSTALLED"),TMC_PORT_VERSION_LABEL,
+                     Port_Text_Tr(st.message),Port_Text_Tr("SELECT A RELEASE BELOW TO READ ITS CHANGELOG."),
+                     Port_Text_Tr("CHOOSE STABLE OR PRE-RELEASE TO CHECK THAT CHANNEL."));
         unsigned n = Update_FormatNotes(body,formatted,512);
         count = 0;
         for (unsigned i=0; i<n && count<512; i++) {
@@ -180,13 +184,14 @@ bool Port_SecondScreen_3DS_PaintUpdateTop(uint32_t* pixels, int stride) {
     SSurf s={pixels,400,240,stride};
     Port_SecondScreenTheme_DrawBackdrop(pixels,400,240,stride,0,0,400,240,2);
     Port_SecondScreenTheme_DrawPlate(pixels,400,240,stride,4,4,392,232,2);
-    char title[80]; snprintf(title,sizeof(title),notes ? "CHANGELOG %s" : "UPDATE",st.version);
+    char title[80]; snprintf(title,sizeof(title),notes ? "%s %s" : "%s",
+             Port_Text_Tr(notes ? "CHANGELOG" : "UPDATE"),st.version);
     for(char* c=title;*c;++c) *c=(char)toupper((unsigned char)*c);
     DrawPanelHeaderChip(&s,200,14,title,1,1.0f/3);
     Port_SecondScreenTheme_DrawWell(pixels,400,240,stride,17,47,366,165,1);
     for (unsigned i=page*9;i<count && i<(page+1)*9;i++)
         UpdateSmallText(&s,lines[i],23,49+(i-page*9)*18,SS_TEXT_INK);
-    char footer[64]; snprintf(footer,sizeof(footer),"PAGE %u OF %u",page+1,pages);
+    char footer[64]; snprintf(footer,sizeof(footer),"%s %u %s %u",Port_Text_Tr("PAGE"),page+1,Port_Text_Tr("OF"),pages);
     const int footerW=UpdateTextWidth(footer)+24;
     const int footerY=211, footerH=24;
     DrawMenuButton(&s,200-footerW/2,footerY,200+(footerW+1)/2,footerY+footerH,"",0,0,1.f/3,1);

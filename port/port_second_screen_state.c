@@ -1,4 +1,5 @@
 #include "port_second_screen_state.h"
+#include "port_text_i18n.h"
 
 #include <string.h>
 
@@ -87,6 +88,8 @@ void Port_SecondScreenState_Publish(void) {
     SNAPSHOT_MUTEX_UNLOCK(&sSnapshotMutex);
 
     next.inGame = gMain.task == TASK_GAME;
+    next.language = RegionSaveSlotToLanguage(gSaveHeader->language);
+    Port_Text_SetLanguage(next.language);
     if (next.inGame) {
         /* Auxiliary cutscene 1 selects the opening Picori legend (dispatch 0).
          * Include queued entry and restoration fades, not other story scenes. */
