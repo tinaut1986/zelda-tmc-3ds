@@ -1441,6 +1441,24 @@ Port3DSFullViewMode Port_Widescreen_3DSViewMode(void) {
     return publishedMode;
 }
 
+/* After a save state is loaded: the view's latch (which room and which geometry the game
+ * produced for) came back with the game's globals, but the shadows and the PPU's flags it
+ * stands for belong to the live session and were not saved. Take it back to "a room just
+ * loaded" so the geometry is staged again from the policy, as after a door. */
+void Port_Widescreen_ResetAfterStateLoad(void) {
+    sWsGameplayRoomKey = 0xffffffffu;
+    sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
+    sWsProducerPendingRoomKey = 0xffffffffu;
+    sWsProducerPendingMode = PORT_3DS_FULL_VIEW_FALLBACK;
+    sWsContentKey = 0xffffffffu;
+    sWsContentPx = 0;
+    sWsContentHeightPx = 0;
+    sWsExperimentalCameraRoomKey = 0xffffffffu;
+    sWsExperimentalCameraSnapArmed = 1;
+    Port_WidescreenPublish3DSView(0xffffffffu, PORT_3DS_FULL_VIEW_FALLBACK);
+    virtuappu_mode1_ws_full_view = 0;
+}
+
 int Port_Widescreen_3DSHoldTop(void) {
 #ifdef TMC_3DS
     if (sWsRoomLoadTicks <= 0 || gMain.task != TASK_GAME) return 0;

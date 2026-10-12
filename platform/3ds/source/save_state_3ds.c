@@ -4,7 +4,10 @@
  * state, and runs inside the game's main loop. */
 #include "save_state_3ds.h"
 
+#include "backgroundAnimations.h"
 #include "main.h"
+#include "map.h"
+#include "screen.h"
 #include "room.h"
 #include "save.h"
 #include "sound.h"
@@ -24,6 +27,7 @@
 /* 3dsx.ld: the game's code and constants, data and .bss. */
 extern char __ss_text_start[], __ss_text_end[], __ss_rodata_start[], __ss_rodata_end[];
 extern char __ss_data_start[], __ss_data_end[], __ss_bss_start[], __ss_bss_end[];
+extern void Port_Widescreen_ResetAfterStateLoad(void); /* port_linked_stubs.c */
 extern u8* gRomData;
 extern u32 gRomSize;
 
@@ -633,6 +637,27 @@ static void MoveRomPointers(uintptr_t oldBase) {
     }
 }
 
+/* States written before gMapBottom/gMapTop (49 KB each, never scanned) and gScreen's inner
+ * pointers were relocated hold the address gScreen had in the build that saved them. After a
+ * rebuild that moved gScreen they point into the middle of a BgSettings, and every consumer
+ * (the widescreen's shadows, the map layers) reads a wrong control word. The pointers the
+ * game keeps there are always one of the BG settings; one that is not is put back on the
+ * BG the game uses for that layer (the top layer on BG1, the bottom one on BG2). */
+static void RepairScreenPointers(void) {
+    BgSettings* const valid[4] = { &gScreen.bg0, &gScreen.bg1, (BgSettings*)&gScreen.bg2, (BgSettings*)&gScreen.bg3 };
+    BgSettings** const holders[4] = { &gMapTop.bgSettings, &gMapBottom.bgSettings, &gUI.mapTopBgSettings,
+                                      &gUI.mapBottomBgSettings };
+    BgSettings* const fallback[4] = { &gScreen.bg1, (BgSettings*)&gScreen.bg2, &gScreen.bg1,
+                                      (BgSettings*)&gScreen.bg2 };
+    for (int i = 0; i < 4; ++i) {
+        BgSettings* const p = *holders[i];
+        if (p == NULL) continue;
+        bool ok = false;
+        for (int j = 0; j < 4; ++j) ok = ok || p == valid[j];
+        if (!ok) *holders[i] = fallback[i];
+    }
+}
+
 /* `f` is positioned after the header. Closes it. */
 static void LoadNamed(FILE* f, const StateHeader* h, uint32_t id) {
     /* All of it into RAM and parsed before anything is applied: a short or
@@ -685,17 +710,32 @@ static void LoadNamed(FILE* f, const StateHeader* h, uint32_t id) {
     }
     MoveRomPointers(h->romBase);
     const uint32_t relocs = GetU32(&c);
+    unsigned animRelocated = 0; /* which gBgAnimations entries came back as a pointer */
     for (uint32_t i = 0; i < relocs; ++i) {
         GetReloc(&c, &rel);
         StatePointers_Apply(&rel);
+        if (!strcmp(rel.holder, "gBgAnimations") && rel.wordOff / sizeof(BgAnimation) < MAX_BG_ANIMATIONS)
+            animRelocated |= 1u << (rel.wordOff / sizeof(BgAnimation));
+    }
+    /* A state saved before the frame lists were relocated holds the addresses of the build that
+     * wrote it; after a rebuild they point at other constants and UpdateBgAnimations uploads
+     * garbage (a data abort). An entry that came back raw is ended: the list stops there and
+     * the room's animations start again at the next room load. */
+    for (unsigned i = 0; i < MAX_BG_ANIMATIONS; ++i) {
+        if (gBgAnimations[i].currentFrame != NULL && !(animRelocated & (1u << i))) {
+            for (unsigned j = i; j < MAX_BG_ANIMATIONS; ++j) gBgAnimations[j].currentFrame = NULL;
+            break;
+        }
     }
     free(body);
     Port_Audio_3DSSetPaused(false);
+    RepairScreenPointers();
     /* The players' state came back with everything else; start the saved
      * room music afresh so the mixer and the game agree on it. */
     const u32 bgm = gSoundPlayingInfo.currentBgm;
     SoundReq(SONG_STOP_ALL);
     if (bgm) SoundReq(bgm);
+    Port_Widescreen_ResetAfterStateLoad();
     Finish(true, id, "STATE %u LOADED", Number(id));
 }
 
@@ -744,6 +784,7 @@ static void Load(uint32_t id) {
     const u32 bgm = gSoundPlayingInfo.currentBgm;
     SoundReq(SONG_STOP_ALL);
     if (bgm) SoundReq(bgm);
+    Port_Widescreen_ResetAfterStateLoad();
     Finish(true, id, "STATE %u LOADED", Number(id));
 }
 
