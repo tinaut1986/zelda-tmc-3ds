@@ -418,6 +418,7 @@ bool PpuGpu3DS_CacheTile(PpuGpu3DSCache* cache, const uint8_t* vram, PpuGpu3DSTi
                          uint16_t* atlas, uint16_t* outSlot);
 uint8_t PpuGpu3DS_MortonIndex(unsigned x, unsigned y);
 uint16_t PpuGpu3DS_PackRgba5551(uint16_t gbaColor, bool opaque);
+void PpuGpu3DS_SetColorCorrection(bool enabled);
 uint16_t PpuGpu3DS_PackAbgr8888(uint32_t abgr);
 int32_t PpuGpu3DS_AffineSample(int32_t reference, int16_t coefficient,
                                int screenCoordinate);

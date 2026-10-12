@@ -254,7 +254,6 @@ void Port_Config_SetSecondScreenSwap(bool on);
 typedef enum {
     PORT_3DS_ASPECT_WIDE = 0,
     PORT_3DS_ASPECT_ORIGINAL,
-    PORT_3DS_ASPECT_STRETCH,
     PORT_3DS_ASPECT_COUNT,
 } Port3DSAspectRatio;
 

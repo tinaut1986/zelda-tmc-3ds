@@ -84,7 +84,7 @@ int main(void) {
     coherence = TopView3DS_ResolvePpuCoherence(PORT_3DS_FULL_VIEW_INTERIOR_2X, 1);
     CHECK(coherence.forceNativeFrame && coherence.clearFullViewProducer);
 
-    /* Native 240, Wide 266, Original 360 and Stretch 400 remain the physical
+    /* Native 240, Wide 266 and Original 360 remain the physical
      * geometry decisions. Blur is directly linear-filtered and Bilinear
      * requests a distinct guarded 2x-nearest/linear pass. */
     TopView3DS_BuildPlan(0, 0, TOP_VIEW_3DS_ASPECT_WIDE,
@@ -103,10 +103,6 @@ int main(void) {
     CHECK(plan.source.sourceWidth == 240 && plan.source.sourceHeight == 160);
     CHECK(plan.drawX == 20 && plan.drawY == 0 && plan.drawWidth == 360 && plan.drawHeight == 240);
     CHECK(!plan.linearFilter && plan.useSharpBilinear && plan.sharpBilinearScale == 2);
-    TopView3DS_BuildPlan(0, 0, TOP_VIEW_3DS_ASPECT_STRETCH,
-                         TOP_VIEW_3DS_DISPLAY_BILINEAR,
-                         PORT_3DS_FULL_VIEW_FALLBACK, 240, 160, 240, 160, 0, 0, &plan);
-    CHECK(plan.drawX == 0 && plan.drawWidth == 400 && plan.useSharpBilinear);
     TopView3DS_BuildPlan(0, 0, TOP_VIEW_3DS_ASPECT_WIDE,
                          TOP_VIEW_3DS_DISPLAY_BILINEAR,
                          PORT_3DS_FULL_VIEW_FALLBACK, 266, 160, 266, 160, 0, 0, &plan);
@@ -116,11 +112,6 @@ int main(void) {
                          TOP_VIEW_3DS_DISPLAY_BLUR,
                          PORT_3DS_FULL_VIEW_FALLBACK, 266, 160, 266, 160, 0, 0, &plan);
     CHECK(plan.drawX == 20 && plan.drawWidth == 360 && plan.linearFilter);
-    CHECK(!plan.useSharpBilinear);
-    TopView3DS_BuildPlan(0, 0, TOP_VIEW_3DS_ASPECT_STRETCH,
-                         TOP_VIEW_3DS_DISPLAY_BLUR,
-                         PORT_3DS_FULL_VIEW_FALLBACK, 240, 160, 240, 160, 0, 0, &plan);
-    CHECK(plan.drawX == 0 && plan.drawWidth == 400 && plan.linearFilter);
     CHECK(!plan.useSharpBilinear);
 
     puts("top_view_3ds_test: PASS");

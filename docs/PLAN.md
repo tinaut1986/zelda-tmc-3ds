@@ -528,3 +528,13 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   The 2DS crash dump the owner brought (a `pc` in the linear heap, process "Minish C") matched no
   frame of the new build: the log showed the build running; it is the known relaunch hang of
   `--install` (issue 2).
+- **2026-10-12** Bottom screen, one style (owner: every window in the new style, no embedded
+  game menus; item sprites stay). Done, uncommitted on `perf/full-view-old3ds`: UPDATE page and
+  its changelog window in the compact style (the top screen keeps the game; the game no longer
+  pauses while it is open), BACKDROP option gone (the theme owns it), STRETCH view gone (old
+  files load as WIDE), COLOURS works on the GPU renderer, ITEMS / QUEST / sidebar / dungeon
+  floors / map chip redrawn with the theme (`bottom_compact_3ds.inc`), `tools/ui-preview` stubs
+  brought up to date. Still to do: check them on the console with a save that has items, the
+  world map's stone frame (crop it inside the frame instead of the jagged edge), the two quest
+  sub-lists (kinstones, techniques) still use the game's art, the region zoom, the load-state and
+  notice modals are reachable only from dead pages.

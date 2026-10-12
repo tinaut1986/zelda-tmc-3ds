@@ -922,6 +922,7 @@ void Port_PPU_Init(SDL_Window* window) {
     virtuappu_mode1_set_old3ds_profile(old3dsProfile);
     sColorCorrection = Port_Config_GetColorCorrection();
     virtuappu_mode1_set_color_correction(sColorCorrection);
+    PpuGpu3DS_SetColorCorrection(sColorCorrection);
     Port_Widescreen_SetWindowPixels(400, 240);
     virtuappu_registers.frame_width = GBA_NATIVE_W;
     virtuappu_registers.frame_height = GBA_H;
@@ -1677,6 +1678,7 @@ unsigned Port_PPU_DisplayRefreshRate(void) {
 void Port_PPU_SetColorCorrection(bool enabled) {
     sColorCorrection = enabled;
     virtuappu_mode1_set_color_correction(enabled);
+    PpuGpu3DS_SetColorCorrection(enabled);
 }
 bool Port_PPU_ColorCorrectionEnabled(void) {
     return sColorCorrection;

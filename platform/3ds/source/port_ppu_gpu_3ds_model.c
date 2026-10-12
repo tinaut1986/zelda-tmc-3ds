@@ -81,9 +81,27 @@ static const uint8_t kTileMorton[64] = {
     42, 43, 46, 47, 58, 59, 62, 63
 };
 
+/* The GBA LCD's response (mode1.c's lut, 8-bit): applied per channel when the
+ * COLOURS option is on. Toggling it bumps every palette generation, so the
+ * atlas and the view rings decode again. */
+static const uint8_t kLcdLut[32] = {
+    0, 0, 0, 0, 1, 2, 4, 8, 13, 19, 25, 32, 39, 46, 54, 63,
+    71, 80, 90, 100, 110, 120, 131, 142, 154, 165, 178, 190, 203, 216, 229, 243,
+};
+static bool sColorCorrection, sColorCorrectionApplied;
+
+void PpuGpu3DS_SetColorCorrection(bool enabled) {
+    sColorCorrection = enabled;
+}
+
 uint16_t PpuGpu3DS_PackRgba5551(uint16_t gbaColor, bool opaque) {
-    return (uint16_t)(((gbaColor & 0x001fu) << 11u) | ((gbaColor & 0x03e0u) << 1u) |
-                      ((gbaColor & 0x7c00u) >> 9u) | (opaque ? 1u : 0u));
+    unsigned r = gbaColor & 0x1fu, g = (gbaColor >> 5u) & 0x1fu, b = (gbaColor >> 10u) & 0x1fu;
+    if (sColorCorrection) {
+        r = kLcdLut[r] >> 3u;
+        g = kLcdLut[g] >> 3u;
+        b = kLcdLut[b] >> 3u;
+    }
+    return (uint16_t)((r << 11u) | (g << 6u) | (b << 1u) | (opaque ? 1u : 0u));
 }
 
 uint16_t PpuGpu3DS_PackAbgr8888(uint32_t abgr) {
@@ -183,6 +201,15 @@ void PpuGpu3DS_CacheBeginFrame(PpuGpu3DSCache* cache, const uint16_t* bgPalette,
     /* Slots used during this frame are the most recent entries in the LRU
      * order, so eviction recognizes them by lastUseFrame without a sweep. */
     cache->exhausted = false;
+    if (sColorCorrectionApplied != sColorCorrection) {
+        sColorCorrectionApplied = sColorCorrection;
+        for (unsigned bank = 0; bank < 16u; ++bank) {
+            ++cache->bgBankGeneration[bank];
+            ++cache->objBankGeneration[bank];
+        }
+        ++cache->bg256Generation;
+        ++cache->obj256Generation;
+    }
     update_palette(cache->bgPalette, cache->bgBankGeneration, &cache->bg256Generation,
                    bgPalette);
     update_palette(cache->objPalette, cache->objBankGeneration, &cache->obj256Generation,
@@ -1050,11 +1077,14 @@ typedef struct PpuGpu3DSBgMap {
      * for each piece below. `source` is how far right of where it is drawn
      * the piece's pixels sit in the layer's map. */
     bool ring;
-    uint8_t ringPieces;
+    uint8_t ringPieces, ringMsgPieces;
     struct {
         int16_t left, right, shift;
         uint8_t variant;
-    } ringPiece[3];
+    } ringPiece[3], ringMsgPiece[5];
+    /* Lines [msgY0, msgY1) draw ringMsgPiece instead (a dialogue's box moved
+     * to the middle of a wide view); ringMsgPieces is 0 without one. */
+    int16_t msgY0, msgY1;
 } PpuGpu3DSBgMap;
 
 
@@ -1982,7 +2012,11 @@ static bool build_bg_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
     const int width = (int)frame->width;
     const int shift = width - MODE1_GBA_BG_CLIP_X;
     /* A dialogue shifts part of BG0 sideways line by line; that keeps the quads. */
-    if ((bg == 0u && frame->wsMsgShift != 0) || (hudRight && shadow)) {
+    if (bg == 0u && frame->wsMsgShift != 0 && shadow) {
+        gPpuGpu3DSRingWhy[bg] = 2;
+        return false;
+    }
+    if (hudRight && shadow) {
         gPpuGpu3DSRingWhy[bg] = 2;
         return false;
     }
@@ -2022,6 +2056,38 @@ static bool build_bg_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
         nativeEnd = MODE1_GBA_BG_CLIP_X;
     }
 #undef RING_PIECE
+    map->ringMsgPieces = 0;
+    if (bg == 0u && frame->wsMsgShift != 0 && !shadow) {
+        /* destination_sample_x for a message line: the box [X0, X1) moves to
+         * [X0 + shift, X1 + shift), the old place is empty, columns past 240
+         * are empty, everything else is where it was. */
+        const int shiftM = frame->wsMsgShift, x0 = frame->wsMsgX0, x1 = frame->wsMsgX1;
+        const int boxLeft = x0 + shiftM, boxRight = x1 + shiftM;
+        int n = 0;
+#define MSG_PIECE(l, r, sh)                                                        \
+        do {                                                                       \
+            if ((r) > (l) && n < 5) {                                              \
+                map->ringMsgPiece[n].left = (int16_t)(l);                          \
+                map->ringMsgPiece[n].right = (int16_t)(r);                         \
+                map->ringMsgPiece[n].shift = (int16_t)(sh);                        \
+                map->ringMsgPiece[n].variant = 0;                                  \
+                ++n;                                                               \
+            }                                                                      \
+        } while (0)
+        MSG_PIECE(0, x0 < MODE1_GBA_BG_CLIP_X ? x0 : MODE1_GBA_BG_CLIP_X, 0);
+        {
+            const int from = x1 > 0 ? x1 : 0;
+            int to = boxLeft < MODE1_GBA_BG_CLIP_X ? boxLeft : MODE1_GBA_BG_CLIP_X;
+            MSG_PIECE(from, to, 0);
+            MSG_PIECE(boxRight > from ? boxRight : from, MODE1_GBA_BG_CLIP_X, 0);
+        }
+        MSG_PIECE(boxLeft, boxRight < width ? boxRight : width, shiftM);
+#undef MSG_PIECE
+        map->ringMsgPieces = (uint8_t)n;
+        map->msgY0 = (int16_t)frame->wsMsgY0;
+        map->msgY1 = (int16_t)frame->wsMsgY1;
+        if (nativeEnd < MODE1_GBA_BG_CLIP_X) nativeEnd = MODE1_GBA_BG_CLIP_X;
+    }
 
     uint16_t sharedBgcnt = 0;
     bool any = false;
@@ -2179,32 +2245,61 @@ static bool build_text_bg(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
 
     const bool fromRing = map && map->ring;
     if (fromRing) {
-        /* One batch group per ring: the pieces that sample it, side by side. */
+        /* A band is cut at a dialogue's lines; each piece set is one run of
+         * quads per ring, and each run its own batches. */
         const uint16_t ringBldcnt = read16(io, MODE1_IO_BLDCNT);
-        for (unsigned variant = 0; variant < 2u; ++variant) {
-            const size_t groupFirst = *indexCursor;
-            for (unsigned piece = 0; piece < map->ringPieces; ++piece) {
-                if (map->ringPiece[piece].variant != variant) continue;
-                emit_ring_quad(frame, cmd, band, scrollX, scrollY, map->ringPiece[piece].left,
-                               map->ringPiece[piece].right, map->ringPiece[piece].shift, vertexCursor,
-                               indexCursor);
+        int segFirst[3], segCount[3];
+        bool segMsg[3];
+        int segs = 0;
+        const int bandTop = band->firstLine, bandEnd = band->firstLine + band->lineCount;
+        if (map->ringMsgPieces == 0) {
+            segFirst[0] = bandTop;
+            segCount[0] = band->lineCount;
+            segMsg[0] = false;
+            segs = 1;
+        } else {
+            const int cuts[4] = { bandTop, map->msgY0 > bandTop ? (map->msgY0 < bandEnd ? map->msgY0 : bandEnd) : bandTop,
+                                  map->msgY1 > bandTop ? (map->msgY1 < bandEnd ? map->msgY1 : bandEnd) : bandTop,
+                                  bandEnd };
+            for (int k = 0; k < 3; ++k) {
+                if (cuts[k + 1] <= cuts[k]) continue;
+                segFirst[segs] = cuts[k];
+                segCount[segs] = cuts[k + 1] - cuts[k];
+                segMsg[segs] = k == 1;
+                ++segs;
             }
-            if (*indexCursor == groupFirst) continue;
-            const PpuGpu3DSBatch ringBase = {
-                .firstIndex = (uint32_t)groupFirst,
-                .indexCount = (uint32_t)(*indexCursor - groupFirst),
-                .firstLine = band->firstLine,
-                .lineCount = band->lineCount,
-                .scissorRight = (uint16_t)frame->width,
-                .layer = (uint8_t)(PPU_GPU3DS_BG0 + bg),
-                .priority = (uint8_t)priority,
-                .effect = PPU_GPU3DS_EFFECT_NONE,
-                .target2 = (uint8_t)((ringBldcnt >> (PPU_GPU3DS_BG0 + bg + 8u)) & 1u),
-                .objectIndex = UINT8_MAX,
-                .texture = (uint8_t)(1u + bg * 2u + variant),
-            };
-            append_layer_batches(cmd, &ringBase, regions, regionCount, ringBldcnt,
-                                 read16(io, MODE1_IO_BLDALPHA), read16(io, MODE1_IO_BLDY), emit, batchCursor);
+        }
+        for (int seg = 0; seg < segs; ++seg) {
+            PpuGpu3DSBand part = *band;
+            part.firstLine = (uint16_t)segFirst[seg];
+            part.lineCount = (uint16_t)segCount[seg];
+            const unsigned count = segMsg[seg] ? map->ringMsgPieces : map->ringPieces;
+            for (unsigned variant = 0; variant < 2u; ++variant) {
+                const size_t groupFirst = *indexCursor;
+                for (unsigned piece = 0; piece < count; ++piece) {
+                    const typeof(map->ringPiece[0])* pc =
+                            segMsg[seg] ? (const void*)&map->ringMsgPiece[piece] : &map->ringPiece[piece];
+                    if (pc->variant != variant) continue;
+                    emit_ring_quad(frame, cmd, &part, scrollX, scrollY, pc->left, pc->right, pc->shift,
+                                   vertexCursor, indexCursor);
+                }
+                if (*indexCursor == groupFirst) continue;
+                const PpuGpu3DSBatch ringBase = {
+                    .firstIndex = (uint32_t)groupFirst,
+                    .indexCount = (uint32_t)(*indexCursor - groupFirst),
+                    .firstLine = part.firstLine,
+                    .lineCount = part.lineCount,
+                    .scissorRight = (uint16_t)frame->width,
+                    .layer = (uint8_t)(PPU_GPU3DS_BG0 + bg),
+                    .priority = (uint8_t)priority,
+                    .effect = PPU_GPU3DS_EFFECT_NONE,
+                    .target2 = (uint8_t)((ringBldcnt >> (PPU_GPU3DS_BG0 + bg + 8u)) & 1u),
+                    .objectIndex = UINT8_MAX,
+                    .texture = (uint8_t)(1u + bg * 2u + variant),
+                };
+                append_layer_batches(cmd, &ringBase, regions, regionCount, ringBldcnt,
+                                     read16(io, MODE1_IO_BLDALPHA), read16(io, MODE1_IO_BLDY), emit, batchCursor);
+            }
         }
         return true;
     } else if (fromMap) {

@@ -14,7 +14,7 @@
     } while (0)
 
 int main(void) {
-    static const char* const aspectNames[] = { "wide", "original", "stretch" };
+    static const char* const aspectNames[] = { "wide", "original" };
     static const char* const displayNames[] = {
         "blur", "bilinear", "pixel-perfect"
     };
@@ -22,7 +22,7 @@ int main(void) {
         "BLUR", "BILINEAR", "PIXEL PERFECT"
     };
 
-    CHECK(CONFIG_3DS_DEFAULT_ASPECT == PORT_3DS_ASPECT_STRETCH);
+    CHECK(CONFIG_3DS_DEFAULT_ASPECT == PORT_3DS_ASPECT_WIDE);
     CHECK(CONFIG_3DS_DEFAULT_DISPLAY == PORT_3DS_DISPLAY_BILINEAR);
     for (int i = 0; i < PORT_3DS_ASPECT_COUNT; ++i) {
         CHECK(strcmp(ConfigValues3DS_AspectName((Port3DSAspectRatio)i), aspectNames[i]) == 0);
@@ -33,6 +33,7 @@ int main(void) {
         CHECK(strcmp(ConfigValues3DS_DisplayLabel((Port3DSDisplayStyle)i), displayLabels[i]) == 0);
         CHECK(ConfigValues3DS_ParseDisplay(displayNames[i]) == (Port3DSDisplayStyle)i);
     }
+    CHECK(ConfigValues3DS_ParseAspect("stretch") == PORT_3DS_ASPECT_WIDE);
     CHECK(ConfigValues3DS_ParseAspect("invalid") == CONFIG_3DS_DEFAULT_ASPECT);
     CHECK(ConfigValues3DS_ParseDisplay("ultra-sharp") == PORT_3DS_DISPLAY_BILINEAR);
     CHECK(ConfigValues3DS_ParseDisplay("scaled") == CONFIG_3DS_DEFAULT_DISPLAY);

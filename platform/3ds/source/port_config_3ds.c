@@ -735,7 +735,7 @@ void Port_Config_SetTurboMultiplier(unsigned multiplier) {
 
 int Port_Config_Get3DSAspectRatio(void) { return (int)sAspectRatio; }
 const char* Port_Config_Get3DSAspectRatioName(void) {
-    static const char* const names[PORT_3DS_ASPECT_COUNT] = { "WIDE", "ORIGINAL", "STRETCH" };
+    static const char* const names[PORT_3DS_ASPECT_COUNT] = { "WIDE", "ORIGINAL" };
     return names[sAspectRatio];
 }
 void Port_Config_Cycle3DSAspectRatio(void) {
