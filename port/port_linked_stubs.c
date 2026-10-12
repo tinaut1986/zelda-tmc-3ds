@@ -2103,12 +2103,18 @@ void Port_Widescreen_UpdateShadows(void) {
      * from that corner, not around it. Publishing a rect short of the real
      * frame left the right border outside the shifted copy (overdrawn by the
      * interior) and the bottom border row outside the y-band (torn by the
-     * HUD right-anchor remap). Clamp to the native canvas. */
+     * HUD right-anchor remap). Clamp to the native canvas.
+     * The frame is placed from gTextRender.message, the renderer's copy of
+     * gMessage: a position token in the text (message.c, token 10) moves only
+     * the copy, so gMessage can name rows the box is not on (the item-get box
+     * in the throne room sits at row 14, gMessage says 12, and its last two
+     * rows were left unshifted). */
     if ((gMessage.state & MESSAGE_ACTIVE) != 0) {
-        int x0 = (int)gMessage.textWindowPosX * 8;
-        int x1 = ((int)gMessage.textWindowPosX + (int)gMessage.textWindowWidth + 2) * 8;
-        int y0 = (int)gMessage.textWindowPosY * 8;
-        int y1 = ((int)gMessage.textWindowPosY + (int)gMessage.textWindowHeight + 2) * 8;
+        const Message* box = &gTextRender.message;
+        int x0 = (int)box->textWindowPosX * 8;
+        int x1 = ((int)box->textWindowPosX + (int)box->textWindowWidth + 2) * 8;
+        int y0 = (int)box->textWindowPosY * 8;
+        int y1 = ((int)box->textWindowPosY + (int)box->textWindowHeight + 2) * 8;
         if (x0 < 0)
             x0 = 0;
         if (x1 > 240)
