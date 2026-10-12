@@ -102,15 +102,30 @@ int Port_SecondScreen_3DS_UiTabCenterY(int height) {
 
 /* ---- text: the 5x7 font at 1x, 6 px per character ---- */
 
+/* Every string goes through Port_Text_Tr (the player's in-game language;
+ * unknown text passes through) and is read as UTF-8: the font covers Latin-1
+ * and draws an accent as a separate mark above the plain letter. */
 static int32_t CText(const SSurf* s, int32_t x, int32_t y, uint32_t color, const char* str) {
     int32_t cx = x;
-    for (const unsigned char* p = (const unsigned char*)str; *p; p++) {
-        const uint8_t* g = UiFont_Glyph(*p);
+    for (const char* p = Port_Text_Tr(str); *p;) {
+        const unsigned char c = Port_Text_Utf8Next(&p);
+        const uint8_t* g = UiFont_Glyph(c);
         if (g) {
             for (int32_t gy = 0; gy < kUiGlyphH; gy++) {
                 for (int32_t gx = 0; gx < kUiGlyphW; gx++) {
                     if (g[gy] & (0x10u >> gx)) {
                         FillRect(s, cx + gx, y + gy, cx + gx + 1, y + gy + 1, color);
+                    }
+                }
+            }
+        }
+        const uint8_t* mark = c >= 0xC0 ? UiFont_Mark(c) : NULL;
+        if (mark) {
+            for (int32_t gy = 0; gy < 2; gy++) {
+                for (int32_t gx = 0; gx < kUiGlyphW; gx++) {
+                    if (mark[gy] & (0x10u >> gx)) {
+                        const int32_t my = y - kUiMarkRise + gy;
+                        FillRect(s, cx + gx, my, cx + gx + 1, my + 1, color);
                     }
                 }
             }
@@ -121,7 +136,10 @@ static int32_t CText(const SSurf* s, int32_t x, int32_t y, uint32_t color, const
 }
 
 static int32_t CTextWidth(const char* str) {
-    int32_t n = (int32_t)strlen(str);
+    int32_t n = 0;
+    for (const char* p = Port_Text_Tr(str); *p; n++) {
+        (void)Port_Text_Utf8Next(&p);
+    }
     return n > 0 ? n * kUiAdvance - 1 : 0;
 }
 
@@ -596,7 +614,7 @@ static void Compact_StatesWhen(uint32_t savedAt, char* out, size_t cap) {
 static const char* Compact_StatesArea(unsigned area, char* buf, size_t cap) {
     const char* name = SaveState_AreaName(area);
     if (!name) {
-        snprintf(buf, cap, "AREA %02X", area);
+        snprintf(buf, cap, "%s %02X", Port_Text_Tr("AREA"), area);
         return buf;
     }
     return name;
@@ -618,7 +636,7 @@ static void Compact_PaintStatesList(const SSurf* s, TargetList* tl) {
     CButton(s, tl, CC_MARGIN, top, 96, 20, "+ NEW STATE", canSave ? CC_ACCENT : CC_FAINT, SS_ACT_STATES,
             STATES_CMD_NEW);
     char line[40];
-    snprintf(line, sizeof(line), "%d STATE%s  %d/%d", count, count == 1 ? "" : "S", page + 1, pages);
+    snprintf(line, sizeof(line), "%d %s  %d/%d", count, Port_Text_Tr(count == 1 ? "STATE" : "STATES"), page + 1, pages);
     CText(s, CC_MARGIN + 104, top + 7, CC_DIM, line);
     CButton(s, tl, s->w - CC_MARGIN - 62, top, 30, 20, "<", page > 0 ? CC_TEXT : CC_FAINT, SS_ACT_STATES,
             STATES_CMD_PREV);
@@ -686,7 +704,7 @@ static void Compact_PaintStatesDetail(const SSurf* s, TargetList* tl, uint32_t i
     const int32_t tx = CC_MARGIN + SAVE_STATE_THUMB_W + 8;
     int32_t ty = top + 2;
     char buf[40], area[24];
-    snprintf(buf, sizeof(buf), "STATE %d", number);
+    snprintf(buf, sizeof(buf), "%s %d", Port_Text_Tr("STATE"), number);
     CText(s, tx, ty, CC_ACCENT, buf);
     ty += 13;
     const char* name = Compact_StatesArea(info.area, area, sizeof(area));
@@ -698,7 +716,7 @@ static void Compact_PaintStatesDetail(const SSurf* s, TargetList* tl, uint32_t i
         CText(s, tx, ty, CC_TEXT, buf);
     }
     ty += 11;
-    snprintf(buf, sizeof(buf), "ROOM %02X", info.room);
+    snprintf(buf, sizeof(buf), "%s %02X", Port_Text_Tr("ROOM"), info.room);
     CText(s, tx, ty, CC_DIM, buf);
     ty += 11;
     snprintf(buf, sizeof(buf), "HP %u/%u  R %u", info.health / 8u, info.maxHealth / 8u, info.rupees);
