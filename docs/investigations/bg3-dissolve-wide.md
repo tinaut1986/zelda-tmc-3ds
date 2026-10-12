@@ -1,7 +1,22 @@
 # The enemy's dissolve in the castle garden is wrong in Wide (Full View)
 
-**Status: open (2026-10-12).** Investigated, partly understood, not fixed. Written so a
-new session can pick it up without the chat. GitHub issue: see the link at the end.
+**Status: fixed in `fix/bg3-native-bounds-gpu` (`bb8c7ab`), owner to confirm (2026-10-12).**
+Written so a new session can pick it up without the chat. GitHub issue: #5.
+
+### Resolution (last commit of the branch)
+
+In native bounds BG3's rows are sampled at the view's y and HOFS is taken to what the game
+would have written natively, `base + native_left` (here -72 + 80 = 8): effect lines (within 32 px
+of the frame's base register) keep their sine on top of it, the static frames of the effect
+(written as 0) get the same offset. Measured with the recorder, enemy centre x 99.4 and
+silhouette 99.5-99.8 (thumbnail px, 2 px each), GPU CHECK 0 pixels in 6 checks. The software PPU
+(`mode1_render_text_bg_compact_tokens`) and the GPU builder (`build_bg3_native_bounds`) share the
+rule. The wip experiment branch was folded into it. Still a heuristic tuned on this scene:
+check the other BG3 HDMA effects (light rays, steam) before merging into the release.
+
+To install a build from a branch that does not contain `release/v0.1.1`'s tip, set
+`TMC3DS_VERSION=0.1.1-dev.xxx`: otherwise `version.sh` prints `0.0.0-dev+hash`, the CIA's title
+version is older than the installed one and AM refuses it (`install write failed (d8e08027)`).
 
 ## Symptom (owner's words)
 
@@ -122,7 +137,6 @@ Not in the release:
 - `fix/affine-obj-uv-inset` (`115fb39`): sword sprite, owner-checked ("the sprite is clean").
 - `fix/bg3-native-bounds-gpu` (`6285a45` canvas, `e7731dc` x compensation): partial, see above.
   Depends on the previous one (same file).
-- `wip/bg3-vertical-experiment` (`d7f576f`): the vertical experiment, GPU CHECK 662 px off.
 
 ## Hypotheses and next steps
 
