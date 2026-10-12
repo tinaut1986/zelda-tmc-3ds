@@ -60,7 +60,9 @@ after a rebuild and the game crashes on load. `state_pointers_3ds.c` has the rul
 2. A pointer into the *middle* of another global (an entity link, a table of pointers into
    `sTileSetsResolved`) is recognised only where the holder is known: add it to `kInner`. For
    a table of pointers into the middle of constants (`gBgAnimations`), `kConstInner`.
-3. Globals bigger than 16 KB (tile maps, the emulated memories) are saved but never scanned.
+3. Globals bigger than 16 KB (tile maps, the emulated memories) are saved but never scanned,
+   except the first word of `gMapBottom` / `gMapTop` (`kHeadOnly`: their BG settings pointer).
+   A word pointing into the middle of `gScreen` is a pointer in any holder (`kInnerTargets`).
 4. `kNotSaved`: runtime objects and audio bookkeeping.
 
 A pointer to something that is not the game's code, constants or globals (a heap object, a
@@ -76,6 +78,17 @@ Most are numbers that look like addresses (positions, tile pairs, packed script 
 that is really a pointer needs a rule. The real test is to save, change the game's code (any
 global or function), rebuild, install and load: the position must be exact and the game must
 go on.
+
+## States from before a rule existed
+
+A state keeps the raw address of any pointer the rules did not cover when it was saved, and
+after a rebuild that moved the target it is stale. `LoadNamed` repairs the two known cases
+instead of trusting them: the BG settings pointers of the map layers and of `gUI` that are not
+one of `gScreen`'s BGs are put back on BG1 / BG2 (`RepairScreenPointers`), and a
+`gBgAnimations` entry that did not come back as a relocation ends the list (a stale frame
+pointer made `LoadBgAnimationGfx` fault). Both showed up as a view stuck at 240x160 and as a
+crash a few seconds after the load. Any new holder of pointers that old states lack needs the
+same: a rule for new states and a repair here for the old ones.
 
 ## What to keep in mind
 

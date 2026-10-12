@@ -40,6 +40,18 @@ static const char* const kInner[] = {
     "gCurrentRoomMemory",
 };
 
+/* Globals the game keeps pointers into the middle of from many places (the BG settings of
+ * gScreen: gUI saves them, the map layers hold them): a word pointing into one of these is a
+ * pointer whatever global holds it. */
+static const char* const kInnerTargets[] = {
+    "gScreen",
+};
+
+/* Globals too big to scan whose first word is a pointer (the map layers' BG settings). */
+static const char* const kHeadOnly[] = {
+    "gMapBottom", "gMapTop",
+};
+
 /* Tables made only of pointers into the middle of the game's constants. */
 static const char* const kConstInner[] = {
     "gBgAnimations",
@@ -86,13 +98,16 @@ int StatePointers_Collect(StateReloc** out) {
     const int count = StateVars_Count();
     for (int i = 0; i < count; ++i) {
         const StateVar* v = StateVars_At(i);
-        if (StatePointers_Excluded(v->name) || v->size < 4 || v->size > kScanLimit || ((uintptr_t)v->ptr & 3u))
+        const bool headOnly = v->size > kScanLimit && InList(kHeadOnly, sizeof(kHeadOnly) / sizeof(kHeadOnly[0]), v->name);
+        if (StatePointers_Excluded(v->name) || v->size < 4 || (v->size > kScanLimit && !headOnly) ||
+            ((uintptr_t)v->ptr & 3u))
             continue;
         const bool inner = InList(kInner, sizeof(kInner) / sizeof(kInner[0]), v->name);
         const bool entities = IsEntityArray(v->name);
         const bool constInner = InList(kConstInner, sizeof(kConstInner) / sizeof(kConstInner[0]), v->name);
         const uint32_t* w = (const uint32_t*)v->ptr;
-        for (uint32_t k = 0; k < v->size / 4u; ++k) {
+        const uint32_t words = headOnly ? 1u : v->size / 4u;
+        for (uint32_t k = 0; k < words; ++k) {
             const uint32_t value = w[k];
             if (value < 0x100000u) continue;
             StateReloc r;
@@ -106,7 +121,7 @@ int StatePointers_Collect(StateReloc** out) {
             uint32_t off = 0;
             const StateVar* t = hash ? NULL : StateVars_Containing(value, &off);
             if (!hash && t) {
-                bool allowed = off == 0 || inner;
+                bool allowed = off == 0 || inner || InList(kInnerTargets, sizeof(kInnerTargets) / sizeof(kInnerTargets[0]), t->name);
                 if (entities && !allowed) {
                     const uint32_t slot = wordOff % ENTITY_SIZE;
                     allowed = EntityLinkOffset(slot) || (slot >= 0x68 && IsEntityArray(t->name) &&
