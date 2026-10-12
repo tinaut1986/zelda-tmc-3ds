@@ -58,6 +58,10 @@ static PpuGpu3DSCommandBuffer sCommands;
 static uint16_t* sParityReference;
 static uint16_t* sParityReadback;
 static C3D_Tex sAtlas;
+/* One view ring per background (port_ppu_gpu_3ds_model.h), sampled by the
+ * batches whose `texture` field is 1 + the background. */
+static C3D_Tex sRingTex[PPU_GPU3DS_RING_COUNT];
+static unsigned sBoundTexture;
 static C3D_Tex sOutputTexture;
 static C3D_RenderTarget* sOutputTarget;
 static DVLB_s* sShader;
@@ -90,6 +94,8 @@ void PortPpuGpu3DS_Shutdown(void) {
     if (sOutputTexture.data) C3D_TexDelete(&sOutputTexture);
     if (sProgramInitialized) shaderProgramFree(&sProgram);
     if (sShader) DVLB_Free(sShader);
+    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring)
+        if (sRingTex[ring].data) C3D_TexDelete(&sRingTex[ring]);
     if (sAtlas.data) C3D_TexDelete(&sAtlas);
     free(sParityReference);
     if (sParityReadback) linearFree(sParityReadback);
@@ -122,6 +128,7 @@ void PortPpuGpu3DS_Shutdown(void) {
     sStats.enabled = false;
     sStats.disabled = false;
     sAtlas = (C3D_Tex){ 0 };
+    memset(sRingTex, 0, sizeof(sRingTex));
     sOutputTexture = (C3D_Tex){ 0 };
     sProgram = (shaderProgram_s){ 0 };
     sAttributes = (C3D_AttrInfo){ 0 };
@@ -185,6 +192,20 @@ bool PortPpuGpu3DS_Init(void) {
     C3D_TexFlush(&sAtlas);
     C3D_TexSetFilter(&sAtlas, GPU_NEAREST, GPU_NEAREST);
     C3D_TexSetWrap(&sAtlas, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+
+    /* A layer without a ring just keeps drawing a quad per tile. */
+    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring) {
+        if (!C3D_TexInit(&sRingTex[ring], PPU_GPU3DS_RING_TEX_WIDTH, PPU_GPU3DS_RING_TEX_HEIGHT,
+                         GPU_RGBA5551)) {
+            memset(&sRingTex[ring], 0, sizeof(sRingTex[ring]));
+            continue;
+        }
+        memset(sRingTex[ring].data, 0, sRingTex[ring].size);
+        C3D_TexFlush(&sRingTex[ring]);
+        C3D_TexSetFilter(&sRingTex[ring], GPU_NEAREST, GPU_NEAREST);
+        C3D_TexSetWrap(&sRingTex[ring], GPU_REPEAT, GPU_REPEAT);
+        PpuGpu3DS_RingSetStorage(sCache, ring, (uint16_t*)sRingTex[ring].data);
+    }
 
     if (!C3D_TexInitVRAM(&sOutputTexture, PPU_GPU3DS_OUTPUT_WIDTH,
                          PPU_GPU3DS_OUTPUT_HEIGHT, GPU_RGBA5551))
@@ -391,6 +412,18 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
         }
         PpuGpu3DS_CacheClearDirty(sCache);
     Platform3DS_SetStage(23);
+    }
+    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring) {
+        size_t offset, bytes;
+        if (!PpuGpu3DS_RingTakeDirty(sCache, ring, &offset, &bytes)) continue;
+        if (!Platform3DS_CleanDataCache((uint8_t*)sRingTex[ring].data + offset, bytes)) {
+            sCommands.vertexCount = 0;
+            sCommands.indexCount = 0;
+            sCommands.batchCount = 0;
+            return FinishPreflight(false, startTick);
+        }
+        sStats.atlasFlushBytes += bytes;
+        ++sStats.atlasFlushCalls;
     }
     /* Same economics as the atlas: one call spanning the rebuilt slices and
      * the per-band geometry beats a call per region. A slice that was kept
@@ -606,6 +639,10 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
         ++sEmptyDrawsSkipped;
         return;
     }
+    if (batch->texture != sBoundTexture) {
+        sBoundTexture = batch->texture;
+        C3D_TexBind(0, batch->texture == 0 ? &sAtlas : &sRingTex[batch->texture - 1u]);
+    }
     SetBatchOffset(batch->offsetX, batch->offsetY);
     const u32 yOffset = sViewportOffset;
     u32 top, bottom;
@@ -733,6 +770,7 @@ bool PortPpuGpu3DS_DrawPrepared(void) {
     C3D_TexSetFilter(&sAtlas, GPU_NEAREST, GPU_NEAREST);
     C3D_TexSetWrap(&sAtlas, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     C3D_TexBind(0, &sAtlas);
+    sBoundTexture = 0;
     LogBatchList();
 
     /* Windows and blending read the stencil as though it starts at zero every

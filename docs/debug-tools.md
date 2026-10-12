@@ -131,6 +131,7 @@ tools/tmc-link/tmc-link.py shot                 # /tmp/tmc-shot/top.png and bott
 tools/tmc-link/tmc-link.py peek gRoomControls 16    # symbols from build-3ds/game/tmc-3ds.elf
 tools/tmc-link/tmc-link.py switch "FRAME SYNC"
 tools/tmc-link/tmc-link.py gpucheck             # next frame by both renderers: differing=N structural=N
+tools/tmc-link/tmc-link.py poke gPpuGpu3DSRingDisable 0f   # bit per BG: draw it from quads again (00 = rings on)
 tools/tmc-link/tmc-link.py log                  # flush (MARK) and fetch the newest SD log
 tools/tmc-link/tmc-link.py run tools/tmc-link/examples/walk-left.txt
 ```
@@ -155,7 +156,11 @@ per second, presentations skipped, engine work per logic tick (and its max),
 vblank wait per frame, GPU frames and software fallbacks, tiles decoded, area and
 room, free memory; with it, while the GPU renderer draws, a `build:` line with the command
 build's phases in ms per GPU frame (`sig` and `retain` are inside `maps`; `decode` is inside
-the phase that needed the tile). BUFFERED (default): lines collect in a 16 KB buffer, written when
+the phase that needed the tile). `ring digest` and `cells` (inside `maps`) are the view rings'
+change detection and cell updates. A `scene:` line follows: bands, vertices and quads of the last
+GPU frame, `ring why` per BG (0: drawn from its ring; 1 not wide / disabled, 2 message or HUD+shadow,
+3 control or mosaic or size, 4 bands disagree on the scroll column, 5 too many rows, 6 and 7 a ring
+could not be brought up to date), and the cells decoded and changed character chunks since boot. BUFFERED (default): lines collect in a 16 KB buffer, written when
 it fills, on a mark, on a mode change, on stop and on exit. DIRECT: each line is
 written and flushed at once, so a hang cannot swallow the last lines.
 

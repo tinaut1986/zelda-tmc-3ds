@@ -42,6 +42,7 @@ v2.2-E1: nothing stable published.
 | `perf/wide-bg-tile-runs` (cut from `fix/gpu-wide-shadow-stride`) | Wide BG build: tile runs checked at their ends instead of every pixel; link MARK and GPUCHECK | on the console by Claude: Hyrule Field 03/01 Wide + Bilinear, bg 10.4 -> 4.9 ms, 57.5 -> 59.8 fps with 10.7 ms of vblank margin; GPU CHECK identical to the build before (5176 / 3986 differing pixels, 0 structural) |
 | `perf/full-view-gpu` (cut from `perf/wide-bg-tile-runs`) | P3.4 first part: Full View (Wide + Pixel Perfect) drawn by the GPU renderer: whole-view shadow, OBJ Y wrap as mode1.c, presenter takes the Full View geometry | on the console by Claude, Hyrule Field 03/01: Full View 400x240 33.8 -> **59.8 fps** (bg 6.2 ms, vblank margin 9.6 ms; the per-frame tile memo and the per-tile Wide emitter), Wide + Bilinear bg 4.2 ms; GPU CHECK 0 structural pixels everywhere tried. Interiors (200x120 at 2x), BG3 native bounds and the Old 3DS not checked yet |
 | `fix/relaunch-hang` (cut from `perf/full-view-gpu`) | issue #2: no GPU teardown while relaunching, exit steps logged | relaunches checked; the hang itself not reproduced |
+| `perf/full-view-old3ds` (cut from `release/v0.1.1`) | P3.3/P4.1: Full View on the Old 3DS (the New 3DS gate is gone) and the view rings: each BG is a texture of decoded tiles, drawn as one quad a band (`docs/renderer-gpu-gap.md`) | on the 2DS by Claude, Hyrule Town 03/01: Full View 400x240 **59.8 fps walking, vblank margin ~9-10 ms** (it was 31 fps, build 22 ms; now 3 ms); host model test passes; not checked on the New 3DS or by the owner; **uncommitted** |
 
 **Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
 Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
@@ -63,13 +64,12 @@ of each; a holder nobody listed crashes on load into a different build).
   5 s, work 0.85-0.9 ms, **vblank wait only 0.14-1.9 ms per frame**: the normal 240x160 view
   already has almost no margin on the 2DS.
 
-**Next after that:** the Old 3DS/2DS at 60 with Wide + Pixel Perfect (P3.3, P4.1). On the 2DS:
-(1) measure Wide + Pixel Perfect, Wide + Bilinear and the location-name banner at the gate of
-Hyrule Town (`DEBUG -> SWITCHES`, `loadstate`, `perf-csv`), one change at a time, and record
-the table here; (2) the Full View build is ~6 ms on the New 3DS, ~18 ms expected at 268 MHz, so
-BG geometry has to be kept across frames (mzm/sm-3ds techniques, `docs/renderer-gpu-gap.md`),
-and the Full View policy still opts in only on the New 3DS. Ask the owner before driving the
-2DS: they may be playing on it.
+**Next after that:** check `perf/full-view-old3ds` on both consoles (the owner), then the
+rest of the 2DS list: Wide (266x160, interiors and map edges) and the location-name banner at
+the gate of Hyrule Town, other areas (Minish Woods, Deepwood, Mt. Crenel), and what is left per
+frame on the 2DS: the rings cost 3 ms (character-data digest 1.3 ms, cell compare 1.5 ms) and
+the OBJ/other quads ~0.5 ms; VRAM write tracking in the PPU model would drop the digest.
+Ask the owner before driving the 2DS: they may be playing on it.
 
 **Owner's request, 2026-10-12 (P3.4): everything through the GPU.** The message shift (dialogues
 and the location-name banner, `virtuappu_mode1_ws_msg_*`), the HUD right-anchor and Wide BGs
@@ -509,4 +509,22 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   frames after the room loads, under the hold, and the scroll through the gate is continuous.
   Not CPU/video: the same GPU renderer, but the shifted band goes through the per-pixel path,
   so the frames with the banner run at ~52 fps on the New 3DS (G 6.2 ms).
-
+- **2026-10-12** Full View on the Old 3DS/2DS (owner: wide + pixel perfect at 60). The New 3DS
+  gate of `Port_Config_3DSFullViewComboEnabled` is gone. First measurement on the 2DS, Hyrule Town:
+  400x240 at 31 fps, build 22 ms, all of it `bg`: 7000 quads a frame at ~2.5 us each (the ARM11 has
+  no L2; every quad touches the tile memo, the cache entry and 64 bytes of vertices). Skipping
+  fully transparent BG tiles (-4 ms) and a bigger tile memo (nothing) were not enough, so the
+  per-tile geometry went: **view rings**, one 256x512 texture per BG and variant (VRAM map /
+  shadow map) holding the tile map transposed, 64 columns x 32 rows of 8x8 cells indexed by
+  absolute map column, REPEAT-wrapped. A frame compares each visible cell's entry and palette
+  generation against what it holds (one word), decodes the ones that differ straight from VRAM
+  with the bank LUT, and draws one quad a band whose UVs carry the scroll; scrolling replaces a
+  column of cells. Character data changes are found by hashing the 256-byte chunks the ring has
+  used. Result: build 22 -> 3 ms, 59.8 fps walking. Layers that keep the quads: BG0 while a message is
+  shifted, mosaic, 64-tile maps, affine, bands that disagree on the scroll column. GPU CHECK on the
+  2DS: 0 structural pixels; ~10000 one-step pixels in the cloud shadows (an alpha-blended BG over
+  a ringed BG, always +1; with rings off it is 0 here, the New 3DS baseline had thousands too):
+  not chased. `gPpuGpu3DSRingDisable` (bit per BG, `tmc-link.py poke`) switches rings off to compare.
+  The 2DS crash dump the owner brought (a `pc` in the linear heap, process "Minish C") matched no
+  frame of the new build: the log showed the build running; it is the known relaunch hang of
+  `--install` (issue 2).

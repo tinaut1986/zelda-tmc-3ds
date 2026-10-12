@@ -218,11 +218,16 @@ void DebugLog_Tick(void) {
         for (int i = 0; i < PPU_GPU3DS_PHASE_COUNT; ++i)
             ms[i] = (gPpuGpu3DSPhase[i] - lastPhase[i]) * msPerTick / (double)gpuShown;
         DebugLog_Printf("build: bands %.2f merge %.2f maps %.2f (sig %.2f retain %.2f) scene %.2f objwin %.2f "
-                        "regions %.2f bg %.2f obj %.2f decode %.2f ms/frame",
+                        "regions %.2f bg %.2f obj %.2f decode %.2f ring digest %.2f cells %.2f ms/frame",
                         ms[PPU_GPU3DS_PHASE_BANDS], ms[PPU_GPU3DS_PHASE_MERGE], ms[PPU_GPU3DS_PHASE_MAPS],
                         ms[PPU_GPU3DS_PHASE_MAPSIG], ms[PPU_GPU3DS_PHASE_MAPRETAIN], ms[PPU_GPU3DS_PHASE_SCENE],
                         ms[PPU_GPU3DS_PHASE_OBJWIN], ms[PPU_GPU3DS_PHASE_REGIONS], ms[PPU_GPU3DS_PHASE_BG],
-                        ms[PPU_GPU3DS_PHASE_OBJ], ms[PPU_GPU3DS_PHASE_DECODE]);
+                        ms[PPU_GPU3DS_PHASE_OBJ], ms[PPU_GPU3DS_PHASE_DECODE], ms[PPU_GPU3DS_PHASE_RINGDIGEST],
+                        ms[PPU_GPU3DS_PHASE_RINGCELLS]);
+        DebugLog_Printf("scene: last frame %u bands, %u vertices (%u quads), %u batches, ring why %u %u %u %u, cells %u stale chunks %u (total)",
+                        gPpuGpu3DSLastBands, gPpuGpu3DSLastVertices, gPpuGpu3DSLastVertices / 4u,
+                        gPpuGpu3DSLastBatches, gPpuGpu3DSRingWhy[0], gPpuGpu3DSRingWhy[1],
+                        gPpuGpu3DSRingWhy[2], gPpuGpu3DSRingWhy[3], gPpuGpu3DSRingCells, gPpuGpu3DSRingStale);
     }
     memcpy(lastPhase, gPpuGpu3DSPhase, sizeof(lastPhase));
 #endif

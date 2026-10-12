@@ -756,6 +756,5 @@ bool Port_Config_3DSFullViewComboEnabled(void) {
      * the following scene latch before any 400x240 geometry is published. */
     const Port3DSAspectRatio aspect = sAspectRatio;
     const Port3DSDisplayStyle style = sDisplayStyle;
-    return Platform3DS_IsNew3DS() && aspect == PORT_3DS_ASPECT_WIDE &&
-           style == PORT_3DS_DISPLAY_PIXEL_PERFECT;
+    return aspect == PORT_3DS_ASPECT_WIDE && style == PORT_3DS_DISPLAY_PIXEL_PERFECT;
 }

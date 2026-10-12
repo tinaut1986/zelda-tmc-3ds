@@ -105,6 +105,43 @@ typedef struct PpuGpu3DSRetainedMap {
     bool valid;
 } PpuGpu3DSRetainedMap;
 
+/* A background's view ring: the tiles the view shows, decoded in place into a
+ * texture of their own, so the layer is drawn as one quad per band instead of
+ * one per 8x8 tile. The texture holds the BG's 64 x 32 tile map transposed
+ * (map column = texture row) so a column of cells, the thing a horizontal
+ * scroll replaces, is contiguous in memory; the GPU's REPEAT wrap makes it a
+ * ring in both directions. Cell (column A, row R) lives at
+ * (A & 63) * 32 + (R & 31), 64 pixels each, Morton ordered. */
+enum {
+    PPU_GPU3DS_RING_COLS = 64,
+    PPU_GPU3DS_RING_ROWS = 32,
+    PPU_GPU3DS_RING_CELLS = PPU_GPU3DS_RING_COLS * PPU_GPU3DS_RING_ROWS,
+    PPU_GPU3DS_RING_TEX_WIDTH = PPU_GPU3DS_RING_ROWS * 8,
+    PPU_GPU3DS_RING_TEX_HEIGHT = PPU_GPU3DS_RING_COLS * 8,
+    PPU_GPU3DS_RING_CHUNK = 256,
+    PPU_GPU3DS_RING_CHUNKS = 256,
+};
+
+typedef struct PpuGpu3DSRing {
+    /* Texture memory, owned by the platform layer; NULL leaves the layer on
+     * the per-tile path. */
+    uint16_t* pixels;
+    /* Per cell: the map entry, the low bits of its palette generation and a
+     * valid bit (0 = empty), compared as one word. */
+    uint32_t key[PPU_GPU3DS_RING_CELLS];
+    /* What each 256-byte chunk of character data held when the cells that
+     * sample it were last decoded. */
+    uint32_t chunkDigest[PPU_GPU3DS_RING_CHUNKS];
+    uint32_t charBase;
+    /* Chunks below this (from charBase's) have been sampled by a cell, so
+     * only they are watched for change. */
+    unsigned chunkEnd;
+    bool bpp8, contextValid;
+    /* Cells written since the platform last flushed them. */
+    uint32_t dirtyFirst, dirtyLast;
+    bool dirty;
+} PpuGpu3DSRing;
+
 enum { PPU_GPU3DS_MEMO_SIZE = 512 };
 
 typedef struct PpuGpu3DSCache {
@@ -151,6 +188,15 @@ typedef struct PpuGpu3DSCache {
     /* Raised when every slot is already claimed by the frame being built. */
     bool exhausted;
     PpuGpu3DSRetainedMap retained[MODE1_GBA_BG_COUNT];
+    /* Two per background: [bg * 2] holds the entries of its VRAM map, [bg * 2 + 1]
+     * those of the shadow tilemap (columns past x=240, or all of them in Full
+     * View). */
+    PpuGpu3DSRing ring[MODE1_GBA_BG_COUNT * 2];
+    /* Character-data chunk digests of the frame being built, shared by the
+     * rings (VRAM does not change while a frame is built). */
+    uint32_t chunkDigest[PPU_GPU3DS_RING_CHUNKS];
+    uint32_t chunkDigestStamp[PPU_GPU3DS_RING_CHUNKS];
+    uint32_t ringStamp;
     uint32_t retainedVertices, retainedIndices;
     /* A 64-bit digest of those ranges rather than a copy of them. The compare
      * then reads VRAM only -- half the traffic of matching two buffers -- and
@@ -242,6 +288,8 @@ typedef struct PpuGpu3DSBatch {
     uint8_t effect, eva, evb, evy, objectIndex;
     uint16_t color;
     bool objWindow, semiTransparent;
+    /* 0 samples the tile atlas; 1 + n samples view ring n (bg * 2 + variant). */
+    uint8_t texture;
     /* Added to every vertex position by the shader. Zero except for
      * background batches that share one map-space copy of the tiles. */
     float offsetX, offsetY;
@@ -339,13 +387,25 @@ typedef enum PpuGpu3DSPhase {
      * re-emitted quads or the re-decoded tiles decides which fix is worth
      * making. */
     PPU_GPU3DS_PHASE_DECODE,
+    PPU_GPU3DS_PHASE_RINGDIGEST,
+    PPU_GPU3DS_PHASE_RINGCELLS,
     PPU_GPU3DS_PHASE_COUNT
 } PpuGpu3DSPhase;
 #ifdef PPU_GPU3DS_PROFILE
 extern double gPpuGpu3DSPhase[PPU_GPU3DS_PHASE_COUNT];
+extern uint32_t gPpuGpu3DSLastBands, gPpuGpu3DSLastVertices, gPpuGpu3DSLastBatches;
 #endif
 
+extern uint32_t gPpuGpu3DSRingWhy[4];
+extern uint32_t gPpuGpu3DSRingCells, gPpuGpu3DSRingStale;
+extern volatile uint8_t gPpuGpu3DSRingDisable;
 void PpuGpu3DS_SetMapSpaceEnabled(bool enabled);
+/* Gives view ring `index` (bg * 2 + variant) its storage in `pixels` (256 x 512 RGBA5551, 256 KiB); NULL takes it away. */
+void PpuGpu3DS_RingSetStorage(PpuGpu3DSCache* cache, unsigned index, uint16_t* pixels);
+/* The byte range of the ring's pixels written since the last call, for the
+ * platform to flush; false when nothing was. */
+bool PpuGpu3DS_RingTakeDirty(PpuGpu3DSCache* cache, unsigned index, size_t* offset, size_t* bytes);
+enum { PPU_GPU3DS_RING_COUNT = MODE1_GBA_BG_COUNT * 2 };
 void PpuGpu3DS_CacheInit(PpuGpu3DSCache* cache);
 void PpuGpu3DS_CacheClearDirty(PpuGpu3DSCache* cache);
 void PpuGpu3DS_CacheBeginFrame(PpuGpu3DSCache* cache, const uint16_t* bgPalette,

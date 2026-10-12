@@ -58,3 +58,11 @@ made mzm and sm-3ds fast:
 mzm's lessons apply whichever way it goes: measure with a runtime toggle before
 believing a cost model (three of theirs died that way), flush the vertex cache once per
 frame, and invalidate the texture cache after an in-place atlas redecode.
+
+## Update 2026-10-12: view rings
+
+Step 3 ("fewer, bigger BG quads") ended up as sm-3ds's idea in a different shape: each
+background keeps a texture of its tile map, `port_ppu_gpu_3ds_model.c` ("View rings"). It runs
+on every wide frame, drawn in one quad a band: Full View went from 22 ms of build on a 2DS to
+3 ms (`docs/PLAN.md`, decisions log). The per-tile paths remain for what rings do not take.
+
