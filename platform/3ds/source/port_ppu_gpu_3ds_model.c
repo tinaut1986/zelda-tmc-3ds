@@ -1571,6 +1571,175 @@ static bool affine_scroll_base(const PpuGpu3DSFrameView* frame, unsigned line,
     return true;
 }
 
+/* An affine BG2 that is only scaled -- no rotation or shear (PB = PC = 0) and the
+ * reference advancing PD per line as the hardware does without HDMA -- maps every
+ * map tile to an axis-aligned screen rectangle. One quad a tile replaces the
+ * general path's per-pixel walk, which the title screen's zoom (PA = PD from
+ * 0x10 to 0x100) took to 30-57 ms a frame and the vertex budget on the Old 3DS.
+ * Pixel x of line y shows source ((refX + PA*x) / 256, (refY + PD*(y-first)) / 256);
+ * with pixel centres at x + 0.5 that is a linear map, so each quad's corners are
+ * put where the source crosses the tile's edges: their UVs are exactly the atlas
+ * slot's edges (no packing error, nothing read from the next slot) and the quad
+ * may run past the screen or the band, which the viewport and the batch's
+ * scissor cut. The GPU interpolates UVs to about 1/256 of a texel, so where a
+ * pixel's source lands exactly on a texel edge it can read the texel before; when
+ * the zoom shows few enough texels each is drawn as its own quad with a constant
+ * UV at its centre instead, which is exact. */
+static bool build_affine_scaled_bg(const PpuGpu3DSFrameView* frame,
+                                   PpuGpu3DSCache* cache, uint16_t* atlas,
+                                   PpuGpu3DSCommandBuffer* cmd,
+                                   const PpuGpu3DSBand* band, const uint8_t* io,
+                                   uint16_t bgcnt, bool emit,
+                                   size_t* vertexCursor, size_t* indexCursor,
+                                   bool* handled, uint32_t* firstIndexOut,
+                                   uint32_t* indexCountOut) {
+    *handled = false;
+    const int32_t pa = (int16_t)read16(io, 0x20);
+    const int32_t pb = (int16_t)read16(io, 0x22);
+    const int32_t pc = (int16_t)read16(io, 0x24);
+    const int32_t pd = (int16_t)read16(io, 0x26);
+    if (pb != 0 || pc != 0 || pa <= 0 || pd <= 0 || (bgcnt & (1u << 6u)) != 0)
+        return true;
+    const unsigned first = band->firstLine;
+    const unsigned end = first + band->lineCount;
+    const int32_t refX = frame->affineRefX[first];
+    const int32_t refY = frame->affineRefY[first];
+    for (unsigned line = first + 1u; line < end; ++line) {
+        if (frame->affineRefX[line] != refX ||
+            frame->affineRefY[line] != refY + pd * (int32_t)(line - first))
+            return true;
+    }
+
+    /* Bands split by other registers (the title splits per line) would each
+     * redraw the layer; the geometry is the same for all of them, so it is
+     * emitted once for the whole screen and the band's scissor keeps its lines. */
+    const int32_t refY0 = refY - pd * (int32_t)first;
+    if (cmd->affineShare.valid && cmd->affineShare.bgcnt == bgcnt &&
+        cmd->affineShare.pa == pa && cmd->affineShare.pd == pd &&
+        cmd->affineShare.refX == refX && cmd->affineShare.refY0 == refY0) {
+        *firstIndexOut = cmd->affineShare.firstIndex;
+        *indexCountOut = cmd->affineShare.indexCount;
+        *handled = true;
+        return true;
+    }
+    const size_t shareFirstIndex = *indexCursor;
+
+    static const int mapSizes[4] = { 128, 256, 512, 1024 };
+    const int mapSize = mapSizes[(bgcnt >> 14u) & 3u];
+    const int mapTiles = mapSize / PPU_GPU3DS_TILE_SIDE;
+    const bool wrap = (bgcnt & (1u << 13u)) != 0;
+    const uint32_t screenBase = ((bgcnt >> 8u) & 0x1fu) * 0x800u;
+    const uint32_t charBase = ((bgcnt >> 2u) & 3u) * 0x4000u;
+
+    /* Tiles the band can show (floor division for negative references). */
+    const int32_t sx0 = PpuGpu3DS_AffineSample(refX, (int16_t)pa, 0);
+    const int32_t sx1 = PpuGpu3DS_AffineSample(refX, (int16_t)pa, (int)frame->width - 1);
+    const int32_t sy0 = PpuGpu3DS_AffineSample(refY0, (int16_t)pd, 0);
+    const int32_t sy1 = PpuGpu3DS_AffineSample(refY0, (int16_t)pd, (int)frame->height - 1);
+    int32_t tx0 = sx0 >> 3, tx1 = sx1 >> 3, ty0 = sy0 >> 3, ty1 = sy1 >> 3;
+    if (!wrap) {
+        if (tx0 < 0) tx0 = 0;
+        if (ty0 < 0) ty0 = 0;
+        if (tx1 >= mapTiles) tx1 = mapTiles - 1;
+        if (ty1 >= mapTiles) ty1 = mapTiles - 1;
+    }
+    if (tx1 < tx0 || ty1 < ty0) {
+        *firstIndexOut = (uint32_t)*indexCursor;
+        *indexCountOut = 0;
+        *handled = true;
+        return true;
+    }
+    if ((int64_t)(tx1 - tx0 + 1) * (ty1 - ty0 + 1) > 4096) return true;
+    const int64_t texels = (int64_t)(sx1 - sx0 + 1) * (sy1 - sy0 + 1);
+    const bool perTexel = texels <= 4096;
+
+    /* First screen coordinate whose source reaches `target` (8.8 fixed point). */
+#define FIRST_REACHING(target, ref, step) \
+    ((int32_t)((((int64_t)(target) - (ref)) <= 0) \
+                   ? -((-((int64_t)(target) - (ref))) / (step)) \
+                   : ((((int64_t)(target) - (ref)) + (step) - 1) / (step))))
+    /* Screen coordinate where the source reaches `s` (in pixels): the inverse of
+     * s = (ref + step * (X - 0.5 - origin)) / 256, nudged by half a source
+     * fixed-point step so an exact texel start rounds into its texel. */
+    const float nudge = 1.0f / 300.0f;
+    const float invAtlas = 1.0f / PPU_GPU3DS_ATLAS_SIDE;
+    const unsigned tilesPerRow = PPU_GPU3DS_ATLAS_SIDE / PPU_GPU3DS_TILE_SIDE;
+    for (int32_t ty = ty0; ty <= ty1; ++ty) {
+        const float top = (256.0f * ((float)(ty * 8) - nudge) - (float)refY0) / (float)pd + 0.5f;
+        const float bottom =
+                (256.0f * ((float)(ty * 8 + 8) - nudge) - (float)refY0) / (float)pd + 0.5f;
+        const int32_t mapY = wrap ? (ty & (mapTiles - 1)) : ty;
+        for (int32_t tx = tx0; tx <= tx1; ++tx) {
+            const float left = (256.0f * ((float)(tx * 8) - nudge) - (float)refX) / (float)pa + 0.5f;
+            const float right =
+                    (256.0f * ((float)(tx * 8 + 8) - nudge) - (float)refX) / (float)pa + 0.5f;
+            const int32_t mapX = wrap ? (tx & (mapTiles - 1)) : tx;
+            const uint32_t mapOffset = (uint32_t)mapY * (unsigned)mapTiles + (uint32_t)mapX;
+            uint8_t tile = 0;
+            if (screenBase < MODE1_VRAM_SIZE && mapOffset < MODE1_VRAM_SIZE - screenBase)
+                tile = frame->memory.vram[screenBase + mapOffset];
+            unsigned slotX = 0, slotY = 0;
+            if (emit) {
+                const PpuGpu3DSTileKey key = {
+                    .vramOffset = charBase + (uint32_t)tile * 64u,
+                    .paletteBank = 0,
+                    .bpp8 = true,
+                    .domain = PPU_GPU3DS_PALETTE_BG,
+                };
+                uint16_t slot;
+                if (!PpuGpu3DS_CacheTile(cache, frame->memory.vram, key, atlas, &slot))
+                    return false;
+                slotX = (slot % tilesPerRow) * PPU_GPU3DS_TILE_SIDE;
+                slotY = (slot / tilesPerRow) * PPU_GPU3DS_TILE_SIDE;
+            }
+            if (!perTexel) {
+                const float u0 = (float)slotX * invAtlas;
+                const float u1 = (float)(slotX + PPU_GPU3DS_TILE_SIDE) * invAtlas;
+                const float v0 = 1.0f - (float)slotY * invAtlas;
+                const float v1 = 1.0f - (float)(slotY + PPU_GPU3DS_TILE_SIDE) * invAtlas;
+                emit_uv_quad(frame, cmd, emit, left, top, right, bottom, 0.0f, u0, v0, u1,
+                             v1, false, vertexCursor, indexCursor);
+                continue;
+            }
+            /* The texels of this tile the band shows, each from the first pixel
+             * (line) whose source reaches it to the first that reaches the next. */
+            const int32_t px0 = sx0 > tx * 8 ? sx0 - tx * 8 : 0;
+            const int32_t px1 = sx1 < tx * 8 + 7 ? sx1 - tx * 8 : 7;
+            const int32_t py0 = sy0 > ty * 8 ? sy0 - ty * 8 : 0;
+            const int32_t py1 = sy1 < ty * 8 + 7 ? sy1 - ty * 8 : 7;
+            for (int32_t py = py0; py <= py1; ++py) {
+                const int64_t ry = (int64_t)(ty * 8 + py) * 256;
+                const float rowTop = (float)FIRST_REACHING(ry, refY0, pd);
+                const float rowBottom = (float)FIRST_REACHING(ry + 256, refY0, pd);
+                if (rowBottom <= rowTop) continue;
+                const float v = 1.0f - ((float)(slotY + (unsigned)py) + 0.5f) * invAtlas;
+                for (int32_t px = px0; px <= px1; ++px) {
+                    const int64_t rx = (int64_t)(tx * 8 + px) * 256;
+                    const float colLeft = (float)FIRST_REACHING(rx, refX, pa);
+                    const float colRight = (float)FIRST_REACHING(rx + 256, refX, pa);
+                    if (colRight <= colLeft) continue;
+                    const float u = ((float)(slotX + (unsigned)px) + 0.5f) * invAtlas;
+                    emit_uv_quad(frame, cmd, emit, colLeft, rowTop, colRight, rowBottom, 0.0f,
+                                 u, v, u, v, false, vertexCursor, indexCursor);
+                }
+            }
+        }
+    }
+#undef FIRST_REACHING
+    *firstIndexOut = (uint32_t)shareFirstIndex;
+    *indexCountOut = (uint32_t)(*indexCursor - shareFirstIndex);
+    cmd->affineShare.valid = true;
+    cmd->affineShare.bgcnt = bgcnt;
+    cmd->affineShare.pa = pa;
+    cmd->affineShare.pd = pd;
+    cmd->affineShare.refX = refX;
+    cmd->affineShare.refY0 = refY0;
+    cmd->affineShare.firstIndex = *firstIndexOut;
+    cmd->affineShare.indexCount = *indexCountOut;
+    *handled = true;
+    return true;
+}
+
 static bool build_affine_bg(const PpuGpu3DSFrameView* frame,
                             PpuGpu3DSCache* cache, uint16_t* atlas,
                             PpuGpu3DSCommandBuffer* cmd,
@@ -1609,7 +1778,20 @@ static bool build_affine_bg(const PpuGpu3DSFrameView* frame,
         }
         if (!fromMap) cmd->mapReject[PPU_GPU3DS_MAP_REJECT_COVERAGE] += 1u;
     }
-    if (!fromMap) {
+    bool scaled = false;
+    uint32_t scaledFirstIndex = 0, scaledIndexCount = 0;
+    if (!fromMap &&
+        !build_affine_scaled_bg(frame, cache, atlas, cmd, band, io, bgcnt, emit,
+                                vertexCursor, indexCursor, &scaled, &scaledFirstIndex,
+                                &scaledIndexCount))
+        return false;
+    if (scaled) {
+        /* Drawn from the shared whole-screen geometry, like a map slice. */
+        fromMap = true;
+        mapFirstIndex = scaledFirstIndex;
+        mapIndexCount = scaledIndexCount;
+    }
+    if (!fromMap && !scaled) {
     /* Each scanline has its own reference point. Where the reference holds
      * still across the band, one quad covers it exactly as before; where it
      * advances -- a band merged because the layer is really a scrolled one --
@@ -3670,10 +3852,27 @@ static bool bands_share_layer(const PpuGpu3DSFrameView* frame, unsigned layer,
                                                      &leftBase) &&
                                   affine_scroll_base(frame, right->firstLine,
                                                      &rightBase);
+            /* The same goes for a layer that is only scaled (the title screen's
+             * zoom): with PB = PC = 0, one PA/PD and one origin, the whole-screen
+             * geometry build_affine_scaled_bg emits serves every band, so the
+             * bands are drawn as one batch instead of once a line. */
+            const int32_t pdA = (int16_t)read16(a, 0x26);
+            const bool scaled =
+                    !scrolled && read16(a, 0x22) == 0 && read16(a, 0x24) == 0 &&
+                    read16(b, 0x22) == 0 && read16(b, 0x24) == 0 &&
+                    (int16_t)read16(a, 0x20) > 0 && pdA > 0 &&
+                    read16(a, 0x20) == read16(b, 0x20) &&
+                    read16(a, 0x26) == read16(b, 0x26);
             if (scrolled) {
                 if (leftBase != rightBase ||
                     frame->affineRefX[left->firstLine] !=
                             frame->affineRefX[right->firstLine])
+                    return false;
+            } else if (scaled) {
+                if (frame->affineRefX[left->firstLine] !=
+                            frame->affineRefX[right->firstLine] ||
+                    frame->affineRefY[left->firstLine] - pdA * (int32_t)left->firstLine !=
+                            frame->affineRefY[right->firstLine] - pdA * (int32_t)right->firstLine)
                     return false;
             } else if (frame->affineRefX[left->firstLine] !=
                                frame->affineRefX[right->firstLine] ||
@@ -4068,6 +4267,7 @@ bool PpuGpu3DS_BuildCommands(const PpuGpu3DSFrameView* frame,
     memset(cmd->mapSliceVertices, 0, sizeof(cmd->mapSliceVertices));
     memset(cmd->mapReject, 0, sizeof(cmd->mapReject));
     memset(cmd->mapRebuild, 0, sizeof(cmd->mapRebuild));
+    cmd->affineShare.valid = false;
     cmd->mapRefresh = 0;
     if (startBatch >= cmd->batchCapacity || startVertex > (size_t)UINT16_MAX) {
         cmd->failReason = PPU_GPU3DS_BUILD_CAPACITY;

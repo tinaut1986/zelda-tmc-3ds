@@ -375,6 +375,14 @@ typedef struct PpuGpu3DSCommandBuffer {
     uint32_t mapRefresh;
     uint32_t mapRebuild[PPU_GPU3DS_MAP_REBUILD_COUNT];
     uint16_t bandCount;
+    /* A scaled affine BG2 drawn for the whole screen once a frame; bands with
+     * the same matrix and origin reuse its indices under their own scissor. */
+    struct {
+        bool valid;
+        uint16_t bgcnt;
+        int32_t pa, pd, refX, refY0;
+        uint32_t firstIndex, indexCount;
+    } affineShare;
     /* What the frame asked for, which on overflow exceeds the capacities. */
     uint32_t requiredVertices, requiredBatches;
 } PpuGpu3DSCommandBuffer;
