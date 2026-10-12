@@ -17,6 +17,16 @@ typedef struct DebugPerfFrame {
     uint64_t bottomTicks;    /* the bottom-screen paint that finished this frame, 0 if none */
     uint32_t logicFrames;    /* logic ticks since the previous row (more than 1 = presentations skipped) */
     uint8_t gpu;             /* 1: the GPU renderer drew this frame */
+    /* GPU path, this frame only: what the builder did (deltas of the renderer's counters). */
+    uint16_t decodes;        /* tiles decoded into the atlas */
+    uint8_t mapRebuilds;     /* BG layers whose quads were re-emitted */
+    uint8_t mapRefreshes;    /* BG layers kept, tiles re-decoded in place */
+    uint8_t mapRebuildWhy[5]; /* PpuGpu3DSMapRebuild reasons: new, tilemap, palette, tiles, window */
+    uint32_t vertices;       /* vertices emitted for the frame */
+    uint32_t phaseTicks[8];  /* maps, mapsig, mapretain, bg, obj, decode, ring digest, ring cells (PPU_GPU3DS_PROFILE builds) */
+    uint8_t ringWhy[4];      /* per BG: why its view ring was not used this frame (0: it was) */
+    uint16_t ringCells;      /* ring cells brought up to date this frame (decoded or copied) */
+    uint16_t ringMemoHits;   /* of those, copied from a cell already decoded this frame */
     uint8_t area, room;
 } DebugPerfFrame;
 

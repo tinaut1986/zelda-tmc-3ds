@@ -184,6 +184,12 @@ at 60 fps, ~2 MB); nothing is written until it is stopped, when the rows become
 | `logic_frames` | logic ticks since the previous row: more than 1 means presentations were skipped |
 | `gpu` | 1 when the GPU renderer drew the frame |
 | `area`, `room` | where the game was (FF outside gameplay) |
+| `decodes`, `map_rebuilds`, `map_refreshes` | GPU path, this frame only: tiles decoded into the atlas, BG layers whose quads were re-emitted, BG layers kept with their tiles re-decoded in place |
+| `why_new` .. `why_window` | the map rebuilds above by reason (new, tilemap, palette, tiles, window) |
+| `vertices` | vertices emitted for the frame |
+| `ph_*_ms` | the builder's phase timers (maps, map signature, map retain, bg, obj, tile decode, ring digest, ring cells), as the SD log's `build:` line but per frame; the build has `PPU_GPU3DS_PROFILE` |
+| `ring_why0..3` | per BG: why its view ring was not used this frame (0: it was; 1 unavailable, 2 dialogue shift or right-anchored HUD) |
+| `ring_cells`, `ring_memo_hits` | ring cells brought up to date this frame, and how many of them were copied from an identical cell decoded earlier in the frame instead of decoded |
 
 On the PC: `tools/perf-csv/analyze.py FILE.csv [--worst N] [--by-room]` prints the
 frame rate, interval percentiles, missed vblanks, the mean / p95 / max of each part

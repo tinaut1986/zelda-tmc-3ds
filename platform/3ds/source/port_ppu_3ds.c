@@ -24,6 +24,7 @@
 #include "platform_gpu_3ds.h"
 #include "top_view_3ds.h"
 #include "port_ppu_gpu_3ds.h"
+#include "port_ppu_gpu_3ds_model.h"
 #include "ndsp_pcm_offload.h"
 #include "ndsp_psg_offload.h"
 
@@ -1457,6 +1458,34 @@ void Port_PPU_PresentFrame(void) {
             .room = gMain.task == TASK_GAME ? gRoomControls.room : 0xFF,
         };
         lastLogicFrames = logicFrames;
+        /* What the GPU builder did for this frame: deltas of its running counters. */
+        static PortPpuGpu3DSStats lastGpu;
+        PortPpuGpu3DSStats gpu;
+        PortPpuGpu3DS_GetStats(&gpu);
+        row.decodes = (uint16_t)(gpu.tileDecodes - lastGpu.tileDecodes);
+        row.mapRebuilds = (uint8_t)(gpu.mapRebuilds - lastGpu.mapRebuilds);
+        row.mapRefreshes = (uint8_t)(gpu.mapRefreshes - lastGpu.mapRefreshes);
+        for (unsigned why = 0; why < 5u; ++why)
+            row.mapRebuildWhy[why] = (uint8_t)(gpu.mapRebuildReason[why] - lastGpu.mapRebuildReason[why]);
+        row.vertices = gpu.lastVertices;
+#ifdef PPU_GPU3DS_PROFILE
+        static double lastPhase[PPU_GPU3DS_PHASE_COUNT];
+        static const unsigned kPhases[8] = { PPU_GPU3DS_PHASE_MAPS, PPU_GPU3DS_PHASE_MAPSIG,
+                                             PPU_GPU3DS_PHASE_MAPRETAIN, PPU_GPU3DS_PHASE_BG,
+                                             PPU_GPU3DS_PHASE_OBJ, PPU_GPU3DS_PHASE_DECODE,
+                                             PPU_GPU3DS_PHASE_RINGDIGEST, PPU_GPU3DS_PHASE_RINGCELLS };
+        for (unsigned i = 0; i < 8u; ++i)
+            row.phaseTicks[i] = (uint32_t)(gPpuGpu3DSPhase[kPhases[i]] - lastPhase[kPhases[i]]);
+        memcpy(lastPhase, gPpuGpu3DSPhase, sizeof(lastPhase));
+#endif
+        static uint32_t lastRingCells;
+        for (unsigned bg = 0; bg < 4u; ++bg) row.ringWhy[bg] = (uint8_t)gPpuGpu3DSRingWhy[bg];
+        static uint32_t lastRingMemo;
+        row.ringCells = (uint16_t)(gPpuGpu3DSRingCells - lastRingCells);
+        row.ringMemoHits = (uint16_t)(gPpuGpu3DSRingMemoHits - lastRingMemo);
+        lastRingCells = gPpuGpu3DSRingCells;
+        lastRingMemo = gPpuGpu3DSRingMemoHits;
+        lastGpu = gpu;
         DebugPerf_Record(&row);
     }
     DebugLog_Tick();
