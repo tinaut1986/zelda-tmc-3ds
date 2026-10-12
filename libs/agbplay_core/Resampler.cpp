@@ -27,6 +27,8 @@ std::unique_ptr<Resampler> Resampler::MakeResampler(ResamplerType t)
         return std::make_unique<BlepResampler>();
     case ResamplerType::BLAMP:
         return std::make_unique<BlampResampler>();
+    case ResamplerType::BOX:
+        return std::make_unique<BoxResampler>();
     }
     throw std::logic_error("MakeResampler: Trying to to instantiate resampler for invalid enum value");
 }
@@ -68,6 +70,61 @@ bool NearestResampler::Process(std::span<float> buffer, float phaseInc, const Fe
         const int32_t istep = static_cast<int32_t>(phase);
         phase -= static_cast<float>(istep);
         fi += istep;
+    }
+
+    // remove first fi elements from the fetch buffer since they are no longer needed
+    fetchBuffer.erase(fetchBuffer.begin(), fetchBuffer.begin() + fi);
+
+    return continuePlayback;
+}
+
+BoxResampler::BoxResampler()
+{
+    Reset();
+}
+
+BoxResampler::~BoxResampler()
+{
+}
+
+void BoxResampler::Reset()
+{
+    fetchBuffer.clear();
+    phase = 0.0f;
+}
+
+bool BoxResampler::Process(std::span<float> buffer, float phaseInc, const FetchCallback &fetchCallback)
+{
+    if (buffer.size() == 0)
+        return true;
+
+    phaseInc = std::max(phaseInc, 0.0f);
+
+    size_t samplesRequired = static_cast<size_t>(phase + phaseInc * static_cast<float>(buffer.size()));
+    // the span of the last output reaches into one more sample, plus one for rounding
+    samplesRequired += 2;
+    const bool continuePlayback = fetchCallback(fetchBuffer, samplesRequired);
+
+    const float invInc = phaseInc > 0.0f ? 1.0f / phaseInc : 0.0f;
+    int32_t fi = 0;
+    for (size_t i = 0; i < buffer.size(); i++) {
+        /* The span [phase, phase + phaseInc) from fetchBuffer[fi]: the partial
+         * first sample, the whole ones, the partial last one. */
+        const float end = phase + phaseInc;
+        const int32_t whole = static_cast<int32_t>(end);
+        float value;
+        if (whole == 0 || phaseInc == 0.0f) {
+            value = fetchBuffer[static_cast<size_t>(fi)];
+        } else {
+            float sum = fetchBuffer[static_cast<size_t>(fi)] * (1.0f - phase);
+            for (int32_t k = 1; k < whole; k++)
+                sum += fetchBuffer[static_cast<size_t>(fi + k)];
+            sum += fetchBuffer[static_cast<size_t>(fi + whole)] * (end - static_cast<float>(whole));
+            value = sum * invInc;
+        }
+        buffer[i] = value;
+        phase = end - static_cast<float>(whole);
+        fi += whole;
     }
 
     // remove first fi elements from the fetch buffer since they are no longer needed

@@ -389,7 +389,13 @@ MP2KChnPSGSquare::MP2KChnPSGSquare(
     };
 
     this->pat = patterns[instrDuty % 4];
+#if defined(__3DS__)
+    /* BLEP's 32-tap window made each CGB voice cost 0.4-0.6 ms a block on the Old 3DS
+     * (the item fanfare in the throne room dropped the game to 20-30 fps). */
+    this->rs = Resampler::MakeResampler(ResamplerType::BOX);
+#else
     this->rs = Resampler::MakeResampler(ResamplerType::BLEP);
+#endif
 }
 
 void MP2KChnPSGSquare::SetPitch(int16_t pitch)
@@ -633,7 +639,13 @@ MP2KChnPSGWave::MP2KChnPSGWave(
             wavePtr = dummyWave;
     }
 
+#if defined(__3DS__)
+    /* BLEP's 32-tap window made each CGB voice cost 0.4-0.6 ms a block on the Old 3DS
+     * (the item fanfare in the throne room dropped the game to 20-30 fps). */
+    this->rs = Resampler::MakeResampler(ResamplerType::BOX);
+#else
     this->rs = Resampler::MakeResampler(ResamplerType::BLEP);
+#endif
 
     /* wave samples are unsigned by default, so we'll calculate the required
      * DC offset correction */
@@ -866,7 +878,12 @@ MP2KChnPSGNoise::MP2KChnPSGNoise(MP2KContext &ctx, MP2KTrack *track, uint32_t in
      * In order to sound good, we then resample this signal again to our actual
      * output rate using a bandlimited sinc resampler. */
     this->rs = Resampler::MakeResampler(ResamplerType::NEAREST);
+#if defined(__3DS__)
+    /* The SINC pass cost 0.8 ms a block per voice on the Old 3DS. */
+    this->srs = Resampler::MakeResampler(ResamplerType::BOX);
+#else
     this->srs = Resampler::MakeResampler(ResamplerType::SINC);
+#endif
     if ((instrNp & 0x1) == 0) {
         noiseState = 0x4000;
         noiseLfsrMask = 0x6000;
