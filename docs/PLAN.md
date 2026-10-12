@@ -51,16 +51,38 @@ decisions log) and taps on the tab bar. Still to check by the owner: the STATES 
 states of other scenes than Hyrule Field and Link's house (run `tools/state-census` on a state
 of each; a holder nobody listed crashes on load into a different build).
 
-**On the owner's console now:** a debug build of `release/v0.1.1`. Five save states (Hyrule
-Field 03/01 and Link's house 22/10, format 2); the oldest ones load since the repairs of
-2026-10-12 but may keep other stale words, so re-saving them is the safe thing.
+**On the owner's consoles now (2026-10-12):** both run the debug build `v0.1.1-dev.84+a354c0a`
+(`release/v0.1.1`, pushed as `2a26c55`, whose source is the same plus the docs).
+- New 3DS, `192.168.1.133` (the one `.3ds_ftp_ip` holds): three save states (Hyrule Field
+  03/01 twice, Link's house 22/10), format 2.
+- Old 3DS/2DS, `192.168.1.139`, installed with FBI (CIA sent with ftpd to `sdmc:/cias/`). Not
+  in `.3ds_ftp_ip`: Claude drives it with `tools/tmc-link/tmc-link.py --ip 192.168.1.139`
+  (and the same `--ip` for the debug files). Its settings are the factory ones: `widescreen=0`,
+  `screen_aspect=stretch`, `display_style=bilinear`. First measurement, Hyrule Field 03/01
+  standing still: 59.6-59.9 fps shown, 0 frames skipped, 300 GPU frames / 0 fallback per
+  5 s, work 0.85-0.9 ms, **vblank wait only 0.14-1.9 ms per frame**: the normal 240x160 view
+  already has almost no margin on the 2DS.
 
-**Next after that:** the Old 3DS/2DS at 60 with Wide + Pixel Perfect (P3.3, P4.1): the Full View
-build is ~6 ms on the New 3DS, ~18 ms expected at 268 MHz, so BG geometry has to be kept across
-frames (mzm/sm-3ds techniques, `docs/renderer-gpu-gap.md`), and the Full View policy still opts
-in only on the New 3DS. Also left: Wide BGs with mosaic, HUD anchor or message shift still go
-through the per-pixel path; the owner's 2DS on the network with a debug build would let Claude
-measure there.
+**Next after that:** the Old 3DS/2DS at 60 with Wide + Pixel Perfect (P3.3, P4.1). On the 2DS:
+(1) measure Wide + Pixel Perfect, Wide + Bilinear and the location-name banner at the gate of
+Hyrule Town (`DEBUG -> SWITCHES`, `loadstate`, `perf-csv`), one change at a time, and record
+the table here; (2) the Full View build is ~6 ms on the New 3DS, ~18 ms expected at 268 MHz, so
+BG geometry has to be kept across frames (mzm/sm-3ds techniques, `docs/renderer-gpu-gap.md`),
+and the Full View policy still opts in only on the New 3DS. Ask the owner before driving the
+2DS: they may be playing on it.
+
+**Owner's request, 2026-10-12 (P3.4): everything through the GPU.** The message shift (dialogues
+and the location-name banner, `virtuappu_mode1_ws_msg_*`), the HUD right-anchor and Wide BGs
+with mosaic still go through the per-pixel path (the banner runs at ~52 fps, G 6.2 ms, on the
+New 3DS). Teach the GPU renderer `ws_msg_shift` first: it is what dialogues and every first
+visit to an area hit.
+
+**Smaller open items:**
+- The busy window of a save state job (SAVING / LOADING / DELETING STATE) is bottom screen only
+  and was never seen on the console (the link's SHOT runs on the game thread, which the job
+  stops); the owner may want a notice on the top screen as well.
+- Re-save the older states (see the decisions log of 2026-10-12): repaired on load, but they
+  may keep other stale words.
 
 **Priority** (owner's order, 2026-10-11): P0.1 → P1 debug tools and P2 bottom UI (so
 that P3 can be measured) → P0.2 baseline → P3.4 Full View on the GPU, and Full View on the
