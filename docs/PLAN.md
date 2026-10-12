@@ -480,3 +480,11 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   set, and `Port_UI_PrepareGameplayGeometry` moved them at once. The anchor holds now; they slide
   up from their corner. Seen and checked with the frame recorder, which now also starts on a
   change of the hide flags.
+- **2026-10-12** The location-name banner (entering Hyrule Town) kept the view at E2 266x160 for
+  its ~4 s, then Full View took over with a camera snap. It was counted as a UI overlay in
+  `Port_WidescreenFullViewUiOverlayActive`; it is a BG0 band that `ws_msg_shift` already centres
+  at any width, like a dialogue, so only native windows count now. Full View is reached 6
+  frames after the room loads, under the hold, and the scroll through the gate is continuous.
+  Not CPU/video: the same GPU renderer, but the shifted band goes through the per-pixel path,
+  so the frames with the banner run at ~52 fps on the New 3DS (G 6.2 ms).
+
