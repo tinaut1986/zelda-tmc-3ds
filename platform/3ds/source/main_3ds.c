@@ -83,18 +83,12 @@ int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
     if (!Platform3DS_Init()) return 1;
+    Platform3DS_SilenceBootConsole();
     Platform3DS_ShowSplash();
 
-    printf("Minish Cap 3DS v" TMC_PORT_VERSION_LABEL " (upstream " TMC_UPSTREAM_VERSION ")\n\n");
-    printf("agbplay: ipatix and contributors (LGPLv3).\nLicenses: romfs:/licenses/\n\n");
-    printf("System: %s\n", Platform3DS_IsNew3DS() ? "New Nintendo 3DS" : "Nintendo 3DS");
-    printf("Performance: %s\n",
-           Platform3DS_IsNew3DS() ? "New 3DS full presentation"
-                                  : "Old 3DS adaptive presentation skip (max 3)");
-    printf("PPU worker core 1: %u%%\n", Platform3DS_Core1TimeLimit());
-    printf("Extra New 3DS core: %s\n\n", Platform3DS_IsNew3DS() ? "enabled" : "unavailable");
-    printf("Preparing storage...\n");
+    Platform3DS_BootAnimStart();
     if (!PrepareStorage()) {
+        Platform3DS_BootAnimStop();
         Platform3DS_ShowFatal("Storage error", "Could not open " APP_DIR ".");
         Platform3DS_Shutdown();
         return 1;
@@ -118,6 +112,7 @@ int main(int argc, char** argv) {
                      "Europe: cff199b36ff173fb6faf152653d1bccf87c26fb7",
                      APP_DIR);
         }
+        Platform3DS_BootAnimStop();
         Platform3DS_ShowFatal(romResult < 0 ? "Unsupported ROM" : "ROM not found", message);
         Platform3DS_Shutdown();
         return 1;
@@ -125,13 +120,13 @@ int main(int argc, char** argv) {
 
     FILE* rom = fopen(romPath, "rb");
     if (!rom) {
+        Platform3DS_BootAnimStop();
         Platform3DS_ShowFatal("ROM error", "Could not open the selected .gba file.");
         Platform3DS_Shutdown();
         return 1;
     }
     fclose(rom);
 
-    printf("Loading ROM and tables...\n");
     Port_Config_Load("tmc3ds.ini");
 #if TMC3DS_DEBUG_TOOLS
     /* Debug builds log from boot unless the DEBUG tab left it off; the FTP
@@ -143,12 +138,14 @@ int main(int argc, char** argv) {
 #endif
     Port_LoadRom(romPath);
     Port_SecondScreenTheme_Ready();
+    Platform3DS_BootAnimStop();
     Port_PPU_Init(NULL);
     if (!Port_Audio_Init()) {
-        printf("Warning: audio is unavailable.\n");
+#if TMC3DS_DEBUG_TOOLS
+        DebugLog_Printf("audio is unavailable");
+#endif
     }
 
-    printf("Starting engine...\n");
     Platform3DS_EnterGameplayDisplay();
     Updater_Init(argc > 0 ? argv[0] : NULL);
     AgbMain();

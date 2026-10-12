@@ -39,7 +39,7 @@ The bug icon in the tab bar (debug builds only).
 | LOG MARK | writes `--- MARK n ---` into the log and flushes it: tap it when the problem shows, then find it in the file |
 | MEM DUMP | writes a quick dump, as L+R+A does (below) |
 | LOAD STATE | loads the game state of the newest dump, after a confirmation |
-| SHOW FPS | the top-screen FPS box |
+| SHOW FPS | the top-screen numbers box: game rate, `L` logic ms, `G` GPU ms, `S` presented rate |
 | FTP SERVER | an FTP server inside the game (below): the side button starts or stops it, the cell shows the address to connect to |
 | GPU CHECK | upstream's parity check: the next frame is drawn by both renderers and compared; the cell shows the checks done and the pixels that differed. Differing frames are saved next to the last dump, and a difference the blender cannot explain turns the GPU renderer off for the session (`GPU OFF: FAILED`). Old 3DS only (the only model with the GPU renderer) |
 

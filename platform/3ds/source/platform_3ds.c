@@ -1,4 +1,5 @@
 #include "platform_3ds.h"
+#include <math.h>
 #include "updater.h"
 #include "old3ds_frame_pacer.h"
 #include "platform_gpu_3ds.h"
@@ -228,6 +229,7 @@ bool Platform3DS_BatteryStatus(uint8_t* level, uint8_t* charging) {
  * also queries the kernel for memory, too slow to call every frame). */
 uint64_t Platform3DS_LogicFrameCount(void) { return sLogicFrames; }
 uint64_t Platform3DS_EngineWorkLastTicks(void) { return sEngineWorkLastTicks; }
+uint64_t Platform3DS_EngineWorkTotalTicks(void) { return sEngineWorkTicks; }
 uint64_t Platform3DS_VblankWaitLastTicks(void) { return sVblankWaitLastTicks; }
 
 int Platform3DS_WifiStrength(void) {
@@ -277,19 +279,93 @@ void Platform3DS_ShowSplash(void) {
 
     uint16_t width = 0;
     uint16_t height = 0;
-    uint16_t* top = (uint16_t*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &width, &height);
-    if (top) {
+    /* Into both buffers of the swap chain, so no later swap shows a black one. */
+    for (int pass = 0; pass < 2; ++pass) {
+        uint16_t* top = (uint16_t*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &width, &height);
+        if (!top) break;
         for (int y = 0; y < 240; ++y) {
             for (int x = 0; x < 400; ++x) {
                 top[(239 - y) + x * 240] = pixels[y * 400 + x];
             }
         }
         gfxFlushBuffers();
-        gfxSwapBuffers();
+        gfxScreenSwapBuffers(GFX_TOP, false);
         gspWaitForVBlank();
-        svcSleepThread(1200000000LL);
     }
     free(pixels);
+}
+
+/* Boot animation on the bottom screen: a gold triforce turning about its vertical axis while
+ * the ROM and tables load, in place of the console's text. It draws straight into the gfx
+ * framebuffer from its own thread, so it must be stopped before anything else uses the bottom
+ * screen (a fatal message's console, or citro3d in Port_PPU_Init). */
+static Thread sBootAnimThread;
+static volatile bool sBootAnimStop;
+
+static void BootAnimMain(void* arg) {
+    (void)arg;
+    enum { SIZE = 56, CX = 160, CY = 120 };
+    const int x0 = CX - SIZE / 2, y0 = CY - SIZE / 2;
+    const float tipH = 0.5f;
+    for (unsigned frame = 0; !sBootAnimStop; ++frame) {
+        uint16_t w = 0, h = 0;
+        uint16_t* fb = (uint16_t*)gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, &w, &h);
+        if (!fb) break;
+        const float c = fabsf(cosf((float)frame * 0.07f));
+        const float scale = c < 0.04f ? 0.04f : c;
+        const float halfW = (SIZE / 2) * scale;
+        for (int y = 0; y < SIZE; ++y) {
+            const float v = (y + 0.5f) / SIZE;
+            for (int x = 0; x < SIZE; ++x) {
+                uint16_t color = 0;
+                const float dx = (x + 0.5f) - SIZE / 2;
+                if (fabsf(dx) <= halfW) {
+                    const float u = 0.5f + dx / (halfW * 2.0f);
+                    /* Three upright triangles: the top one and the two at the bottom corners. */
+                    bool in;
+                    if (v < tipH) {
+                        const float half = v * 0.5f / tipH * 0.5f + 0.0f; /* 0..0.25 */
+                        in = fabsf(u - 0.5f) <= half;
+                    } else {
+                        const float t = (v - tipH) / (1.0f - tipH); /* 0..1 down the bottom row */
+                        const float half = 0.25f * t;
+                        in = fabsf(u - 0.25f) <= half || fabsf(u - 0.75f) <= half;
+                    }
+                    if (in) {
+                        const int shade = 255 - (int)(v * 70.0f);
+                        const int r = shade, g = shade * 205 / 255, b = shade * 40 / 255;
+                        color = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+                    }
+                }
+                fb[(239 - (y0 + y)) + (x0 + x) * 240] = color;
+            }
+        }
+        gfxFlushBuffers();
+        gfxScreenSwapBuffers(GFX_BOTTOM, false);
+        gspWaitForVBlank();
+    }
+}
+
+void Platform3DS_BootAnimStart(void) {
+    if (sBootAnimThread) return;
+    /* Both buffers of the swap chain start black. */
+    for (int i = 0; i < 2; ++i) {
+        uint16_t w = 0, h = 0;
+        uint16_t* fb = (uint16_t*)gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, &w, &h);
+        if (fb) memset(fb, 0, 320u * 240u * sizeof(uint16_t));
+        gfxFlushBuffers();
+        gfxScreenSwapBuffers(GFX_BOTTOM, false);
+    }
+    sBootAnimStop = false;
+    sBootAnimThread = threadCreate(BootAnimMain, NULL, 16 * 1024, 0x30, -2, false);
+}
+
+void Platform3DS_BootAnimStop(void) {
+    if (!sBootAnimThread) return;
+    sBootAnimStop = true;
+    threadJoin(sBootAnimThread, U64_MAX);
+    threadFree(sBootAnimThread);
+    sBootAnimThread = NULL;
 }
 
 static bool GameplayLogSinkPrint(void* console, int character) {
@@ -298,13 +374,12 @@ static bool GameplayLogSinkPrint(void* console, int character) {
     return true;
 }
 
-void Platform3DS_EnterGameplayDisplay(void) {
-    if (sGameplayDisplayActive) return;
-
-    /* Keep the visible console throughout boot, then prevent stdout from ever
-     * writing into the bottom framebuffer owned by Citro3D. stderr remains
-     * available to an attached debugger through SVC instead of being painted
-     * over the live map/touch UI. */
+/* From here on stdout and stderr go nowhere: the ROM loader's stderr notes would otherwise be
+ * painted on the bottom screen by the boot console, over the boot animation and then over the
+ * live UI. stderr stays available to an attached debugger through SVC. */
+static void SilenceLogSink(void) {
+    static bool done;
+    if (done) return;
     fflush(stdout);
     fflush(stderr);
     sGameplayLogSink = *consoleGetDefault();
@@ -313,6 +388,14 @@ void Platform3DS_EnterGameplayDisplay(void) {
     sGameplayLogSink.consoleInitialised = true;
     consoleSelect(&sGameplayLogSink);
     consoleDebugInit(debugDevice_SVC);
+    done = true;
+}
+
+void Platform3DS_SilenceBootConsole(void) { SilenceLogSink(); }
+
+void Platform3DS_EnterGameplayDisplay(void) {
+    if (sGameplayDisplayActive) return;
+    SilenceLogSink();
     sGameplayDisplayActive = true;
 }
 
