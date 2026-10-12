@@ -1,5 +1,6 @@
 #include "fade_gpu_3ds.h"
 #include "platform_3ds.h"
+#include "boot_text_3ds.h"
 #include <math.h>
 #include "updater.h"
 #include "old3ds_frame_pacer.h"
@@ -1022,14 +1023,9 @@ void Platform3DS_WaitForVBlank(void) {
 }
 
 void Platform3DS_ShowFatal(const char* title, const char* message) {
-    /* consoleInit(NULL) reuses libctru's current console.  Gameplay replaces
-     * that current console with a framebuffer-less log sink, so explicitly
-     * select the real bottom console returned by consoleInit before printing. */
-    PrintConsole* fatalConsole = consoleInit(GFX_BOTTOM, NULL);
-    consoleSelect(fatalConsole);
-    consoleDebugInit(debugDevice_CONSOLE);
-    consoleClear();
-    printf("%s\n\n%s\n\nPress START to exit.\n", title ? title : "Error", message ? message : "");
+    /* Also from inside Port_LoadRom, while the boot animation still draws there. */
+    Platform3DS_BootAnimStop();
+    BootText_ShowMessage(BootText_Tr(title ? title : "ERROR"), BOOT_TEXT_BAD, message, BootText_Tr("PRESS START TO EXIT."));
     while (aptMainLoop()) {
         hidScanInput();
         if (hidKeysDown() & KEY_START) break;

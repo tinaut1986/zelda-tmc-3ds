@@ -145,6 +145,8 @@ add_executable(tmc-3ds
     source/speaker_eq_3ds.c
     source/port_second_screen_3ds.c
     source/ui_font_3ds.c
+    source/upstream_import_3ds.c
+    source/boot_text_3ds.c
     source/debug_files_3ds.c
     source/debug_log_3ds.c
     source/debug_perf_3ds.c
