@@ -42,6 +42,9 @@ typedef struct SaveStateInfo {
  * ignored by SCAN and SAVE_NEW. */
 bool SaveState_Request(SaveStateJob job, uint32_t id);
 bool SaveState_Busy(void);
+/* The job waiting or running (NONE when idle), for a "saving..." notice. The job starts a few
+ * frames after it is asked, so that a notice can be on the screen before the game stops. */
+SaveStateJob SaveState_PendingJob(void);
 /* Rises by one each time a job ends; with SaveState_LastResult a caller can
  * wait for the job it asked for. */
 uint32_t SaveState_Generation(void);

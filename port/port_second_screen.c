@@ -3119,6 +3119,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     } else if (unavailableNoticeActive) {
         PaintUnavailableNotice(&s, &tl, u, ts);
     }
+    Compact_PaintBusy(&s, &tl);
 #endif
 
     /* Publish this frame's hit boxes for the tap thread. */

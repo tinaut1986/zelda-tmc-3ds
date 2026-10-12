@@ -473,6 +473,45 @@ static void Compact_PaintToast(const SSurf* s) {
 
 #include "save_state_3ds.h"
 
+/* ---- busy notice: a window over everything while a save state job stops the game ---- */
+
+static uint8_t sBusyOnScreen;
+
+static const char* Compact_BusyText(void) {
+    switch (SaveState_PendingJob()) {
+        case SAVE_STATE_JOB_SAVE_NEW:
+        case SAVE_STATE_JOB_OVERWRITE: return "SAVING STATE";
+        case SAVE_STATE_JOB_LOAD: return "LOADING STATE";
+        case SAVE_STATE_JOB_DELETE: return "DELETING STATE";
+        default: return NULL;
+    }
+}
+
+/* Paint while it shows, and once more to take it away. */
+static int Compact_BusyNeedsPaint(void) {
+    return Compact_BusyText() != NULL || sBusyOnScreen;
+}
+
+/* Last in the paint: it takes every tap (the target list is emptied) and draws over the panel. */
+static void Compact_PaintBusy(const SSurf* s, TargetList* tl) {
+    const char* text = Compact_BusyText();
+    sBusyOnScreen = (uint8_t)(text != NULL);
+    if (!text) return;
+    tl->n = 0;
+    const int32_t w = 156, h = 56;
+    const int32_t x = (s->w - w) / 2, y = (s->h - h) / 2;
+    FillRect(s, x - 2, y - 2, x + w + 2, y + h + 2, CC_BG);
+    CBox(s, x, y, w, h, CC_BAR, CC_ACCENT);
+    CTextCentered(s, s->w / 2, y + 14, CC_TEXT, text);
+    CTextCentered(s, s->w / 2, y + 30, CC_DIM, "PLEASE WAIT");
+    /* A row of dots that fills and empties, so a frozen screen can be told from a slow one. */
+    const int lit = (int)((sCompactTick / 2u) % 6u);
+    for (int i = 0; i < 5; ++i) {
+        const int32_t dx = s->w / 2 - 20 + i * 10;
+        FillRect(s, dx, y + 43, dx + 4, y + 47, i < lit ? CC_ACCENT : CC_TAB);
+    }
+}
+
 enum {
     STATES_CMD_NEW = 1,
     STATES_CMD_PREV,
