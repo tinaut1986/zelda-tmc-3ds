@@ -25,6 +25,9 @@ typedef struct CcTheme {
     const char* name;
     uint32_t bg, bar, tab, tabEdge, tabOn, tabOnEdge, tabOnText, cell, cellEdge, btn, btnEdge;
     uint32_t text, dim, faint, good, warn, bad, accent;
+    /* The status icons (clock, Wi-Fi, battery) sit on `bar`, which can be dark in a light
+     * theme: they have their own colours. */
+    uint32_t barText, barDim, barFaint, barGood, barWarn, barBad;
     uint8_t tabsBottom;
     uint8_t backdrop; /* SS_BACKDROP_* the map/items/quest panels sit on */
 } CcTheme;
@@ -32,20 +35,24 @@ typedef struct CcTheme {
 static const CcTheme kCcThemes[] = {
     { "SLATE", RGB(16, 20, 26), RGB(10, 13, 18), RGB(32, 40, 52), RGB(60, 74, 92), RGB(40, 112, 68),
       RGB(110, 200, 130), RGB(232, 236, 240), RGB(26, 32, 42), RGB(64, 80, 100), RGB(22, 56, 42),
-      RGB(70, 150, 100), RGB(232, 236, 240), RGB(140, 150, 166), RGB(84, 94, 110), RGB(120, 220, 130),
-      RGB(240, 200, 80), RGB(240, 110, 100), RGB(110, 200, 240), 0, SS_BACKDROP_SLATE },
+      RGB(70, 150, 100), RGB(232, 236, 240), RGB(140, 150, 166), RGB(104, 114, 130), RGB(120, 220, 130),
+      RGB(240, 200, 80), RGB(240, 110, 100), RGB(110, 200, 240), RGB(232, 236, 240), RGB(140, 150, 166),
+      RGB(104, 114, 130), RGB(120, 220, 130), RGB(240, 200, 80), RGB(240, 110, 100), 0, SS_BACKDROP_SLATE },
     { "PARCHMENT", RGB(226, 212, 172), RGB(88, 60, 36), RGB(196, 176, 128), RGB(120, 92, 60), RGB(54, 112, 56),
-      RGB(24, 64, 28), RGB(244, 240, 220), RGB(242, 232, 200), RGB(150, 118, 76), RGB(70, 128, 70),
-      RGB(36, 78, 38), RGB(50, 38, 28), RGB(122, 96, 68), RGB(168, 146, 112), RGB(30, 120, 44),
-      RGB(160, 100, 14), RGB(176, 46, 36), RGB(36, 86, 156), 0, SS_BACKDROP_PARCHMENT },
+      RGB(24, 64, 28), RGB(244, 240, 220), RGB(242, 232, 200), RGB(150, 118, 76), RGB(214, 224, 176),
+      RGB(36, 78, 38), RGB(50, 38, 28), RGB(100, 76, 52), RGB(140, 116, 84), RGB(30, 120, 44),
+      RGB(160, 100, 14), RGB(176, 46, 36), RGB(36, 86, 156), RGB(244, 236, 214), RGB(210, 190, 150),
+      RGB(150, 118, 82), RGB(120, 210, 110), RGB(240, 190, 70), RGB(240, 110, 90), 0, SS_BACKDROP_PARCHMENT },
     { "NIGHT GOLD", RGB(12, 16, 34), RGB(6, 8, 20), RGB(26, 34, 70), RGB(52, 66, 120), RGB(142, 104, 26),
       RGB(240, 200, 90), RGB(255, 246, 220), RGB(20, 26, 54), RGB(56, 70, 124), RGB(40, 50, 100),
-      RGB(110, 130, 210), RGB(236, 236, 246), RGB(140, 148, 180), RGB(76, 84, 120), RGB(120, 220, 150),
-      RGB(250, 210, 90), RGB(240, 110, 100), RGB(110, 190, 255), 0, SS_BACKDROP_NAVY },
+      RGB(110, 130, 210), RGB(236, 236, 246), RGB(140, 148, 180), RGB(106, 114, 156), RGB(120, 220, 150),
+      RGB(250, 210, 90), RGB(240, 110, 100), RGB(110, 190, 255), RGB(236, 236, 246), RGB(140, 148, 180),
+      RGB(106, 114, 156), RGB(120, 220, 150), RGB(250, 210, 90), RGB(240, 110, 100), 0, SS_BACKDROP_NAVY },
     { "FOREST", RGB(14, 26, 18), RGB(8, 16, 10), RGB(28, 48, 32), RGB(56, 90, 60), RGB(60, 140, 70),
       RGB(150, 220, 140), RGB(240, 246, 230), RGB(22, 38, 26), RGB(60, 100, 66), RGB(40, 90, 50),
-      RGB(110, 180, 110), RGB(236, 240, 224), RGB(150, 170, 140), RGB(80, 100, 80), RGB(150, 230, 120),
-      RGB(240, 200, 80), RGB(240, 110, 100), RGB(120, 210, 230), 1, SS_BACKDROP_DARK },
+      RGB(110, 180, 110), RGB(236, 240, 224), RGB(150, 170, 140), RGB(116, 140, 116), RGB(150, 230, 120),
+      RGB(240, 200, 80), RGB(240, 110, 100), RGB(120, 210, 230), RGB(236, 240, 224), RGB(150, 170, 140),
+      RGB(116, 140, 116), RGB(150, 230, 120), RGB(240, 200, 80), RGB(240, 110, 100), 1, SS_BACKDROP_DARK },
 };
 enum { CC_THEME_COUNT = (int)(sizeof(kCcThemes) / sizeof(kCcThemes[0])) };
 static const CcTheme* sCc = &kCcThemes[0];
@@ -78,6 +85,9 @@ int Port_SecondScreen_3DS_UiTabCenterY(int height);
 #define CC_WARN        (sCc->warn)
 #define CC_BAD         (sCc->bad)
 #define CC_ACCENT      (sCc->accent)
+#define CC_BAR_TEXT    (sCc->barText)
+#define CC_BAR_DIM     (sCc->barDim)
+#define CC_BAR_FAINT   (sCc->barFaint)
 
 enum {
     CC_TAB_H = 24,     /* tab bar height; the content starts 2 px away from it */
@@ -238,7 +248,7 @@ static void CIcon(const SSurf* s, int32_t cx, int32_t cy, const char* const* row
 }
 
 static void CStatus(const SSurf* s, int32_t ty) {
-    const uint32_t frame = CC_DIM, dim = CC_FAINT;
+    const uint32_t frame = CC_BAR_DIM, dim = CC_BAR_FAINT;
     const int32_t cy = ty + CC_TAB_H / 2;
     /* Battery: 15x8 shell and a 2x4 nub, far right. */
     const int32_t bx = s->w - 21, by = cy - 4;
@@ -250,7 +260,7 @@ static void CStatus(const SSurf* s, int32_t ty) {
     uint8_t level = 0, charging = 0;
     if (Platform3DS_BatteryStatus(&level, &charging)) {
         int32_t w = level * 11 / 5;
-        uint32_t fill = charging ? CC_GOOD : level <= 1 ? CC_BAD : level == 2 ? CC_WARN : CC_GOOD;
+        uint32_t fill = charging ? sCc->barGood : level <= 1 ? sCc->barBad : level == 2 ? sCc->barWarn : sCc->barGood;
         if (w > 0) FillRect(s, bx + 2, by + 2, bx + 2 + w, by + 6, fill);
         if (charging) {
             /* A lightning bolt over the battery, dark edge so it reads on any fill. */
@@ -264,7 +274,7 @@ static void CStatus(const SSurf* s, int32_t ty) {
                             FillRect(s, px - 1, py, px + 2, py + 1, CC_BAR);
                             FillRect(s, px, py - 1, px + 1, py + 2, CC_BAR);
                         } else {
-                            FillRect(s, px, py, px + 1, py + 1, CC_WARN);
+                            FillRect(s, px, py, px + 1, py + 1, sCc->barWarn);
                         }
                     }
                 }
@@ -285,7 +295,7 @@ static void CStatus(const SSurf* s, int32_t ty) {
     time_t t = time(NULL);
     struct tm* tm = gmtime(&t);
     if (tm) snprintf(buf, sizeof(buf), "%02d:%02d", tm->tm_hour, tm->tm_min);
-    CText(s, wx - 5 - CTextWidth(buf), cy - 3, CC_TEXT, buf);
+    CText(s, wx - 5 - CTextWidth(buf), cy - 3, CC_BAR_TEXT, buf);
 }
 
 /* What the status icons last showed: the tab bar is repainted when they change
@@ -481,7 +491,7 @@ static void Compact_PaintToast(const SSurf* s) {
     int32_t w = CTextWidth(sToast) + 12, h = 15;
     int32_t x = (s->w - w) / 2, y = CcContentBottom(s->h) - h - 4;
     CBox(s, x, y, w, h, CC_BAR, CC_ACCENT);
-    CTextCentered(s, s->w / 2, y + 4, CC_TEXT, sToast);
+    CTextCentered(s, s->w / 2, y + 4, CC_BAR_TEXT, sToast);
 }
 
 /* ---- STATES: save states (save_state_3ds.h), as in ../mzm and ../sm-3ds ----
@@ -521,13 +531,13 @@ static void Compact_PaintBusy(const SSurf* s, TargetList* tl) {
     const int32_t x = (s->w - w) / 2, y = (s->h - h) / 2;
     FillRect(s, x - 2, y - 2, x + w + 2, y + h + 2, CC_BG);
     CBox(s, x, y, w, h, CC_BAR, CC_ACCENT);
-    CTextCentered(s, s->w / 2, y + 14, CC_TEXT, text);
-    CTextCentered(s, s->w / 2, y + 30, CC_DIM, "PLEASE WAIT");
+    CTextCentered(s, s->w / 2, y + 14, CC_BAR_TEXT, text);
+    CTextCentered(s, s->w / 2, y + 30, CC_BAR_DIM, "PLEASE WAIT");
     /* A row of dots that fills and empties, so a frozen screen can be told from a slow one. */
     const int lit = (int)((sCompactTick / 2u) % 6u);
     for (int i = 0; i < 5; ++i) {
         const int32_t dx = s->w / 2 - 20 + i * 10;
-        FillRect(s, dx, y + 43, dx + 4, y + 47, i < lit ? CC_ACCENT : CC_TAB);
+        FillRect(s, dx, y + 43, dx + 4, y + 47, i < lit ? CC_BAR_TEXT : CC_BAR_FAINT);
     }
 }
 
@@ -857,10 +867,10 @@ static void CRunCell(const SSurf* s, TargetList* tl, int32_t x, int32_t y, int32
     CText(s, x + 4, y + 4, CC_DIM, name);
     CText(s, x + 4, y + 14, valueColor, value);
     int32_t bx = x + w - bw - 2, by = y + 2, bh = CC_CELL_H - 4;
-    CBox(s, bx, by, bw, bh, running ? CC_BAR : CC_BTN, running ? CC_BAD : CC_BTN_EDGE);
+    CBox(s, bx, by, bw, bh, running ? CC_BAR : CC_BTN, running ? sCc->barBad : CC_BTN_EDGE);
     int32_t cx = bx + bw / 2, cy = by + bh / 2;
     if (running) {
-        FillRect(s, cx - 3, cy - 3, cx + 4, cy + 4, CC_BAD);
+        FillRect(s, cx - 3, cy - 3, cx + 4, cy + 4, sCc->barBad);
     } else {
         for (int i = 0; i < 7; i++) FillRect(s, cx - 3 + i, cy - 3 + i / 2, cx - 2 + i, cy + 4 - i / 2, CC_GOOD);
     }
@@ -1167,7 +1177,7 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
             const int32_t cx = ix + c * (cell + 1);
             FillRect(s, cx, cy, cx + cell, cy + 8, CC_CELL_EDGE);
             FillRect(s, cx + 1, cy + 1, cx + cell - 1, cy + 7, CC_BAR);
-            if (q) FillRect(s, cx + 1, cy + 1, cx + 1 + (cell - 2) * q / 4, cy + 7, CC_WARN);
+            if (q) FillRect(s, cx + 1, cy + 1, cx + 1 + (cell - 2) * q / 4, cy + 7, sCc->barWarn);
         }
     } else if (snap->rActionFrame != 0) {
         /* Words of ActionRButton (include/player.h). */
@@ -1364,7 +1374,7 @@ static void Compact_PaintDungeonView(const SSurf* s, const SecondScreenSnapshot*
             char up[40];
             snprintf(up, sizeof(up), "%s", dname);
             CBox(s, (int32_t)rx0, top, (int32_t)(rx1 - rx0), 16, CC_BAR, CC_TAB_EDGE);
-            CTextCentered(s, (int32_t)(rx0 + rx1) / 2, top + 4, CC_TEXT, up);
+            CTextCentered(s, (int32_t)(rx0 + rx1) / 2, top + 4, CC_BAR_TEXT, up);
             top += 19;
         }
         const int8_t topFloor = snap->dungeonIdx < 7 ? kDungeonTopFloor[snap->dungeonIdx] : 2;
