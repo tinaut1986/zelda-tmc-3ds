@@ -74,6 +74,13 @@ Other local checkouts: `../mzm` and `../sm-3ds`, the reference ports.
   mergeable on its own. The one exception is a task that truly needs another
   unmerged branch; say so in PLAN's branch table.
 - Never commit directly on `main` or `release/*`. Commit only when the owner asks.
+- **`main` has no `CLAUDE.md` or `docs/PLAN.md` until the first release merge**: it is
+  still upstream's v2.2-E1 and GitHub's default branch, so a fresh clone lands on it
+  without these instructions. Check out the active release branch first
+  (`git checkout release/vX.Y.Z`; PLAN's Status names it) and cut topic branches from
+  there. The files reach `main` with the first `--no-ff` merge of a release branch;
+  the owner wants `main` to stay the stable line and the release branch the working
+  one (2026-10-12), so the default branch is not switched to the release.
 
 ### Versions
 
