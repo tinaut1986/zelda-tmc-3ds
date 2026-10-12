@@ -3167,6 +3167,22 @@ static int PickMapRegion(int x, int y) {
 }
 
 
+/* Whether (x, y) lands on a tab of the tab bar. The bar is at the same place in every panel, so
+ * a tab tap does not depend on which panel's hit boxes are the visible ones. */
+int Port_SecondScreen_TapIsTab(int x, int y) {
+    int tab = 0;
+    UI_LOCK();
+    for (int i = 0; i < sTapTargetCount; i++) {
+        const TapTarget* t = &sTapTargets[i];
+        if (t->action == SS_ACT_TAB && x >= t->x0 && x < t->x1 && y >= t->y0 && y < t->y1) {
+            tab = 1;
+            break;
+        }
+    }
+    UI_UNLOCK();
+    return tab;
+}
+
 void Port_SecondScreen_OnTap(int x, int y, int longPress) {
     TapTarget hit;
     int found = 0;

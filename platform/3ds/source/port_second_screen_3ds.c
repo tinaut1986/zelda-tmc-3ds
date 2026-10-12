@@ -114,6 +114,8 @@ void Port_SecondScreen_3DS_GetFrameStats(BottomFrameState3DSStats* out) {
     BottomFrameState3DS_GetStats(&sFrameState, out);
 }
 
+extern int Port_SecondScreen_TapIsTab(int x, int y); /* port_second_screen.c */
+
 void Port_SecondScreen_3DS_OnTap(int x, int y, int longPress) {
     SecondScreenSnapshot currentSnapshot;
     Port_SecondScreenState_Read(&currentSnapshot);
@@ -122,6 +124,16 @@ void Port_SecondScreen_3DS_OnTap(int x, int y, int longPress) {
      * to the confirmed visible generation and task; otherwise fail closed
      * while leaving the per-tick HID polling cadence untouched. */
     if (!BottomFrameState3DS_CanDispatchTouch(&sFrameState, currentSnapshot.inGame != 0)) {
+        /* The tab bar is the same in every panel: a tap on it is safe against hit boxes of a
+         * panel that is not yet the visible one. Dropping it made a tab (above all the one
+         * tapped just after another, while the first one's repaint was in flight) need
+         * several taps. */
+        if (BottomFrameState3DS_VisibleModeMatches(&sFrameState, currentSnapshot.inGame != 0) &&
+            Port_SecondScreen_TapIsTab(x, y)) {
+            Port_SecondScreen_OnTap(x, y, longPress);
+            RequestTouchRefresh();
+            return;
+        }
         /* A same-task hidden paint is already on its way to the display; an
          * extra request would only lengthen this fail-closed interval.  Task
          * transitions (and the pre-first-frame state) still need a paint. */
