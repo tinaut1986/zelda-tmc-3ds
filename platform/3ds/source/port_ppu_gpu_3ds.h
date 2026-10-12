@@ -52,6 +52,8 @@ bool PortPpuGpu3DS_QueueFrameCapture(void);
 void PortPpuGpu3DS_WriteFrameCapture(const char* prefix);
 
 unsigned long long PortPpuGpu3DS_EmptyDrawsSkipped(void);
+uint8_t PortPpuGpu3DS_FadeWeight(void);
+uint8_t PortPpuGpu3DS_FadeLevel(void);
 void PortPpuGpu3DS_RequestParityCheck(void);
 bool PortPpuGpu3DS_ParityRequested(void);
 void PortPpuGpu3DS_CaptureParityReference(const uint32_t* pixels, unsigned pitch,

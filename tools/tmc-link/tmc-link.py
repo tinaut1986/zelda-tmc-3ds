@@ -20,7 +20,7 @@ SITE commands of platform/3ds/source/debug_link_3ds.h. Standard library only.
     dump                      screen dump: debug/tmc-dump-NNNN-* (written at the next frame)
     switch NAME               cycle a DEBUG -> SWITCHES value ("FRAME SYNC")
     shot [DIR]                screenshots of both screens as PNG, default /tmp/tmc-shot
-    rec                       record the top screen around the next room change
+    rec [now]                 record the top screen around the next room change, HUD hide or fade start (now: no trigger)
     recfetch [DIR]            wait for the recording, write DIR/frames.png (a contact sheet) and list the frames
     peek WHAT LENGTH          hex bytes; WHAT is a hex address or a symbol of the ELF
     poke WHAT HEXBYTES        write bytes there
@@ -154,8 +154,9 @@ def frames_to_png(data, path, columns=6):
     lines = []
     for i in range(count):
         o = 16 + i * size
-        vw, vh, hold, mode, _, _, frame = struct.unpack_from('<HHBBBBI', data, o)
-        lines.append('%2d frame %6d view %dx%d mode %d%s' % (i, frame, vw, vh, mode, ' HOLD' if hold else ''))
+        vw, vh, hold, mode, fade_w, fade_l, frame = struct.unpack_from('<HHBBBBI', data, o)
+        lines.append('%2d frame %6d view %dx%d mode %d%s%s' % (i, frame, vw, vh, mode, ' HOLD' if hold else '',
+                                                              ' fade %d/%d' % (fade_w, fade_l) if fade_w else ''))
         cx, cy = (i % columns) * (w + 2), (i // columns) * (h + 2)
         for y in range(h):
             row = sheet[cy + y]
@@ -227,7 +228,7 @@ def run(link, argv):
                 f.write(bmp_to_png(buf.getvalue()))
             print(path)
     elif cmd == 'rec':
-        print(link.site('REC'))
+        print(link.site(('REC ' + (args[0] if args else '')).strip()))  # rec now: no trigger, the next 36 frames
     elif cmd == 'recfetch':
         # waits for debug/frames.bin, writes OUTDIR/frames.png (a contact sheet) and prints each frame
         out = args[0] if args else '/tmp/tmc-rec'
@@ -243,6 +244,8 @@ def run(link, argv):
         buf = io.BytesIO()
         link.connect().retrbinary('RETR %s/debug/frames.bin' % DATA, buf.write)
         link.connect().voidcmd('DELE %s/debug/frames.bin' % DATA)
+        with open(os.path.join(out, 'frames.bin'), 'wb') as f:
+            f.write(buf.getvalue())
         print(frames_to_png(buf.getvalue(), os.path.join(out, 'frames.png')))
     elif cmd == 'peek':
         address, length = link.address(args[0]), int(args[1], 0)

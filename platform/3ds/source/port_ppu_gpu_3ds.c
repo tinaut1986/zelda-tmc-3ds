@@ -992,6 +992,11 @@ void PortPpuGpu3DS_WriteFrameCapture(const char* prefix) {
     fclose(file);
 }
 
+/* The fade the frame last built applied on the GPU (weight 0: none), for the
+ * frame recorder. */
+uint8_t PortPpuGpu3DS_FadeWeight(void) { return sFadeWeight; }
+uint8_t PortPpuGpu3DS_FadeLevel(void) { return sFadeLevel; }
+
 void PortPpuGpu3DS_RequestParityCheck(void) {
     if (sReady && !sDisabled && !sParityRequested && !sParitySubmitted) {
         sParityRequested = true;

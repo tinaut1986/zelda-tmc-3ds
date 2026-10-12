@@ -35,6 +35,7 @@
 #include "map.h"
 #include "area.h"
 #include "screen.h"
+#include "fade.h"
 #include "menu.h"
 #include "player.h"
 #include "room.h"
@@ -1039,7 +1040,9 @@ static void ApplyUploadLayoutSwitch(void) {
 /* Frame recorder (SITE REC, docs/debug-tools.md): the top screen as shown, at
  * 200x120, for the frames around the next room change, so a glitch that lasts
  * a few frames can be looked at. Armed it keeps the last REC_PRE frames; at
- * the room change it records REC_POST more and writes debug/frames.bin. */
+ * a room change, a HUD hide or the start of a screen fade it records REC_POST
+ * more and writes debug/frames.bin. Each frame carries the fade the GPU
+ * applied (weight, level). `REC NOW` records without waiting for a trigger. */
 extern bool Platform3DS_CaptureTopThumbnail(uint16_t* pixels, int width, int height);
 
 enum { REC_W = 200, REC_H = 120, REC_PRE = 24, REC_POST = 36, REC_FRAMES = REC_PRE + REC_POST };
@@ -1056,8 +1059,9 @@ static int sRecState; /* 0 off, 1 armed (ring), 2 recording after the change */
 static int sRecHead, sRecCount, sRecPost;
 static uint32_t sRecRoom;
 static uint8_t sRecHide;
+static bool sRecFade;
 
-bool Port_PPU_3DS_ArmFrameRecorder(char* reply, unsigned cap) {
+bool Port_PPU_3DS_ArmFrameRecorder(bool now, char* reply, unsigned cap) {
     if (!sRec) sRec = malloc(sizeof(RecFrame) * REC_FRAMES);
     if (!sRec) {
         snprintf(reply, cap, "550 No memory for %u frames.", (unsigned)REC_FRAMES);
@@ -1067,7 +1071,14 @@ bool Port_PPU_3DS_ArmFrameRecorder(char* reply, unsigned cap) {
     sRecHead = sRecCount = sRecPost = 0;
     sRecRoom = ((uint32_t)gRoomControls.area << 8) | gRoomControls.room;
     sRecHide = gHUD.hideFlags;
-    snprintf(reply, cap, "200 Recording around the next room change or HUD hide (debug/frames.bin).");
+    sRecFade = gFadeControl.active != 0;
+    if (now) {
+        sRecState = 2;
+        sRecPost = REC_POST;
+        snprintf(reply, cap, "200 Recording the next %u frames (debug/frames.bin).", (unsigned)REC_POST);
+        return true;
+    }
+    snprintf(reply, cap, "200 Recording around the next room change, HUD hide or fade start (debug/frames.bin).");
     return true;
 }
 
@@ -1091,13 +1102,17 @@ static void RecTick(int viewW, int viewH, bool hold, int mode) {
     slot->viewH = (uint16_t)viewH;
     slot->hold = hold;
     slot->mode = (uint8_t)mode;
-    slot->gfx = 0;
+    slot->gfx = PortPpuGpu3DS_FadeWeight();
+    slot->pad = PortPpuGpu3DS_FadeLevel();
     slot->frame = (uint32_t)sFrameNumber;
     if (!Platform3DS_CaptureTopThumbnail(slot->px, REC_W, REC_H)) memset(slot->px, 0, sizeof(slot->px));
     sRecHead = (sRecHead + 1) % REC_FRAMES;
     if (sRecCount < REC_FRAMES) ++sRecCount;
     const uint32_t room = ((uint32_t)gRoomControls.area << 8) | gRoomControls.room;
-    if (sRecState == 1 && (room != sRecRoom || gHUD.hideFlags != sRecHide)) {
+    const bool fading = gFadeControl.active != 0;
+    const bool fadeStarted = fading && !sRecFade;
+    sRecFade = fading;
+    if (sRecState == 1 && (room != sRecRoom || gHUD.hideFlags != sRecHide || fadeStarted)) {
         sRecState = 2;
         sRecPost = REC_POST;
     } else if (sRecState == 2 && --sRecPost <= 0) {
