@@ -187,8 +187,9 @@ and the worst frames with their parts.
 ## Frame recorder (SITE REC)
 
 For a glitch that lasts a few frames at a room change. `tmc-link.py rec` arms it: it keeps the
-last 24 frames of the top screen as shown (200x120), and when the room changes records 36
-more and writes `debug/frames.bin`. `tmc-link.py recfetch [DIR]` waits for the file, deletes
+last 24 frames of the top screen as shown (200x120), and when the room changes (or the HUD is hidden) records 36
+more and writes `debug/frames.bin`. A change of the HUD's hide flags (a cutscene taking the
+buttons away) starts the recording as well. `tmc-link.py recfetch [DIR]` waits for the file, deletes
 it on the console and writes `DIR/frames.png`, a contact sheet of the 60 frames, and prints
 each frame's view size, Full View mode and whether the top screen was being held. Read the
 sheet left to right, top to bottom.

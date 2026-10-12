@@ -1037,6 +1037,7 @@ static RecFrame* sRec;
 static int sRecState; /* 0 off, 1 armed (ring), 2 recording after the change */
 static int sRecHead, sRecCount, sRecPost;
 static uint32_t sRecRoom;
+static uint8_t sRecHide;
 
 bool Port_PPU_3DS_ArmFrameRecorder(char* reply, unsigned cap) {
     if (!sRec) sRec = malloc(sizeof(RecFrame) * REC_FRAMES);
@@ -1047,7 +1048,8 @@ bool Port_PPU_3DS_ArmFrameRecorder(char* reply, unsigned cap) {
     sRecState = 1;
     sRecHead = sRecCount = sRecPost = 0;
     sRecRoom = ((uint32_t)gRoomControls.area << 8) | gRoomControls.room;
-    snprintf(reply, cap, "200 Recording around the next room change (debug/frames.bin).");
+    sRecHide = gHUD.hideFlags;
+    snprintf(reply, cap, "200 Recording around the next room change or HUD hide (debug/frames.bin).");
     return true;
 }
 
@@ -1077,7 +1079,7 @@ static void RecTick(int viewW, int viewH, bool hold, int mode) {
     sRecHead = (sRecHead + 1) % REC_FRAMES;
     if (sRecCount < REC_FRAMES) ++sRecCount;
     const uint32_t room = ((uint32_t)gRoomControls.area << 8) | gRoomControls.room;
-    if (sRecState == 1 && room != sRecRoom) {
+    if (sRecState == 1 && (room != sRecRoom || gHUD.hideFlags != sRecHide)) {
         sRecState = 2;
         sRecPost = REC_POST;
     } else if (sRecState == 2 && --sRecPost <= 0) {
