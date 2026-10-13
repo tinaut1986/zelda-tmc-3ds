@@ -27,6 +27,10 @@ int Port_SecondScreen_3DS_NeedsRefresh(void);
 int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap, uint32_t tick,
                                                uint32_t paintedTick, int32_t width,
                                                int32_t height);
+void Port_SecondScreen_3DS_ServicePendingTap(void);
+/* The bottom screen shows generation (from RequestRefresh) or a newer paint. */
+int Port_SecondScreen_3DS_IsShown(uint32_t generation);
+int Port_SecondScreen_3DS_HudChanged(const SecondScreenSnapshot* previous, const SecondScreenSnapshot* current);
 int Port_SecondScreen_3DS_SnapshotChangeNeedsRefresh(const SecondScreenSnapshot* previous,
                                                      const SecondScreenSnapshot* current,
                                                      int previousValid);

@@ -77,7 +77,7 @@ static bool sGpuStencil = true;
 static bool sGpuFade = true;
 /* -1 keeps the built-in choice; 0 or 1 pins the audio worker for an A/B. */
 static int sAudioCore = -1;
-/* -1 keeps core 0; 1 moves the bottom-screen painter off the main thread's core. */
+/* -1 AUTO (core 1 on the Old 3DS, 0 on the New 3DS); 0 or 1 pins the bottom-screen painter. */
 static int sBottomCore = -1;
 /* Skip a MAP-tab bottom-screen repaint when the quantised animation signature
  * says the next tick draws the same picture. Defaults on: a dump measured 2230
@@ -515,7 +515,7 @@ void DebugSwitch_Value(int id, char* out, unsigned cap) {
             snprintf(out, cap, "%s", v ? "GPU" : "CPU (TEST)");
             return;
         case DEBUG_SW_BOTTOM_CORE:
-            snprintf(out, cap, "%s", v == 1 ? "CORE 1" : "CORE 0");
+            snprintf(out, cap, "%s", v < 0 ? (Platform3DS_IsNew3DS() ? "AUTO 0" : "AUTO 1") : (v ? "CORE 1" : "CORE 0"));
             return;
         case DEBUG_SW_AUDIO_CORE:
             snprintf(out, cap, "%s", v < 0 ? "AUTO" : (v ? "CORE 1" : "CORE 0"));
@@ -541,7 +541,7 @@ void DebugSwitch_Cycle(int id) {
         case DEBUG_SW_STATIC_QUAD: sGpuStaticQuad = !sGpuStaticQuad; break;
         case DEBUG_SW_MAP_SKIP: sBottomMapSkip = !sBottomMapSkip; break;
         case DEBUG_SW_BOTTOM_CORE:
-            sBottomCore = sBottomCore == 1 ? -1 : 1;
+            sBottomCore = sBottomCore < 0 ? 0 : (sBottomCore == 0 ? 1 : -1);
             Platform3DS_RestartBottomWorker();
             break;
         case DEBUG_SW_AUDIO_CORE:

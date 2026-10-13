@@ -92,6 +92,12 @@ static uint64_t sPerfBottomTicks;
 static uint64_t sPerfTotalTicks;
 static uint64_t sPerfSamples;
 static uint64_t sPerfBottomSamples;
+/* The SD log's bottom line: paints shown, their paint time, and how long each
+ * took from being scheduled to being submitted (what a tap or a HUD change
+ * waits for). Maxima are since the last read. */
+static uint64_t sBottomWorkerScheduledTick, sBottomFrontScheduledTick;
+static uint64_t sBottomStatPaints, sBottomStatPaintTicks, sBottomStatPaintMax;
+static uint64_t sBottomStatLatencyTicks, sBottomStatLatencyMax;
 static uint64_t sPerfRenderMaxTicks;
 static uint64_t sPerfTopMaxTicks;
 /* Frequency buckets for the presentation span; thresholds are derived from the
@@ -933,7 +939,22 @@ void Port_PPU_3DS_RenderBottomWorker(void) {
     sBottomWorkerLastTicks = Platform3DS_SystemTick() - startTick;
 }
 
+void Port_PPU_3DS_TakeBottomStats(uint64_t out[5]) {
+    out[0] = sBottomStatPaints;
+    out[1] = sBottomStatPaintTicks;
+    out[2] = sBottomStatPaintMax;
+    out[3] = sBottomStatLatencyTicks;
+    out[4] = sBottomStatLatencyMax;
+    sBottomStatPaintMax = 0;
+    sBottomStatLatencyMax = 0;
+}
+
 static void RecordBottomWorkerTiming(void) {
+    sBottomFrontScheduledTick = sBottomWorkerScheduledTick;
+    ++sBottomStatPaints;
+    sBottomStatPaintTicks += sBottomWorkerLastTicks;
+    if (sBottomWorkerLastTicks > sBottomStatPaintMax)
+        sBottomStatPaintMax = sBottomWorkerLastTicks;
     if (sFrameNumber < 120u)
         return;
     ++sPerfBottomSamples;
@@ -1487,14 +1508,20 @@ static void PresentFrame(void) {
     if (cadenceDue) {
         ++sBottomTick;
     }
-    const bool forcedUpdate = !sBottomReady || Port_SecondScreen_3DS_NeedsRefresh();
-    if (!sBottomWorkerPending && (forcedUpdate || cadenceDue)) {
+    bool forcedUpdate = !sBottomReady || Port_SecondScreen_3DS_NeedsRefresh();
+    if (!sBottomWorkerPending && (forcedUpdate || cadenceDue || sBottomSnapshotValid)) {
         SecondScreenSnapshot nextSnapshot;
         Port_SecondScreenState_Read(&nextSnapshot);
+        /* The HUD (the R prompt while Link runs, hearts, rupees) is painted as soon
+         * as the painter is free, not at the next cadence tick. */
+        if (!forcedUpdate && sBottomSnapshotValid &&
+            Port_SecondScreen_3DS_HudChanged(&sBottomWorkerSnapshot, &nextSnapshot))
+            forcedUpdate = true;
 
-        const bool snapshotChanged = Port_SecondScreen_3DS_SnapshotChangeNeedsRefresh(
+        const bool considered = forcedUpdate || cadenceDue; /* else only the HUD check above */
+        const bool snapshotChanged = considered && Port_SecondScreen_3DS_SnapshotChangeNeedsRefresh(
             &sBottomWorkerSnapshot, &nextSnapshot, sBottomSnapshotValid);
-        const bool animationRequired = Port_SecondScreen_3DS_NeedsPeriodicRefresh(
+        const bool animationRequired = considered && Port_SecondScreen_3DS_NeedsPeriodicRefresh(
             &nextSnapshot, sBottomTick, sBottomWorkerTick, 320, 240);
         const bool schedulePaint = BottomFrameState3DS_ShouldSchedulePaint(
             sBottomWorkerPending, forcedUpdate, cadenceDue, bottomChanged, snapshotChanged, animationRequired);
@@ -1517,6 +1544,7 @@ static void PresentFrame(void) {
             sBottomSnapshotValid = true;
             sBottomWorkerTick = sBottomTick;
             sBottomWorkerGeneration = 0;
+            sBottomWorkerScheduledTick = Platform3DS_SystemTick();
             if (Platform3DS_SubmitBottomWorker()) {
                 sBottomWorkerPending = true;
             } else {
@@ -1541,6 +1569,13 @@ static void PresentFrame(void) {
     if (PlatformGpu3DS_EndBottom(sBottomUploads[sBottomFrontBuffer], sBottomTextureDirty)) {
         if (sBottomTextureDirty) {
             sBottomTextureDirty = false;
+            if (sBottomFrontScheduledTick != 0) {
+                const uint64_t latency = Platform3DS_SystemTick() - sBottomFrontScheduledTick;
+                sBottomStatLatencyTicks += latency;
+                if (latency > sBottomStatLatencyMax)
+                    sBottomStatLatencyMax = latency;
+                sBottomFrontScheduledTick = 0;
+            }
             Port_SecondScreen_3DS_MarkSubmitted(sBottomBufferGeneration[sBottomFrontBuffer],
                                                 sBottomBufferInGame[sBottomFrontBuffer]);
         }

@@ -102,6 +102,12 @@ uint32_t Port_SecondScreen_3DS_RequestRefresh(void) {
     return RequestRefresh();
 }
 
+int Port_SecondScreen_3DS_IsShown(uint32_t generation) {
+    BottomFrameState3DSStats stats;
+    BottomFrameState3DS_GetStats(&sFrameState, &stats);
+    return stats.visible != 0 && (int32_t)(stats.visible - generation) >= 0;
+}
+
 void Port_SecondScreen_3DS_MarkSubmitted(uint32_t generation, int inGame) {
     BottomFrameState3DS_MarkSubmitted(&sFrameState, generation, inGame);
 }
@@ -115,6 +121,16 @@ void Port_SecondScreen_3DS_GetFrameStats(BottomFrameState3DSStats* out) {
 }
 
 extern int Port_SecondScreen_TapIsTab(int x, int y); /* port_second_screen.c */
+
+/* A tap that came while the panel it was aimed at was being repainted, replayed
+ * once the new panel is shown (Port_SecondScreen_3DS_ServicePendingTap, each
+ * tick after the VBlank); forgotten after PENDING_TAP_TICKS logic ticks. Main
+ * thread only, like OnTap. */
+enum { PENDING_TAP_TICKS = 45 };
+static struct {
+    int x, y, longPress;
+    unsigned ticksLeft;
+} sPendingTap;
 
 void Port_SecondScreen_3DS_OnTap(int x, int y, int longPress) {
     SecondScreenSnapshot currentSnapshot;
@@ -139,10 +155,34 @@ void Port_SecondScreen_3DS_OnTap(int x, int y, int longPress) {
          * transitions (and the pre-first-frame state) still need a paint. */
         if (!BottomFrameState3DS_VisibleModeMatches(&sFrameState, currentSnapshot.inGame != 0)) {
             RequestTouchRefresh();
+            return;
         }
+        /* Kept, not dropped: the player tapped what is on screen, and the panel
+         * that answers the previous tap is only a paint away. Dropping it made
+         * quick taps need several tries. */
+        sPendingTap.x = x;
+        sPendingTap.y = y;
+        sPendingTap.longPress = longPress;
+        sPendingTap.ticksLeft = PENDING_TAP_TICKS;
         return;
     }
+    sPendingTap.ticksLeft = 0;
     Port_SecondScreen_OnTap(x, y, longPress);
+    RequestTouchRefresh();
+}
+
+void Port_SecondScreen_3DS_ServicePendingTap(void) {
+    if (sPendingTap.ticksLeft == 0) return;
+    --sPendingTap.ticksLeft;
+    SecondScreenSnapshot currentSnapshot;
+    Port_SecondScreenState_Read(&currentSnapshot);
+    if (!BottomFrameState3DS_VisibleModeMatches(&sFrameState, currentSnapshot.inGame != 0)) {
+        sPendingTap.ticksLeft = 0;
+        return;
+    }
+    if (!BottomFrameState3DS_CanDispatchTouch(&sFrameState, currentSnapshot.inGame != 0)) return;
+    sPendingTap.ticksLeft = 0;
+    Port_SecondScreen_OnTap(sPendingTap.x, sPendingTap.y, sPendingTap.longPress);
     RequestTouchRefresh();
 }
 
@@ -220,6 +260,19 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
         return 1;
     }
     return 0;
+}
+
+/* What the sidebar's HUD shows (the R prompt, hearts, rupees, keys, the charge
+ * meter, the equipped items): a change of these is painted at once, not at the
+ * next cadence tick, since it answers what the player just did. */
+int Port_SecondScreen_3DS_HudChanged(const SecondScreenSnapshot* previous, const SecondScreenSnapshot* current) {
+    if (!previous || !current || !current->inGame) return 0;
+    return previous->rActionFrame != current->rActionFrame || previous->health != current->health ||
+           previous->maxHealth != current->maxHealth || previous->rupees != current->rupees ||
+           previous->dungeonKeys != current->dungeonKeys || previous->topHudHidden != current->topHudHidden ||
+           previous->chargeAction != current->chargeAction ||
+           (current->chargeAction != 0 && previous->chargeTimer != current->chargeTimer) ||
+           previous->equippedA != current->equippedA || previous->equippedB != current->equippedB;
 }
 
 int Port_SecondScreen_3DS_SnapshotChangeNeedsRefresh(const SecondScreenSnapshot* previous,
