@@ -2357,6 +2357,10 @@ void Port_Widescreen_UpdateShadows(void) {
     if (sWsRoomLoadGraceTicks > 0) --sWsRoomLoadGraceTicks;
     if (gFadeControl.active != 0) sWsFadeRecent = 90;
     else if (sWsFadeRecent > 0) --sWsFadeRecent;
+    /* Out of the game (a soft reset to the intro and title, the file select) the gameplay
+     * camera is not prepared, so nothing else drops the producer: it stayed in Full View with
+     * the last room's key, and the intro was drawn at 400x240 over that room's map shadows. */
+    if (gMain.task != TASK_GAME) sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
     if (sWsGameplayRoomKey != roomKey) {
         const int carry = Port_WidescreenScrollCarriesFullView();
         sWsRoomLoadTicks = sWsFadeRecent > 0 ? 16 : 0;
