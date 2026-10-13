@@ -1554,8 +1554,18 @@ int Port_SecondScreenTheme_BackdropIsDark(void) {
     return (299u * r + 587u * g + 114u * b) / 1000u < 128u;
 }
 
+static SecondScreenThemeBoxPainter sBoxPainter;
+
+void Port_SecondScreenTheme_SetBoxPainter(SecondScreenThemeBoxPainter painter) {
+    sBoxPainter = painter;
+}
+
 void Port_SecondScreenTheme_DrawBackdrop(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
                                          int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t scale) {
+    if (sBoxPainter) {
+        sBoxPainter(pixels, bufW, bufH, stride, x0, y0, x1 - x0, y1 - y0, SS_BOX_BACKDROP);
+        return;
+    }
     if (scale < 1) {
         scale = 1;
     }
@@ -1785,6 +1795,10 @@ static void DrawSliced(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t str
 
 void Port_SecondScreenTheme_DrawPlate(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
                                       int32_t x, int32_t y, int32_t w, int32_t h, int32_t scale) {
+    if (sBoxPainter) {
+        sBoxPainter(pixels, bufW, bufH, stride, x, y, w, h, SS_BOX_PLATE);
+        return;
+    }
     if (!sMenuOk || !sSlabOk) {
         /* Palette-toned stand-in: stone fill, ink outline. */
         uint32_t ink = sColors[SSC_MENU_INK];
@@ -1800,6 +1814,10 @@ void Port_SecondScreenTheme_DrawPlate(uint32_t* pixels, int32_t bufW, int32_t bu
 
 void Port_SecondScreenTheme_DrawWell(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
                                      int32_t x, int32_t y, int32_t w, int32_t h, int32_t scale) {
+    if (sBoxPainter) {
+        sBoxPainter(pixels, bufW, bufH, stride, x, y, w, h, SS_BOX_WELL);
+        return;
+    }
     if (!sMenuOk || !sTrayOk) {
         uint32_t rim = sColors[SSC_MENU_INK];
         int32_t t = scale > 0 ? scale : 1;

@@ -159,11 +159,80 @@ static void CTextCentered(const SSurf* s, int32_t cx, int32_t y, uint32_t color,
 
 /* ---- boxes ---- */
 
-/* 1 px border, flat body, a 1 px lighter line under the top edge (mzm style). */
+/* One pixel of a box corner, (cx, cy) counted inward from the corner the
+ * flips name: the four corners are one drawing mirrored. */
+static void CCornerPixel(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h, int right, int bottom,
+                         int32_t cx, int32_t cy, uint32_t color) {
+    const int32_t px = right ? x + w - 1 - cx : x + cx;
+    const int32_t py = bottom ? y + h - 1 - cy : y + cy;
+    FillRect(s, px, py, px + 1, py + 1, color);
+}
+
+/* A filled rectangle whose corners follow `inset`: row i from the top and
+ * the bottom starts inset[i] pixels in (n rows); the rows between are full. */
+static void CRoundFill(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h, const uint8_t* inset, int n,
+                       uint32_t color) {
+    if (w <= 0 || h <= 0) return;
+    if (2 * n > h) n = h / 2;
+    for (int i = 0; i < n; i++) {
+        FillRect(s, x + inset[i], y + i, x + w - inset[i], y + i + 1, color);
+        FillRect(s, x + inset[i], y + h - 1 - i, x + w - inset[i], y + h - i, color);
+    }
+    FillRect(s, x, y + n, x + w, y + h - n, color);
+}
+
+/* The rounding of the message window's outer corners (DispMessageFrame,
+ * border_type 0): the curve the game draws its windows with. */
+static const uint8_t kCcRound[3] = { 3, 1, 1 };
+static const uint8_t kCcRoundInner[2] = { 2, 1 };
+static const uint8_t kCcRoundCore[1] = { 1 };
+
+/* Cells, buttons and tabs: the window's rounded corners at 1x in the theme's
+ * colours, a one-pixel edge following the curve and a softer line inside it
+ * (the pause menu chips' keyline and shade). Geometry only, no game pixels. */
 static void CBox(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t body, uint32_t edge) {
-    FillRect(s, x, y, x + w, y + h, edge);
-    FillRect(s, x + 1, y + 1, x + w - 1, y + h - 1, body);
-    FillRect(s, x + 1, y + 1, x + w - 1, y + 2, MixColor(body, edge, 96));
+    if (w < 8 || h < 8) {
+        FillRect(s, x, y, x + w, y + h, edge);
+        FillRect(s, x + 1, y + 1, x + w - 1, y + h - 1, body);
+        return;
+    }
+    CRoundFill(s, x, y, w, h, kCcRound, 3, edge);
+    CRoundFill(s, x + 1, y + 1, w - 2, h - 2, kCcRoundInner, 2, MixColor(body, edge, 96));
+    CRoundFill(s, x + 2, y + 2, w - 4, h - 4, kCcRoundCore, 1, body);
+}
+
+/* The message window's frame (DispMessageFrame, border_type 0) at 1x in the
+ * theme's colours: a five-pixel band rounded at the outer corners, a thin
+ * rim outside it and a dark line inside. For the windows that open over a
+ * panel (toast, busy, modal). */
+static void CWindow(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t body, uint32_t band) {
+    if (w < 12 || h < 12) {
+        CBox(s, x, y, w, h, body, band);
+        return;
+    }
+    const uint32_t rim = MixColor(band, body, 72);
+    const uint32_t inner = MixColor(band, body, 168);
+    /* The band with its rounded outer corners (rows 0..2 inset 3, 2, 1). */
+    FillRect(s, x + 3, y, x + w - 3, y + h, band);
+    FillRect(s, x + 1, y + 2, x + w - 1, y + h - 2, band);
+    FillRect(s, x + 2, y + 1, x + w - 2, y + h - 1, band);
+    FillRect(s, x, y + 3, x + w, y + h - 3, band);
+    /* Rim: the outermost pixel all round, following the rounding. */
+    FillRect(s, x + 4, y, x + w - 4, y + 1, rim);
+    FillRect(s, x + 4, y + h - 1, x + w - 4, y + h, rim);
+    FillRect(s, x, y + 4, x + 1, y + h - 4, rim);
+    FillRect(s, x + w - 1, y + 4, x + w, y + h - 4, rim);
+    for (int corner = 0; corner < 4; corner++) {
+        const int right = corner & 1, bottom = corner >> 1;
+        CCornerPixel(s, x, y, w, h, right, bottom, 3, 0, MixColor(rim, band, 128));
+        CCornerPixel(s, x, y, w, h, right, bottom, 0, 3, MixColor(rim, band, 128));
+        CCornerPixel(s, x, y, w, h, right, bottom, 2, 1, rim);
+        CCornerPixel(s, x, y, w, h, right, bottom, 1, 2, rim);
+    }
+    /* Inner line and body, the inner corner rounded by one pixel. */
+    FillRect(s, x + 5, y + 4, x + w - 5, y + h - 4, inner);
+    FillRect(s, x + 4, y + 5, x + w - 4, y + h - 5, inner);
+    FillRect(s, x + 5, y + 5, x + w - 5, y + h - 5, body);
 }
 
 /* A two-line cell: the name dimmed on top, the value under it in `valueColor`.
@@ -340,8 +409,22 @@ static void Compact_PaintTabBar(const SSurf* s, TargetList* tl, int activeTab, i
     /* The theme is picked in OPTIONS (THEME); the tab bar has no shortcut. */
 }
 
+/* The pause menu's parchment, slab and wells, where the shared screens ask
+ * for them (the quest lists and their wells): this screen's own background
+ * and boxes instead, so every tab is drawn the same way. */
+static void Compact_BoxPainter(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x, int32_t y,
+                               int32_t w, int32_t h, int kind) {
+    const SSurf surf = { pixels, bufW, bufH, stride };
+    switch (kind) {
+        case SS_BOX_BACKDROP: FillRect(&surf, x, y, x + w, y + h, CC_BG); break;
+        case SS_BOX_PLATE: CBox(&surf, x, y, w, h, CC_CELL, CC_CELL_EDGE); break;
+        default: CBox(&surf, x, y, w, h, MixColor(CC_CELL, CC_BG, 128), CC_TAB_EDGE); break;
+    }
+}
+
 /* The theme picked in the config, and its panel backdrop with it. */
 static void Compact_ApplyThemeFromConfig(void) {
+    Port_SecondScreenTheme_SetBoxPainter(Compact_BoxPainter);
     Port_SecondScreen_3DS_SetUiTheme(Port_Config_GetUiTheme());
     /* The theme owns the panel backdrop; there is no separate option. */
     if (Port_Config_GetSecondScreenBackdrop() != sCc->backdrop) Port_Config_SetSecondScreenBackdrop(sCc->backdrop);
@@ -488,10 +571,11 @@ static void Compact_PaintToast(const SSurf* s) {
     if (notice) Compact_Toast("%s", notice);
     sToastOnScreen = (uint8_t)Compact_ToastVisible();
     if (!sToastOnScreen) return;
-    int32_t w = CTextWidth(sToast) + 12, h = 15;
+    /* The window's band is five pixels: three more around the text. */
+    int32_t w = CTextWidth(sToast) + 2 * 8, h = kUiGlyphH + 2 * 8;
     int32_t x = (s->w - w) / 2, y = CcContentBottom(s->h) - h - 4;
-    CBox(s, x, y, w, h, CC_BAR, CC_ACCENT);
-    CTextCentered(s, s->w / 2, y + 4, CC_BAR_TEXT, sToast);
+    CWindow(s, x, y, w, h, CC_BAR, CC_BAR_DIM);
+    CTextCentered(s, s->w / 2, y + 8, CC_BAR_TEXT, sToast);
 }
 
 /* ---- STATES: save states (save_state_3ds.h), as in ../mzm and ../sm-3ds ----
@@ -530,7 +614,7 @@ static void Compact_PaintBusy(const SSurf* s, TargetList* tl) {
     const int32_t w = 156, h = 56;
     const int32_t x = (s->w - w) / 2, y = (s->h - h) / 2;
     FillRect(s, x - 2, y - 2, x + w + 2, y + h + 2, CC_BG);
-    CBox(s, x, y, w, h, CC_BAR, CC_ACCENT);
+    CWindow(s, x, y, w, h, CC_BAR, CC_BAR_DIM);
     CTextCentered(s, s->w / 2, y + 14, CC_BAR_TEXT, text);
     CTextCentered(s, s->w / 2, y + 30, CC_BAR_DIM, "PLEASE WAIT");
     /* A row of dots that fills and empties, so a frozen screen can be told from a slow one. */
@@ -1100,8 +1184,8 @@ static void Compact_PaintModal(const SSurf* s, TargetList* tl, const char* title
     for (int32_t y = 0; y < s->h; y += 2) FillRect(s, 0, y, s->w, y + 1, CC_BG);
     const int32_t w = 260, h = 30 + nLines * 10 + 36;
     const int32_t x = (s->w - w) / 2, y = (s->h - h) / 2;
-    CBox(s, x, y, w, h, CC_CELL, CC_CELL_EDGE);
-    CTextCentered(s, s->w / 2, y + 8, CC_ACCENT, title);
+    CWindow(s, x, y, w, h, CC_CELL, CC_CELL_EDGE);
+    CTextCentered(s, s->w / 2, y + 9, CC_ACCENT, title);
     for (int i = 0; i < nLines; ++i) CTextCentered(s, s->w / 2, y + 24 + i * 10, CC_TEXT, lines[i]);
     const int32_t by = y + h - 28, bw = right ? (w - 12 - CC_GAP) / 2 : w - 8;
     CButton(s, tl, x + 4, by, bw, 24, left, CC_TEXT, leftAction, 0);
@@ -1122,6 +1206,11 @@ static void Compact_MapChip(const SSurf* s, const char* label, float cx, float c
     out[1] = (float)y;
     out[2] = (float)(x + w);
     out[3] = (float)(y + h);
+}
+
+/* The box around the whole world map: the map is drawn over its inside. */
+static void Compact_MapFrame(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h) {
+    CBox(s, x, y, w, h, CC_CELL, CC_CELL_EDGE);
 }
 
 /* The A/B cell: its letter, the equipped item's icon and its ammo; tapping it

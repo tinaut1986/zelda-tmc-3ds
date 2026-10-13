@@ -38,6 +38,9 @@ static void FakeSnapshot(SecondScreenSnapshot* s) {
     s->bombMax = 30;
     s->arrowCount = 25;
     s->arrowMax = 50;
+    s->kinstoneBagOwned = 1;
+    s->kinstoneFused = 12;
+    s->swordSkills = 3;
     s->kinstoneFused = 23;
     s->kinstoneBag = 9;
     s->heartPieces = 2;
