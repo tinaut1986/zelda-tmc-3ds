@@ -1023,21 +1023,42 @@ static u16 sWsShadowBG2[MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_COLS];
 /* Retain only the outgoing viewport before LoadRoomGfx replaces its maps.
  * This is tile data, not a frozen image: the current palettes/animations still
  * apply. Both the native screenblock and reveal use the same world sampler. */
-enum { WS_SCROLL_COLS = 36, WS_SCROLL_ROWS = 24 };
+/* Sized for Full View (400x240 plus a tile each side); normal Wide uses the
+ * first 36x24. */
+enum { WS_SCROLL_COLS = 52, WS_SCROLL_ROWS = 32 };
 static struct {
     int valid, area, room, direction;
+    int fullView; /* taken in Full View: the scroll keeps the 400x240 view */
+    int cols, rows;
     int startX, startY, tileX, tileY;
     u16 tiles[2][WS_SCROLL_ROWS][WS_SCROLL_COLS];
 } sWsScroll;
 
+static Port3DSFullViewMode Port_WidescreenGameplayMode(void);
+
 void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
     sWsScroll.valid = 0;
     const int width = Port_Widescreen_GameplayViewWidth();
-    if (width <= 240 || width > 266 || direction > 3 || gRoomControls.scrollAction > 1 || gArea.unk_0c_0 ||
-        (gRoomControls.scroll_flags & 1) || room >= MAX_ROOMS || gArea.roomResInfos[room].pixel_width <= 240 ||
-        gArea.roomResInfos[room].pixel_height < 160 || gRoomControls.height < 160)
+    if (direction > 3 || gRoomControls.scrollAction > 1 || gArea.unk_0c_0 || (gRoomControls.scroll_flags & 1) ||
+        room >= MAX_ROOMS)
+        return;
+    /* Full View scrolls at 400x240 into a room that can hold that view (an
+     * exterior at least 400x240, as the policy asks); the next room's own
+     * content scan then confirms it. Anything else keeps the 266 scroll or
+     * none. */
+    const int fullView = Port_WidescreenGameplayMode() == PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
+                         gRoomControls.area <= AREA_98 &&
+                         Port3DSFullViewPolicy_AreaIsExterior(gRoomControls.area, (int)room,
+                                                              gAreaMetadata[gRoomControls.area].flags) &&
+                         gArea.roomResInfos[room].pixel_width >= 400 &&
+                         gArea.roomResInfos[room].pixel_height >= 240 && gRoomControls.height >= 240;
+    if (!fullView && (width <= 240 || width > 266 || gArea.roomResInfos[room].pixel_width <= 240 ||
+                      gArea.roomResInfos[room].pixel_height < 160 || gRoomControls.height < 160))
         return;
     sWsScroll.valid = 1;
+    sWsScroll.fullView = fullView;
+    sWsScroll.cols = fullView ? WS_SCROLL_COLS : 36;
+    sWsScroll.rows = fullView ? WS_SCROLL_ROWS : 24;
     sWsScroll.area = gRoomControls.area;
     sWsScroll.room = room;
     sWsScroll.direction = direction;
@@ -1047,9 +1068,9 @@ void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
     sWsScroll.tileY = (gRoomControls.scroll_y >> 3) - 1;
     for (int layer = 0; layer < 2; ++layer) {
         const u16* map = layer ? gMapDataTopSpecial : gMapDataBottomSpecial;
-        for (int y = 0; y < WS_SCROLL_ROWS; ++y) {
+        for (int y = 0; y < sWsScroll.rows; ++y) {
             const int my = sWsScroll.tileY + y - gRoomControls.origin_y / 8;
-            for (int x = 0; x < WS_SCROLL_COLS; ++x) {
+            for (int x = 0; x < sWsScroll.cols; ++x) {
                 const int mx = sWsScroll.tileX + x - gRoomControls.origin_x / 8;
                 sWsScroll.tiles[layer][y][x] = mx >= 0 && mx < gRoomControls.width / 8 && mx < 128 && my >= 0 &&
                                                        my < gRoomControls.height / 8 && my < 128
@@ -1061,10 +1082,22 @@ void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
 }
 
 static int Port_WidescreenScrollActive(void) {
+    /* A Full View scroll is live from its first tick: the room has been
+     * replaced by then (the load runs in the same GameMain_Update), and the
+     * 400x240 view samples the outgoing tiles from the snapshot at once. */
     return sWsScroll.valid && gMain.task == TASK_GAME && gRoomControls.area == sWsScroll.area &&
            gRoomControls.room == sWsScroll.room && gRoomControls.scroll_direction == sWsScroll.direction &&
-           (gRoomControls.scrollAction == 2 || gRoomControls.scrollAction == 0) && gRoomControls.scrollSubAction >= 1 && !(gRoomControls.scroll_flags & 1) &&
+           (gRoomControls.scrollAction == 2 || gRoomControls.scrollAction == 0) &&
+           (gRoomControls.scrollSubAction >= 1 || sWsScroll.fullView) && !(gRoomControls.scroll_flags & 1) &&
            Port_Config_WidescreenEnabled();
+}
+
+/* A room-border scroll that keeps Full View (see Port_Widescreen_BeginScroll),
+ * through its last tick: the scroll ends (scrollAction 0) one tick before
+ * Scroll0 clears reload_flags. */
+static int Port_WidescreenFullViewScrollActive(void) {
+    return sWsScroll.fullView && Port_WidescreenScrollActive() &&
+           (gRoomControls.scrollAction == 2 || gRoomControls.reload_flags != 0);
 }
 
 int Port_Widescreen_AdvanceScroll(void) {
@@ -1074,9 +1107,11 @@ int Port_Widescreen_AdvanceScroll(void) {
      * camera's endpoint changes to the actual viewport edge. */
     int endX = sWsScroll.startX, endY = sWsScroll.startY;
     int duration = 40;
+    const int viewW = sWsScroll.fullView ? 400 : Port_Widescreen_GameplayViewWidth();
+    const int viewH = sWsScroll.fullView ? 240 : 160;
     switch (sWsScroll.direction) {
         case 0:
-            endY = gRoomControls.origin_y + gRoomControls.height - 160;
+            endY = gRoomControls.origin_y + gRoomControls.height - viewH;
             break;
         case 1:
             endX = gRoomControls.origin_x;
@@ -1086,7 +1121,7 @@ int Port_Widescreen_AdvanceScroll(void) {
             endY = gRoomControls.origin_y;
             break;
         case 3:
-            endX = gRoomControls.origin_x + gRoomControls.width - Port_Widescreen_GameplayViewWidth();
+            endX = gRoomControls.origin_x + gRoomControls.width - viewW;
             duration = 60;
             break;
     }
@@ -1104,7 +1139,7 @@ static u16 Port_WidescreenScrollTile(const u16* map, int col, int row) {
         return map[row * 128 + col];
     const int x = col + gRoomControls.origin_x / 8 - sWsScroll.tileX;
     const int y = row + gRoomControls.origin_y / 8 - sWsScroll.tileY;
-    return x >= 0 && x < WS_SCROLL_COLS && y >= 0 && y < WS_SCROLL_ROWS
+    return x >= 0 && x < sWsScroll.cols && y >= 0 && y < sWsScroll.rows
                ? sWsScroll.tiles[map == gMapDataTopSpecial][y][x]
                : 0;
 }
@@ -1278,6 +1313,9 @@ static int Port_WidescreenRoomTransitionActive(void) {
      * popped in at once. */
     enum { CHANGEROOM_LOAD_TICKS = 2 };
     if (gMain.substate == GAMEMAIN_INITROOM) return 1;
+    /* A border scroll taken in Full View: the outgoing room's tiles come from
+     * the scroll snapshot, so the two map generations never mix. */
+    if (Port_WidescreenFullViewScrollActive()) return 0;
     if (gMain.substate == GAMEMAIN_CHANGEROOM && sWsChangeRoomTicks < CHANGEROOM_LOAD_TICKS) return 1;
     if (gMain.substate == GAMEMAIN_CHANGEAREA && gFadeControl.active == 0) return 1;
     return Port3DSFullViewPolicy_RoomTransitionActive(0, 0, gRoomControls.reload_flags, gRoomControls.scrollAction);
@@ -1963,10 +2001,13 @@ void Port_Widescreen_UpdateShadows(void) {
     if (gFadeControl.active != 0) sWsFadeRecent = 90;
     else if (sWsFadeRecent > 0) --sWsFadeRecent;
     if (sWsGameplayRoomKey != roomKey) {
+        /* A Full View border scroll carries the view into the next room: it
+         * is the same 400x240 camera moving on, not a new room to latch. */
+        const int carry = Port_WidescreenFullViewScrollActive() && sWsGameplayMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
         sWsRoomLoadTicks = sWsFadeRecent > 0 ? 16 : 0;
         sWsRoomLoadGraceTicks = sWsFadeRecent > 0 ? 16 + 24 : 0;
         sWsGameplayRoomKey = roomKey;
-        sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
+        sWsGameplayMode = carry ? PORT_3DS_FULL_VIEW_OUTDOOR_1X : PORT_3DS_FULL_VIEW_FALLBACK;
         sWsProducerPendingRoomKey = 0xffffffffu;
         sWsProducerPendingMode = PORT_3DS_FULL_VIEW_FALLBACK;
     }
