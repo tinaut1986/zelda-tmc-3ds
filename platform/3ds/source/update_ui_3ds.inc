@@ -146,7 +146,14 @@ static void PaintUpdatePanel(const SSurf* s, TargetList* tl) {
     CColumn(s->w, 2, 0, 1, &x, &cw);
     CCell(s, tl, x, y, cw, CC_CELL_H, "CHANNEL", st.prerelease ? "+ BETAS" : "STABLE", CC_TEXT, SS_ACT_UPDATE_CHANNEL, 0);
     CColumn(s->w, 2, 1, 1, &x, &cw);
-    UpdateUpper(text, sizeof(text), st.version[0] ? st.version : Port_Text_Tr("NONE"));
+    /* The + BETAS channel only looks at pre-releases (Update_ParseRelease): say so. */
+    if (st.version[0]) {
+        char release[64];
+        snprintf(release, sizeof(release), "%s%s", st.version, st.prerelease ? " BETA" : "");
+        UpdateUpper(text, sizeof(text), release);
+    } else {
+        UpdateUpper(text, sizeof(text), Port_Text_Tr("NONE"));
+    }
     CCell(s, tl, x, y, cw, CC_CELL_H, "RELEASE", text, notes ? CC_ACCENT : CC_TEXT, SS_ACT_UPDATE_RELEASE, 0);
     y += CC_CELL_H + CC_GAP;
 
@@ -161,6 +168,14 @@ static void PaintUpdatePanel(const SSurf* s, TargetList* tl) {
     const int32_t statusH = 44;
     CBox(s, CC_MARGIN, y, w, statusH, CC_CELL, CC_TAB);
     CText(s, CC_MARGIN + 4, y + 4, CC_DIM, "STATUS");
+    /* What is installed, with its channel: "0.1.2 BETA", "0.1.2-DEV.54+758FD59". */
+    {
+        char installed[64];
+        snprintf(installed, sizeof(installed), "%s V", Port_Text_Tr("INSTALLED"));
+        UpdateUpper(text, sizeof(text), TMC_PORT_VERSION_LABEL);
+        strncat(installed, text, sizeof(installed) - strlen(installed) - 1);
+        CText(s, CC_MARGIN + w - 4 - CTextWidth(installed), y + 4, CC_DIM, installed);
+    }
     for (unsigned i = 0; i < n; ++i) CText(s, CC_MARGIN + 4, y + 14 + (int32_t)i * 10, color, lines[i]);
     y += statusH + CC_GAP;
 

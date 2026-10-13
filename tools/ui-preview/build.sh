@@ -33,11 +33,12 @@ SHOTS=(
   "quest:t2"
   "quest_kinstones:t2;35,50"
   "quest_techniques:t2;155,50"
-  "options:t3"
-  "options_frames:t3;200,40;200,40"
-  "updates:t3;240,110"
+  "states:t3"
+  "options:t4"
+  "options_frames:t4;200,40;200,40"
+  "updates:t4;240,110"
 )
-[ "${TMC3DS_DEBUG_TOOLS:-1}" = 1 ] && SHOTS+=("debug:t4" "debug_recording:t4;300,107" "debug_switches:t4;280,63;100,64;100,120")
+[ "${TMC3DS_DEBUG_TOOLS:-1}" = 1 ] && SHOTS+=("debug:t5" "debug_recording:t5;300,107" "debug_switches:t5;280,63;100,64;100,120")
 rm -f "$OUT"/*.ppm "$OUT"/*.png
 "$OUT/preview" "$OUT" "${SHOTS[@]}" > /dev/null
 python3 "$ROOT/tools/ui-preview/ppm2png.py" "$OUT"/*.ppm

@@ -5,7 +5,9 @@
 #include <string.h>
 #include <ctype.h>
 
-typedef struct Version { unsigned part[3], experiment; bool pre; } Version;
+/* rank orders the pre-releases of one number: a dev build (1) comes before its beta or an
+ * upstream -En (2); the plain X.Y.Z comes after all of them. */
+typedef struct Version { unsigned part[3], experiment, rank; bool pre; } Version;
 static bool parse_version(const char *s, Version *v) {
   memset(v, 0, sizeof(*v));
   if (!s) return false;
@@ -26,15 +28,17 @@ static bool parse_version(const char *s, Version *v) {
     s++;
     // Our own builds: "-beta" is a published pre-release (the CI bakes the
     // channel into the binary), "-dev.N+hash" a local or CI build off a
-    // release branch. Both sort below the plain X.Y.Z, like an upstream -En.
-    if (!strcmp(s, "beta")) { v->pre = true; return true; }
+    // release branch. Both sort below the plain X.Y.Z, like an upstream -En,
+    // and a dev build below the beta: the release branch is renamed to the next
+    // patch after every tag, so a dev build of X.Y.Z predates its tag.
+    if (!strcmp(s, "beta")) { v->pre = true; v->rank = 2; return true; }
     if (!strncmp(s, "dev", 3)) {
       for (s += 3; *s; s++)
         if (!isalnum((unsigned char)*s) && *s != '.' && *s != '+') return false;
-      v->pre = true; return true;
+      v->pre = true; v->rank = 1; return true;
     }
     if (*s++ != 'E' || !isdigit((unsigned char)*s)) return false;
-    v->pre = true;
+    v->pre = true; v->rank = 2;
     while (isdigit((unsigned char)*s)) {
       v->experiment = v->experiment * 10 + (*s++ - '0');
       if (v->experiment > 65535) return false;
@@ -48,6 +52,7 @@ bool Update_IsNewer(const char *candidate, const char *installed) {
   if (!parse_version(candidate, &a) || !parse_version(installed, &b)) return false;
   for (int i = 0; i < 3; i++) if (a.part[i] != b.part[i]) return a.part[i] > b.part[i];
   if (a.pre != b.pre) return !a.pre;
+  if (a.rank != b.rank) return a.rank > b.rank;
   return a.pre && a.experiment > b.experiment;
 }
 bool Update_AllowedDownloadUrl(const char *url) {
