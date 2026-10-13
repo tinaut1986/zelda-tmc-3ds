@@ -211,7 +211,8 @@ and the worst frames with their parts.
 
 ## Frame recorder (SITE REC)
 
-For a glitch that lasts a few frames at a room change. `tmc-link.py rec` arms it: it keeps the
+For a glitch that lasts a few frames at a room change (on the Old 3DS the game drops to ~20 fps
+while it is armed: tell the owner if they are playing). `tmc-link.py rec` arms it: it keeps the
 last 24 frames of the top screen as shown (200x120), and when the room changes (or the HUD is hidden) records 36
 more and writes `debug/frames.bin`. A change of the HUD's hide flags (a cutscene taking the
 buttons away) starts the recording as well. `tmc-link.py recfetch [DIR]` waits for the file, deletes
