@@ -556,17 +556,12 @@ static void Compact_Toast(const char* fmt, ...) {
 
 static uint8_t sToastOnScreen;
 
-#if TMC3DS_DEBUG_TOOLS
 #include "ftp_server_3ds.h"
-#endif
 
-/* A notice that holds the toast while it lasts: a build arriving over FTP. */
+/* A notice that holds the toast while it lasts: a build arriving over FTP (the DEBUG tab's
+ * server, or the install-only one of a production build). */
 static const char* Compact_StandingNotice(void) {
-#if TMC3DS_DEBUG_TOOLS
     return FtpServer_Notice();
-#else
-    return NULL;
-#endif
 }
 
 static int Compact_ToastVisible(void) {
@@ -615,6 +610,36 @@ static const char* Compact_BusyText(void) {
 /* Paint while it shows, and once more to take it away. */
 static int Compact_BusyNeedsPaint(void) {
     return Compact_BusyText() != NULL || sBusyOnScreen;
+}
+
+/* ---- install-only FTP (production builds with dev-ftp.txt, ftp_server_3ds.h) ----
+ * A bar over the bottom of every tab: what is serving, its address, and CANCEL, which stops it
+ * until the game is opened again. Taps under the bar go nowhere but CANCEL. */
+
+enum { DEVFTP_BAR_H = 36 };
+static uint8_t sDevFtpOnScreen;
+static char sDevFtpAddress[48];
+
+static int Compact_DevFtpNeedsPaint(void) {
+    if (!FtpServer_InstallOnly()) return sDevFtpOnScreen;
+    char address[48];
+    FtpServer_Address(address, sizeof(address));
+    return !sDevFtpOnScreen || strcmp(address, sDevFtpAddress) != 0;
+}
+
+static void Compact_PaintDevFtp(const SSurf* s, TargetList* tl) {
+    sDevFtpOnScreen = (uint8_t)FtpServer_InstallOnly();
+    if (!sDevFtpOnScreen) return;
+    FtpServer_Address(sDevFtpAddress, sizeof(sDevFtpAddress));
+    const int32_t y = CcContentBottom(s->h) - DEVFTP_BAR_H;
+    int kept = 0;
+    for (int i = 0; i < tl->n; ++i)
+        if (tl->t[i].y1 <= y) tl->t[kept++] = tl->t[i];
+    tl->n = kept;
+    CWindow(s, 2, y, s->w - 4, DEVFTP_BAR_H - 2, CC_BAR, CC_BAR_DIM);
+    CText(s, 12, y + 7, CC_WARN, "FTP - INSTALL ONLY");
+    CText(s, 12, y + 19, CC_BAR_TEXT, sDevFtpAddress);
+    CButton(s, tl, s->w - 12 - 72, y + 7, 72, 20, "CANCEL", CC_TEXT, SS_ACT_DEVFTP_CANCEL, 0);
 }
 
 /* Last in the paint: it takes every tap (the target list is emptied) and draws over the panel. */

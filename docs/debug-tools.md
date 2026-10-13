@@ -8,7 +8,8 @@ the plan for the rest is PLAN phase 1.
 
 Everything below exists only in a debug-tools build (the SD log and perf recorder
 code is compiled into every build, but nothing reaches it without the DEBUG tab;
-there is no button chord any more: upstream's L+R+A is gone):
+there is no button chord any more: upstream's L+R+A is gone). The one exception is the
+install-only FTP server of a production build (`dev-ftp.txt`, "FTP server" below):
 
 ```sh
 ./build_3ds.sh                                 # asks; debug is the default
@@ -112,6 +113,22 @@ over the running game and relaunches into the new build (the FTP server comes ba
 offers it as "Install into the running game". Any unsaved progress is lost. While a
 `.cia` is being received and while it installs, the bottom screen says so
 (`RECEIVING NEW BUILD...`, then `INSTALLING NEW BUILD - GAME WILL RESTART`) on any tab.
+
+**Install-only server in a production build.** A production build has no DEBUG tab, so a new
+build could only be installed with FBI. If `dev-ftp.txt` (any content, empty is fine) is in
+`/3ds/Minish Cap 3DS/`, a production build starts a reduced server once Wi-Fi is up (it retries
+every ~2 s): still anonymous, but only `/3ds/Minish Cap 3DS/update/` can be listed, read or
+written (any other path answers `550 Not allowed.`; its parent folders can be entered to walk
+down to it), and the remote control (every `SITE` but INSTALL) answers `504`. So
+`./build_3ds.sh --install IP` works on it as on a debug build, with either build mode. The bottom
+screen shows a bar over every tab, `FTP - INSTALL ONLY` with the address and CANCEL; taps under
+the bar reach nothing else. CANCEL stops the server for the rest of the session (leave the game
+and open it again to get it back). A debug build ignores the file (it has the DEBUG tab's server).
+Create the file once, while a debug build has its FTP on:
+`curl -T /dev/null ftp://<ip>:5000/3ds/Minish%20Cap%203DS/dev-ftp.txt`. Delete it to turn it
+off. Anyone on the same network can send a CIA while the server runs, and the title-ID check
+only stops a CIA of *another* app (`cia/tmc3ds.rsf` is public): keep the file off on networks
+you do not trust. Players never see it and it is not in the release notes.
 
 Its thread runs on core 1 below the game's priority and sleeps on the network,
 so it costs nothing while idle; a transfer competes with the game for the SD

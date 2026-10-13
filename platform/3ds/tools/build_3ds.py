@@ -436,7 +436,8 @@ def main():
   ./build_3ds.sh --ftp 192.168.1.55       # build and upload
   ./build_3ds.sh --ftp                    # upload to the last IP used
   ./build_3ds.sh --ftp 192.168.1.55:5000 --clean
-  ./build_3ds.sh --install 192.168.1.55   # install into the running game (DEBUG -> FTP SERVER on)
+  ./build_3ds.sh --install 192.168.1.55   # install into the running game (DEBUG -> FTP SERVER on,
+                                          # or a production build with dev-ftp.txt); any --mode
   ./build_3ds.sh --mode prod --no-ftp     # what a release build is (no debug tools)
 """)
     parser.add_argument("-m", "--mode", choices=["debug", "test", "prod", "production", "release"],
@@ -446,8 +447,9 @@ def main():
     parser.add_argument("--ip", metavar="IP", help="Console IP for the FTP upload.")
     parser.add_argument("-p", "--port", type=int, default=5000, help="FTP port (default 5000).")
     parser.add_argument("--install", nargs="?", const="true", default=None, metavar="IP[:PORT]",
-                        help="Upload to the game's own FTP server (DEBUG -> FTP SERVER) and install: "
-                             "the game updates itself and relaunches. Debug builds only.")
+                        help="Upload to the game's own FTP server (DEBUG -> FTP SERVER, or the install-only "
+                             "server of a production build with dev-ftp.txt) and install: the game updates "
+                             "itself and relaunches. Either mode can be sent.")
     parser.add_argument("--no-ftp", action="store_true", help="Build only, no menu.")
     parser.add_argument("-c", "--clean", action="store_true", help="Delete build-3ds/game first.")
     parser.add_argument("-j", "--jobs", type=int, default=None, help="Parallel build jobs.")
@@ -470,7 +472,7 @@ def main():
         debug = mode_idx == 0
         ftp_idx = interactive_select("Send the CIA to the 3DS over FTP?", [
             ("Install into the running game",
-             "The game has DEBUG -> FTP SERVER on: it installs the build and relaunches. No FBI."),
+             "The game has DEBUG -> FTP SERVER on (or dev-ftp.txt): it installs the build and relaunches. No FBI."),
             ("Yes, find the 3DS on the network",
              "Scans the local network for FTP servers (ftpd / FBI) and lets you pick one."),
             ("Yes, enter the 3DS IP by hand",
@@ -483,10 +485,6 @@ def main():
             ftp_host, ftp_port = detect_ftp_host_interactive(args.port)
         elif ftp_idx == 2:
             ftp_host, ftp_port = prompt_ftp_host_manual(load_last_ip(), args.port)
-        if install and not debug:
-            print(f"{YELLOW}Installing into the running game needs a debug build; switching to debug.{RESET}")
-            debug = True
-
         clean_idx = interactive_select("Clean build?", [
             ("No (incremental)", "Faster; switching the mode needs no clean either."),
             ("Yes (clean build first)", "Deletes build-3ds/game: after toolchain or CMake changes."),
@@ -496,9 +494,6 @@ def main():
                          install=install and bool(ftp_host))
 
     install = args.install is not None
-    if install and not debug:
-        print(f"{RED}--install needs a debug build (the FTP server is in the DEBUG tab).{RESET}")
-        return 1
     send_ftp = args.ftp is not None or args.ip is not None or install
     ftp_host, ftp_port = parse_ftp_argument(args.install if install else args.ftp, explicit_ip=args.ip,
                                             default_port=args.port)

@@ -21,8 +21,9 @@
 #include "debug_log_3ds.h"
 #include "debug_perf_3ds.h"
 #include "debug_switches_3ds.h"
-#include "ftp_server_3ds.h"
 #endif
+#include "app_paths_3ds.h"
+#include "ftp_server_3ds.h"
 #include "platform_gpu_3ds.h"
 #include "top_view_3ds.h"
 #include "port_ppu_gpu_3ds.h"
@@ -47,6 +48,7 @@
 #include "vram.h"
 
 #include <stdbool.h>
+#include <unistd.h>
 #include <stdint.h>
 #include <errno.h>
 #include <stdio.h>
@@ -1448,6 +1450,19 @@ static void PresentFrame(void) {
     if (Port_Config_DebugFtpOn() && !FtpServer_Running() && ++ftpRetry >= 120) {
         ftpRetry = 0;
         FtpServer_Start();
+    }
+#else
+    {
+        /* dev-ftp.txt in the data folder: the install-only server, so a new build can be sent
+         * over FTP to a production install (docs/debug-tools.md). Tried every ~2 s until Wi-Fi
+         * is up; never again after its CANCEL. */
+        static int devFtp = -1;
+        static unsigned ftpRetry = 120;
+        if (devFtp < 0) devFtp = access(TMC3DS_APP_DIR "/dev-ftp.txt", F_OK) == 0;
+        if (devFtp && !FtpServer_Running() && ++ftpRetry >= 120) {
+            ftpRetry = 0;
+            FtpServer_StartInstallOnly();
+        }
     }
 #endif
 

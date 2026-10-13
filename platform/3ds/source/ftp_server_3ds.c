@@ -72,6 +72,11 @@ static volatile bool sConnected;
 static char sStatus[48] = "STOPPED";
 /* FtpServer_Notice: what the player is told while a new build comes in. */
 static const char* volatile sNotice;
+/* Install-only mode (production builds, started by dev-ftp.txt): only the update folder is
+ * reachable and none of the remote control. */
+static bool sRestricted;
+static volatile bool sCancelled;
+#define FTP_RESTRICTED_ROOT "/3ds/Minish Cap 3DS/update"
 static unsigned sNextPasv;
 static char* sIo;
 
@@ -187,6 +192,14 @@ static void ResolvePath(const Session* s, const char* arg, char* out, unsigned c
     if (n == 0) snprintf(out, cap, "/");
 }
 
+/* May the client touch this path? Always, except in install-only mode, where only the update
+ * folder is open (FAT is not case sensitive). */
+static bool Allowed(const char* vpath) {
+    if (!sRestricted) return true;
+    const size_t n = sizeof(FTP_RESTRICTED_ROOT) - 1;
+    return strncasecmp(vpath, FTP_RESTRICTED_ROOT, n) == 0 && (vpath[n] == 0 || vpath[n] == '/');
+}
+
 static void RealPath(const char* virtualPath, char* out, unsigned cap) {
     snprintf(out, cap, "sdmc:%s", virtualPath);
 }
@@ -258,6 +271,11 @@ static void CmdList(Session* s, const char* arg, int kind /* 0 LIST, 1 NLST, 2 M
     }
     char vpath[FTP_PATH_MAX], rpath[FTP_PATH_MAX + 8];
     ResolvePath(s, arg, vpath, sizeof(vpath));
+    if (!Allowed(vpath)) {
+        ClosePasv(s);
+        Reply(s, "550 Not allowed.");
+        return;
+    }
     RealPath(vpath, rpath, sizeof(rpath));
     DIR* dir = opendir(rpath);
     if (!dir) {
@@ -297,6 +315,11 @@ static void CmdList(Session* s, const char* arg, int kind /* 0 LIST, 1 NLST, 2 M
 static void CmdRetr(Session* s, const char* arg) {
     char vpath[FTP_PATH_MAX], rpath[FTP_PATH_MAX + 8];
     ResolvePath(s, arg, vpath, sizeof(vpath));
+    if (!Allowed(vpath)) {
+        ClosePasv(s);
+        Reply(s, "550 Not allowed.");
+        return;
+    }
     RealPath(vpath, rpath, sizeof(rpath));
     FILE* f = fopen(rpath, "rb");
     if (!f) {
@@ -324,6 +347,11 @@ static void CmdRetr(Session* s, const char* arg) {
 static void CmdStor(Session* s, const char* arg, bool append) {
     char vpath[FTP_PATH_MAX], rpath[FTP_PATH_MAX + 8];
     ResolvePath(s, arg, vpath, sizeof(vpath));
+    if (!Allowed(vpath)) {
+        ClosePasv(s);
+        Reply(s, "550 Not allowed.");
+        return;
+    }
     RealPath(vpath, rpath, sizeof(rpath));
     FILE* f = fopen(rpath, append ? "ab" : "wb");
     if (!f) {
@@ -371,7 +399,8 @@ static void HandleSession(int ctrl) {
     /* Log in at the SD card's root, like any FTP server: clients take URL
      * paths relative to it. The game's files are in /3ds/Minish Cap 3DS/. */
     snprintf(s->cwd, sizeof(s->cwd), "/");
-    Reply(s, "220 Minish Cap 3DS debug FTP. SD card root; the game's files are in /3ds/Minish Cap 3DS/debug.");
+    if (sRestricted) Reply(s, "220 Minish Cap 3DS FTP (install only: /3ds/Minish Cap 3DS/update).");
+    else Reply(s, "220 Minish Cap 3DS debug FTP. SD card root; the game's files are in /3ds/Minish Cap 3DS/debug.");
     char line[FTP_LINE_MAX];
     for (;;) {
         SetFtpStage("waiting for a command", true);
@@ -399,7 +428,10 @@ static void HandleSession(int ctrl) {
         else if (!strcmp(line, "CWD") || !strcmp(line, "CDUP")) {
             ResolvePath(s, !strcmp(line, "CDUP") ? ".." : arg, vpath, sizeof(vpath));
             RealPath(vpath, rpath, sizeof(rpath));
-            DIR* d = opendir(rpath);
+            /* Install-only: the update folder, or one of its parents to walk down through. */
+            DIR* d = !sRestricted || Allowed(vpath) || strncasecmp(FTP_RESTRICTED_ROOT, vpath, strlen(vpath)) == 0
+                             ? opendir(rpath)
+                             : NULL;
             if (d) {
                 closedir(d);
                 snprintf(s->cwd, sizeof(s->cwd), "%s", vpath);
@@ -427,14 +459,17 @@ static void HandleSession(int ctrl) {
         else if (!strcmp(line, "SIZE") || !strcmp(line, "MDTM")) {
             ResolvePath(s, arg, vpath, sizeof(vpath));
             RealPath(vpath, rpath, sizeof(rpath));
-            if (stat(rpath, &st) != 0 || S_ISDIR(st.st_mode)) Reply(s, "550 No such file.");
+            if (!Allowed(vpath) || stat(rpath, &st) != 0 || S_ISDIR(st.st_mode)) Reply(s, "550 No such file.");
             else if (line[0] == 'S') Reply(s, "213 %llu", (unsigned long long)st.st_size);
             else Reply(s, "213 20260101000000");
         } else if (!strcmp(line, "DELE") || !strcmp(line, "RMD") || !strcmp(line, "XRMD") || !strcmp(line, "MKD") ||
                    !strcmp(line, "XMKD")) {
             ResolvePath(s, arg, vpath, sizeof(vpath));
             RealPath(vpath, rpath, sizeof(rpath));
-            int r = line[0] == 'D' ? remove(rpath) : (strstr(line, "RMD") ? rmdir(rpath) : mkdir(rpath, 0777));
+            int r = !Allowed(vpath)   ? -1
+                    : line[0] == 'D'  ? remove(rpath)
+                    : strstr(line, "RMD") ? rmdir(rpath)
+                                          : mkdir(rpath, 0777);
             if (r != 0) Reply(s, "550 Failed.");
             else if (strstr(line, "MKD")) Reply(s, "257 \"%s\" created.", vpath);
             else Reply(s, "250 OK.");
@@ -446,7 +481,8 @@ static void HandleSession(int ctrl) {
             RealPath(s->rnfr, from, sizeof(from));
             ResolvePath(s, arg, vpath, sizeof(vpath));
             RealPath(vpath, rpath, sizeof(rpath));
-            Reply(s, s->rnfr[0] && rename(from, rpath) == 0 ? "250 Renamed." : "550 Rename failed.");
+            Reply(s, s->rnfr[0] && Allowed(s->rnfr) && Allowed(vpath) && rename(from, rpath) == 0 ? "250 Renamed."
+                                                                                                   : "550 Rename failed.");
             s->rnfr[0] = 0;
         } else if (!strcmp(line, "SITE")) {
             /* SITE INSTALL <path>: install a CIA of this game from the SD card
@@ -465,6 +501,10 @@ static void HandleSession(int ctrl) {
                       (unsigned)Platform3DS_SecondsSinceScreenDump(), (unsigned)SCREEN_DUMP_INSTALL_GRACE_S);
             } else if (!strcmp(sub, "INSTALL") && path && *path) {
                 ResolvePath(s, path, vpath, sizeof(vpath));
+                if (!Allowed(vpath)) {
+                    Reply(s, "550 Not allowed.");
+                    continue;
+                }
                 char error[96];
                 sNotice = "INSTALLING NEW BUILD - GAME WILL RESTART";
                 if (CiaInstall_File(vpath, error, sizeof(error))) {
@@ -476,6 +516,8 @@ static void HandleSession(int ctrl) {
                 }
             } else if (!strcmp(sub, "INSTALL")) {
                 Reply(s, "501 SITE INSTALL <path to a .cia of this game>");
+            } else if (sRestricted) {
+                Reply(s, "504 Unknown SITE command.");
             } else {
                 char reply[FTP_LINE_MAX - 8];
                 if (DebugLink_Command(sub, path, reply, sizeof(reply))) Reply(s, "%s", reply);
@@ -514,8 +556,9 @@ static void FtpMain(void* argument) {
     }
 }
 
-bool FtpServer_Start(void) {
+static bool StartServer(bool restricted) {
     if (sRun) return true;
+    sRestricted = restricted;
     if (sThreadStuck) {
         snprintf(sStatus, sizeof(sStatus), "STUCK, RESTART THE GAME");
         return false;
@@ -572,6 +615,20 @@ bool FtpServer_Start(void) {
 
 const char* FtpServer_Notice(void) {
     return sNotice;
+}
+
+bool FtpServer_Start(void) { return StartServer(false); }
+
+bool FtpServer_StartInstallOnly(void) {
+    if (sCancelled) return false;
+    return StartServer(true);
+}
+
+bool FtpServer_InstallOnly(void) { return sRun && sRestricted; }
+
+void FtpServer_Cancel(void) {
+    sCancelled = true;
+    FtpServer_Stop();
 }
 
 void FtpServer_Stop(void) {

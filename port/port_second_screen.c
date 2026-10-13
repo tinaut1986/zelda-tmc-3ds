@@ -172,6 +172,7 @@ enum {
     SS_ACT_TABS,  /* OPTIONS -> TABS: tab bar on top or below */
     SS_ACT_DEBUG, /* DEBUG tab command, arg = DBG_CMD_* (bottom_compact_3ds.inc) */
     SS_ACT_STATES, /* STATES tab command, arg = STATES_CMD_* (bottom_compact_3ds.inc) */
+    SS_ACT_DEVFTP_CANCEL, /* the install-only FTP bar's CANCEL (bottom_compact_3ds.inc) */
 #endif
 };
 
@@ -3210,6 +3211,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     SS_MARK(SS_PHASE_SIDEBAR);
     Compact_PaintTabBar(&s, &tl, tab, settingsPage);
     Compact_PaintToast(&s);
+    Compact_PaintDevFtp(&s, &tl);
     SS_MARK(SS_PHASE_TABBAR);
 #else
     if (tab != SS_TAB_SETTINGS) {
@@ -3330,6 +3332,10 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
 #endif
         case SS_ACT_STATES:
             Compact_StatesCommand(hit.arg);
+            break;
+        case SS_ACT_DEVFTP_CANCEL:
+            FtpServer_Cancel();
+            Compact_Toast("FTP STOPPED");
             break;
 #endif
         case SS_ACT_TAB:
