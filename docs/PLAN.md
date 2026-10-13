@@ -56,12 +56,12 @@ boxes below. History: `git log` and the decisions log.
 | `chore/tmc-link-elf` (cut from `release/v0.1.2`) | `tmc-link.py --elf`: symbols from the ELF of the build the console runs (a worktree's build has other addresses) | tried against the 2DS (peek by symbol with the combined build's ELF) | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `fix/fullview-scroll-align` (cut from `release/v0.1.2`) | issue #11: a Full View border scroll first lines the camera up across the scroll inside the outgoing room, so the 400x240 window never shows black outside a narrower or offset incoming room | on the 2DS by Claude, Hyrule Field: down 03/05 -> 03/04 (lines up left, then scrolls; before: a black strip), up 03/04 -> 03/05 (no line-up needed), right 03/06 -> 03/05; every recorded frame 400x240 with the HUD; a sideways scroll that needs a vertical line-up not forced | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `fix/state-script-context` (cut from `release/v0.1.2`) | save states: an entity's script context (+0x84) is relocated when saved and repaired from `gEntityScriptCtxTable` on load; a state from another build crashed in a house door's script (Lon Lon Ranch, 03/05, walking down) | on the 2DS by Claude and the owner: the owner's state 4 (03/05), which crashed, plays on | _(merged into `release/v0.1.2` 2026-10-13)_ |
-| `fix/fullview-scroll-hud-jump` (cut from `release/v0.1.2`) | Full View border scroll: on the tick the scroll starts (the room switches mid-tick) A/B/R/X/Y jumped for one frame to the middle of the top edge; the gameplay mode now carries the 400 view before the next VBlank commits it | on the 2DS by Claude (owner's state 03/04 going up, FRAMES = no skips): 1 of 3 recordings showed the jump before, 0 of 3 after | _(merged into `release/v0.1.2` 2026-10-13 on the owner's word)_ |
-| `fix/hud-diamond-hide` (cut from `release/v0.1.2`) | the A/B/X/Y diamond sits lower than the game's A/B row, so the buttons' slide off the top for a message left B, Y and A's bottom on screen: every button now goes as high as A/B did | on the 2DS by Claude in Full View and VISTA = ORIGINAL (Minish Woods "¡Socorro!") | _(merged into `release/v0.1.2` 2026-10-13)_ |
-| `fix/fullview-iris` (cut from `release/v0.1.2`) | the iris fade (circle wipe) drawn across the whole wide view instead of dropping to 266x160 (`docs/gpu-fade.md`, "Iris fades in a wide view") | on the 2DS by Claude and the owner (Link's iris); Ezlo's (centre near the view's edge) checked by Claude after the radius change | _(merged into `release/v0.1.2` 2026-10-13)_ |
-| `fix/msg-shift-drawn-box` (cut from `release/v0.1.2`) | Wide/Full View: while a text box opened or closed the hearts jumped 80 px right; the centred band is now the box as drawn (`gCurrentWindow`) | on the 2DS by Claude (heart piece, 00/00: opening and closing) | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/fullview-scroll-hud-jump` (cut from `release/v0.1.2`) | issue #11 (comment): Full View border scroll: on the tick the scroll starts (the room switches mid-tick) A/B/R/X/Y jumped for one frame to the middle of the top edge; the gameplay mode now carries the 400 view before the next VBlank commits it | on the 2DS by Claude (owner's state 03/04 going up, FRAMES = no skips): 1 of 3 recordings showed the jump before, 0 of 3 after | _(merged into `release/v0.1.2` 2026-10-13 on the owner's word)_ |
+| `fix/hud-diamond-hide` (cut from `release/v0.1.2`) | issue #15: the A/B/X/Y diamond sits lower than the game's A/B row, so the buttons' slide off the top for a message left B, Y and A's bottom on screen: every button now goes as high as A/B did | on the 2DS by Claude in Full View and VISTA = ORIGINAL (Minish Woods "¡Socorro!") | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/fullview-iris` (cut from `release/v0.1.2`) | issue #16: the iris fade (circle wipe) drawn across the whole wide view instead of dropping to 266x160 (`docs/gpu-fade.md`, "Iris fades in a wide view") | on the 2DS by Claude and the owner (Link's iris); Ezlo's (centre near the view's edge) checked by Claude after the radius change | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/msg-shift-drawn-box` (cut from `release/v0.1.2`) | issue #17: Wide/Full View: while a text box opened or closed the hearts jumped 80 px right; the centred band is now the box as drawn (`gCurrentWindow`) | on the 2DS by Claude (heart piece, 00/00: opening and closing) | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `feat/dev-ftp-install` (cut from `release/v0.1.3`) | production builds run an install-only FTP server when `dev-ftp.txt` is in the data folder (only `update/`, no remote control, CANCEL bar), anonymous; `--install` sends either mode (ported from `../mzm` without its login) | on the 2DS by Claude: the path limits and SITE refusals, debug -> production -> debug installs through it; the bar and CANCEL only in `tools/ui-preview`. `dev-ftp.txt` is left on the 2DS | _(merged into `release/v0.1.3` 2026-10-13)_ |
-| `fix/updater-beta-labels` (cut from `release/v0.1.3`) | updater: `X.Y.Z-dev` < `X.Y.Z BETA` < `X.Y.Z` (a dev build was told it was up to date with its beta out); OPTIONS -> UPDATES shows BETA on the release found and the installed build's label | host check of `Update_IsNewer` (no host jansson for the full test); screen in `tools/ui-preview` (`UPDATE_BETA=1`), whose tab indices are fixed; the same BETA label merged into `../mzm` and `../sm-3ds` | _(merged into `release/v0.1.3` 2026-10-13)_ |
+| `fix/updater-beta-labels` (cut from `release/v0.1.3`) | issue #18: updater: `X.Y.Z-dev` < `X.Y.Z BETA` < `X.Y.Z` (a dev build was told it was up to date with its beta out); OPTIONS -> UPDATES shows BETA on the release found and the installed build's label | host check of `Update_IsNewer` (no host jansson for the full test); screen in `tools/ui-preview` (`UPDATE_BETA=1`), whose tab indices are fixed; the same BETA label merged into `../mzm` and `../sm-3ds` | _(merged into `release/v0.1.3` 2026-10-13)_ |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
@@ -69,29 +69,35 @@ Link's house and the Minish Woods are untested in builds other than their writer
 build, as the house door did: issue #14). A state saved inside the pause menu breaks on closing
 it (issue #13).
 
-**Start here (2026-10-13, end of the session):** everything is merged into `release/v0.1.2` and
-pushed: light rays, TABS (P2.7), the X/Y diamond (P2.6), the Chuchu guard, `tmc-link --elf`, the
-Full View scroll line-up (issue #11) and entity script contexts in save states (issue #14). No
-branch or worktree is open. Next, in this order:
+**Start here (2026-10-13, after the v0.1.2 beta):** `v0.1.2` is published as a beta and every
+branch of the day is merged into `release/v0.1.3` and pushed (no worktree, nothing uncommitted).
+Waiting for the owner's check on the console: Ezlo's iris after the radius change (issue #16), the
+hearts with a text box (#17), the scroll's button jump (#11, comment of 2026-10-13), the
+install-only FTP bar and its CANCEL on a production build, and the updater's order and labels (#18,
+needs a dev build of a number whose beta is out). Next, in this order:
 1. Issue #13: closing the pause menu after loading a state saved in it writes `0x160` (the OBJ
    tile of gfx slot 2, Link's) into a Chuchu's child and garbles Link: find who writes it.
-2. Issue #4 (reopened 2026-10-13: the loader ran out of memory again after an install): the relaunch after `SITE INSTALL` sometimes fails.
+2. Issue #4 (reopened 2026-10-13, Luma dump 7: the loader ran out of memory again after an
+   install): the relaunch after `SITE INSTALL` sometimes fails.
 3. Issue #11: a sideways border scroll that needs a vertical line-up is still to be seen (same
    code as the vertical case); then close it.
 To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
 **On the owner's consoles now (2026-10-13):**
-- Old 3DS/2DS, **`192.168.1.132`** (`.3ds_ftp_ip` holds it now): a debug build with the code of
-  `release/v0.1.2` at `a9ee331` (2026-10-13; built from the working tree, so it calls itself
-  `0.1.2-dev.54+758fd59`), Full View (`widescreen=1`,
-  `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT. The owner plays on
-  it (Minish Woods, sword and shield only) and keeps save states at spots that reproduce bugs:
-  never overwrite or delete one (protect their place with a *new* state: `savestate`, then
-  `loadstate 1` and `delstate 1` after the install). Its three newest states (00/00, saved by
-  the build `0.1.2-dev.31+22638c2`) include one Claude saved to protect the owner's place;
-  which one is not known, so none was deleted: the owner decides from the thumbnails.
+- Old 3DS/2DS, **`192.168.1.132`** (`.3ds_ftp_ip` holds it): a debug build of `release/v0.1.3`
+  with `feat/dev-ftp-install` (`076b951`) but not yet `fix/updater-beta-labels`; it calls itself
+  `0.1.2` (built while the branch tip was the tag). Full View (`widescreen=1`,
+  `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT, FRAMES = AUTO.
+  **`/3ds/Minish Cap 3DS/dev-ftp.txt` is there** (Claude left it, to try the install-only server
+  with a production build; a debug build ignores it). The owner plays on it (Minish Woods, sword
+  and shield only) and keeps save states at spots that reproduce bugs: never overwrite or delete
+  one (protect their place with a *new* state: `savestate`, then `loadstate 1` and `delstate 1`
+  after the install). Newest first: 1 = 00/00 in front of a piece of heart (#17), 2 = 03/04 below
+  the scroll up (#11), 4 = 00/00 in the "¡Socorro!" dialogue before Ezlo's iris (#15, #16).
+  Loading a state switches the bottom screen to MAP: tap another tab after it, not before.
 - New 3DS, `192.168.1.133` (not in `.3ds_ftp_ip`: pass `--ip`): not touched since 2026-10-12.
-- The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP).
+- The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP); 7 is
+  the newest (#4).
 
 **Older notes (2026-10-12), still open:** check `perf/full-view-old3ds`-era Wide (266x160,
 interiors and map edges) and other areas (Deepwood, Mt. Crenel) on the 2DS; per-frame cost left
@@ -667,3 +673,21 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
 - **2026-10-13** The R prompt follows the HUD: the button at the right, the game's label art
   (in the game's language) over it to its left, measured on a scratch strip first because
   `Port_SecondScreenTheme_DrawActionLabel` places by its centre.
+- **2026-10-13** The iris fade in a wide view is drawn by the port, not through the GBA window
+  path: WIN0H is 8-bit and the game's table has 160 lines. The GPU renderer draws it as a mask
+  (backdrop quads outside the circle over a windowless frame), which is exact for the iris's
+  settings (inside everything, outside the backdrop): a band per line through the window path
+  cost the Old 3DS ~40 ms of building and a scissored full-screen quad per run ~99 ms of GPU
+  wait. 150, where the game ends the iris, is scaled to the farthest corner from the circle's
+  centre, so an off-centre iris (Ezlo near a room's edge) does not jump at its end.
+- **2026-10-13** The updater orders `X.Y.Z-dev` < `X.Y.Z BETA` < `X.Y.Z`. The first test
+  (2026-10-11) had dev and beta level for no stated reason; with the release branch renamed after
+  every tag a dev build of X.Y.Z always predates its tag, so it is offered the beta.
+- **2026-10-13** The install-only FTP server of production builds (`dev-ftp.txt`) is anonymous,
+  on the owner's word ("solo se está compartiendo la carpeta update"), after being told that the
+  title-ID check only stops a CIA of another app: anyone on the network can install a CIA built
+  with our title ID while it runs. `../mzm` has a login for it; a hardcoded password was refused
+  by Claude Code's permission check here and the owner chose none. The docs say to keep the file
+  off on untrusted networks.
+- **2026-10-13** Fixes to the updater and to shared tools go to `../mzm` and `../sm-3ds` as well
+  when they have the same bug (owner, 2026-10-13): the updater's BETA label went to all three.
