@@ -7,6 +7,7 @@
 #include "port_hdma.h"
 #include "port_ppu.h"
 #include "port_rom.h"
+#include "port_softslots.h"
 #include "port_types.h"
 #include "platform_3ds.h"
 #include <math.h>
@@ -703,7 +704,17 @@ void VBlankIntrWait(void) {
     } else {
         Platform3DS_PumpWithoutVBlank();
     }
-    gba_write16(REG_ADDR_KEYINPUT, Platform3DS_ReadKeyInput());
+    {
+        /* X and Y (and ZL/ZR) fire their soft-slot items through the B
+         * dispatch, as Port_UpdateInput does on PC: while one is held with an
+         * item this save owns, the engine sees B. Not in the pause menu,
+         * where B means back. */
+        u16 keyinput = Platform3DS_ReadKeyInput();
+        Port_SoftSlots_Update();
+        if (Port_SoftSlots_IsBHeld() && !Port_SoftSlots_IsPauseActive()) keyinput &= ~B_BUTTON;
+        Port_SoftSlots_TickPause();
+        gba_write16(REG_ADDR_KEYINPUT, keyinput);
+    }
     {
         extern void Port_QuickSave_AutoTick(void);
         Port_QuickSave_AutoTick();
