@@ -137,12 +137,18 @@ tools/tmc-link/tmc-link.py loadstate            # the newest save state; `loadst
 tools/tmc-link/tmc-link.py states               # number=area/room for each
 tools/tmc-link/tmc-link.py shot                 # /tmp/tmc-shot/top.png and bottom.png
 tools/tmc-link/tmc-link.py peek gRoomControls 16    # symbols from build-3ds/game/tmc-3ds.elf
+tools/tmc-link/tmc-link.py --elf ../wt/build-3ds/game/tmc-3ds.elf peek gHUD 8   # a build made elsewhere
 tools/tmc-link/tmc-link.py switch "FRAME SYNC"
 tools/tmc-link/tmc-link.py gpucheck             # next frame by both renderers: differing=N structural=N
 tools/tmc-link/tmc-link.py poke gPpuGpu3DSRingDisable 0f   # bit per BG: draw it from quads again (00 = rings on)
 tools/tmc-link/tmc-link.py log                  # flush (MARK) and fetch the newest SD log
 tools/tmc-link/tmc-link.py run tools/tmc-link/examples/walk-left.txt
 ```
+
+Symbols are looked up in the ELF of `build-3ds/` in this checkout unless `--elf` names another
+(goes before the command, with `--ip`). It must be the ELF of the build the console is running:
+a build made in another worktree has other addresses, and `peek`/`poke` by symbol would read and
+write the wrong memory.
 
 Buttons are added to the real ones and counted in logic frames, so a held direction
 moves Link exactly as far each time. Touches, screenshots, dumps,

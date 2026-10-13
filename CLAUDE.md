@@ -238,6 +238,8 @@ tools/tmc-link/tmc-link.py wait && tools/tmc-link/tmc-link.py run SCRIPT   # dri
 - `tools/tmc-link/tmc-link.py` (docs/debug-tools.md, "Remote control") presses buttons,
   taps, saves and loads save states (`savestate`, `loadstate N`; docs/save-states.md),
   takes screenshots (`shot`, then look at the PNGs), reads state and memory by symbol.
+  `peek`/`poke` by symbol use this checkout's `build-3ds/game/tmc-3ds.elf`: when the console runs
+  a build made in another worktree, pass that build's ELF with `--elf`.
   A state survives rebuilds that only change the port (renderer, UI, platform), so the
   loop is: save a state once, then install, `wait`, `loadstate`, play the scenario, measure. Use it to reproduce and check on the console without
   the owner; say before driving the game while the owner is playing.
