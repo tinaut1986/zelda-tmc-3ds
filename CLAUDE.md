@@ -251,6 +251,10 @@ tools/tmc-link/tmc-link.py wait && tools/tmc-link/tmc-link.py run SCRIPT   # dri
   (`Platform3DS_RequestRelaunch`). The relaunched game turns the FTP server back on by
   itself (`debug_ftp` in `tmc3ds.ini`), so installs and fetches can follow one another;
   give it a few seconds after the relaunch.
+- A **production** build installed on the console has no DEBUG tab, but if
+  `/3ds/Minish Cap 3DS/dev-ftp.txt` exists it runs an install-only server (only `update/`, no
+  remote control, a CANCEL bar on the bottom screen): `--install` works on it with either build
+  mode, `tmc-link.py` and fetching `debug/` do not (docs/debug-tools.md, "FTP server").
 - Any unsaved progress is lost on relaunch: say so before installing while the owner plays.
 - With two consoles on the network (owner's New 3DS and 2DS) `.3ds_ftp_ip` holds only the last
   one the build assistant used. Pass the address explicitly (`tmc-link.py --ip IP ...`, `curl

@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "updater.h"
@@ -159,6 +160,9 @@ void FtpServer_Address(char* out, unsigned cap) { snprintf(out, cap, "192.168.1.
 void FtpServer_Stats(unsigned* a, unsigned* b, bool* c) { *a = 3; *b = 1; *c = false; }
 bool FtpServer_Start(void) { return true; }
 void FtpServer_Stop(void) {}
+/* DEVFTP=1 previews the install-only server's bar (production builds with dev-ftp.txt). */
+bool FtpServer_InstallOnly(void) { return getenv("DEVFTP") != NULL; }
+void FtpServer_Cancel(void) {}
 
 /* ---- save states, FTP and debug switches added since (save_state_3ds.c, ftp_server_3ds.c) ---- */
 #include "save_state_3ds.h"

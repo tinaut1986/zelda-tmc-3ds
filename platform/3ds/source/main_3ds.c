@@ -23,9 +23,9 @@
 #if TMC3DS_DEBUG_TOOLS
 #include "debug_log_3ds.h"
 #include "debug_perf_3ds.h"
-#include "ftp_server_3ds.h"
 #include "debug_switches_3ds.h"
 #endif
+#include "ftp_server_3ds.h"
 
 #define APP_DIR TMC3DS_APP_DIR
 #define ROM_PATH_SIZE 512
@@ -182,12 +182,13 @@ int main(int argc, char** argv) {
         DebugLog_Flush();                       \
     } while (0)
     EXIT_STEP("engine returned");
-    if (FtpServer_Running()) FtpServer_Stop();
-    EXIT_STEP("ftp stopped");
     if (DebugPerf_Running()) DebugPerf_Stop();
 #else
 #define EXIT_STEP(name) ((void)0)
 #endif
+    /* Production builds too: the install-only server (dev-ftp.txt). */
+    if (FtpServer_Running()) FtpServer_Stop();
+    EXIT_STEP("ftp stopped");
     Updater_Shutdown();
     EXIT_STEP("updater stopped");
     Port_PPU_Shutdown();
