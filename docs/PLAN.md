@@ -19,8 +19,8 @@ change (what goes where: the table in `CLAUDE.md`).
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.1.2` (on origin). Published: **`v0.1.1`** (2026-10-12, **stable**,
-merged into `main`) and `v0.1.0` (2026-10-11, beta).
+**Release line:** `release/v0.1.3` (on origin). Published: **`v0.1.2`** (2026-10-13, beta),
+`v0.1.1` (2026-10-12, **stable**, merged into `main`) and `v0.1.0` (2026-10-11, beta).
 
 **Branches:**
 
@@ -56,6 +56,10 @@ merged into `main`) and `v0.1.0` (2026-10-11, beta).
 | `chore/tmc-link-elf` (cut from `release/v0.1.2`) | `tmc-link.py --elf`: symbols from the ELF of the build the console runs (a worktree's build has other addresses) | tried against the 2DS (peek by symbol with the combined build's ELF) | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `fix/fullview-scroll-align` (cut from `release/v0.1.2`) | issue #11: a Full View border scroll first lines the camera up across the scroll inside the outgoing room, so the 400x240 window never shows black outside a narrower or offset incoming room | on the 2DS by Claude, Hyrule Field: down 03/05 -> 03/04 (lines up left, then scrolls; before: a black strip), up 03/04 -> 03/05 (no line-up needed), right 03/06 -> 03/05; every recorded frame 400x240 with the HUD; a sideways scroll that needs a vertical line-up not forced | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `fix/state-script-context` (cut from `release/v0.1.2`) | save states: an entity's script context (+0x84) is relocated when saved and repaired from `gEntityScriptCtxTable` on load; a state from another build crashed in a house door's script (Lon Lon Ranch, 03/05, walking down) | on the 2DS by Claude and the owner: the owner's state 4 (03/05), which crashed, plays on | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/fullview-scroll-hud-jump` (cut from `release/v0.1.2`) | Full View border scroll: on the tick the scroll starts (the room switches mid-tick) A/B/R/X/Y jumped for one frame to the middle of the top edge; the gameplay mode now carries the 400 view before the next VBlank commits it | on the 2DS by Claude (owner's state 03/04 going up, FRAMES = no skips): 1 of 3 recordings showed the jump before, 0 of 3 after | _(merged into `release/v0.1.2` 2026-10-13 on the owner's word)_ |
+| `fix/hud-diamond-hide` (cut from `release/v0.1.2`) | the A/B/X/Y diamond sits lower than the game's A/B row, so the buttons' slide off the top for a message left B, Y and A's bottom on screen: every button now goes as high as A/B did | on the 2DS by Claude in Full View and VISTA = ORIGINAL (Minish Woods "¡Socorro!") | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/fullview-iris` (cut from `release/v0.1.2`) | the iris fade (circle wipe) drawn across the whole wide view instead of dropping to 266x160 (`docs/gpu-fade.md`, "Iris fades in a wide view") | on the 2DS by Claude and the owner (Link's iris); Ezlo's (centre near the view's edge) checked by Claude after the radius change | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/msg-shift-drawn-box` (cut from `release/v0.1.2`) | Wide/Full View: while a text box opened or closed the hearts jumped 80 px right; the centred band is now the box as drawn (`gCurrentWindow`) | on the 2DS by Claude (heart piece, 00/00: opening and closing) | _(merged into `release/v0.1.2` 2026-10-13)_ |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
@@ -69,21 +73,22 @@ Full View scroll line-up (issue #11) and entity script contexts in save states (
 branch or worktree is open. Next, in this order:
 1. Issue #13: closing the pause menu after loading a state saved in it writes `0x160` (the OBJ
    tile of gfx slot 2, Link's) into a Chuchu's child and garbles Link: find who writes it.
-2. Issue #4: the relaunch after `SITE INSTALL` sometimes fails (the loader runs out of memory).
+2. Issue #4 (reopened 2026-10-13: the loader ran out of memory again after an install): the relaunch after `SITE INSTALL` sometimes fails.
 3. Issue #11: a sideways border scroll that needs a vertical line-up is still to be seen (same
    code as the vertical case); then close it.
 To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
 **On the owner's consoles now (2026-10-13):**
-- Old 3DS/2DS, **`192.168.1.132`** (not in `.3ds_ftp_ip`: pass `--ip`): a debug build of
-  `release/v0.1.2` with the code of `ffefbe4` (2026-10-13), Full View (`widescreen=1`,
+- Old 3DS/2DS, **`192.168.1.132`** (`.3ds_ftp_ip` holds it now): a debug build with the code of
+  `release/v0.1.2` at `a9ee331` (2026-10-13; built from the working tree, so it calls itself
+  `0.1.2-dev.54+758fd59`), Full View (`widescreen=1`,
   `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT. The owner plays on
   it (Minish Woods, sword and shield only) and keeps save states at spots that reproduce bugs:
   never overwrite or delete one (protect their place with a *new* state: `savestate`, then
   `loadstate 1` and `delstate 1` after the install). Its three newest states (00/00, saved by
   the build `0.1.2-dev.31+22638c2`) include one Claude saved to protect the owner's place;
   which one is not known, so none was deleted: the owner decides from the thumbnails.
-- New 3DS, `192.168.1.133` (the one `.3ds_ftp_ip` holds): not touched since 2026-10-12.
+- New 3DS, `192.168.1.133` (not in `.3ds_ftp_ip`: pass `--ip`): not touched since 2026-10-12.
 - The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP).
 
 **Older notes (2026-10-12), still open:** check `perf/full-view-old3ds`-era Wide (266x160,
