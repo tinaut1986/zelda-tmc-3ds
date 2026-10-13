@@ -86,6 +86,48 @@ static unsigned sParityWidth;
 static unsigned sParityHeight;
 /* The prepared frame's screen fade (PpuGpu3DSFrameView::fadeWeight/fadeLevel). */
 static uint8_t sFadeWeight, sFadeLevel;
+/* The prepared frame's iris mask (PpuGpu3DSFrameView::irisLines): quads of
+ * the backdrop colour outside each line's {left, right}, one per run of equal
+ * lines and side, appended after the frame's geometry and drawn in one call. */
+static size_t sIrisFirstIndex, sIrisIndexCount;
+static uint16_t sIrisColor;
+
+static void AppendIrisQuad(unsigned left, unsigned top, unsigned right, unsigned bottom, unsigned width,
+                           unsigned height) {
+    PpuGpu3DSVertex* quad = sVertices + sCommands.vertexCount;
+    const float x0 = 2.0f * (float)left / (float)width - 1.0f, x1 = 2.0f * (float)right / (float)width - 1.0f;
+    const float y0 = 1.0f - 2.0f * (float)top / (float)height, y1 = 1.0f - 2.0f * (float)bottom / (float)height;
+    quad[0] = (PpuGpu3DSVertex){ x0, y0, 0.0f, 0, 0 };
+    quad[1] = (PpuGpu3DSVertex){ x1, y0, 0.0f, 0, 0 };
+    quad[2] = (PpuGpu3DSVertex){ x1, y1, 0.0f, 0, 0 };
+    quad[3] = (PpuGpu3DSVertex){ x0, y1, 0.0f, 0, 0 };
+    sCommands.vertexCount += 4;
+    sIrisIndexCount += 6;
+}
+
+static void AppendIrisMask(const PpuGpu3DSFrameView* frame) {
+    sIrisIndexCount = 0;
+    if (frame->irisLines == NULL) return;
+    /* The static index pattern draws quad q from vertices 4q..4q+3 (indices 6q..). */
+    sCommands.vertexCount = (sCommands.vertexCount + 3u) & ~(size_t)3u;
+    sIrisFirstIndex = sCommands.vertexCount / 4u * 6u;
+    sIrisColor = (uint16_t)(frame->memory.bg_palette[0] & 0x7fffu);
+    unsigned first = 0;
+    for (unsigned line = 1; line <= frame->height; ++line) {
+        const uint16_t* a = &frame->irisLines[first * 2u];
+        if (line < frame->height && frame->irisLines[line * 2u] == a[0] && frame->irisLines[line * 2u + 1u] == a[1])
+            continue;
+        if (sCommands.vertexCount + 8u > PPU_GPU3DS_BUILD_VERTICES) break;
+        const unsigned left = a[0], right = a[1];
+        if (left >= right) {
+            AppendIrisQuad(0, first, frame->width, line, frame->width, frame->height);
+        } else {
+            if (left > 0) AppendIrisQuad(0, first, left, line, frame->width, frame->height);
+            if (right < frame->width) AppendIrisQuad(right, first, frame->width, line, frame->width, frame->height);
+        }
+        first = line;
+    }
+}
 /* Debug: poke 1 to skip the fade's full-screen quad (the picture then shows the
  * unfaded palettes), to time it (tmc-link.py poke gPpuGpu3DSFadeQuadDisable 01). */
 volatile uint8_t gPpuGpu3DSFadeQuadDisable;
@@ -438,7 +480,10 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
      * from last frame is only re-flushed when it sits between two that were
      * not, which costs bytes rather than calls. */
     Platform3DS_SetStage(24);
+    const size_t irisFirstVertex = sCommands.vertexCount;
+    AppendIrisMask(frame);
     size_t geometryFirstVertex = sCommands.dynamicFirstVertex;
+    if (sIrisIndexCount != 0 && irisFirstVertex < geometryFirstVertex) geometryFirstVertex = irisFirstVertex;
     size_t geometryFirstIndex = sCommands.dynamicFirstIndex;
     for (unsigned bg = 0; bg < 4u; ++bg) {
         if ((sCommands.mapDirtyMask & (1u << bg)) == 0) continue;
@@ -839,6 +884,27 @@ bool PortPpuGpu3DS_DrawPrepared(void) {
         else
             C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_COLOR);
         DrawBatch(batch);
+    }
+
+    /* The iris (PpuGpu3DSFrameView::irisLines): the backdrop outside the circle,
+     * before the fade quad so a fade darkens it as PAL_RAM's backdrop was. */
+    if (sIrisIndexCount != 0) {
+        for (int stage = 0; stage < 3; ++stage)
+            C3D_TexEnvInit(C3D_GetTexEnv(stage));
+        C3D_TexEnv* env = C3D_GetTexEnv(0);
+        const u32 r = sIrisColor & 31u, g = (sIrisColor >> 5u) & 31u, b = (sIrisColor >> 10u) & 31u;
+        C3D_TexEnvSrc(env, C3D_Both, GPU_CONSTANT, GPU_CONSTANT, GPU_CONSTANT);
+        C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+        C3D_TexEnvColor(env, ((r << 3u) | (r >> 2u)) | (((g << 3u) | (g >> 2u)) << 8u) |
+                                     (((b << 3u) | (b >> 2u)) << 16u) | 0xff000000u);
+        C3D_BlendingColor(0);
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+        C3D_AlphaTest(false, GPU_ALWAYS, 0);
+        C3D_StencilTest(false, GPU_ALWAYS, 0, 0xff, 0);
+        C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_COLOR);
+        SetBatchOffset(0.0f, 0.0f);
+        SetScissorCached(0, yOffset, sPreparedWidth, yOffset + sPreparedHeight);
+        C3D_DrawElements(GPU_TRIANGLES, (int)sIrisIndexCount, C3D_UNSIGNED_SHORT, sIndices + sIrisFirstIndex);
     }
 
     /* A uniform screen fade (docs/gpu-fade.md): the picture above was drawn from

@@ -323,11 +323,15 @@ void SetVBlankDMA(u16* src, u16* dest, u32 size) {
     gScreen.vBlankDMA.size = size;
     gScreen.vBlankDMA.ready = TRUE;
     gUnk_03003DE4[0] ^= 1;
+#ifdef PC_PORT
+    Port_Widescreen_ForgetIris(src);
+#endif
 }
 
 void DisableVBlankDMA(void) {
     gScreen.vBlankDMA.ready = FALSE;
 #ifdef PC_PORT
+    Port_Widescreen_ForgetIris(NULL);
     port_hdma_unregister(0);
 #endif
 }

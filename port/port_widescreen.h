@@ -93,6 +93,14 @@ int Port_Widescreen_HudTargetViewHeight(void);
  * overlay screens (storybook, pause) drop this to 0 -> present native 240. */
 int Port_Widescreen_ShadowsLive(void);
 
+/* The iris fade's WIN0 table (src/fade.c): SetVBlankDMA forgets the table it is
+ * handed, the fade notes its circle after building one. Win0Lines fills
+ * {left, right} per line (out: height * 2) for a view past 240x160 when the
+ * HBlank DMA feeding WIN0 this frame is a noted iris; 0 otherwise. */
+void Port_Widescreen_ForgetIris(const void* table);
+void Port_Widescreen_NoteIris(void);
+int Port_Widescreen_Win0Lines(int width, int height, unsigned short* out);
+
 /* EnterRoomTextboxManager writes its location banner directly to BG0 rather
  * than opening gMessage.  Publish that separate lifecycle so wide rendering
  * can center the complete two-row banner instead of applying the HUD's

@@ -252,6 +252,12 @@ typedef struct PpuGpu3DSFrameView {
     bool bg3NativeBounds;
     /* BG3HOFS before any HBlank DMA step (virtuappu_mode1_bg3_hofs_base), -1 unknown. */
     int bg3HofsBase;
+    /* The iris fade in a wide view (virtuappu_mode1_ws_win0_lines: {left,
+     * right} per line), or NULL. The frame is then built without WIN0 and the
+     * renderer paints the backdrop colour outside each line's span, which is
+     * what the iris's window settings (inside everything, outside nothing)
+     * show; splitting the frame into a band per line cost the Old 3DS 40 ms. */
+    const uint16_t* irisLines;
 } PpuGpu3DSFrameView;
 
 typedef struct PpuGpu3DSInterval {

@@ -137,6 +137,8 @@ static bool sGpuSnapshotValid;
 static uint64_t sTopDrawTicks;
 static uint64_t sTopBlitTicks;
 static uint16_t sGpuDispcntPerLine[MODE1_GBA_HEIGHT];
+/* The iris fade's WIN0 in view pixels (virtuappu_mode1_ws_win0_lines). */
+static uint16_t sWin0Lines[MODE1_GBA_HEIGHT * 2];
 static int32_t sGpuAffRefX[MODE1_GBA_HEIGHT];
 static int32_t sGpuAffRefY[MODE1_GBA_HEIGHT];
 static uint16_t
@@ -274,6 +276,7 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     view->wsFullView = virtuappu_mode1_ws_full_view != 0;
     /* The software PPU's rule (mode1_bg3_native_bounds_active). */
     view->bg3HofsBase = virtuappu_mode1_bg3_hofs_base;
+    view->irisLines = virtuappu_mode1_ws_win0_lines;
     view->bg3NativeBounds = virtuappu_mode1_ws_full_view != 0 && virtuappu_mode1_bg3_hdma_native_bounds &&
                             (view->width > MODE1_GBA_BG_CLIP_X ||
                              (unsigned)virtuappu_mode1_frame_height() > MODE1_GBA_NATIVE_HEIGHT);
@@ -1233,6 +1236,10 @@ static void PresentFrame(void) {
         DeepFindEntityByID(MANAGER, VAATI_APPARATE_MANAGER) != NULL;
     /* BG3HOFS before any HBlank DMA step of this frame. */
     virtuappu_mode1_bg3_hofs_base = (int)((gIoMem[MODE1_IO_BG3HOFS] | (gIoMem[MODE1_IO_BG3HOFS + 1] << 8)) & 0x1ff);
+    /* The game's iris (WIN0 from an HBlank table: 8-bit, 160 lines) redrawn
+     * for the whole view; both renderers take WIN0 from here then. */
+    virtuappu_mode1_ws_win0_lines =
+        Port_Widescreen_Win0Lines(sTopPresentWidth, sTopPresentHeight, sWin0Lines) ? sWin0Lines : NULL;
 
     Platform3DS_Heartbeat();
     Platform3DS_SetStage(1);
@@ -1263,6 +1270,12 @@ static void PresentFrame(void) {
         virtuappu_mode1_prepare_frame(
             &virtuappu_registers, sGpuIoPerLine[0], sGpuDispcntPerLine,
             sGpuAffRefX, sGpuAffRefY, &frameView.frameDispcnt);
+        if (frameView.irisLines != NULL) {
+            /* Drawn as a mask over a windowless frame (PpuGpu3DSFrameView::irisLines). */
+            for (int line = 0; line < MODE1_GBA_HEIGHT; ++line)
+                sGpuDispcntPerLine[line] &= (uint16_t)~MODE1_DISP_WIN0_ON;
+            frameView.frameDispcnt &= (uint16_t)~MODE1_DISP_WIN0_ON;
+        }
         sGpuSnapshotValid = true;
         /* Claim the GPU frame first: preflight writes the vertex, index and
          * atlas buffers the previous frame may still be drawing from, so this

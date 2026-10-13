@@ -122,6 +122,13 @@ void virtuappu_mode1_commit_obj_metadata(void);
 #define MODE1_WS_HUD_RIGHT_NATIVE_X 176
 extern int virtuappu_mode1_ws_hud_right_anchor;
 
+/* WIN0 in view pixels for a view wider or taller than the GBA's, one
+ * {left, right} pair per output line (left == right: empty), or NULL. WIN0H is
+ * 8 bits and the game's HBlank table has 160 lines, so the port draws its iris
+ * fade (src/fade.c) from this table instead (Port_Widescreen_Win0Lines). It
+ * replaces WIN0H and WIN0V; WININ/WINOUT and the enable bit still apply. */
+extern const uint16_t* virtuappu_mode1_ws_win0_lines;
+
 /* Runtime WIP widescreen message-box centering. The engine composes the
  * textbox on BG0 for a 240-px canvas (default box: tiles 1..27). On a wide
  * frame that leaves the box hugging the left edge, and snapping the whole
