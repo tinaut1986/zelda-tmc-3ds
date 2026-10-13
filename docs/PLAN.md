@@ -48,6 +48,7 @@ merged into `main`) and `v0.1.0` (2026-10-11, beta).
 | `fix/updater-audio` (cut from `release/v0.1.2`) | the update check broke up the sound on the Old 3DS: the updater worker one priority below the game thread instead of at the audio worker's | checked by the owner on the 2DS: no dropouts during a check | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `feat/game-style-windows` (cut from `release/v0.1.2`) | the bottom screen's own menu style in every tab: cells, buttons and tabs with the game windows' rounded corners at 1x in the theme's colours, toasts / busy / modals in the message window's frame, the world map without the stone frame (its own box, Link's head as the marker), the quest lists' and wells' slab and stone through the same boxes (`Port_SecondScreenTheme_SetBoxPainter`) | on the 2DS by Claude (screenshots of every tab, both map views); the quest sub-lists (kinstones, techniques) not seen: the save on the console has neither | _(merged into `release/v0.1.2` 2026-10-13 on the owner's word)_ |
 | `fix/fullview-border-scroll` (cut from `release/v0.1.2`) | issue #11: a room-border scroll keeps Full View (400x240 snapshot of the outgoing room, the scroll ends on the 400x240 view's edge, the view carried across the room change) instead of dropping to 266x160 | checked by the owner and by Claude on the 2DS, Hyrule Field 03/06 <-> 03/05 (right and left: every recorded frame 400x240); up and down not tried yet | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `feat/sidebar-game-hud` (cut from `release/v0.1.2`) | P2.5: X/Y (and ZL/ZR) fire soft-slot items on 3DS; the sidebar's A/B/X/Y diamond with a selected button; R always shown with the game's label over it; rupees/keys in the HUD font | checked by the owner on the 2DS (X/Y with sword and shield: the only items the save has) | _(merged into `release/v0.1.2` 2026-10-13)_ |
 
 **Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
 Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
@@ -57,29 +58,26 @@ decisions log) and taps on the tab bar. Still to check by the owner: the STATES 
 states of other scenes than Hyrule Field and Link's house (run `tools/state-census` on a state
 of each; a holder nobody listed crashes on load into a different build).
 
-**On the owner's consoles now (2026-10-12):** both run the debug build `v0.1.1-dev.84+a354c0a`
-(`release/v0.1.1`, pushed as `2a26c55`, whose source is the same plus the docs).
-- New 3DS, `192.168.1.133` (the one `.3ds_ftp_ip` holds): three save states (Hyrule Field
-  03/01 twice, Link's house 22/10), format 2.
-- Old 3DS/2DS, `192.168.1.139`, installed with FBI (CIA sent with ftpd to `sdmc:/cias/`). Not
-  in `.3ds_ftp_ip`: Claude drives it with `tools/tmc-link/tmc-link.py --ip 192.168.1.139`
-  (and the same `--ip` for the debug files). Its settings are the factory ones: `widescreen=0`,
-  `screen_aspect=stretch`, `display_style=bilinear`. First measurement, Hyrule Field 03/01
-  standing still: 59.6-59.9 fps shown, 0 frames skipped, 300 GPU frames / 0 fallback per
-  5 s, work 0.85-0.9 ms, **vblank wait only 0.14-1.9 ms per frame**: the normal 240x160 view
-  already has almost no margin on the 2DS.
+**Start here (2026-10-13, end of the session):** everything is merged into `release/v0.1.2`
+and pushed. Next, in this order: **P2.6** (A/B/X/Y as a diamond in the in-game HUD, spec
+below), then issue #4 (the relaunch after `SITE INSTALL` sometimes fails: the loader runs out of
+memory, see its last comment), then the two checks left on issue #11 (a border scroll up and
+one down in Full View, and one frame at the scroll's start where the HUD vanishes).
 
-**2026-10-13:** the Old 3DS/2DS answers at `192.168.1.132` now (not in `.3ds_ftp_ip`; pass
-`--ip`). It runs a debug build with both branches above (`0.1.2-dev.8`), Full View
-(`widescreen=1`, `screen_aspect=wide`, `display_style=pixel-perfect`) and the PARCHMENT theme.
-Its third install of the night ended in a kernel panic on the relaunch (issue #4).
+**On the owner's consoles now (2026-10-13):**
+- Old 3DS/2DS, **`192.168.1.132`** (not in `.3ds_ftp_ip`: pass `--ip`): the debug build of
+  `feat/sidebar-game-hud` (= `release/v0.1.2` at the merge), Full View (`widescreen=1`,
+  `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT. The owner plays on
+  it (Minish Woods, sword and shield only) and keeps save states at spots that reproduce bugs:
+  never overwrite or delete one (protect their place with a *new* state: `savestate`, then
+  `loadstate 1` and `delstate 1` after the install).
+- New 3DS, `192.168.1.133` (the one `.3ds_ftp_ip` holds): not touched since 2026-10-12.
+- The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP).
 
-**Next after that:** check `perf/full-view-old3ds` on both consoles (the owner), then the
-rest of the 2DS list: Wide (266x160, interiors and map edges) and the location-name banner at
-the gate of Hyrule Town, other areas (Minish Woods, Deepwood, Mt. Crenel), and what is left per
-frame on the 2DS: the rings cost 3 ms (character-data digest 1.3 ms, cell compare 1.5 ms) and
-the OBJ/other quads ~0.5 ms; VRAM write tracking in the PPU model would drop the digest.
-Ask the owner before driving the 2DS: they may be playing on it.
+**Older notes (2026-10-12), still open:** check `perf/full-view-old3ds`-era Wide (266x160,
+interiors and map edges) and other areas (Deepwood, Mt. Crenel) on the 2DS; per-frame cost left
+there: the rings 3 ms (character-data digest 1.3 ms, cell compare 1.5 ms), OBJ/other quads
+~0.5 ms; VRAM write tracking in the PPU model would drop the digest.
 
 **Owner's request, 2026-10-12 (P3.4): everything through the GPU.** The message shift (dialogues
 and the location-name banner, `virtuappu_mode1_ws_msg_*`), the HUD right-anchor and Wide BGs
@@ -102,7 +100,7 @@ Branches not in the release: `fix/affine-obj-uv-inset` (sword, checked), `fix/bg
 (partial), `wip/bg3-vertical-experiment` (experiment, not a fix). The 2DS at 192.168.1.139 runs the
 experiment build, FRAMES = SIN SALTOS, VISTA = ANCHO.
 
-**Priority** (owner's order, 2026-10-11): P0.1 → P1 debug tools and P2 bottom UI (so
+**Priority** (owner's order, 2026-10-11; 2026-10-13: P2.6 first, then issue #4): P0.1 → P1 debug tools and P2 bottom UI (so
 that P3 can be measured) → P0.2 baseline → P3.4 Full View on the GPU, and Full View on the
 Old 3DS (P4.1) → the rest of P3 → P4.2.
 
@@ -296,6 +294,30 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   SYSTEM (updates channel/check/what's new, CPU clock on New 3DS, FPS counter,
   reset). Randomizer row removed while it does nothing.
   *Done when:* checked on the console.
+- [x] **P2.4** The bottom screen's own menu style.
+  *Spec:* the same boxes in every tab (rounded corners of the game windows, 1x, theme colours),
+  toasts and windows in the message window's frame, the world map without the stone frame
+  (Link's head as its marker), the quest lists' slab and wells through the same boxes; no game
+  pixels scaled (decisions log, 2026-10-13).
+  *Done when:* the owner approves it on the console (2026-10-13, merged).
+- [x] **P2.5** X and Y item buttons.
+  *Spec:* X and Y (also ZL/ZR) fire items like B through the port's soft slots
+  (`port/port_softslots.c`, wired into the 3DS input path in `port/port_bios.c`), assigned
+  from the bottom screen: tap A/B/X/Y in the sidebar's diamond (it stays selected), then an item
+  in ITEMS; a second tap on X/Y's item clears it. Kept for every save file (`tmc.softslots` in
+  the data folder); an item the save does not own does nothing.
+  *Done when:* the owner fires items with X and Y on the console (2026-10-13, sword and shield).
+- [ ] **P2.6** A/B/X/Y in the in-game HUD.
+  *Spec:* the top screen's HUD shows four item buttons in the console's diamond (X on top, Y
+  left, A right, B below; owner's choice, 2026-10-13) in the style of the game's A/B buttons:
+  the button bubbles of sprite 505 (504 on EU), frames 0/1, with X/Y letters drawn into a copy
+  of the bubble, and each button's item icon as the HUD draws A/B's (gfx loaded per equipped
+  item, `src/ui.c` ButtonUIElement / the item elements). Where the HUD is anchored right in
+  Wide / Full View the diamond follows it. Open: whether to do it in the engine (two more UI
+  elements and OBJ VRAM tiles composed at runtime, so both renderers draw it) or as an overlay
+  on the GPU top screen (start by reading `src/ui.c` and the HUD right-anchor,
+  `virtuappu_mode1_ws_hud_right_anchor`).
+  *Done when:* the owner sees the four buttons with their items in normal, Wide and Full View.
 
 ## Phase 3: performance (60 fps, New 3DS and Old 3DS, no 3D)
 
@@ -576,3 +598,12 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   menu chips' keyline as geometry, drawn at 1x in the theme's colours, never the game's pixels
   scaled (upstream's attempt scaled 720p art and cropped it). The world map drops the stone
   frame; its crop is the map inside it (x 41..198, y 13..139 of the composite).
+- **2026-10-13** X/Y items reuse the PC port's soft slots instead of new engine slots: the B
+  dispatch and the held-item check already honour them (`Port_SoftSlots_GetEffectiveBItem`,
+  `IsBHeld`), so held items keep their semantics without touching the save. The 3DS had never
+  polled them: its VBlankIntrWait writes KEYINPUT from the platform directly and skips
+  `Port_UpdateInput`, where PC polls them. Assignment selection is sticky (owner): the tapped
+  button stays selected, A by default.
+- **2026-10-13** The R prompt follows the HUD: the button at the right, the game's label art
+  (in the game's language) over it to its left, measured on a scratch strip first because
+  `Port_SecondScreenTheme_DrawActionLabel` places by its centre.

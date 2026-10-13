@@ -39,6 +39,15 @@ The ROM is read locally from the SD card and is never copied into the CIA.
 Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
 `Dump DSP firmware` option if homebrew audio is unavailable.
 
+## Controls
+
+- A, B, R, L, START, SELECT and the D-pad / Circle Pad as on the GBA.
+- **X and Y** (also ZL and ZR) use an item of their own, like B. Assign it on the bottom
+  screen: tap A, B, X or Y in the right-hand column (the button stays selected), then the
+  item in ITEMS; tapping X's or Y's item again clears that button. X/Y assignments are kept
+  for every save file (`tmc.softslots` in the data folder); in a save without that item the
+  button does nothing.
+
 ## Display
 
 - Top screen: selectable Wide, Original, and Stretch aspect ratios.
@@ -46,7 +55,7 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
   and centered one-pixel-per-source-pixel Pixel Perfect. Fresh installations
   start with Bilinear and Stretch; valid saved choices are restored on later
   launches.
-- Experimental Full View: on New 3DS, selecting Wide + Pixel Perfect renders
+- Experimental Full View: on New 3DS and Old 3DS/2DS, selecting Wide + Pixel Perfect renders
   compatible outdoor rooms at 400x240; interiors keep the 1x Wide view (no
   zoom). Dialogues keep the 400x240 view (the text box is centred); room-name
   banners, transitions and unsupported
