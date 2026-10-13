@@ -68,6 +68,7 @@ boxes below. History: `git log` and the decisions log.
 | `fix/fullview-after-soft-reset` (cut from `release/v0.1.3`) | issue #23: Full View off after a soft reset (the intro was drawn at 400x240 over the last room) | on the 2DS by Claude (soft reset from the Minish Woods: intro and title at 240x160) | _(merged into `release/v0.1.3` 2026-10-13)_ |
 | `feat/scene-recorder` (cut from `release/v0.1.3`) | P1.6: `tmc-link.py scenerec`, `tools/scene-rec/decode.py` | on the 2DS by Claude (89 frames decoded to PNG and GIF) | _(merged into `release/v0.1.3` 2026-10-13)_ |
 | `fix/install-relaunch` (cut from `release/v0.1.3`) | issue #4: relaunch 10 s after `SITE INSTALL` through libctru's chainloader (Luma dumps 7 and 8, `0xD86007F3`), as `../legend-of-doom-3ds` fixed it | builds; to try with several installs in a row; the same fix went to `../mzm` | _(merged into `release/v0.1.3` 2026-10-13 on the owner's word, before the install test)_ |
+| `feat/title-wide` (cut from `release/v0.1.3`, pushed) | P4.4: the title drawn at 400x240 in Full View (forest extended from the shipped picture as BG1, light rays from the top, sword and logo centred); scene extensions shipped in the romfs (owner's decision) with `tools/scene-extend/to_console.py`; issue #24 (GPU dots on the scaled sword) | on the 2DS by Claude (frame 400x240, GPU CHECK 0 on the settled title, recorded zoom); the owner saw an earlier build and asked for the rays and sword fixes; **the light rays still show seams** at x=80 and x=336 (their 256-wide layer repeats): the owner is to choose (Start here) | waits for the owner |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
@@ -75,39 +76,42 @@ Link's house and the Minish Woods are untested in builds other than their writer
 build, as the house door did: issue #14). A state saved inside the pause menu breaks on closing
 it (issue #13).
 
-**Start here (2026-10-13, after the v0.1.2 beta):** `v0.1.2` is published as a beta and every
-branch of the day is merged into `release/v0.1.3` and pushed (no worktree, nothing uncommitted).
-Checked by the owner on the 2DS the same day: Ezlo's iris (#16), the hearts with a text box (#17),
-the scroll's button jump (#11), the install-only FTP bar and its CANCEL. The updater's labels
-(#18) too (V0.1.2 BETA, INSTALLED V0.1.3-DEV...); its dev < beta offer is still to see, with a
-0.1.3-dev build installed once `v0.1.3` is out as a beta. Next, in this order:
-1. Issue #13: closing the pause menu after loading a state saved in it writes `0x160` (the OBJ
-   tile of gfx slot 2, Link's) into a Chuchu's child and garbles Link: find who writes it.
-2. Issue #4 (reopened 2026-10-13, Luma dump 7: the loader ran out of memory again after an
-   install): the relaunch after `SITE INSTALL` sometimes fails.
-3. Issue #11: a sideways border scroll that needs a vertical line-up is still to be seen (same
-   code as the vertical case); then close it.
+**Start here (2026-10-13, end of the day):** everything is merged into `release/v0.1.3` and pushed
+except `feat/title-wide` (pushed, waits for the owner). Next, in this order:
+1. The title's light rays (P4.4, `feat/title-wide`): their 256-wide layer does not tile, so the
+   repeat leaves seams. Options put to the owner: (a) extend the rays with the generative AI as
+   well and draw them as palette indices (so the game's shimmer, alpha and fades still apply),
+   (b) rays only in the middle 256 columns, (c) leave the seams. Then the owner checks the title
+   (soft reset) and the branch is merged.
+2. The README's before/after GIF of the portal shrink (owner's request): record it with the scene
+   recorder (`tmc-link.py scenerec`, P1.6) on the New 3DS, which holds more frames, once VISTA =
+   ORIGINAL and once Full View; then rewrite the README (performance, Full View, bottom screen,
+   states, updater) with the GIFs (owner's request, 2026-10-13).
+3. Issue #4: the relaunch fix is merged; a few more installs without a loader dump, then close.
+   Issue #23 waits for the owner's soft reset check.
+4. Issue #19 (states break when the port's statics grow), #13, #11 as before.
+Scene pictures (portal, title): procedure in `docs/wide-scene-extension.md`; the owner's material
+in `~/Imágenes/minish-portal-cutscene/` and `~/Imágenes/intro-titulo/` (never in the repository).
 To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
 **On the owner's consoles now (2026-10-13):**
-- Old 3DS/2DS, **`192.168.1.132`** (`.3ds_ftp_ip` holds it): a debug build of `release/v0.1.3` with
-  `fix/fullview-portal-camera`, `fix/bottom-hud-live` and `feat/portal-cutscene-wide` merged on top
-  (a local merge, 2026-10-13; the same code as `release/v0.1.3` after their merge), BOTTOM CORE = AUTO,
-  `portal-cutscene-strips.bin` from the owner's generated picture 1 (`~/Imágenes/minish-portal-cutscene/`,
-  never in the repository: it is derived from the ROM's art). `debug/` cleared of old dumps and checks
-  (1245 files made listing it hang the FTP server).
-  UPDATES channel + BETAS. Full View (`widescreen=1`,
-  `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT, FRAMES = AUTO.
-  **`/3ds/Minish Cap 3DS/dev-ftp.txt` is there** (Claude left it, to try the install-only server
-  with a production build; a debug build ignores it). The owner plays on it (Minish Woods, sword
-  and shield only) and keeps save states at spots that reproduce bugs: never overwrite or delete
-  one (protect their place with a *new* state: `savestate`, then `loadstate 1` and `delstate 1`
-  after the install). Of the 13 (2026-10-13): 2 = 00/00 on the Minish Woods stump (#21, P4.3),
-  4 = 03/04 below the scroll up (#11).
+- Old 3DS/2DS, **`192.168.1.139`** (its address changed; `.3ds_ftp_ip` holds it): a debug build of
+  `feat/title-wide` at `1b2b129` (2026-10-13), BOTTOM CORE = AUTO, UPDATES channel + BETAS, Full View
+  (`widescreen=1`, `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT, FRAMES = AUTO.
+  `portal-cutscene-strips.bin` from the owner's picture 1 is in the data folder (the same as the
+  shipped one). **`dev-ftp.txt` is there** (install-only server for production builds). `debug/` was
+  cleared of 1053 old dumps and checks (listing a folder that size hung the FTP server).
+  The owner plays on it (Minish Woods, sword and shield only) and keeps save states at spots that
+  reproduce bugs: never overwrite or delete one (protect their place with a *new* state:
+  `savestate`, then `loadstate 1` and `delstate 1` after the install). Of the 14 (2026-10-13):
+  **1 is Claude's**, the owner's place before the evening installs (00/00, to load and delete);
+  3 = 00/00 on the Minish Woods stump (#21, P4.3); 5 = 03/04 below the scroll up (#11).
   Loading a state switches the bottom screen to MAP: tap another tab after it, not before.
-- New 3DS, `192.168.1.133` (not in `.3ds_ftp_ip`: pass `--ip`): not touched since 2026-10-12.
-- The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP); 7 is
-  the newest (#4).
+- New 3DS, **`192.168.1.141`** (pass `--ip`): a debug build of `feat/title-wide` at `96c1f99` (the
+  title with the forest only around the GBA's screen). Its state 1 is Claude's, the owner's place
+  (area 0x15) before that install.
+- The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP); 8 is
+  the newest on the 2DS (#4, before the relaunch fix).
 
 **Older notes (2026-10-12), still open:** check `perf/full-view-old3ds`-era Wide (266x160,
 interiors and map edges) and other areas (Deepwood, Mt. Crenel) on the 2DS; per-frame cost left
@@ -122,8 +126,7 @@ visit to an area hit.
 
 **Smaller open items:**
 - The busy window of a save state job (SAVING / LOADING / DELETING STATE) is bottom screen only
-  and was never seen on the console (the link's SHOT runs on the game thread, which the job
-  stops); the owner may want a notice on the top screen as well.
+  (since #22 the job waits until it is shown); the owner may want a notice on the top screen too.
 - Re-save the older states (see the decisions log of 2026-10-12): repaired on load, but they
   may keep other stale words.
 
@@ -131,9 +134,8 @@ visit to an area hit.
 (BG3 under HDMA, "native bounds"): issue #5 and
 [`docs/investigations/bg3-dissolve-wide.md`](investigations/bg3-dissolve-wide.md) (reproduction,
 findings, images, branches). Read it before touching BG3 / `mode1_bg3_native_bounds_active`.
-Branches not in the release: `fix/affine-obj-uv-inset` (sword, checked), `fix/bg3-native-bounds-gpu`
-(partial), `wip/bg3-vertical-experiment` (experiment, not a fix). The 2DS at 192.168.1.139 runs the
-experiment build, FRAMES = SIN SALTOS, VISTA = ANCHO.
+Not in the release: `fix/bg3-native-bounds-gpu` (partial, on origin); `wip/bg3-vertical-experiment`
+(an experiment) is in neither this checkout nor origin any more.
 
 **Priority** (owner's order, 2026-10-11; 2026-10-13: P2.6 first, then issue #4): P0.1 → P1 debug tools and P2 bottom UI (so
 that P3 can be measured) → P0.2 baseline → P3.4 Full View on the GPU, and Full View on the

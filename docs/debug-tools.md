@@ -115,6 +115,8 @@ on with it.
 offers it as "Install into the running game". Any unsaved progress is lost. While a
 `.cia` is being received and while it installs, the bottom screen says so
 (`RECEIVING NEW BUILD...`, then `INSTALLING NEW BUILD - GAME WILL RESTART`) on any tab.
+Keep `debug/` small: a listing of it with over a thousand files (old dumps and GPU checks) hung the
+server; fetch known names (`tmc-dump-NNNN-vram.bin`, `tmc-check-last.txt`) instead of listing.
 
 **Install-only server in a production build.** A production build has no DEBUG tab, so a new
 build could only be installed with FBI. If `dev-ftp.txt` (any content, empty is fine) is in
