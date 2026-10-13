@@ -19,6 +19,7 @@
 #include "main.h"
 #include "map.h"
 #include "manager/diggingCaveEntranceManager.h"
+#include "manager/lightRayManager.h"
 #include "menu.h"
 #include "message.h"
 #include "npc.h"
@@ -1970,6 +1971,48 @@ static void Port_WidescreenParallaxShadows(void) {
     }
 }
 
+/* The light rays of the Minish Woods (LightRayManager, gfx group 0x25) are a
+ * screen-fixed BG3 picture that fills only the right half of its 256 px map and
+ * ends at the right edge of the GBA screen: the light comes in from there. In
+ * Full View the layer would otherwise repeat from the view's left edge, cutting
+ * the rays at x=240 and starting them mid-view. Anchor the one copy of the map
+ * to the right edge of the view instead (as the HUD is) and leave the columns
+ * to its left empty (tile 0 of the rays' charblock is blank). */
+static u16 sWsLightRays[MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_FULL_VIEW_COLS];
+static void Port_WidescreenLightRayShadow(int width) {
+    const LightRayManager* rays = (const LightRayManager*)DeepFindEntityByID(MANAGER, LIGHT_RAY_MANAGER);
+    const u16* map = gScreen.bg3.subTileMap;
+    if (rays == NULL || rays->gfxGroup != 0x25 || map == NULL || (gScreen.lcd.displayControl & DISPCNT_BG3_ON) == 0 ||
+        (gScreen.bg3.control & 0xC080) != 0 || width <= 240 || ((width - 240) & 7) != 0)
+        return;
+    /* Shadow column c covers view x [c*8 - fine, c*8 + 8 - fine): with the map's
+     * native screen moved right by width-240, that is map column c + H/8 - (width-240)/8. */
+    const int first = ((gScreen.bg3.xOffset & 0x1ff) >> 3) - (width - 240) / 8;
+    /* The 240 px tall view reaches past the map's 32 rows and would wrap to its
+     * top; the map is a 32-row window into gBG3Buffer (64 rows), so the rows
+     * below come from the buffer. The view spans at most 31 rows, so each one
+     * keeps its own slot at (row & 31), the slot the renderers read. */
+    const int firstRow = (gScreen.bg3.yOffset & 0x1ff) >> 3;
+    const ptrdiff_t inBuffer = map - gBG3Buffer;
+    for (int k = 0; k < MODE1_WS_SHADOW_ROWS; ++k) {
+        const int row = firstRow + k;
+        const u16* src;
+        if (inBuffer >= 0 && inBuffer < (ptrdiff_t)ARRAY_COUNT(gBG3Buffer))
+            src = inBuffer + row * 32 < (ptrdiff_t)ARRAY_COUNT(gBG3Buffer) ? map + row * 32 : NULL;
+        else
+            src = map + (row & 31) * 32;
+        u16* dst = &sWsLightRays[(row & 31) * MODE1_WS_SHADOW_FULL_VIEW_COLS];
+        for (int col = 0; col < MODE1_WS_SHADOW_FULL_VIEW_COLS; ++col) {
+            const int mapCol = first + col;
+            dst[col] = src != NULL && mapCol >= 0 && mapCol < 32 ? src[mapCol] : 0;
+        }
+    }
+    virtuappu_mode1_ws_shadow[3] = sWsLightRays;
+    virtuappu_mode1_ws_shadow_base_tile[3] = 0;
+    virtuappu_mode1_ws_shadow_cols[3] = MODE1_WS_SHADOW_FULL_VIEW_COLS;
+    virtuappu_mode1_ws_shadow_stride[3] = MODE1_WS_SHADOW_FULL_VIEW_COLS;
+}
+
 /* Called per-VBlank from src/interrupts.c::UpdateDisplayControls. */
 void Port_Widescreen_UpdateShadows(void) {
     if (gMain.task != TASK_GAME || (gRoomControls.scrollAction != 2 && gRoomControls.scrollAction != 0))
@@ -2144,6 +2187,7 @@ void Port_Widescreen_UpdateShadows(void) {
     }
     if (latchedMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X) {
         virtuappu_mode1_ws_full_view = 1;
+        Port_WidescreenLightRayShadow(400); /* the published view is not 400 wide yet this tick */
     }
     if (!Port_Widescreen_ShadowsLive()) {
         if (producerMode != PORT_3DS_FULL_VIEW_FALLBACK) {

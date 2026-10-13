@@ -49,6 +49,7 @@ merged into `main`) and `v0.1.0` (2026-10-11, beta).
 | `feat/game-style-windows` (cut from `release/v0.1.2`) | the bottom screen's own menu style in every tab: cells, buttons and tabs with the game windows' rounded corners at 1x in the theme's colours, toasts / busy / modals in the message window's frame, the world map without the stone frame (its own box, Link's head as the marker), the quest lists' and wells' slab and stone through the same boxes (`Port_SecondScreenTheme_SetBoxPainter`) | on the 2DS by Claude (screenshots of every tab, both map views); the quest sub-lists (kinstones, techniques) not seen: the save on the console has neither | _(merged into `release/v0.1.2` 2026-10-13 on the owner's word)_ |
 | `fix/fullview-border-scroll` (cut from `release/v0.1.2`) | issue #11: a room-border scroll keeps Full View (400x240 snapshot of the outgoing room, the scroll ends on the 400x240 view's edge, the view carried across the room change) instead of dropping to 266x160 | checked by the owner and by Claude on the 2DS, Hyrule Field 03/06 <-> 03/05 (right and left: every recorded frame 400x240); up and down not tried yet | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `feat/sidebar-game-hud` (cut from `release/v0.1.2`) | P2.5: X/Y (and ZL/ZR) fire soft-slot items on 3DS; the sidebar's A/B/X/Y diamond with a selected button; R always shown with the game's label over it; rupees/keys in the HUD font | checked by the owner on the 2DS (X/Y with sword and shield: the only items the save has) | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/light-rays-full-view` (cut from `release/v0.1.2`) | the Minish Woods light rays in Full View: BG3 anchored to the view's right edge (they started mid-view and were cut at x=240 on the GPU renderer); BG3 in Full View drawn across the whole view by the GPU renderer as by the software one; BG3 HBlank effects in the native canvas only for Vaati's appearing | on the 2DS by Claude with the owner's state (00/00): rays enter from the right edge, GPU CHECK 0; in the combined build on the owner's 2DS |
 
 **Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
 Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
@@ -604,6 +605,15 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   polled them: its VBlankIntrWait writes KEYINPUT from the platform directly and skips
   `Port_UpdateInput`, where PC polls them. Assignment selection is sticky (owner): the tapped
   button stays selected, A by default.
+- **2026-10-13** The Minish Woods light rays (LightRayManager, gfx group 0x25) are a screen-fixed
+  BG3 picture filling only the right half of its 256 px map, ending at the GBA screen's right edge.
+  Full View repeats a 32-column BG from the view's left edge (mode1.c, `repeat_full_view_overlay`),
+  which put a hard edge through the view; the GPU renderer did not even repeat it (only Hyrule
+  Field's clouds had `bg3Repeat`) and cut it at x=240. Now a BG3 shadow anchors the one copy to the
+  view's right edge (`Port_WidescreenLightRayShadow`), rows past the map's 32 read from gBG3Buffer;
+  the GPU renderer repeats BG3 in Full View like the software one; and the "native bounds" rule for
+  BG3 under HBlank DMA (issue #5) applies only while Vaati's appearing manager exists, since the
+  other HBlank BG3 effects (rays in their other state, steam) are overlays of the whole screen.
 - **2026-10-13** The R prompt follows the HUD: the button at the right, the game's label art
   (in the game's language) over it to its left, measured on a scratch strip first because
   `Port_SecondScreenTheme_DrawActionLabel` places by its centre.

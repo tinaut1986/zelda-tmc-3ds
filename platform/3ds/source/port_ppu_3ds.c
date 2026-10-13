@@ -32,6 +32,8 @@
 #include "virtuappu.h"
 #include "cpu/mode1.h"
 #include "main.h"
+#include "entity.h"
+#include "manager.h"
 #include "map.h"
 #include "area.h"
 #include "screen.h"
@@ -265,7 +267,9 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     view->wsMsgX1 = virtuappu_mode1_ws_msg_x1;
     view->wsMsgY0 = virtuappu_mode1_ws_msg_y0;
     view->wsMsgY1 = virtuappu_mode1_ws_msg_y1;
-    view->bg3Repeat = virtuappu_mode1_bg3_repeat;
+    /* As mode1.c's repeat_full_view_overlay: in Full View BG3 (light rays, steam,
+     * clouds) covers the whole view, not just the native 240 columns. */
+    view->bg3Repeat = virtuappu_mode1_bg3_repeat || virtuappu_mode1_ws_full_view != 0;
     view->wsFullView = virtuappu_mode1_ws_full_view != 0;
     /* The software PPU's rule (mode1_bg3_native_bounds_active). */
     view->bg3HofsBase = virtuappu_mode1_bg3_hofs_base;
@@ -1210,8 +1214,12 @@ void Port_PPU_PresentFrame(void) {
      * Wide mode must extend them past x=240 just as Full View already does. */
     virtuappu_mode1_bg3_repeat = gMain.task == TASK_GAME &&
         gRoomControls.area == AREA_HYRULE_FIELD && gScreen.bg3.control == 0x1e05;
+    /* Only Vaati's appearing effect is placed on the native screen (BG3 drawn at an
+     * entity's screen position); the other BG3 HBlank effects (Minish Woods light
+     * rays, steam) are overlays that must cover the whole view. */
     virtuappu_mode1_bg3_hdma_native_bounds =
-        port_hdma_dest_overlaps(gIoMem + MODE1_IO_BG3HOFS, gIoMem + MODE1_IO_BG3VOFS + 2) != 0;
+        port_hdma_dest_overlaps(gIoMem + MODE1_IO_BG3HOFS, gIoMem + MODE1_IO_BG3VOFS + 2) != 0 &&
+        DeepFindEntityByID(MANAGER, VAATI_APPARATE_MANAGER) != NULL;
     /* BG3HOFS before any HBlank DMA step of this frame. */
     virtuappu_mode1_bg3_hofs_base = (int)((gIoMem[MODE1_IO_BG3HOFS] | (gIoMem[MODE1_IO_BG3HOFS + 1] << 8)) & 0x1ff);
 
