@@ -49,6 +49,7 @@ merged into `main`) and `v0.1.0` (2026-10-11, beta).
 | `feat/game-style-windows` (cut from `release/v0.1.2`) | the bottom screen's own menu style in every tab: cells, buttons and tabs with the game windows' rounded corners at 1x in the theme's colours, toasts / busy / modals in the message window's frame, the world map without the stone frame (its own box, Link's head as the marker), the quest lists' and wells' slab and stone through the same boxes (`Port_SecondScreenTheme_SetBoxPainter`) | on the 2DS by Claude (screenshots of every tab, both map views); the quest sub-lists (kinstones, techniques) not seen: the save on the console has neither | _(merged into `release/v0.1.2` 2026-10-13 on the owner's word)_ |
 | `fix/fullview-border-scroll` (cut from `release/v0.1.2`) | issue #11: a room-border scroll keeps Full View (400x240 snapshot of the outgoing room, the scroll ends on the 400x240 view's edge, the view carried across the room change) instead of dropping to 266x160 | checked by the owner and by Claude on the 2DS, Hyrule Field 03/06 <-> 03/05 (right and left: every recorded frame 400x240); up and down not tried yet | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `feat/sidebar-game-hud` (cut from `release/v0.1.2`) | P2.5: X/Y (and ZL/ZR) fire soft-slot items on 3DS; the sidebar's A/B/X/Y diamond with a selected button; R always shown with the game's label over it; rupees/keys in the HUD font | checked by the owner on the 2DS (X/Y with sword and shield: the only items the save has) | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/chuchu-bad-child` (cut from `release/v0.1.2`) | a Chuchu no longer reads its FX child unless it is an entity: closing the pause menu after loading a state saved in it left `0x160` there and crashed (Luma dumps 2 and 3, `chuchu.c:84`); who writes the value is not known yet | on the 2DS by Claude: same state, no crash |
 
 **Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
 Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
@@ -65,8 +66,9 @@ memory, see its last comment), then the two checks left on issue #11 (a border s
 one down in Full View, and one frame at the scroll's start where the HUD vanishes).
 
 **On the owner's consoles now (2026-10-13):**
-- Old 3DS/2DS, **`192.168.1.132`** (not in `.3ds_ftp_ip`: pass `--ip`): the debug build of
-  `feat/sidebar-game-hud` (= `release/v0.1.2` at the merge), Full View (`widescreen=1`,
+- Old 3DS/2DS, **`192.168.1.132`** (not in `.3ds_ftp_ip`: pass `--ip`): a debug build of
+  `release/v0.1.2` with `fix/light-rays-full-view`, `feat/tabbar-position`, `feat/hud-xy-diamond`
+  and `fix/chuchu-bad-child` applied together (2026-10-13), Full View (`widescreen=1`,
   `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT. The owner plays on
   it (Minish Woods, sword and shield only) and keeps save states at spots that reproduce bugs:
   never overwrite or delete one (protect their place with a *new* state: `savestate`, then
