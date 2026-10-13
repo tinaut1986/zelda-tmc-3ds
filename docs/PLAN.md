@@ -52,6 +52,7 @@ merged into `main`) and `v0.1.0` (2026-10-11, beta).
 | `fix/light-rays-full-view` (cut from `release/v0.1.2`) | the Minish Woods light rays in Full View: BG3 anchored to the view's right edge (they started mid-view and were cut at x=240 on the GPU renderer); BG3 in Full View drawn across the whole view by the GPU renderer as by the software one; BG3 HBlank effects in the native canvas only for Vaati's appearing | on the 2DS by Claude with the owner's state (00/00): rays enter from the right edge, GPU CHECK 0; in the combined build on the owner's 2DS |
 | `feat/tabbar-position` (cut from `release/v0.1.2`) | P2.7: OPTIONS -> TABS (top / bottom) next to THEME; FOREST is a palette like the others; `tools/ui-preview` links again (soft-slot stubs) | on the 2DS by Claude (the cell shows TABS = TOP); the switch itself not tried yet |
 | `feat/hud-xy-diamond` (cut from `release/v0.1.2`) | P2.6: X/Y in the top HUD, A/B/X/Y as a diamond; X/Y sprites drawn by the engine, their tiles in OBJ VRAM only while the frame renders | on the 2DS by Claude and the owner (combined build, Minish Woods 00/00): the diamond with sword on X and shield on Y, A/B slide into it from a state saved with the old layout, GPU CHECK 0 structural |
+| `fix/chuchu-bad-child` (cut from `release/v0.1.2`) | a Chuchu no longer reads its FX child unless it is an entity: closing the pause menu after loading a state saved in it left `0x160` there and crashed (Luma dumps 2 and 3, `chuchu.c:84`); who writes the value is not known yet (issue #13) | on the 2DS by Claude: same state, no crash |
 
 **Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
 Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
@@ -68,8 +69,9 @@ memory, see its last comment), then the two checks left on issue #11 (a border s
 one down in Full View, and one frame at the scroll's start where the HUD vanishes).
 
 **On the owner's consoles now (2026-10-13):**
-- Old 3DS/2DS, **`192.168.1.132`** (not in `.3ds_ftp_ip`: pass `--ip`): the debug build of
-  `feat/sidebar-game-hud` (= `release/v0.1.2` at the merge), Full View (`widescreen=1`,
+- Old 3DS/2DS, **`192.168.1.132`** (not in `.3ds_ftp_ip`: pass `--ip`): a debug build of
+  `release/v0.1.2` with `fix/light-rays-full-view`, `feat/tabbar-position`, `feat/hud-xy-diamond`
+  and `fix/chuchu-bad-child` applied together (2026-10-13), Full View (`widescreen=1`,
   `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT. The owner plays on
   it (Minish Woods, sword and shield only) and keeps save states at spots that reproduce bugs:
   never overwrite or delete one (protect their place with a *new* state: `savestate`, then
