@@ -421,6 +421,9 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   *Spec:* the intro/title at 400x240: only the forest background extended (a picture the owner
   generates from a dump, read from the SD card as in P4.3), the logo, sword and the rest centred as
   they are; the light rays between the trees stretched or repeated to the edges if they can be.
+  The forest is 240x160, so it needs all four sides (80 left and right, 40 above and below). The
+  picture's procedure (dump, template, prompt, check): `docs/wide-scene-extension.md`; the owner's
+  material and the Antigravity prompt: `~/Imágenes/intro-titulo/` (never in the repository).
   *Done when:* the owner sees the title at 400x240 on the console.
 ---
 
