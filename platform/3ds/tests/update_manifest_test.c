@@ -22,7 +22,7 @@ int main(int argc,char **argv) {
  assert(!Update_ValidVersion("3.1-E99999999"));assert(!Update_ValidVersion("3.1.2.3"));
  assert(Update_IsNewer("v0.1.0","0.1.0-beta"));assert(Update_IsNewer("v0.1.0","0.1.0-dev.3+abc1234"));
  assert(Update_IsNewer("v0.1.1-beta","0.1.0"));assert(!Update_IsNewer("v0.1.0-beta","0.1.0-beta"));
- assert(Update_IsNewer("v0.1.0-beta","0.1.0-dev.3.2+abc1234")==false);assert(!Update_IsNewer("v0.1.0","0.1.1-dev.1+abc1234"));
+ assert(Update_IsNewer("v0.1.0-beta","0.1.0-dev.3.2+abc1234"));assert(!Update_IsNewer("v0.1.0-dev.5+abc1234","0.1.0-beta"));assert(!Update_IsNewer("v0.1.0","0.1.1-dev.1+abc1234"));
  assert(!Update_ValidVersion("0.1.0-dev/../x"));assert(!Update_ValidVersion("0.1.0-betax"));
  char lines[384][43];
  unsigned count=Update_FormatNotes("## Changelog\n\n- **Fixed** [world colors](https://example.com).\n![QR](https://example.com/qr.png)",lines,384);

@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "updater.h"
@@ -89,7 +90,16 @@ void Updater_Check(void) {}
 void Updater_Download(void) {}
 void Updater_SetChannel(bool prerelease) { (void)prerelease; }
 unsigned Updater_GetNotes(char* out, unsigned capacity) { if (capacity) out[0] = 0; return 0; }
-void Updater_GetStatus(UpdateStatus* out) { memset(out, 0, sizeof(*out)); }
+/* UPDATE_BETA=1: a beta found on the + BETAS channel, to preview the RELEASE cell. */
+void Updater_GetStatus(UpdateStatus* out) {
+    memset(out, 0, sizeof(*out));
+    if (getenv("UPDATE_BETA")) {
+        out->state = UPDATE_AVAILABLE;
+        out->prerelease = true;
+        snprintf(out->version, sizeof(out->version), "v0.1.2");
+        snprintf(out->message, sizeof(out->message), "UPDATE AVAILABLE");
+    }
+}
 unsigned Update_FormatNotes(const char* md, char lines[][43], unsigned capacity) {
     (void)md; (void)lines; (void)capacity; return 0;
 }

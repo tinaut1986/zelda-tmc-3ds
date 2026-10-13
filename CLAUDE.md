@@ -163,9 +163,11 @@ A **stable** release lists everything since the previous *stable* tag, betas inc
 The workflow passes `TMC3DS_CHANNEL=beta|release` to `platform/3ds/build.sh`. The
 generated `tmc3ds_version.h` then carries `TMC_PORT_IS_BETA` and
 `TMC_PORT_VERSION_LABEL` ("X.Y.Z BETA"); `TMC_PORT_VERSION` stays the plain number
-(user-agent, file names, comparisons). The updater treats an installed beta as
-older than the stable release of its own number, and never offers a beta its own
-pre-release page.
+(user-agent, file names, comparisons). The updater orders one number's builds
+`X.Y.Z-dev.N` < `X.Y.Z BETA` < `X.Y.Z`: a dev build is offered the beta of its number
+(it predates the tag, the branch being renamed after it), an installed beta the stable
+release, and a beta is never offered its own pre-release page. OPTIONS -> UPDATES shows
+the release found with BETA when it is one, and the installed build's label.
 
 ### After tagging
 
