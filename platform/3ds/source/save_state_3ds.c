@@ -13,6 +13,7 @@
 #include "sound.h"
 #include "port_config.h"
 #include "port_audio_3ds.h"
+#include "port_entity_ctx.h"
 #include "state_pointers_3ds.h"
 #include "state_symbols_3ds.h"
 #include "tmc3ds_version.h"
@@ -648,6 +649,22 @@ static void MoveRomPointers(uintptr_t oldBase) {
  * (the widescreen's shadows, the map layers) reads a wrong control word. The pointers the
  * game keeps there are always one of the BG settings; one that is not is put back on the
  * BG the game uses for that layer (the top layer on BG1, the bottom one on BG2). */
+/* Each entity keeps its script context twice: in gEntityScriptCtxTable (a holder the state
+ * relocates) and in its own scriptContext field (+0x84), which points into the middle of
+ * gScriptExecutionContextArray. States written before that array was a relocation target
+ * (2026-10-13) hold the field as the writing build's address; once the array has moved, an
+ * entity runs a script from whatever is there now (a house door in Lon Lon Ranch: a data abort
+ * in GetNextScriptCommandHalfword). Put the field back from the table, which Port_SetEntityScriptCtx
+ * keeps equal to it. */
+static void RepairEntityScriptContexts(void) {
+    for (int slot = 1; slot < PC_MAX_ENTITY_SLOTS; ++slot) {
+        ScriptExecutionContext* ctx = gEntityScriptCtxTable[slot];
+        Entity* ent = Port_EntityFromSlot(slot);
+        if (ctx != NULL && ent != NULL && ent->next != NULL)
+            ((GenericEntity*)ent)->scriptContext = ctx;
+    }
+}
+
 static void RepairScreenPointers(void) {
     BgSettings* const valid[4] = { &gScreen.bg0, &gScreen.bg1, (BgSettings*)&gScreen.bg2, (BgSettings*)&gScreen.bg3 };
     BgSettings** const holders[4] = { &gMapTop.bgSettings, &gMapBottom.bgSettings, &gUI.mapTopBgSettings,
@@ -735,6 +752,7 @@ static void LoadNamed(FILE* f, const StateHeader* h, uint32_t id) {
     free(body);
     Port_Audio_3DSSetPaused(false);
     RepairScreenPointers();
+    RepairEntityScriptContexts();
     /* The players' state came back with everything else; start the saved
      * room music afresh so the mixer and the game agree on it. */
     const u32 bgm = gSoundPlayingInfo.currentBgm;

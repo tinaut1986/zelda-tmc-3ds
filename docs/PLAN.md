@@ -55,6 +55,7 @@ merged into `main`) and `v0.1.0` (2026-10-11, beta).
 | `fix/chuchu-bad-child` (cut from `release/v0.1.2`) | a Chuchu no longer reads its FX child unless it is an entity: closing the pause menu after loading a state saved in it left `0x160` there and crashed (Luma dumps 2 and 3, `chuchu.c:84`); who writes the value is not known yet (issue #13) | on the 2DS by Claude: same state, no crash | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `chore/tmc-link-elf` (cut from `release/v0.1.2`) | `tmc-link.py --elf`: symbols from the ELF of the build the console runs (a worktree's build has other addresses) | tried against the 2DS (peek by symbol with the combined build's ELF) | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `fix/fullview-scroll-align` (cut from `release/v0.1.2`) | issue #11: a Full View border scroll first lines the camera up across the scroll inside the outgoing room, so the 400x240 window never shows black outside a narrower or offset incoming room | on the 2DS by Claude, Hyrule Field: down 03/05 -> 03/04 (lines up left, then scrolls; before: a black strip), up 03/04 -> 03/05 (no line-up needed), right 03/06 -> 03/05; every recorded frame 400x240 with the HUD; a sideways scroll that needs a vertical line-up not forced |
+| `fix/state-script-context` (cut from `release/v0.1.2`) | save states: an entity's script context (+0x84) is relocated when saved and repaired from `gEntityScriptCtxTable` on load; a state from another build crashed in a house door's script (Lon Lon Ranch, 03/05, walking down) | on the 2DS by Claude and the owner: the owner's state 4 (03/05), which crashed, plays on |
 
 **Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
 Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
@@ -646,6 +647,12 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   the retail duration (4 px a tick, at most 20 ticks), then scrolls straight; when the incoming
   room is wider no line-up is needed. Only Full View does it: it only scrolls into rooms of at
   least 400x240, so a position that fits exists unless the rooms barely overlap.
+- **2026-10-13** A save state loaded into a build whose globals had moved crashed in a house
+  door's script (Luma dump 4: GetNextScriptCommandHalfword, houseDoorExterior.c:244). Every entity
+  keeps its script context in `gEntityScriptCtxTable` (relocated, a kInner holder) and in its own
+  field at +0x84, a pointer into the middle of `gScriptExecutionContextArray` that no rule covered.
+  New states relocate it (`kInnerTargets`); on load every live entity's field is put back from
+  the table, which also repairs the states already on the SD card.
 - **2026-10-13** The R prompt follows the HUD: the button at the right, the game's label art
   (in the game's language) over it to its left, measured on a scratch strip first because
   `Port_SecondScreenTheme_DrawActionLabel` places by its centre.
