@@ -18,6 +18,7 @@
 #include "state_pointers_3ds.h"
 #include "state_symbols_3ds.h"
 #include "tmc3ds_version.h"
+#include "retro_ach.h"
 
 #include <dirent.h>
 #include <stdio.h>
@@ -630,6 +631,7 @@ static void Save(uint32_t id, bool isNew) {
     SaveStateInfo info;
     InfoFromHeader(id, &h, &info);
     ListUpsert(&info);
+    RetroAch_StateSaved(id); /* the achievements' progress goes with the state */
     Finish(true, id, "STATE %u SAVED", Number(id));
 }
 
@@ -763,6 +765,7 @@ static void LoadNamed(FILE* f, const StateHeader* h, uint32_t id) {
     SoundReq(SONG_STOP_ALL);
     if (bgm) SoundReq(bgm);
     Port_Widescreen_ResetAfterStateLoad();
+    RetroAch_StateLoaded(id);
     Finish(true, id, "STATE %u LOADED", Number(id));
 }
 
@@ -812,6 +815,7 @@ static void Load(uint32_t id) {
     SoundReq(SONG_STOP_ALL);
     if (bgm) SoundReq(bgm);
     Port_Widescreen_ResetAfterStateLoad();
+    RetroAch_StateLoaded(id);
     Finish(true, id, "STATE %u LOADED", Number(id));
 }
 
@@ -824,6 +828,7 @@ static void Delete(uint32_t id) {
     ThumbPath(path, sizeof(path), id);
     remove(path);
     if (ok) ListRemove(id);
+    if (ok) RetroAch_StateDeleted(id);
     Finish(ok, id, ok ? "STATE %u DELETED" : "DELETE FAILED", number);
 }
 

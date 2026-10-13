@@ -68,6 +68,7 @@ boxes below. History: `git log` and the decisions log.
 | `fix/fullview-after-soft-reset` (cut from `release/v0.1.3`) | issue #23: Full View off after a soft reset (the intro was drawn at 400x240 over the last room) | on the 2DS by Claude (soft reset from the Minish Woods: intro and title at 240x160) | _(merged into `release/v0.1.3` 2026-10-13)_ |
 | `feat/scene-recorder` (cut from `release/v0.1.3`) | P1.6: `tmc-link.py scenerec`, `tools/scene-rec/decode.py` | on the 2DS by Claude (89 frames decoded to PNG and GIF) | _(merged into `release/v0.1.3` 2026-10-13)_ |
 | `fix/install-relaunch` (cut from `release/v0.1.3`) | issue #4: relaunch 10 s after `SITE INSTALL` through libctru's chainloader (Luma dumps 7 and 8, `0xD86007F3`), as `../legend-of-doom-3ds` fixed it | builds; to try with several installs in a row; the same fix went to `../mzm` | _(merged into `release/v0.1.3` 2026-10-13 on the owner's word, before the install test)_ |
+| `feat/retroachievements` (cut from `release/v0.1.3`) | P2.8: the RetroAchievements tab (`docs/retroachievements.md`): rcheevos, `retro_ach.c` from `../sm-3ds`, RA memory map from `linker.ld`, top/bottom unlock notice, `http:C` in the RSF | builds (debug); tab seen in `tools/ui-preview` only; not run on the console (login, set, an unlock); pushed, for the owner to check and merge |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
@@ -361,6 +362,15 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   next to THEME (owner, 2026-10-13); every theme is only a palette (FOREST used to move the bar).
   Saved as `ui_tabs_bottom`; a config without it and with FOREST keeps the bar below.
   *Done when:* the owner switches it on the console in each theme (2026-10-13).
+
+- [ ] **P2.8** RetroAchievements tab (owner's request, 2026-10-13).
+  *Spec:* as in `../mzm` and `../sm-3ds`: rcheevos (softcore), login with the system keyboard,
+  on/off, notice on the top or bottom screen with its sound and a sample, the set as cards with
+  badges, sortable, a detail per achievement; progress saved with each save state
+  (`docs/retroachievements.md`). The game's memory at its GBA addresses through
+  `tools/gen_ra_map.py`. A first attempt with another tool had left only a stub.
+  *Done when:* the owner logs in on the console, the list and badges load, and an achievement
+  unlocks in play with its notice and sound (and is on the RA site).
 
 ## Phase 3: performance (60 fps, New 3DS and Old 3DS, no 3D)
 
@@ -729,3 +739,9 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   with generative AI from a screen dump (palette kept, centre untouched). It is read from the SD
   card (`portal-cutscene-strips.bin`), never shipped: it is derived from the game's art. Without
   it the sides are black.
+- **2026-10-13** RetroAchievements reads the game at its GBA addresses through a table generated
+  from `linker.ld` and the ELF (`tools/gen_ra_map.py`), not a hand list as `../mzm` started with:
+  every global the original keeps at a fixed place is covered at once, and the ARM32 structs keep
+  the GBA layout. The ROM is hashed from the file (the port patches `gRomData`). rcheevos and
+  `retro_ach.c` are built `-Os` to stay under the pinned read-only segment instead of raising the
+  pin, which would refuse every older save state.

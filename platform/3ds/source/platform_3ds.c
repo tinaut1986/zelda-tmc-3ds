@@ -1,6 +1,7 @@
 #include "fade_gpu_3ds.h"
 #include "platform_3ds.h"
 #include "boot_text_3ds.h"
+#include "retro_ach.h"
 #include <math.h>
 #include "updater.h"
 #include "old3ds_frame_pacer.h"
@@ -648,6 +649,8 @@ static bool PumpLifecycleAndAudio(void) {
     const uint64_t audioTicks = svcGetSystemTick() - audioStart;
     sAudioPumpTicks += audioTicks;
     if (audioTicks > sAudioPumpMaxTicks) sAudioPumpMaxTicks = audioTicks;
+    /* Server answers, keep-alive and the unlock notice's timer, also outside gameplay. */
+    RetroAch_Update();
     return true;
 }
 

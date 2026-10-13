@@ -122,6 +122,19 @@ set(TMC_PORT_SOURCES
 )
 list(TRANSFORM TMC_PORT_SOURCES PREPEND "${TMC_ROOT}/")
 
+# rcheevos: the official RetroAchievements library, vendored under third_party/rcheevos
+# (its VERSION.txt: the commit and the subset kept). Its own target, so it is built as
+# plain C without the game's forced include and defines.
+file(GLOB RCHEEVOS_SOURCES
+    "${TMC_ROOT}/third_party/rcheevos/src/*.c"
+    "${TMC_ROOT}/third_party/rcheevos/src/rapi/*.c"
+    "${TMC_ROOT}/third_party/rcheevos/src/rcheevos/*.c")
+add_library(rcheevos STATIC ${RCHEEVOS_SOURCES} "${TMC_ROOT}/third_party/rcheevos/src/rhash/md5.c")
+target_include_directories(rcheevos
+    PUBLIC "${TMC_ROOT}/third_party/rcheevos/include" "${TMC_ROOT}/third_party/rcheevos/src/rhash"
+    PRIVATE "${TMC_ROOT}/third_party/rcheevos/src")
+target_compile_options(rcheevos PRIVATE -Os -ffunction-sections -fdata-sections -w)
+
 ctr_add_shader_library(ppu_gpu_3ds_shader source/ppu_gpu_3ds.v.pica)
 dkp_add_embedded_binary_library(ppu_gpu_3ds_shader_bin ppu_gpu_3ds_shader)
 
@@ -155,6 +168,8 @@ add_executable(tmc-3ds
     source/ftp_server_3ds.c
     source/debug_link_3ds.c
     source/save_state_3ds.c
+    source/retro_ach.c
+    source/retro_ach_map_3ds.c
     source/state_symbols_3ds.c
     source/state_blob_3ds.c
     source/state_pointers_3ds.c
@@ -211,6 +226,9 @@ set_source_files_properties(
     "${CMAKE_CURRENT_LIST_DIR}/source/port_ppu_gpu_3ds.c"
     PROPERTIES COMPILE_OPTIONS "-flto;-fno-semantic-interposition"
 )
+# Neither is hot (a few calls a frame): built for size, so the read-only segment stays
+# under its pin (3dsx.ld).
+set_source_files_properties("${CMAKE_CURRENT_LIST_DIR}/source/retro_ach.c" PROPERTIES COMPILE_OPTIONS "-Os")
 set_source_files_properties(
     "${TMC_ROOT}/port/port_m4a_backend.cpp"
     # The mixdown was carved out of port_m4a_backend.cpp, so it must keep that
@@ -240,9 +258,9 @@ target_link_directories(tmc-3ds PRIVATE "${UPDATE_DEPS_ROOT}/lib")
 find_library(TMC_UPDATE_ZLIB NAMES z PATHS "${UPDATE_DEPS_ROOT}/lib"
     "$ENV{DEVKITPRO}/portlibs/3ds/lib" NO_DEFAULT_PATH)
 if(TMC_UPDATE_ZLIB)
-    target_link_libraries(tmc-3ds PRIVATE citro2d citro3d curl jansson mbedtls mbedx509 mbedcrypto "${TMC_UPDATE_ZLIB}" ctru m ppu_gpu_3ds_shader_bin)
+    target_link_libraries(tmc-3ds PRIVATE rcheevos citro2d citro3d curl jansson mbedtls mbedx509 mbedcrypto "${TMC_UPDATE_ZLIB}" ctru m ppu_gpu_3ds_shader_bin)
 else()
-    target_link_libraries(tmc-3ds PRIVATE citro2d citro3d curl jansson mbedtls mbedx509 mbedcrypto ctru m ppu_gpu_3ds_shader_bin)
+    target_link_libraries(tmc-3ds PRIVATE rcheevos citro2d citro3d curl jansson mbedtls mbedx509 mbedcrypto ctru m ppu_gpu_3ds_shader_bin)
 endif()
 
 set(TMC_ROMFS "${CMAKE_CURRENT_BINARY_DIR}/romfs")
@@ -254,7 +272,10 @@ configure_file("${TMC_ROOT}/COPYRIGHT.md" "${TMC_ROMFS}/licenses/COPYRIGHT.md" C
 configure_file("${TMC_ROOT}/THIRD-PARTY-LICENSES.md" "${TMC_ROMFS}/licenses/THIRD-PARTY-LICENSES.md" COPYONLY)
 configure_file("${TMC_ROOT}/libs/agbplay_core/LICENSE" "${TMC_ROMFS}/licenses/agbplay-NOTICE.txt" COPYONLY)
 configure_file("${TMC_ROOT}/libs/agbplay_core/COPYING.LESSER" "${TMC_ROMFS}/licenses/LGPL-3.0.txt" COPYONLY)
+configure_file("${TMC_ROOT}/third_party/rcheevos/LICENSE" "${TMC_ROMFS}/licenses/rcheevos-MIT.txt" COPYONLY)
 configure_file("${CMAKE_CURRENT_LIST_DIR}/romfs/update-ca.pem" "${TMC_ROMFS}/update-ca.pem" COPYONLY)
+# The RetroAchievements unlock sound (retro_ach.c): mono s16le at 32000 Hz, from ../sm-3ds.
+configure_file("${CMAKE_CURRENT_LIST_DIR}/romfs/ra-unlock.pcm" "${TMC_ROMFS}/ra-unlock.pcm" COPYONLY)
 configure_file(
     "${CMAKE_CURRENT_LIST_DIR}/romfs/splash.rgb565"
     "${TMC_ROMFS}/splash.rgb565"
