@@ -108,6 +108,8 @@ void Port_Widescreen_NoteWindowCircle(int x, int y, int radius);
 int Port_Widescreen_PortalCutsceneWide(void);
 int Port_Widescreen_CutsceneViewLive(void);
 int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY);
+/* The title screen's forest is on the shown frame (the presenter extends it). */
+int Port_Widescreen_TitleForestShown(void);
 int Port_Widescreen_Win0Lines(int width, int height, unsigned short* out);
 
 /* EnterRoomTextboxManager writes its location banner directly to BG0 rather

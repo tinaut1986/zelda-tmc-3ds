@@ -1469,6 +1469,22 @@ int Port_Widescreen_CutsceneViewLive(void) {
            mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
 }
 
+/* The title screen's forest is on screen (src/title.c: BG1, or BG3 in the Japanese layout, at
+ * screen base 30, priority 3), read from the registers the shown frame was drawn from: the
+ * presenter then extends it around the 240x160 screen (docs/wide-scene-extension.md). */
+int Port_Widescreen_TitleForestShown(void) {
+#ifdef TMC_3DS
+    if (!Port_Config_3DSFullViewComboEnabled() || gMain.task != TASK_TITLE) return 0;
+    const unsigned dispcnt = gIoMem[REG_OFFSET_DISPCNT] | (gIoMem[REG_OFFSET_DISPCNT + 1] << 8);
+    const unsigned bg1 = gIoMem[REG_OFFSET_BG1CNT] | (gIoMem[REG_OFFSET_BG1CNT + 1] << 8);
+    const unsigned bg3 = gIoMem[REG_OFFSET_BG3CNT] | (gIoMem[REG_OFFSET_BG3CNT + 1] << 8);
+    const unsigned forest = BGCNT_SCREENBASE(30) | BGCNT_PRIORITY(3);
+    return ((dispcnt & DISPCNT_BG1_ON) && bg1 == forest) || ((dispcnt & DISPCNT_BG3_ON) && bg3 == forest);
+#else
+    return 0;
+#endif
+}
+
 int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {
     if (!Port_Widescreen_CutsceneViewLive()) return 0;
     /* Where the picture's top-left lands on screen: BG1's offsets in the registers the shown
@@ -2589,6 +2605,9 @@ int Port_Widescreen_PortalCutsceneWide(void) {
     return 0;
 }
 int Port_Widescreen_CutsceneViewLive(void) {
+    return 0;
+}
+int Port_Widescreen_TitleForestShown(void) {
     return 0;
 }
 int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {

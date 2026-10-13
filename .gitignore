@@ -49,7 +49,7 @@ tools/binutils
 !tools/scene-rec/decode.py
 !tools/scene-extend/extract_bg.py
 !tools/scene-extend/check_extension.py
-!tools/portal-strips/make_strips.py
+!tools/scene-extend/to_console.py
 *.pl
 
 # graphics

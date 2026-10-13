@@ -6,9 +6,11 @@ and right of the original picture do not exist in the game's data. The owner fil
 generative AI (Antigravity) from a screen dump; the game reads the result from the SD card.
 Done for the Minish portal cutscene (PLAN P4.3); planned for the title screen (P4.4).
 
-**Legal:** the dump, the template and the AI's picture are derived from the game's art. They stay
-on the owner's PC (`~/Imágenes/<scene>/`) and the SD card, never in the repository, a release or
-the CIA. The game works without them (black sides).
+**What ships:** only the generated parts (the original area left transparent), in
+`platform/3ds/assets/wide-scenes/` and, converted, in the romfs (`platform/3ds/romfs/wide-scenes/`,
+owner's decision, 2026-10-13, so players have them). The dump, the template and the whole
+picture (with the game's art in it) stay on the owner's PC (`~/Imágenes/<scene>/`). A file of the
+same name in the data folder replaces the shipped one, for trying a new picture.
 
 ## 1. Dump the scene and extract its picture
 
@@ -69,15 +71,22 @@ tools/scene-extend/check_extension.py ~/Imágenes/<scene>/extended.png ~/Imágen
 The original area must be unchanged (0 pixels; else paste the original back over it) and the new
 parts should use only the original's colours (0 off-palette; else map them to the nearest).
 
-## 4. Put it on the console
+## 4. Put it on the console, and in the game
 
-Each scene has its own file in the data folder and its own converter; the presenter draws only
-the new columns, scrolled with the picture, through the game's colour conversion and fades.
+```sh
+tools/scene-extend/to_console.py SCENE extended.png --ip IP     # try it: into the data folder
+```
 
-| Scene | File on the SD card | Converter | Code |
+To ship it: keep the generated parts (the original area transparent) in
+`platform/3ds/assets/wide-scenes/` and convert that into the romfs:
+`tools/scene-extend/to_console.py SCENE platform/3ds/assets/wide-scenes/NAME.png
+platform/3ds/romfs/wide-scenes/FILE.bin`. The presenter draws only the parts outside the game's
+own picture, scrolled with it, through the game's colour conversion and fades.
+
+| Scene | File (romfs `wide-scenes/`, or the data folder) | `to_console.py` scene; pictures | Code |
 |---|---|---|---|
-| Minish portal cutscene (P4.3) | `portal-cutscene-strips.bin` (80 + 64 columns x 320, RGB565) | `tools/portal-strips/make_strips.py extended.png --ip IP` | `Port_Widescreen_CutsceneStrips`, `DrawCutsceneStrips` (`platform_gpu_3ds.c`) |
-| Title screen (P4.4) | not made yet: the forest (BG1, 240x160, 22 colours) needs all four sides, 80 left and right and 40 above and below (`extract_bg.py DUMP 1 --top 40 --bottom 40`); the light rays (BG0, blended over it) and the logo and sword stay the game's | | |
+| Minish portal cutscene (P4.3) | `portal-cutscene-strips.bin` (80 + 64 columns x 320) | `portal`; shipped: `portal-cutscene-1.png` (the owner's pick; `-2` the plainer variant) | `Port_Widescreen_CutsceneStrips`, `DrawScenePictures` (`platform_gpu_3ds.c`) |
+| Title screen (P4.4) | `title-forest.bin` (400x240, the centre not drawn) | `title`; shipped: `title-forest-a.png` (`-b` the framed variant). The forest (BG1, 240x160, 22 colours) needs all four sides (`extract_bg.py DUMP 1 --top 40 --bottom 40`); the light rays, the logo and the sword stay inside the game's screen | `Port_Widescreen_TitleForestShown`, `DrawScenePictures` |
 
 A new scene needs its view at 400x240 first (the scene's own layout: how the picture and the
 sprites are centred, which BG repeats), then a strips file and its converter as for the portal.
