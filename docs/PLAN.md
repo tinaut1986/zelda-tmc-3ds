@@ -411,8 +411,9 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
 - [ ] **P4.3** Cutscenes in Full View: the Minish portal (owner's request, 2026-10-13).
   *Spec:* the portal's falling cutscene (`SUBTASK_PORTALCUTSCENE`) at 400x240: its 256x320
   picture (BG1) centred, the camera following Link over 240 lines, BG1 repeated across the view
-  and the wrapped columns covered by the presenter's side strips: black, or the player's own
-  picture from `portal-cutscene-strips.bin` (`tools/portal-strips/`), faded with the game's fades.
+  and the wrapped columns covered by the presenter's side strips from `portal-cutscene-strips.bin`
+  (shipped in the romfs, or the player's own; `tools/scene-extend/to_console.py`), faded with the
+  game's fades.
   Port side only through the published view key (no static added, issue #19).
   *Done when:* the owner sees the cutscene at 400x240 on the 2DS, black sides and with a strips
   file made from a generated extension of the picture.
@@ -729,3 +730,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   with generative AI from a screen dump (palette kept, centre untouched). It is read from the SD
   card (`portal-cutscene-strips.bin`), never shipped: it is derived from the game's art. Without
   it the sides are black.
+- **2026-10-13** The generated scene extensions ship after all (owner, so players have them):
+  only the generated parts, the original area transparent (`platform/3ds/assets/wide-scenes/`),
+  converted into the romfs; a file of the same name in the data folder replaces them. This
+  replaces the entry above that kept them on the SD card only. Dumps, templates and whole
+  pictures (with the game's art) stay off the repository.
