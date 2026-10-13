@@ -1662,9 +1662,21 @@ int Port_Widescreen_EffectiveViewHeight(void) {
     }
 }
 
+/* A Full View border scroll carries the view into the next room: it is the
+ * same 400x240 camera moving on, not a new room to latch. */
+static int Port_WidescreenScrollCarriesFullView(void) {
+    return Port_WidescreenFullViewScrollActive() && sWsGameplayMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
+}
+
 static Port3DSFullViewMode Port_WidescreenGameplayMode(void) {
     if (sWsGameplayRoomKey == Port_WidescreenRoomKey()) {
         return sWsGameplayMode;
+    }
+    /* The scroll switches gRoomControls.room mid-tick (sub_0807BD14), before
+     * UpdateShadows commits the carry at the next VBlank; the rest of that tick
+     * (the HUD's button anchors) must already see the carried 400 view. */
+    if (Port_WidescreenScrollCarriesFullView()) {
+        return PORT_3DS_FULL_VIEW_OUTDOOR_1X;
     }
     /* Presentation may intentionally show the previous room's last committed
      * frame for one boundary. A new live room must never inherit that old
@@ -2112,9 +2124,7 @@ void Port_Widescreen_UpdateShadows(void) {
     if (gFadeControl.active != 0) sWsFadeRecent = 90;
     else if (sWsFadeRecent > 0) --sWsFadeRecent;
     if (sWsGameplayRoomKey != roomKey) {
-        /* A Full View border scroll carries the view into the next room: it
-         * is the same 400x240 camera moving on, not a new room to latch. */
-        const int carry = Port_WidescreenFullViewScrollActive() && sWsGameplayMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
+        const int carry = Port_WidescreenScrollCarriesFullView();
         sWsRoomLoadTicks = sWsFadeRecent > 0 ? 16 : 0;
         sWsRoomLoadGraceTicks = sWsFadeRecent > 0 ? 16 + 24 : 0;
         sWsGameplayRoomKey = roomKey;
