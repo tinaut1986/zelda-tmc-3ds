@@ -160,6 +160,7 @@ add_executable(tmc-3ds
     source/cia_install_3ds.c
     source/port_second_screen_sync_3ds.c
     source/port_ppu_3ds.c
+    source/hud_xy_3ds.c
     source/fade_gpu_3ds.c
     source/port_ppu_gpu_3ds_model.c
     source/port_ppu_gpu_3ds.c

@@ -54,8 +54,15 @@ void* sub_080AD8F0(u32 sprite, u32 frame) {
 #endif
 }
 
+#ifdef TMC_3DS
+#include "port_hud_xy.h"
+#endif
+
 void FlushSprites(void) {
     gOAMControls.updated = 0;
+#ifdef TMC_3DS
+    Port_HudXY_BeginFrame();
+#endif
 }
 
 void CopyOAM(void) {
