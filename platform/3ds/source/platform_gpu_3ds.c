@@ -7,6 +7,7 @@
 #include "port_widescreen.h"
 #include "app_paths_3ds.h"
 #include "fade_gpu_3ds.h"
+#include "cpu/mode1.h"
 
 #include <3ds.h>
 #include <citro2d.h>
@@ -74,6 +75,7 @@ _Static_assert(SHARP_BILINEAR_TEXTURE_HEIGHT >= 160 * 2 + 1,
 extern u32 __ctru_linear_heap;
 extern u32 __ctru_linear_heap_size;
 extern bool Port_Config_GetShowFps(void);
+extern bool Port_Config_GetColorCorrection(void);
 extern void Port_FadedBlackRGB(uint8_t* r, uint8_t* g, uint8_t* b); /* src/fade.c */
 
 /* What the bars beside a narrow view are filled with: black, or the fade's
@@ -565,6 +567,7 @@ enum { STRIPS_LEFT_W = 80, STRIPS_RIGHT_W = 64, STRIPS_W = STRIPS_LEFT_W + STRIP
        STRIPS_TEX_W = 256, STRIPS_TEX_H = 512, PICTURE_W = 256 };
 static C3D_Tex sStripsTexture;
 static int sStripsState; /* 0 not tried, 1 loaded, -1 no file (black) */
+static bool sStripsCorrected; /* the colour correction the texture was made with */
 
 static void LoadCutsceneStrips(void) {
     sStripsState = -1;
@@ -581,10 +584,11 @@ static void LoadCutsceneStrips(void) {
     memset(linear, 0, (size_t)STRIPS_TEX_W * STRIPS_TEX_H * sizeof(uint32_t));
     for (unsigned r = 0; r < STRIPS_H; ++r) {
         for (unsigned x = 0; x < STRIPS_W; ++x) {
+            /* Back to the GBA's 15-bit colour (the picture keeps the game's palette) and through
+             * the game's own conversion, colour correction included, so the strips match it. */
             const uint16_t c = pixels[r * STRIPS_W + x];
-            const uint32_t red = ((c >> 11) & 31u) * 255u / 31u, green = ((c >> 5) & 63u) * 255u / 63u,
-                           blue = (c & 31u) * 255u / 31u;
-            linear[r * STRIPS_TEX_W + x] = 0xFF000000u | (blue << 16) | (green << 8) | red;
+            const uint16_t gba = (uint16_t)(((c >> 11) & 31u) | ((((c >> 5) & 63u) >> 1) << 5) | ((c & 31u) << 10));
+            linear[r * STRIPS_TEX_W + x] = virtuappu_mode1_rgb555_to_abgr8888(gba);
         }
     }
     if (!C3D_TexInit(&sStripsTexture, STRIPS_TEX_W, STRIPS_TEX_H, GPU_RGBA8)) {
@@ -596,6 +600,7 @@ static void LoadCutsceneStrips(void) {
                             GX_BUFFER_DIM(STRIPS_TEX_W, STRIPS_TEX_H), TextureTransfer());
     linearFree(linear);
     C3D_TexSetFilter(&sStripsTexture, GPU_NEAREST, GPU_NEAREST);
+    sStripsCorrected = Port_Config_GetColorCorrection();
     sStripsState = 1;
 }
 
@@ -624,6 +629,10 @@ static void DrawCutsceneStrips(bool abgrAfter) {
         if (sStripsState == 1) C3D_TexDelete(&sStripsTexture);
         sStripsState = 0;
         return;
+    }
+    if (sStripsState == 1 && sStripsCorrected != Port_Config_GetColorCorrection()) {
+        C3D_TexDelete(&sStripsTexture); /* the option changed: made again */
+        sStripsState = 0;
     }
     if (sStripsState == 0) LoadCutsceneStrips();
     /* Citro2D sends a batch when the texture changes, with the env set then: send the

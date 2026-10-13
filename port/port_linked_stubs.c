@@ -1441,9 +1441,13 @@ int Port_Widescreen_CutsceneViewLive(void) {
 
 int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {
     if (!Port_Widescreen_CutsceneViewLive()) return 0;
-    /* Where the picture's top-left lands on screen: BG1's offsets, as the frame drew them. */
-    if (pictureX) *pictureX = -(s16)gScreen.bg1.xOffset;
-    if (pictureY) *pictureY = -(s16)gScreen.bg1.yOffset;
+    /* Where the picture's top-left lands on screen: BG1's offsets in the registers the shown
+     * frame was drawn from (gScreen is already the next tick's, a frame ahead: the strips
+     * slid against the picture). 9-bit, so 0x1B0 is -80. */
+    const int hofs = (gIoMem[REG_OFFSET_BG1HOFS] | (gIoMem[REG_OFFSET_BG1HOFS + 1] << 8)) & 0x1ff;
+    const int vofs = (gIoMem[REG_OFFSET_BG1VOFS] | (gIoMem[REG_OFFSET_BG1VOFS + 1] << 8)) & 0x1ff;
+    if (pictureX) *pictureX = -(hofs >= 256 ? hofs - 512 : hofs);
+    if (pictureY) *pictureY = -(vofs >= 256 ? vofs - 512 : vofs);
     return 1;
 }
 
