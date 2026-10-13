@@ -57,30 +57,32 @@ merged into `main`) and `v0.1.0` (2026-10-11, beta).
 | `fix/fullview-scroll-align` (cut from `release/v0.1.2`) | issue #11: a Full View border scroll first lines the camera up across the scroll inside the outgoing room, so the 400x240 window never shows black outside a narrower or offset incoming room | on the 2DS by Claude, Hyrule Field: down 03/05 -> 03/04 (lines up left, then scrolls; before: a black strip), up 03/04 -> 03/05 (no line-up needed), right 03/06 -> 03/05; every recorded frame 400x240 with the HUD; a sideways scroll that needs a vertical line-up not forced | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `fix/state-script-context` (cut from `release/v0.1.2`) | save states: an entity's script context (+0x84) is relocated when saved and repaired from `gEntityScriptCtxTable` on load; a state from another build crashed in a house door's script (Lon Lon Ranch, 03/05, walking down) | on the 2DS by Claude and the owner: the owner's state 4 (03/05), which crashed, plays on | _(merged into `release/v0.1.2` 2026-10-13)_ |
 
-**Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
-Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
-triforce turning on the bottom screen, the whole splash on top, no console text, no fixed delay),
-the SHOW FPS box of four lines, save states from older builds (view and crash fixes, see the
-decisions log) and taps on the tab bar. Still to check by the owner: the STATES tab itself, and
-states of other scenes than Hyrule Field and Link's house (run `tools/state-census` on a state
-of each; a holder nobody listed crashes on load into a different build).
+**Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
+Link's house and the Minish Woods are untested in builds other than their writer's (run
+`tools/state-census` on a state of each; a holder nobody listed crashes on load into a different
+build, as the house door did: issue #14). A state saved inside the pause menu breaks on closing
+it (issue #13).
 
-**Start here (2026-10-13, later):** everything is merged into `release/v0.1.2` and pushed (light
-rays, TABS, the X/Y diamond, the Chuchu guard, `tmc-link --elf`). P2.6 and P2.7 confirmed by the
-owner. Next, in this order: issue #13 (closing the
-pause menu after loading a state saved in it: who writes `0x160` into the Chuchu, garbled Link);
-issue #4 (the relaunch after `SITE INSTALL` sometimes fails). Issue #11: scrolls up, down and
-sideways checked (the HUD stayed in every recorded frame), Full View scrolls now line up before
-they cross; a sideways scroll that needs a vertical line-up is still to be seen.
+**Start here (2026-10-13, end of the session):** everything is merged into `release/v0.1.2` and
+pushed: light rays, TABS (P2.7), the X/Y diamond (P2.6), the Chuchu guard, `tmc-link --elf`, the
+Full View scroll line-up (issue #11) and entity script contexts in save states (issue #14). No
+branch or worktree is open. Next, in this order:
+1. Issue #13: closing the pause menu after loading a state saved in it writes `0x160` (the OBJ
+   tile of gfx slot 2, Link's) into a Chuchu's child and garbles Link: find who writes it.
+2. Issue #4: the relaunch after `SITE INSTALL` sometimes fails (the loader runs out of memory).
+3. Issue #11: a sideways border scroll that needs a vertical line-up is still to be seen (same
+   code as the vertical case); then close it.
+To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
 **On the owner's consoles now (2026-10-13):**
 - Old 3DS/2DS, **`192.168.1.132`** (not in `.3ds_ftp_ip`: pass `--ip`): a debug build of
-  `release/v0.1.2` with `fix/light-rays-full-view`, `feat/tabbar-position`, `feat/hud-xy-diamond`
-  and `fix/chuchu-bad-child` applied together (2026-10-13), Full View (`widescreen=1`,
+  `release/v0.1.2` with the code of `ffefbe4` (2026-10-13), Full View (`widescreen=1`,
   `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT. The owner plays on
   it (Minish Woods, sword and shield only) and keeps save states at spots that reproduce bugs:
   never overwrite or delete one (protect their place with a *new* state: `savestate`, then
-  `loadstate 1` and `delstate 1` after the install).
+  `loadstate 1` and `delstate 1` after the install). Its three newest states (00/00, saved by
+  the build `0.1.2-dev.31+22638c2`) include one Claude saved to protect the owner's place;
+  which one is not known, so none was deleted: the owner decides from the thumbnails.
 - New 3DS, `192.168.1.133` (the one `.3ds_ftp_ip` holds): not touched since 2026-10-12.
 - The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP).
 
