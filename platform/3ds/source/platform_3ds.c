@@ -13,6 +13,7 @@
 #include "tmc3ds_build_config.h"
 #if TMC3DS_DEBUG_TOOLS
 #include "debug_link_3ds.h"
+#include "ftp_server_3ds.h"
 #endif
 
 #include <3ds.h>
@@ -860,6 +861,9 @@ void Platform3DS_SetStage(uint32_t stage) { sMainStage = stage; }
 void Platform3DS_Heartbeat(void) { ++sMainHeartbeat; }
 
 void Platform3DS_WatchdogPoll(void) {
+#if TMC3DS_DEBUG_TOOLS
+    FtpServer_WatchdogPoll();
+#endif
     static uint32_t lastHeartbeat;
     static unsigned stalledPolls;
     static bool reported;
@@ -875,10 +879,13 @@ void Platform3DS_WatchdogPoll(void) {
      * seconds of a genuinely stopped main thread rather than a slow frame. */
     if (++stalledPolls < 240u) return;
     reported = true;
-    char line[128];
+    char line[192], ftp[64] = "not built";
+#if TMC3DS_DEBUG_TOOLS
+    FtpServer_DescribeStage(ftp, sizeof(ftp));
+#endif
     snprintf(line, sizeof(line),
-             "[tmc3ds] WATCHDOG: main thread stopped at stage %lu, frame %lu\n",
-             (unsigned long)sMainStage, (unsigned long)beat);
+             "[tmc3ds] WATCHDOG: main thread stopped at stage %lu, frame %lu (ftp server: %s)\n",
+             (unsigned long)sMainStage, (unsigned long)beat, ftp);
     Platform3DS_Debug(line);
 }
 

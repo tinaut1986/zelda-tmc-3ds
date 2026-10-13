@@ -14,7 +14,7 @@ static bool sAcReady;
 bool Net3DS_Acquire(void) {
     LightLock_Lock(&sLock);
     bool ok = true;
-    if (sRefs == 0) {
+    if (!sSocBuffer) {
         sAcReady = R_SUCCEEDED(acInit());
         sSocBuffer = memalign(0x1000, SOC_BUFFER_SIZE);
         if (!sAcReady || !sSocBuffer || R_FAILED(socInit(sSocBuffer, SOC_BUFFER_SIZE))) {
@@ -31,14 +31,13 @@ bool Net3DS_Acquire(void) {
 }
 
 void Net3DS_Release(void) {
+    /* The service stays up once started (its 1 MB buffer with it): socExit froze the game
+     * when the FTP server stopped with a client still connected (main thread stuck in the
+     * release, tmc3ds.log stage 33), the close of that connection never finishing. The
+     * kernel closes the SOC and AC sessions when the process ends, so nothing is shut down
+     * here, not even at exit. The count only says who is using it. */
     LightLock_Lock(&sLock);
-    if (sRefs > 0 && --sRefs == 0) {
-        socExit();
-        free(sSocBuffer);
-        sSocBuffer = NULL;
-        if (sAcReady) acExit();
-        sAcReady = false;
-    }
+    if (sRefs > 0) --sRefs;
     LightLock_Unlock(&sLock);
 }
 
