@@ -54,6 +54,7 @@ merged into `main`) and `v0.1.0` (2026-10-11, beta).
 | `feat/hud-xy-diamond` (cut from `release/v0.1.2`) | P2.6: X/Y in the top HUD, A/B/X/Y as a diamond; X/Y sprites drawn by the engine, their tiles in OBJ VRAM only while the frame renders | on the 2DS by Claude and the owner (combined build, Minish Woods 00/00): the diamond with sword on X and shield on Y, A/B slide into it from a state saved with the old layout, GPU CHECK 0 structural | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `fix/chuchu-bad-child` (cut from `release/v0.1.2`) | a Chuchu no longer reads its FX child unless it is an entity: closing the pause menu after loading a state saved in it left `0x160` there and crashed (Luma dumps 2 and 3, `chuchu.c:84`); who writes the value is not known yet (issue #13) | on the 2DS by Claude: same state, no crash | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `chore/tmc-link-elf` (cut from `release/v0.1.2`) | `tmc-link.py --elf`: symbols from the ELF of the build the console runs (a worktree's build has other addresses) | tried against the 2DS (peek by symbol with the combined build's ELF) | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/state-script-context` (cut from `release/v0.1.2`) | save states: an entity's script context (+0x84) is relocated when saved and repaired from `gEntityScriptCtxTable` on load; a state from another build crashed in a house door's script (Lon Lon Ranch, 03/05, walking down) | on the 2DS by Claude and the owner: the owner's state 4 (03/05), which crashed, plays on |
 
 **Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
 Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
@@ -638,6 +639,12 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   and Y letters are drawn into a copy of the A bubble (4x5, the A's outline colour). Layout: A keeps
   its column, the diamond's middle row at y=42 under R and its label, 12 px steps (half the
   original A-B distance); X/Y are placed from A's live position.
+- **2026-10-13** A save state loaded into a build whose globals had moved crashed in a house
+  door's script (Luma dump 4: GetNextScriptCommandHalfword, houseDoorExterior.c:244). Every entity
+  keeps its script context in `gEntityScriptCtxTable` (relocated, a kInner holder) and in its own
+  field at +0x84, a pointer into the middle of `gScriptExecutionContextArray` that no rule covered.
+  New states relocate it (`kInnerTargets`); on load every live entity's field is put back from
+  the table, which also repairs the states already on the SD card.
 - **2026-10-13** The R prompt follows the HUD: the button at the right, the game's label art
   (in the game's language) over it to its left, measured on a scratch strip first because
   `Port_SecondScreenTheme_DrawActionLabel` places by its centre.

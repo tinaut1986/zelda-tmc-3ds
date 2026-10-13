@@ -45,6 +45,7 @@ static const char* const kInner[] = {
  * pointer whatever global holds it. */
 static const char* const kInnerTargets[] = {
     "gScreen",
+    "gScriptExecutionContextArray", /* every entity's scriptContext field points into it */
 };
 
 /* Globals too big to scan whose first word is a pointer (the map layers' BG settings). */
