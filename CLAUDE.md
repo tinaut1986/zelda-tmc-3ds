@@ -249,10 +249,10 @@ tools/tmc-link/tmc-link.py wait && tools/tmc-link/tmc-link.py run SCRIPT   # dri
 - `--install` uploads to `/3ds/Minish Cap 3DS/update/dev.cia` and sends `SITE INSTALL`
   after the transfer (`curl -Q "-SITE INSTALL <path>"`; the leading `-` means "after").
   The game refuses a CIA with another title ID, installs over itself
-  (`cia_install_3ds.c`), replies `200` and jumps into the new build
-  (`Platform3DS_RequestRelaunch`). The relaunched game turns the FTP server back on by
-  itself (`debug_ftp` in `tmc3ds.ini`), so installs and fetches can follow one another;
-  give it a few seconds after the relaunch.
+  (`cia_install_3ds.c`), replies `200` and relaunches into the new build 10 s later
+  (`Platform3DS_RequestRelaunch`, libctru's chainloader; jumping at once crashed the system
+  loader, issue #4). The relaunched game turns the FTP server back on by itself (`debug_ftp`
+  in `tmc3ds.ini`), so installs and fetches can follow one another: `tmc-link.py wait`.
 - A **production** build installed on the console has no DEBUG tab, but if
   `/3ds/Minish Cap 3DS/dev-ftp.txt` exists it runs an install-only server (only `update/`, no
   remote control, a CANCEL bar on the bottom screen): `--install` works on it with either build
