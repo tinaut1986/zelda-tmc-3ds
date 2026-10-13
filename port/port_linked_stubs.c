@@ -1024,16 +1024,31 @@ static u16 sWsShadowBG2[MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_COLS];
 /* Retain only the outgoing viewport before LoadRoomGfx replaces its maps.
  * This is tile data, not a frozen image: the current palettes/animations still
  * apply. Both the native screenblock and reveal use the same world sampler. */
-/* Sized for Full View (400x240 plus a tile each side); normal Wide uses the
- * first 36x24. */
-enum { WS_SCROLL_COLS = 52, WS_SCROLL_ROWS = 32 };
+/* Sized for Full View (400x240 plus a tile each side, and the sideways
+ * alignment below); normal Wide uses the first 36x24. */
+enum { WS_SCROLL_COLS = 96, WS_SCROLL_ROWS = 64, WS_SCROLL_ALIGN_SPEED = 4 };
 static struct {
     int valid, area, room, direction;
     int fullView; /* taken in Full View: the scroll keeps the 400x240 view */
     int cols, rows;
     int startX, startY, tileX, tileY;
+    /* Full View: where the camera goes across the scroll before it moves along
+     * it, and in how many of the scroll's ticks (Port_Widescreen_AdvanceScroll). */
+    int alignX, alignY, alignTicks;
     u16 tiles[2][WS_SCROLL_ROWS][WS_SCROLL_COLS];
 } sWsScroll;
+
+/* The camera position on one axis that keeps a `view`-wide window inside both
+ * the outgoing room [oldOrigin, +oldSize) and the incoming one, closest to
+ * `camera`; `camera` itself when no position fits both. */
+static int Port_WidescreenScrollAlign(int camera, int view, int oldOrigin, int oldSize, int newOrigin, int newSize) {
+    const int lo = oldOrigin > newOrigin ? oldOrigin : newOrigin;
+    const int oldMax = oldOrigin + oldSize - view, newMax = newOrigin + newSize - view;
+    const int hi = oldMax < newMax ? oldMax : newMax;
+    if (lo > hi)
+        return camera;
+    return camera < lo ? lo : camera > hi ? hi : camera;
+}
 
 static Port3DSFullViewMode Port_WidescreenGameplayMode(void);
 
@@ -1065,8 +1080,48 @@ void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
     sWsScroll.direction = direction;
     sWsScroll.startX = gRoomControls.scroll_x;
     sWsScroll.startY = gRoomControls.scroll_y;
-    sWsScroll.tileX = (gRoomControls.scroll_x >> 3) - 1;
-    sWsScroll.tileY = (gRoomControls.scroll_y >> 3) - 1;
+    /* Full View: the 400x240 window can stick out of the incoming room across
+     * the scroll (a narrower or offset room below/above, a lower or offset one
+     * to a side) and show black outside it. The retail camera only lines up
+     * after the scroll. Line it up first, inside the outgoing room, then
+     * scroll straight. The snapshot below then covers both positions. */
+    sWsScroll.alignX = sWsScroll.startX;
+    sWsScroll.alignY = sWsScroll.startY;
+    sWsScroll.alignTicks = 0;
+    if (fullView) {
+        const RoomResInfo* next = &gArea.roomResInfos[room];
+        int shift;
+        if (direction == 0 || direction == 2) {
+            sWsScroll.alignX = Port_WidescreenScrollAlign(gRoomControls.scroll_x, 400, gRoomControls.origin_x,
+                                                          gRoomControls.width, next->map_x, next->pixel_width);
+            shift = sWsScroll.alignX - sWsScroll.startX;
+            if (shift > (WS_SCROLL_COLS - 53) * 8 || -shift > (WS_SCROLL_COLS - 53) * 8)
+                sWsScroll.alignX = sWsScroll.startX, shift = 0;
+        } else {
+            sWsScroll.alignY = Port_WidescreenScrollAlign(gRoomControls.scroll_y, 240, gRoomControls.origin_y,
+                                                          gRoomControls.height, next->map_y, next->pixel_height);
+            shift = sWsScroll.alignY - sWsScroll.startY;
+            if (shift > (WS_SCROLL_ROWS - 33) * 8 || -shift > (WS_SCROLL_ROWS - 33) * 8)
+                sWsScroll.alignY = sWsScroll.startY, shift = 0;
+        }
+        if (shift < 0)
+            shift = -shift;
+        sWsScroll.alignTicks = (shift + WS_SCROLL_ALIGN_SPEED - 1) / WS_SCROLL_ALIGN_SPEED;
+        if (sWsScroll.alignTicks > 20) /* half the shorter (vertical) scroll */
+            sWsScroll.alignTicks = 20;
+        sWsScroll.cols = 52 + (sWsScroll.alignX - sWsScroll.startX >= 0 ? sWsScroll.alignX - sWsScroll.startX
+                                                                         : sWsScroll.startX - sWsScroll.alignX) / 8 + 1;
+        sWsScroll.rows = 32 + (sWsScroll.alignY - sWsScroll.startY >= 0 ? sWsScroll.alignY - sWsScroll.startY
+                                                                         : sWsScroll.startY - sWsScroll.alignY) / 8 + 1;
+        if (sWsScroll.cols > WS_SCROLL_COLS) sWsScroll.cols = WS_SCROLL_COLS;
+        if (sWsScroll.rows > WS_SCROLL_ROWS) sWsScroll.rows = WS_SCROLL_ROWS;
+    }
+    {
+        const int left = sWsScroll.alignX < sWsScroll.startX ? sWsScroll.alignX : sWsScroll.startX;
+        const int top = sWsScroll.alignY < sWsScroll.startY ? sWsScroll.alignY : sWsScroll.startY;
+        sWsScroll.tileX = (left >> 3) - 1;
+        sWsScroll.tileY = (top >> 3) - 1;
+    }
     for (int layer = 0; layer < 2; ++layer) {
         const u16* map = layer ? gMapDataTopSpecial : gMapDataBottomSpecial;
         for (int y = 0; y < sWsScroll.rows; ++y) {
@@ -1129,8 +1184,21 @@ int Port_Widescreen_AdvanceScroll(void) {
     int progress = gRoomControls.unk_18;
     if (progress > duration)
         progress = duration;
-    gRoomControls.scroll_x = sWsScroll.startX + (endX - sWsScroll.startX) * progress / duration;
-    gRoomControls.scroll_y = sWsScroll.startY + (endY - sWsScroll.startY) * progress / duration;
+    /* Full View: the first alignTicks line the camera up across the scroll
+     * (still inside the outgoing room), the rest scroll along it. */
+    const int align = sWsScroll.alignTicks < duration ? sWsScroll.alignTicks : 0;
+    const int vertical = sWsScroll.direction == 0 || sWsScroll.direction == 2;
+    if (vertical) endX = sWsScroll.alignX;
+    else endY = sWsScroll.alignY;
+    if (align > 0 && progress < align) {
+        gRoomControls.scroll_x = sWsScroll.startX + (sWsScroll.alignX - sWsScroll.startX) * progress / align;
+        gRoomControls.scroll_y = sWsScroll.startY + (sWsScroll.alignY - sWsScroll.startY) * progress / align;
+        return 1;
+    }
+    const int fromX = vertical ? sWsScroll.alignX : sWsScroll.startX;
+    const int fromY = vertical ? sWsScroll.startY : sWsScroll.alignY;
+    gRoomControls.scroll_x = fromX + (endX - fromX) * (progress - align) / (duration - align);
+    gRoomControls.scroll_y = fromY + (endY - fromY) * (progress - align) / (duration - align);
     return 1;
 }
 
