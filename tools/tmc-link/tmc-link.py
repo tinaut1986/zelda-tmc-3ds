@@ -20,6 +20,9 @@ SITE commands of platform/3ds/source/debug_link_3ds.h. Standard library only.
     dump                      screen dump: debug/tmc-dump-NNNN-* (written at the next frame)
     switch NAME               cycle a DEBUG -> SWITCHES value ("FRAME SYNC")
     shot [DIR]                screenshots of both screens as PNG, default /tmp/tmc-shot
+    scenerec start [N]        the top screen, full size, one frame in N (default 2), into RAM
+    scenerec stop [DIR]       write it (debug/tmc-scene-NNNN.bin), fetch it to DIR (default
+                              /tmp/tmc-scene); tools/scene-rec/decode.py makes PNGs and a GIF
     rec [now]                 record the top screen around the next room change, HUD hide or fade start (now: no trigger)
     recfetch [DIR]            wait for the recording, write DIR/frames.png (a contact sheet) and list the frames
     peek WHAT LENGTH          hex bytes; WHAT is a hex address or a symbol of the ELF
@@ -229,6 +232,41 @@ def run(link, argv):
             path = os.path.join(out, screen + '.png')
             with open(path, 'wb') as f:
                 f.write(bmp_to_png(buf.getvalue()))
+            print(path)
+    elif cmd == 'scenerec':
+        # start [N]: record; stop [DIR]: write it on the console, wait for the file, fetch it to DIR
+        def last_scene():
+            buf = io.BytesIO()
+            try:
+                link.connect().retrbinary('RETR %s/debug/tmc-scene-last.txt' % DATA, buf.write)
+                return int(buf.getvalue())
+            except Exception:
+                return -1
+        if not args or args[0].lower() not in ('start', 'stop'):
+            raise LinkError('scenerec start [N] | stop [DIR]')
+        if args[0].lower() == 'start':
+            print(link.site('SCENEREC START ' + (args[1] if len(args) > 1 else '2')))
+        else:
+            before = last_scene()
+            print(link.site('SCENEREC STOP'))
+            out = args[1] if len(args) > 1 else '/tmp/tmc-scene'
+            os.makedirs(out, exist_ok=True)
+            end = time.time() + 300
+            while True:  # the number is taken when the write starts, the .bin appears when it ends
+                number = last_scene()
+                if number != before and number >= 0:
+                    name = 'tmc-scene-%04d.bin' % number
+                    try:
+                        link.connect().size('%s/debug/%s' % (DATA, name))
+                        break
+                    except Exception:
+                        pass
+                if time.time() > end:
+                    raise LinkError('no scene recording written')
+                time.sleep(1)
+            path = os.path.join(out, name)
+            with open(path, 'wb') as f:
+                link.connect().retrbinary('RETR %s/debug/%s' % (DATA, name), f.write)
             print(path)
     elif cmd == 'rec':
         print(link.site(('REC ' + (args[0] if args else '')).strip()))  # rec now: no trigger, the next 36 frames

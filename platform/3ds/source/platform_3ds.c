@@ -1182,6 +1182,38 @@ bool Platform3DS_CaptureTopThumbnail(uint16_t* pixels, int width, int height) {
     return true;
 }
 
+/* The top screen as shown, full size for the scene recorder: 400 columns of 240 pixels in the
+ * framebuffer's own order (column-major, each column bottom to top), as RGB565. */
+bool Platform3DS_CaptureTopRgb565(uint16_t* pixels) {
+    GSPGPU_CaptureInfo capture;
+    memset(&capture, 0, sizeof(capture));
+    if (!pixels || R_FAILED(GSPGPU_ImportDisplayCaptureInfo(&capture))) return false;
+    const GSPGPU_CaptureInfoEntry* top = &capture.screencapture[GSP_SCREEN_TOP];
+    if (!top->framebuf0_vaddr || top->framebuf_widthbytesize == 0) return false;
+    const GSPGPU_FramebufferFormat format = (GSPGPU_FramebufferFormat)(top->format & 7u);
+    const unsigned bpp = gspGetBytesPerPixel(format);
+    if (bpp < 2 || bpp > 4 || top->framebuf_widthbytesize < 240u * bpp) return false;
+    const uint8_t* fb = (const uint8_t*)top->framebuf0_vaddr;
+    GSPGPU_InvalidateDataCache(fb, top->framebuf_widthbytesize * 400u);
+    for (unsigned col = 0; col < 400u; ++col) {
+        const uint8_t* src = fb + (size_t)col * top->framebuf_widthbytesize;
+        uint16_t* dst = pixels + (size_t)col * 240u;
+        if (format == GSP_RGB565_OES) {
+            memcpy(dst, src, 240u * 2u);
+        } else if (format == GSP_BGR8_OES) {
+            for (unsigned i = 0; i < 240u; ++i, src += 3)
+                dst[i] = (uint16_t)(((src[2] >> 3) << 11) | ((src[1] >> 2) << 5) | (src[0] >> 3));
+        } else {
+            for (unsigned i = 0; i < 240u; ++i, src += bpp) {
+                uint8_t r, g, b;
+                ReadFramebufferPixel(src, format, &r, &g, &b);
+                dst[i] = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+            }
+        }
+    }
+    return true;
+}
+
 static bool SaveCapturedFramebufferRaw(const char* path, const GSPGPU_CaptureInfoEntry* capture,
                                        int width) {
     if (!path) return true;

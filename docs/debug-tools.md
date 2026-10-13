@@ -240,6 +240,18 @@ it on the console and writes `DIR/frames.png`, a contact sheet of the 60 frames,
 each frame's view size, Full View mode and whether the top screen was being held. Read the
 sheet left to right, top to bottom.
 
+## Scene recorder (SITE SCENEREC)
+
+For a video of the top screen, full size (PLAN P1.6, after `../sm-3ds`): `tmc-link.py scenerec start [N]`
+keeps one presented frame in N (default 2: 30 fps) in a RAM ring as large as free memory allows
+with 8 MB left over (on the 2DS in a game about 90 frames, 3 s at N = 2; the New 3DS holds more);
+`tmc-link.py scenerec stop [DIR]` writes the ring to `debug/tmc-scene-NNNN.bin` at the next frame
+(the game stops while it does) and fetches it to DIR. `tools/scene-rec/decode.py REC.bin [OUTDIR]
+[--gif OUT.gif] [--first N] [--last N] [--crop X,Y,W,H] [--scale N]` writes the frames as PNG and,
+with `--gif`, an animated GIF at the rate they were taken. The file: a header (`SCN1`, frame count,
+400, 240, N), then per frame its number and 400x240 RGB565 in the framebuffer's order (columns from
+the left, each bottom to top). A capture costs a few ms a recorded frame.
+
 ## Screen dump
 
 DEBUG -> SCREEN DUMP, or `tmc-link.py dump`. It does not write at once: the request is
