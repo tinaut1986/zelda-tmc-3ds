@@ -1288,11 +1288,23 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
     const int32_t ix = x + 3, iw = w - 6;
     int32_t cy = y + 2;
 
-    /* Hearts, eight to a row, the game's own sprites. */
+    /* Hearts as the HUD draws them: a row starts with the game's edge tile (the
+     * first heart's left outline), then up to eight hearts. */
     int maxHearts = snap->maxHealth / 8;
     if (maxHearts > 20) maxHearts = 20;
     if (maxHearts < 1) maxHearts = 1;
-    const int cols = iw / 8 < 8 ? iw / 8 : 8;
+    const SecondScreenThemeSprite* edge = Port_SecondScreenTheme_Get(SST_HEART_EDGE);
+    int32_t edgeInk = 0; /* the edge tile's inked columns, at its right */
+    if (edge && edge->px) {
+        for (int32_t c = 0; c < edge->w && edgeInk == 0; c++)
+            for (int32_t r = 0; r < edge->h; r++)
+                if (edge->px[r * edge->w + c] != 0) { /* BlitSprite's transparency */
+                    edgeInk = edge->w - c;
+                    break;
+                }
+    }
+    const int32_t hx = ix + edgeInk;
+    const int cols = (iw - edgeInk) / 8 < 8 ? (iw - edgeInk) / 8 : 8;
     const int quarters = snap->health == 1 ? 1 : snap->health / 2;
     const int full = quarters / 4, frac = quarters & 3;
     for (int i = 0; i < maxHearts; i++) {
@@ -1300,7 +1312,8 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
         if (i < full) state = SST_HEART_FULL;
         else if (i == full && frac != 0) state = SST_HEART_Q1 + (frac - 1);
         const SecondScreenThemeSprite* hs = Port_SecondScreenTheme_Get(state);
-        if (hs) BlitSprite(s, hs, ix + (i % cols) * 8, cy + (i / cols) * 8, 1);
+        if (edgeInk && i % cols == 0) BlitSprite(s, edge, hx - 8, cy + (i / cols) * 8, 1);
+        if (hs) BlitSprite(s, hs, hx + (i % cols) * 8, cy + (i / cols) * 8, 1);
     }
     cy += ((maxHearts + cols - 1) / cols) * 8 + 4;
 
@@ -1317,23 +1330,20 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
             if (q) FillRect(s, cx + 1, cy + 1, cx + 1 + (cell - 2) * q / 4, cy + 7, sCc->barWarn);
         }
     } else {
-        /* The HUD's R button, always there as on the GBA's HUD, at the right,
-         * with the game's own label for what it does now (SPEAK, READ, LIFT...,
-         * in the game's language) to its left and running under it, as the
-         * HUD lays them out, the label over the button. The label is measured
-         * on a scratch strip first: the label call places by its centre. */
-        const int32_t rw = 18, rx = ix + iw - rw;
-        if (!Port_SecondScreenTheme_DrawRButton(s->px, s->w, s->h, s->stride, rx, cy, 2)) {
+        /* The HUD's R button, always there as on the GBA's HUD, with the game's
+         * own label for what it does now (SPEAK, READ, LIFT..., in the game's
+         * language) laid out as the HUD has them: one element position, each
+         * sprite at its own piece offsets, the label's outline over the
+         * button's edge. The button sits at the sidebar's right edge whatever
+         * the label, which runs to its left. */
+        int32_t box[4];
+        if (Port_SecondScreenTheme_RButtonBounds(0, box)) {
+            Port_SecondScreenTheme_DrawRButtonAt(s->px, s->w, s->h, s->stride, ix + iw - box[2], cy - box[1],
+                                                 snap->rActionFrame);
+        } else {
+            const int32_t rw = 18, rx = ix + iw - rw;
             CBox(s, rx, cy, rw, 14, CC_BTN, CC_BTN_EDGE);
             CTextCentered(s, rx + rw / 2, cy + 4, CC_TEXT, "R");
-        }
-        if (snap->rActionFrame != 0) {
-            static uint32_t scratch[96 * 24];
-            const int32_t lw = Port_SecondScreenTheme_DrawActionLabel(scratch, 96, 24, 96, 48, 0, 2,
-                                                                     snap->rActionFrame);
-            if (lw > 0)
-                Port_SecondScreenTheme_DrawActionLabel(s->px, s->w, s->h, s->stride, rx + 6 - lw / 2, cy, 2,
-                                                       snap->rActionFrame);
         }
     }
     cy += 20;

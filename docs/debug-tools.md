@@ -60,7 +60,7 @@ blue: changed). None needs a restart.
 | VBLANK LOCK | `vblank_phase_lock` | ON / OFF | lock the presentation to the next vblank instead of a pending one |
 | STATIC QUAD | `gpu_static_quad` | ON / OFF | reuse the presenter's quad |
 | MAP SKIP | `bottom_map_skip` | ON / OFF | skip MAP-tab repaints that would draw the same picture |
-| BOTTOM CORE | `bottom_core` | CORE 0 / CORE 1 | where the bottom-screen painter runs; its thread is recreated before the next paint |
+| BOTTOM CORE | `bottom_core` | AUTO / CORE 0 / CORE 1 | where the bottom-screen painter runs (AUTO: core 1 on the Old 3DS, core 0 on the New 3DS); its thread is recreated before the next paint |
 | AUDIO CORE | `audio_core` | AUTO / CORE 0 / CORE 1 | where the audio refill thread runs; it is recreated at once (the queued buffers cover the gap) |
 | COMPACT UP | `compact_upload` | ON / OFF | smaller upload surfaces, Old 3DS only; taken at the start of the next frame |
 | CPU LIMIT | `app_cpu_limit` | AUTO / 80 / 70 / 50 / 30 % | the app's share of core 1 (the rest goes to GSP and the sysmodules); the cell shows the share granted |
@@ -191,7 +191,10 @@ the phase that needed the tile). `ring digest` and `cells` (inside `maps`) are t
 change detection and cell updates. A `scene:` line follows: bands, vertices and quads of the last
 GPU frame, `ring why` per BG (0: drawn from its ring; 1 not wide / disabled, 2 message or HUD+shadow,
 3 control or mosaic or size, 4 bands disagree on the scroll column, 5 too many rows, 6 and 7 a ring
-could not be brought up to date), and the cells decoded and changed character chunks since boot. BUFFERED (default): lines collect in a 16 KB buffer, written when
+could not be brought up to date), and the cells decoded and changed character chunks since boot. A `bottom:` line
+gives the bottom screen's paints in those 5 s, their paint time (wall time on the painter thread, so it
+grows when that thread is starved) and the wait from a paint being scheduled to being submitted: what a
+tap or a HUD change waits for. BUFFERED (default): lines collect in a 16 KB buffer, written when
 it fills, on a mark, on a mode change, on stop and on exit. DIRECT: each line is
 written and flushed at once, so a hang cannot swallow the last lines.
 

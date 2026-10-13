@@ -765,10 +765,15 @@ static bool EnsureBottomWorker(void) {
      * and its 83 ms spikes coincide with the frames that miss VBlank. Core 1
      * carries audio and GSP but has idle time, and this thread is low priority
      * so it would only take what is going spare. Switchable rather than
-     * assumed: moving audio to core 0 was tried before and made things worse. */
+     * assumed: moving audio to core 0 was tried before and made things worse.
+     * AUTO is core 1 on the Old 3DS (2026-10-13, 2DS in Full View): on core 0 the
+     * main thread left it so little that a paint took 350-550 ms of wall time
+     * (the R label, hearts and taps lagged by up to a second); on core 1, 70 ms
+     * with the same frame rate. The New 3DS keeps core 0 (not measured). */
     extern int Port_Config_BottomCore(void);
     const int bottomOverride = Port_Config_BottomCore();
-    const int core = (bottomOverride == 0 || bottomOverride == 1) ? bottomOverride : 0;
+    const int core = (bottomOverride == 0 || bottomOverride == 1) ? bottomOverride
+                                                                  : (Platform3DS_IsNew3DS() ? 0 : 1);
     sBottomWorkerThread = threadCreate(BottomWorkerMain, NULL, 64u * 1024u, priority, core, false);
     if (!sBottomWorkerThread) {
         sBottomWorkerRunning = false;
@@ -843,6 +848,7 @@ static void PollInput(void) {
         memset(&sCStickPosition, 0, sizeof(sCStickPosition));
         sCStickHeld = false;
     }
+    Port_SecondScreen_3DS_ServicePendingTap(); /* a tap kept while its panel was repainted */
     if (sDown & KEY_TOUCH) {
         touchPosition touch;
         hidTouchRead(&touch);

@@ -43,6 +43,9 @@ enum {
     SST_HEART_Q2,
     SST_HEART_Q3,
     SST_HEART_FULL,
+    /* The tile DrawHearts puts before each row of hearts (0x10): the first
+     * heart's left outline. */
+    SST_HEART_EDGE,
     /* HUD rupee icon (16x16), one per wallet tier — the HUD swaps the icon
      * with the wallet (gWalletSizes[].iconStartTile). */
     SST_RUPEE_WALLET0,
@@ -299,6 +302,15 @@ int Port_SecondScreenTheme_DrawRButton(uint32_t* pixels, int32_t bufW, int32_t b
 int32_t Port_SecondScreenTheme_DrawActionLabel(uint32_t* pixels, int32_t bufW, int32_t bufH,
                                                int32_t stride, int32_t x, int32_t y, int32_t scale2,
                                                uint8_t frameId);
+
+/* The R button and its label laid out as the top screen's HUD has them: both
+ * at one element position (x, y), each by its own sprite frame's piece offsets.
+ * Bounds gives the box both cover relative to that position (left, top, right,
+ * bottom, exclusive); 0 while the art isn't decoded. A frameId of 0 is the
+ * button alone. */
+int Port_SecondScreenTheme_RButtonBounds(uint8_t frameId, int32_t box[4]);
+int Port_SecondScreenTheme_DrawRButtonAt(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                         int32_t x, int32_t y, uint8_t frameId);
 
 #ifdef __cplusplus
 }

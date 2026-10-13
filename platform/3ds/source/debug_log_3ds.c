@@ -209,6 +209,21 @@ void DebugLog_Tick(void) {
                     (double)rt.engineWorkMaxTicks * msPerTick, vbl, (unsigned long long)gpuShown,
                     (unsigned long long)gpuFallback, (unsigned long long)(gpu.tileDecodes - lastGpu.tileDecodes),
                     snap.area, snap.room, (unsigned long)(rt.applicationMemoryFree / 1024));
+    {
+        /* The bottom screen: paints, their cost, and the wait from scheduled to submitted. */
+        extern void Port_PPU_3DS_TakeBottomStats(uint64_t out[5]);
+        static uint64_t lastBottom[5];
+        uint64_t b[5];
+        Port_PPU_3DS_TakeBottomStats(b);
+        const uint64_t paints = b[0] - lastBottom[0];
+        DebugLog_Printf("bottom: %llu paints (%.1f/s), paint %.2f ms (max %.2f), scheduled->submitted %.2f ms (max %.2f)",
+                        (unsigned long long)paints, (double)paints / secs,
+                        paints ? (double)(b[1] - lastBottom[1]) * msPerTick / (double)paints : 0.0,
+                        (double)b[2] * msPerTick,
+                        paints ? (double)(b[3] - lastBottom[3]) * msPerTick / (double)paints : 0.0,
+                        (double)b[4] * msPerTick);
+        memcpy(lastBottom, b, sizeof(b));
+    }
 #ifdef PPU_GPU3DS_PROFILE
     /* Where the GPU command build goes, per GPU frame. sig and retain are
      * inside maps; decode is inside whichever phase reached it. */
