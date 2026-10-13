@@ -31,6 +31,8 @@ SHOTS=(
   "map:"
   "items:t1"
   "quest:t2"
+  "quest_kinstones:t2;35,50"
+  "quest_techniques:t2;155,50"
   "options:t3"
   "options_frames:t3;200,40;200,40"
   "updates:t3;240,110"

@@ -46,6 +46,7 @@ merged into `main`) and `v0.1.0` (2026-10-11, beta).
 | `fix/theme-contrast` (cut from `release/v0.1.2`) | bottom-screen themes readable: own colours for what sits on the tab bar (clock, battery, Wi-Fi, toast, busy window), PARCHMENT buttons light; `tools/ui-preview` builds again | on the 2DS by Claude (screenshots of MAP and STATES in PARCHMENT); the other themes only in `tools/ui-preview` | _(merged into `release/v0.1.2` 2026-10-13: checked by the owner)_ |
 | `fix/ftp-stop-freeze` (cut from `release/v0.1.2`) | issue #9: stopping the FTP server froze the game (socExit with a client connected); stop, link waits and polls made safe, stop and watchdog logged in `tmc3ds.log` | on the 2DS by Claude and the owner (stop during a link request, stop with an idle client) | _(merged into `release/v0.1.2` 2026-10-13; the same fix merged into `../mzm` `release/v0.7.7` and `../sm-3ds` `release/v0.6.6`, not run in those games yet)_ |
 | `fix/updater-audio` (cut from `release/v0.1.2`) | the update check broke up the sound on the Old 3DS: the updater worker one priority below the game thread instead of at the audio worker's | checked by the owner on the 2DS: no dropouts during a check | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `feat/game-style-windows` (cut from `release/v0.1.2`) | the bottom screen's own menu style in every tab: cells, buttons and tabs with the game windows' rounded corners at 1x in the theme's colours, toasts / busy / modals in the message window's frame, the world map without the stone frame (its own box, Link's head as the marker), the quest lists' and wells' slab and stone through the same boxes (`Port_SecondScreenTheme_SetBoxPainter`) | on the 2DS by Claude (screenshots of every tab, both map views); the quest sub-lists (kinstones, techniques) not seen: the save on the console has neither | not merged |
 
 **Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
 Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
@@ -566,3 +567,11 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   (issue #9). It costs the 1 MB SOC buffer from the first FTP start or update check until the
   game exits; the kernel closes the sessions at process exit. The same change went into the
   sibling ports (mzm, sm-3ds, Legend of Doom), which share the code.
+- **2026-10-13** The bottom screen is its own menu, the same in every tab (owner's choice over
+  copying the pause menu's screens: those are laid out for 240x160 and the whole screen, the
+  tabs here are not the game's, and a tab that imitates the original next to ones that do not
+  reads as a change of style). The game supplies the content (item icons, fonts, the map, Link's
+  head, sprites) and the shapes: the boxes copy the message windows' corner curve and the pause
+  menu chips' keyline as geometry, drawn at 1x in the theme's colours, never the game's pixels
+  scaled (upstream's attempt scaled 720p art and cropped it). The world map drops the stone
+  frame; its crop is the map inside it (x 41..198, y 13..139 of the composite).

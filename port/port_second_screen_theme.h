@@ -224,6 +224,16 @@ int Port_SecondScreenTheme_BackdropIsDark(void);
 void Port_SecondScreenTheme_DrawBackdrop(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
                                          int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t scale);
 
+/* A frontend that draws its own panels (the 3DS's compact bottom screen)
+ * can take over the pause menu's dressing: while a painter is set,
+ * DrawBackdrop, DrawPlate and DrawWell call it instead of drawing the game's
+ * parchment, stone slab and wells, so the screens that use them (the quest
+ * lists and wells) match that frontend's own boxes. NULL restores the art. */
+enum { SS_BOX_BACKDROP = 0, SS_BOX_PLATE, SS_BOX_WELL };
+typedef void (*SecondScreenThemeBoxPainter)(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                            int32_t x, int32_t y, int32_t w, int32_t h, int kind);
+void Port_SecondScreenTheme_SetBoxPainter(SecondScreenThemeBoxPainter painter);
+
 /* Draws the menu's carved stone slab (the item screen's big plate) over
  * the rect: nine-sliced from the composed screen so the triforce corners
  * and carved bands stay pixel-authentic; interiors tile. */
