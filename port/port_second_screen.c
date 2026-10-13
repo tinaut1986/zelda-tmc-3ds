@@ -46,6 +46,7 @@
  */
 
 #include "port_second_screen.h"
+#include "port_softslots.h"
 #include "port_second_screen_camera.h"
 #include "port_second_screen_dungeonmap.h"
 #include "port_second_screen_quest.h"
@@ -3332,7 +3333,9 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             /* Re-tapping the active panel tab returns to the map — the
              * reference's "toggle back" behavior. */
             sUi.tab = (sUi.tab == hit.arg && hit.arg != SS_TAB_MAP) ? SS_TAB_MAP : hit.arg;
+#ifndef TMC_3DS
             sUi.armedRing = 0;             /* changing tabs cancels a pending assignment */
+#endif
             sUi.questView = SS_QUEST_MAIN; /* ...and closes a list left open */
             sUi.settingsPage = SS_SETTINGS_ROOT;
             UI_UNLOCK();
@@ -3395,15 +3398,35 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             break;
         case SS_ACT_RING:
             UI_LOCK();
+#ifdef TMC_3DS
+            /* The button tapped stays selected: every item tapped from now on
+             * goes to it, until another button is picked. */
+            sUi.armedRing = hit.arg;
+#else
             sUi.armedRing = (sUi.armedRing == hit.arg) ? 0 : hit.arg;
+#endif
             UI_UNLOCK();
             break;
         case SS_ACT_ITEM: {
             uint8_t armed;
             UI_LOCK();
             armed = sUi.armedRing;
+#ifdef TMC_3DS
+            if (armed == 0) armed = 1; /* nothing picked yet: A */
+#else
             sUi.armedRing = 0;
+#endif
             UI_UNLOCK();
+#ifdef TMC_3DS
+            /* X and Y (armed 3 and 4) are the port's soft slots: kept outside
+             * the save, see port_softslots.h. A second tap on the item that
+             * is already there clears the button. */
+            if (armed >= 3) {
+                const int soft = armed - 3;
+                Port_SoftSlots_SetAssignment(soft, Port_SoftSlots_GetAssignment(soft) == hit.arg ? 0 : hit.arg);
+                break;
+            }
+#endif
             /* An armed ring picks the slot; otherwise tap = A, hold = B —
              * both through the engine-side RequestEquip flow. */
             uint8_t slot = armed ? (uint8_t)(armed - 1) : (uint8_t)(longPress ? 1 : 0);

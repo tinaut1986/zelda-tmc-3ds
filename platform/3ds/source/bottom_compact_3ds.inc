@@ -1213,25 +1213,36 @@ static void Compact_MapFrame(const SSurf* s, int32_t x, int32_t y, int32_t w, in
     CBox(s, x, y, w, h, CC_CELL, CC_CELL_EDGE);
 }
 
-/* The A/B cell: its letter, the equipped item's icon and its ammo; tapping it
- * arms it for the next item tapped. */
+/* An item button's cell: its letter, the item's icon and its ammo; tapping it
+ * arms it for the next item tapped. `button` is 0 A, 1 B (the game's two
+ * equip slots), 2 X, 3 Y (the port's soft slots, port_softslots.h). */
+static const char* const kCcButtonNames[4] = { "A", "B", "X", "Y" };
+
+static uint8_t Compact_ButtonItem(const SecondScreenSnapshot* snap, int button) {
+    switch (button) {
+        case 0: return snap->equippedA;
+        case 1: return snap->equippedB;
+        default: return Port_SoftSlots_GetAssignment(button - 2);
+    }
+}
+
 static void Compact_EquipCell(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, int32_t x,
-                              int32_t y, int32_t w, int32_t h, int isA, int armed, uint32_t tick) {
-    const uint32_t pulse = armed ? ((tick / 12u) & 1u ? CC_WARN : CC_ACCENT) : CC_CELL_EDGE;
-    CBox(s, x, y, w, h, CC_CELL, pulse);
-    if (armed) FillRect(s, x + 1, y + 1, x + w - 1, y + h - 1, MixColor(CC_CELL, CC_WARN, 40));
-    CText(s, x + 4, y + 4, CC_DIM, isA ? "A" : "B");
-    uint8_t itemId = isA ? snap->equippedA : snap->equippedB;
+                              int32_t y, int32_t w, int32_t h, int button, int armed, uint32_t tick) {
+    /* The selected button: where the items tapped in ITEMS go. */
+    (void)tick;
+    CBox(s, x, y, w, h, armed ? MixColor(CC_CELL, CC_ACCENT, 48) : CC_CELL, armed ? CC_ACCENT : CC_CELL_EDGE);
+    CText(s, x + 4, y + 4, CC_DIM, kCcButtonNames[button]);
+    uint8_t itemId = Compact_ButtonItem(snap, button);
     if (itemId >= ITEMID_BOTTLE1 && itemId < ITEMID_BOTTLE1 + 4) {
         const uint8_t content = snap->bottleContents[itemId - ITEMID_BOTTLE1];
         if (content != 0) itemId = content;
     }
     if (itemId != 0) {
-        const int32_t ix = x + w - 36, iy = y + 3;
-        Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, 2, itemId);
-        DrawItemAmmoCount(s, snap, itemId, x + 4, y + h - 11, 1);
+        const int32_t ix = x + w - 4 - 16, iy = y + (h - 16) / 2;
+        Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, 1, itemId);
+        DrawItemAmmoCount(s, snap, itemId, x + 3, y + h - 11, 1);
     }
-    AddTarget(tl, (float)x, (float)y, (float)(x + w), (float)(y + h), SS_ACT_RING, (uint8_t)(isA ? 1 : 2));
+    AddTarget(tl, (float)x, (float)y, (float)(x + w), (float)(y + h), SS_ACT_RING, (uint8_t)(button + 1));
 }
 
 static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, int32_t x,
@@ -1268,37 +1279,52 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
             FillRect(s, cx + 1, cy + 1, cx + cell - 1, cy + 7, CC_BAR);
             if (q) FillRect(s, cx + 1, cy + 1, cx + 1 + (cell - 2) * q / 4, cy + 7, sCc->barWarn);
         }
-    } else if (snap->rActionFrame != 0) {
-        /* Words of ActionRButton (include/player.h). */
-        static const char* const kWords[] = { NULL,    "CANCEL", "DROP", "THROW", "READ", "CHECK", "OPEN",
-                                              "SPEAK", "GRAB",   "LIFT", "GROW",  "SHRINK", "ROLL" };
-        const char* word = snap->rActionId < (uint8_t)(sizeof(kWords) / sizeof(kWords[0]))
-                               ? kWords[snap->rActionId] : NULL;
-        char line[24];
-        snprintf(line, sizeof(line), "R %s", word ? word : "");
-        CBox(s, ix, cy, iw, 14, CC_BTN, CC_BTN_EDGE);
-        CTextCentered(s, ix + iw / 2, cy + 4, CC_TEXT, line);
+    } else {
+        /* The HUD's R button, always there as on the GBA's HUD, at the right,
+         * with the game's own label for what it does now (SPEAK, READ, LIFT...,
+         * in the game's language) to its left and running under it, as the
+         * HUD lays them out, the label over the button. The label is measured
+         * on a scratch strip first: the label call places by its centre. */
+        const int32_t rw = 18, rx = ix + iw - rw;
+        if (!Port_SecondScreenTheme_DrawRButton(s->px, s->w, s->h, s->stride, rx, cy, 2)) {
+            CBox(s, rx, cy, rw, 14, CC_BTN, CC_BTN_EDGE);
+            CTextCentered(s, rx + rw / 2, cy + 4, CC_TEXT, "R");
+        }
+        if (snap->rActionFrame != 0) {
+            static uint32_t scratch[96 * 24];
+            const int32_t lw = Port_SecondScreenTheme_DrawActionLabel(scratch, 96, 24, 96, 48, 0, 2,
+                                                                     snap->rActionFrame);
+            if (lw > 0)
+                Port_SecondScreenTheme_DrawActionLabel(s->px, s->w, s->h, s->stride, rx + 6 - lw / 2, cy, 2,
+                                                       snap->rActionFrame);
+        }
     }
-    cy += 18;
+    cy += 20;
 
-    /* A and B, stacked. */
-    const int32_t cellH = 44;
-    Compact_EquipCell(s, snap, tl, ix, cy, iw, cellH, 1, armedRing == 1, tick);
-    Compact_EquipCell(s, snap, tl, ix, cy + cellH + 3, iw, cellH, 0, armedRing == 2, tick);
+    /* A, B, X and Y as the console has them: a diamond, X on top, Y left,
+     * A right, B below. */
+    {
+        const int selected = armedRing != 0 ? armedRing : 1; /* A until another is picked */
+        const int32_t cw = (iw - 2) / 2, ch = 30;
+        const int32_t mid = ix + (iw - cw) / 2;
+        Compact_EquipCell(s, snap, tl, mid, cy, cw, ch, 2, selected == 3, tick);
+        Compact_EquipCell(s, snap, tl, ix, cy + ch + 2, cw, ch, 3, selected == 4, tick);
+        Compact_EquipCell(s, snap, tl, ix + iw - cw, cy + ch + 2, cw, ch, 0, selected == 1, tick);
+        Compact_EquipCell(s, snap, tl, mid, cy + 2 * (ch + 2), cw, ch, 1, selected == 2, tick);
+    }
 
     /* Rupees, and keys in a dungeon, along the bottom. */
     const int dungeon = (snap->areaFlags & SECOND_SCREEN_AR_HAS_KEYS) != 0;
+    /* In the HUD's own counter font, three digits as the HUD pads them,
+     * yellow when the wallet is full. */
     int32_t by = y + h - (dungeon ? 34 : 17);
-    char num[16];
     const SecondScreenThemeSprite* wallet = Port_SecondScreenTheme_Get(SST_RUPEE_WALLET0 + (snap->walletType & 3));
     if (wallet) BlitSprite(s, wallet, ix, by, 1);
-    snprintf(num, sizeof(num), "%u", (unsigned)snap->rupees);
-    CText(s, ix + 20, by + 5, snap->walletMax != 0 && snap->rupees >= snap->walletMax ? CC_GOOD : CC_TEXT, num);
+    DrawHudNumber(s, ix + 18 + 3 * 8, by, 1, snap->rupees, 3, snap->walletMax != 0 && snap->rupees >= snap->walletMax);
     if (dungeon) {
         const SecondScreenThemeSprite* key = Port_SecondScreenTheme_Get(SST_KEY);
         if (key) BlitSprite(s, key, ix, by + 17, 1);
-        snprintf(num, sizeof(num), "%u", (unsigned)snap->dungeonKeys);
-        CText(s, ix + 20, by + 22, CC_TEXT, num);
+        DrawHudNumber(s, ix + 18 + 8, by + 17, 1, snap->dungeonKeys, 1, 0);
     }
 }
 
@@ -1321,9 +1347,11 @@ static void Compact_PaintItems(const SSurf* s, const SecondScreenSnapshot* snap,
     FillRect(s, (int32_t)rx0 - 1, (int32_t)ry0 - 2, (int32_t)rx1 + 1, (int32_t)ry1 + 2, CC_BG);
     int32_t gx, gy;
     const int32_t cell = Compact_GridCell(rx0, ry0, rx1, ry1, &gx, &gy);
-    int pulseSlot = -1;
-    if (armedRing == 1) pulseSlot = snap->equippedSlotA;
-    if (armedRing == 2) pulseSlot = snap->equippedSlotB;
+    /* The selected button stays selected (it is not a one-shot assignment),
+     * so nothing in the grid blinks for it. */
+    (void)armedRing;
+    const int pulseSlot = -1;
+    const uint8_t softX = Port_SoftSlots_GetAssignment(0), softY = Port_SoftSlots_GetAssignment(1);
     for (int slot = 0; slot < SECOND_SCREEN_ITEM_SLOTS; slot++) {
         const int32_t x = gx + (slot % 4) * (cell + CC_GAP), y = gy + (slot / 4) * (cell + CC_GAP);
         const bool equippedA = slot == snap->equippedSlotA, equippedB = slot == snap->equippedSlotB;
@@ -1344,9 +1372,15 @@ static void Compact_PaintItems(const SSurf* s, const SecondScreenSnapshot* snap,
         const int32_t ix = x + (cell - 16 * scale) / 2, iy = y + (cell - 16 * scale) / 2 - 2;
         Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, scale, iconId);
         DrawItemAmmoCount(s, snap, itemId, x + 2, y + cell - 10, 1);
-        if (equippedA || equippedB) {
-            CText(s, x + 3, y + 3, CC_ACCENT, equippedA ? "A" : "B");
-        }
+        /* Its buttons, A B X Y in that order, along the top. */
+        char letters[5];
+        int nl = 0;
+        if (equippedA) letters[nl++] = 'A';
+        if (equippedB) letters[nl++] = 'B';
+        if (itemId == softX) letters[nl++] = 'X';
+        if (itemId == softY) letters[nl++] = 'Y';
+        letters[nl] = 0;
+        if (nl) CText(s, x + 4, y + 4, CC_ACCENT, letters);
         AddTarget(tl, (float)x, (float)y, (float)(x + cell), (float)(y + cell), SS_ACT_ITEM, itemId);
     }
 }
