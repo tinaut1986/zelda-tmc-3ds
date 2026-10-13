@@ -44,6 +44,8 @@ merged into `main`) and `v0.1.0` (2026-10-11, beta).
 | `feat/port-ui-language` (cut from `release/v0.1.1`) | the port's own text (bottom screen, updater) follows the language chosen in-game: EN/FR/DE/ES/IT, `port/port_text_i18n.c`; accents fall back to the plain letter when the font lacks them | builds; not checked on the console (EU ROM: accents, widths of the longer FR/DE/ES/IT strings) |
 | `fix/fullview-room-hold` (cut from `release/v0.1.2`) | Full View through the fade-in of an area change: no 266x160 frames before the 400x240 view, the fade-in from white visible again | on the 2DS by Claude over the link (castle garden <-> 03/06, both ways, frame recorder and view log) | _(merged into `release/v0.1.2` 2026-10-13: checked by the owner)_ |
 | `fix/theme-contrast` (cut from `release/v0.1.2`) | bottom-screen themes readable: own colours for what sits on the tab bar (clock, battery, Wi-Fi, toast, busy window), PARCHMENT buttons light; `tools/ui-preview` builds again | on the 2DS by Claude (screenshots of MAP and STATES in PARCHMENT); the other themes only in `tools/ui-preview` | _(merged into `release/v0.1.2` 2026-10-13: checked by the owner)_ |
+| `fix/ftp-stop-freeze` (cut from `release/v0.1.2`) | issue #9: stopping the FTP server froze the game (socExit with a client connected); stop, link waits and polls made safe, stop and watchdog logged in `tmc3ds.log` | on the 2DS by Claude and the owner (stop during a link request, stop with an idle client) | _(merged into `release/v0.1.2` 2026-10-13; same fix uncommitted-then-merged in `../mzm`, `../sm-3ds` and `../legend-of-doom-3ds`)_ |
+| `fix/updater-audio` (cut from `release/v0.1.2`) | the update check broke up the sound on the Old 3DS: the updater worker one priority below the game thread instead of at the audio worker's | builds; installed on the 2DS; the owner has not checked a search for updates yet (no update to find) | not merged |
 
 **Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
 Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
@@ -559,3 +561,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   ticks now (the room is loaded by then), and the hold may run 24 ticks past its 16 while the
   policy wants Full View and only the latch is missing. The first half of the fade-in is still
   under the hold (white).
+- **2026-10-13** The network service (SOC and AC, `net_3ds.c`) is never shut down while the game
+  runs: `socExit` hung the main thread when the FTP server stopped with a client connected
+  (issue #9). It costs the 1 MB SOC buffer from the first FTP start or update check until the
+  game exits; the kernel closes the sessions at process exit. The same change went into the
+  sibling ports (mzm, sm-3ds, Legend of Doom), which share the code.
