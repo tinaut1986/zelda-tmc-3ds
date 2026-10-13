@@ -586,9 +586,14 @@ static uint64_t sAptMaxTicks;
 static uint64_t sAudioPumpTicks;
 static uint64_t sAudioPumpMaxTicks;
 
-/* SITE INSTALL (ftp_server_3ds.c) installed a new build of this title: jump
- * into it from the main thread, then let the game close as on HOME -> close. */
+/* SITE INSTALL (ftp_server_3ds.c) installed a new build of this title: relaunch into it 10 s
+ * later, through libctru's chainloader, and let the game close as on HOME -> close. Jumping at
+ * once (APT_PrepareToDoApplicationJump + APT_DoApplicationJump) had the system load the title a
+ * second time while the new build already ran, and the loader faulted out of memory (Luma
+ * dumps 7 and 8, r0 = 0xD86007F3, issue #4); ../legend-of-doom-3ds measured the same: 3 installs
+ * in 4 jumping at once, none of 10 waiting 10 s. The notice stays on the bottom screen meanwhile. */
 static volatile bool sRelaunchRequested;
+static uint64_t sRelaunchAt; /* osGetTime() of the relaunch, 0 none: main thread only */
 
 static bool sRelaunching;
 
@@ -608,20 +613,22 @@ static void RelaunchSelf(void) {
     DebugLog_Printf("relaunching into the build just installed");
     DebugLog_Flush();
     sRelaunching = true;
-    /* The jump is requested with the GPU still ours, and the game then closes
-     * through main's normal exit path (the APT hook drains citro3d's queue,
-     * the teardown runs on a thread with a timeout), exactly as HOME -> close
-     * and as ../sm-3ds does after SITE INSTALL (its #20). Tearing citro3d down
-     * *before* the jump hung the console on one relaunch in two (issue #2). */
-    u8 param[0x300] = { 0 };
-    u8 hmac[0x20] = { 0 };
-    if (R_SUCCEEDED(APT_PrepareToDoApplicationJump(0, TMC3DS_TITLE_ID, MEDIATYPE_SD)))
-        APT_DoApplicationJump(param, sizeof(param), hmac);
+    /* aptExit() starts this title again once the process has exited, after main's normal exit
+     * path (the APT hook drains citro3d's queue, the teardown runs on a thread with a timeout),
+     * as HOME -> close and as ../sm-3ds does. Tearing citro3d down *before* a jump hung the
+     * console on one relaunch in two (issue #2). */
+    aptSetChainloaderToSelf();
 }
 
 static bool PumpLifecycleAndAudio(void) {
     if (sRelaunchRequested) {
+        extern void DebugLog_Printf(const char* fmt, ...);
         sRelaunchRequested = false;
+        sRelaunchAt = osGetTime() + 10000u;
+        DebugLog_Printf("new build installed: relaunching in 10 s");
+    }
+    if (sRelaunchAt != 0 && osGetTime() >= sRelaunchAt) {
+        sRelaunchAt = 0;
         RelaunchSelf();
         sRunning = false;
         return false;
