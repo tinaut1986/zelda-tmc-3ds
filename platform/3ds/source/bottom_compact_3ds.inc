@@ -19,8 +19,8 @@
 #include <time.h>
 
 /* Colours, RGBA_8888 as the compositor stores them (RGB() above). A theme is
- * a palette plus where the tab bar goes; the owner picks one (2026-10-11:
- * proposals rendered with tools/ui-preview, THEME=n). */
+ * a palette; the owner picks one (2026-10-11: proposals rendered with
+ * tools/ui-preview, THEME=n). Where the tab bar goes is its own option (TABS). */
 typedef struct CcTheme {
     const char* name;
     uint32_t bg, bar, tab, tabEdge, tabOn, tabOnEdge, tabOnText, cell, cellEdge, btn, btnEdge;
@@ -28,7 +28,6 @@ typedef struct CcTheme {
     /* The status icons (clock, Wi-Fi, battery) sit on `bar`, which can be dark in a light
      * theme: they have their own colours. */
     uint32_t barText, barDim, barFaint, barGood, barWarn, barBad;
-    uint8_t tabsBottom;
     uint8_t backdrop; /* SS_BACKDROP_* the map/items/quest panels sit on */
 } CcTheme;
 
@@ -37,28 +36,33 @@ static const CcTheme kCcThemes[] = {
       RGB(110, 200, 130), RGB(232, 236, 240), RGB(26, 32, 42), RGB(64, 80, 100), RGB(22, 56, 42),
       RGB(70, 150, 100), RGB(232, 236, 240), RGB(140, 150, 166), RGB(104, 114, 130), RGB(120, 220, 130),
       RGB(240, 200, 80), RGB(240, 110, 100), RGB(110, 200, 240), RGB(232, 236, 240), RGB(140, 150, 166),
-      RGB(104, 114, 130), RGB(120, 220, 130), RGB(240, 200, 80), RGB(240, 110, 100), 0, SS_BACKDROP_SLATE },
+      RGB(104, 114, 130), RGB(120, 220, 130), RGB(240, 200, 80), RGB(240, 110, 100), SS_BACKDROP_SLATE },
     { "PARCHMENT", RGB(226, 212, 172), RGB(88, 60, 36), RGB(196, 176, 128), RGB(120, 92, 60), RGB(54, 112, 56),
       RGB(24, 64, 28), RGB(244, 240, 220), RGB(242, 232, 200), RGB(150, 118, 76), RGB(214, 224, 176),
       RGB(36, 78, 38), RGB(50, 38, 28), RGB(100, 76, 52), RGB(140, 116, 84), RGB(30, 120, 44),
       RGB(160, 100, 14), RGB(176, 46, 36), RGB(36, 86, 156), RGB(244, 236, 214), RGB(210, 190, 150),
-      RGB(150, 118, 82), RGB(120, 210, 110), RGB(240, 190, 70), RGB(240, 110, 90), 0, SS_BACKDROP_PARCHMENT },
+      RGB(150, 118, 82), RGB(120, 210, 110), RGB(240, 190, 70), RGB(240, 110, 90), SS_BACKDROP_PARCHMENT },
     { "NIGHT GOLD", RGB(12, 16, 34), RGB(6, 8, 20), RGB(26, 34, 70), RGB(52, 66, 120), RGB(142, 104, 26),
       RGB(240, 200, 90), RGB(255, 246, 220), RGB(20, 26, 54), RGB(56, 70, 124), RGB(40, 50, 100),
       RGB(110, 130, 210), RGB(236, 236, 246), RGB(140, 148, 180), RGB(106, 114, 156), RGB(120, 220, 150),
       RGB(250, 210, 90), RGB(240, 110, 100), RGB(110, 190, 255), RGB(236, 236, 246), RGB(140, 148, 180),
-      RGB(106, 114, 156), RGB(120, 220, 150), RGB(250, 210, 90), RGB(240, 110, 100), 0, SS_BACKDROP_NAVY },
+      RGB(106, 114, 156), RGB(120, 220, 150), RGB(250, 210, 90), RGB(240, 110, 100), SS_BACKDROP_NAVY },
     { "FOREST", RGB(14, 26, 18), RGB(8, 16, 10), RGB(28, 48, 32), RGB(56, 90, 60), RGB(60, 140, 70),
       RGB(150, 220, 140), RGB(240, 246, 230), RGB(22, 38, 26), RGB(60, 100, 66), RGB(40, 90, 50),
       RGB(110, 180, 110), RGB(236, 240, 224), RGB(150, 170, 140), RGB(116, 140, 116), RGB(150, 230, 120),
       RGB(240, 200, 80), RGB(240, 110, 100), RGB(120, 210, 230), RGB(236, 240, 224), RGB(150, 170, 140),
-      RGB(116, 140, 116), RGB(150, 230, 120), RGB(240, 200, 80), RGB(240, 110, 100), 1, SS_BACKDROP_DARK },
+      RGB(116, 140, 116), RGB(150, 230, 120), RGB(240, 200, 80), RGB(240, 110, 100), SS_BACKDROP_DARK },
 };
 enum { CC_THEME_COUNT = (int)(sizeof(kCcThemes) / sizeof(kCcThemes[0])) };
 static const CcTheme* sCc = &kCcThemes[0];
+static uint8_t sCcTabsBottom; /* OPTIONS -> TABS: the tab bar below the content */
 
 void Port_SecondScreen_3DS_SetUiTheme(int theme) {
     sCc = &kCcThemes[theme >= 0 && theme < CC_THEME_COUNT ? theme : 0];
+}
+
+void Port_SecondScreen_3DS_SetUiTabsBottom(int bottom) {
+    sCcTabsBottom = bottom ? 1u : 0u;
 }
 
 /* For tools/ui-preview: the theme's name and the row a tab tap lands on. */
@@ -96,15 +100,15 @@ enum {
     CC_CELL_H = 25,    /* name row + value row */
 };
 
-/* Where the tab bar and the content go for the current theme. */
+/* Where the tab bar and the content go (OPTIONS -> TABS). */
 static int32_t CcTabY(int32_t h) {
-    return sCc->tabsBottom ? h - CC_TAB_H : 0;
+    return sCcTabsBottom ? h - CC_TAB_H : 0;
 }
 static int32_t CcContentTop(void) {
-    return sCc->tabsBottom ? 0 : CC_TAB_H;
+    return sCcTabsBottom ? 0 : CC_TAB_H;
 }
 static int32_t CcContentBottom(int32_t h) {
-    return sCc->tabsBottom ? h - CC_TAB_H : h;
+    return sCcTabsBottom ? h - CC_TAB_H : h;
 }
 int Port_SecondScreen_3DS_UiTabCenterY(int height) {
     return CcTabY(height) + CC_TAB_H / 2;
@@ -392,7 +396,7 @@ static void Compact_PaintTabBar(const SSurf* s, TargetList* tl, int activeTab, i
     int n = CompactTabCount();
     int32_t ty = CcTabY(s->h);
     FillRect(s, 0, ty, s->w, ty + CC_TAB_H, CC_BAR);
-    FillRect(s, 0, sCc->tabsBottom ? ty : ty + CC_TAB_H - 1, s->w, sCc->tabsBottom ? ty + 1 : ty + CC_TAB_H,
+    FillRect(s, 0, sCcTabsBottom ? ty : ty + CC_TAB_H - 1, s->w, sCcTabsBottom ? ty + 1 : ty + CC_TAB_H,
              CC_TAB_EDGE);
     sCompactChromeKey = CompactChromeKey();
     CStatus(s, ty);
@@ -426,6 +430,7 @@ static void Compact_BoxPainter(uint32_t* pixels, int32_t bufW, int32_t bufH, int
 static void Compact_ApplyThemeFromConfig(void) {
     Port_SecondScreenTheme_SetBoxPainter(Compact_BoxPainter);
     Port_SecondScreen_3DS_SetUiTheme(Port_Config_GetUiTheme());
+    Port_SecondScreen_3DS_SetUiTabsBottom(Port_Config_GetUiTabsBottom());
     /* The theme owns the panel backdrop; there is no separate option. */
     if (Port_Config_GetSecondScreenBackdrop() != sCc->backdrop) Port_Config_SetSecondScreenBackdrop(sCc->backdrop);
 }
@@ -435,6 +440,11 @@ static void Compact_NextTheme(void) {
     Port_Config_SetUiTheme(next);
     Port_SecondScreen_3DS_SetUiTheme(next);
     Port_Config_SetSecondScreenBackdrop(sCc->backdrop);
+}
+
+static void Compact_ToggleTabsBottom(void) {
+    Port_Config_SetUiTabsBottom(!sCcTabsBottom);
+    Port_SecondScreen_3DS_SetUiTabsBottom(!sCcTabsBottom);
 }
 
 /* ---- OPTIONS ---- */
@@ -505,8 +515,10 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
         int32_t x, w;
         CColumn(s->w, 4, 0, 1, &x, &w);
         CCell(s, tl, x, CRowY(3), w, CC_CELL_H, "THEME", sCc->name, CC_ACCENT, SS_ACT_THEME, 0);
+        CColumn(s->w, 4, 1, 1, &x, &w);
+        CCell(s, tl, x, CRowY(3), w, CC_CELL_H, "TABS", sCcTabsBottom ? "BOTTOM" : "TOP", CC_TEXT, SS_ACT_TABS, 0);
     }
-    CSettingCell(s, tl, 3, 1, 1, "SHOW FPS", SS_SET_SHOW_FPS);
+    CSettingCell(s, tl, 4, 0, 1, "SHOW FPS", SS_SET_SHOW_FPS);
     {
         int32_t x, w;
         CColumn(s->w, 4, 2, 2, &x, &w);

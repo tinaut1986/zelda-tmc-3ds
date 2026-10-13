@@ -20,6 +20,7 @@ enum { CONFIG_TEXT_CAP = 3072 };
  * holds a compositor lock while touching the SD card. */
 static _Atomic bool sShowFps;
 static _Atomic int sUiTheme; /* bottom_compact_3ds.inc kCcThemes index */
+static _Atomic bool sUiTabsBottom; /* OPTIONS -> TABS */
 /* OPTIONS -> FRAMES, as in ../mzm and ../sm-3ds: PORT_3DS_PACING_* */
 static _Atomic int sFramePacing;
 static _Atomic bool sFollow = true;
@@ -159,6 +160,7 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("performance_profile_version=%d\n", PERFORMANCE_PROFILE_VERSION);
     APPEND("show_fps=%u\n", sShowFps ? 1u : 0u);
     APPEND("ui_theme=%d\n", (int)sUiTheme);
+    APPEND("ui_tabs_bottom=%u\n", sUiTabsBottom ? 1u : 0u);
     APPEND("frame_pacing=%d\n", (int)sFramePacing);
     APPEND("follow_cam=%u\n", sFollow ? 1u : 0u);
     APPEND("windcrest_pins=%u\n", sCrests ? 1u : 0u);
@@ -332,6 +334,7 @@ void Port_Config_Load(const char* path) {
     if (path != NULL && path[0] != '\0') snprintf(sConfigPath, sizeof(sConfigPath), "%s", path);
 
     bool hasScreenAspect = false;
+    bool hasTabsBottom = false;
     bool migratePerformanceProfile = false;
     FILE* file = fopen(sConfigPath, "rb");
     if (file) {
@@ -344,6 +347,10 @@ void Port_Config_Load(const char* path) {
                 sPerformanceProfileVersion = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "show_fps") == 0) sShowFps = ParseBool(value);
             else if (strcmp(key, "ui_theme") == 0) sUiTheme = (int)strtol(value, NULL, 10);
+            else if (strcmp(key, "ui_tabs_bottom") == 0) {
+                sUiTabsBottom = ParseBool(value);
+                hasTabsBottom = true;
+            }
             else if (strcmp(key, "frame_pacing") == 0) sFramePacing = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "gpu_renderer") == 0) sGpuRenderer = ParseBool(value);
             else if (strcmp(key, "gpu_frame_sync") == 0) sGpuFrameSync = ParseBool(value);
@@ -403,6 +410,10 @@ void Port_Config_Load(const char* path) {
         sPerformanceProfileVersion = PERFORMANCE_PROFILE_VERSION;
         migratePerformanceProfile = true;
     }
+
+    /* FOREST used to put the tab bar below; it is its own option now (TABS).
+     * Keep it where a FOREST player had it. */
+    if (!hasTabsBottom && sUiTheme == 3) sUiTabsBottom = true;
 
     if (sVolume < 0.0f) sVolume = 0.0f;
     if (sVolume > 1.0f) sVolume = 1.0f;
@@ -566,6 +577,8 @@ bool Port_Config_GetShowFps(void) { return sShowFps; }
 void Port_Config_SetShowFps(bool on) { sShowFps = on; SaveConfig(); }
 int Port_Config_GetUiTheme(void) { return sUiTheme; }
 void Port_Config_SetUiTheme(int theme) { sUiTheme = theme; SaveConfig(); }
+bool Port_Config_GetUiTabsBottom(void) { return sUiTabsBottom; }
+void Port_Config_SetUiTabsBottom(bool bottom) { sUiTabsBottom = bottom; SaveConfig(); }
 int Port_Config_GetFramePacing(void) {
     int v = sFramePacing;
     return v >= 0 && v < PORT_3DS_PACING_COUNT ? v : PORT_3DS_PACING_AUTO;

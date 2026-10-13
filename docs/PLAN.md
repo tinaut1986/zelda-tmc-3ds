@@ -50,6 +50,7 @@ merged into `main`) and `v0.1.0` (2026-10-11, beta).
 | `fix/fullview-border-scroll` (cut from `release/v0.1.2`) | issue #11: a room-border scroll keeps Full View (400x240 snapshot of the outgoing room, the scroll ends on the 400x240 view's edge, the view carried across the room change) instead of dropping to 266x160 | checked by the owner and by Claude on the 2DS, Hyrule Field 03/06 <-> 03/05 (right and left: every recorded frame 400x240); up and down not tried yet | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `feat/sidebar-game-hud` (cut from `release/v0.1.2`) | P2.5: X/Y (and ZL/ZR) fire soft-slot items on 3DS; the sidebar's A/B/X/Y diamond with a selected button; R always shown with the game's label over it; rupees/keys in the HUD font | checked by the owner on the 2DS (X/Y with sword and shield: the only items the save has) | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `fix/light-rays-full-view` (cut from `release/v0.1.2`) | the Minish Woods light rays in Full View: BG3 anchored to the view's right edge (they started mid-view and were cut at x=240 on the GPU renderer); BG3 in Full View drawn across the whole view by the GPU renderer as by the software one; BG3 HBlank effects in the native canvas only for Vaati's appearing | on the 2DS by Claude with the owner's state (00/00): rays enter from the right edge, GPU CHECK 0; in the combined build on the owner's 2DS |
+| `feat/tabbar-position` (cut from `release/v0.1.2`) | P2.7: OPTIONS -> TABS (top / bottom) next to THEME; FOREST is a palette like the others; `tools/ui-preview` links again (soft-slot stubs) | on the 2DS by Claude (the cell shows TABS = TOP); the switch itself not tried yet |
 
 **Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
 Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
@@ -319,6 +320,12 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   on the GPU top screen (start by reading `src/ui.c` and the HUD right-anchor,
   `virtuappu_mode1_ws_hud_right_anchor`).
   *Done when:* the owner sees the four buttons with their items in normal, Wide and Full View.
+
+- [ ] **P2.7** Tab bar on top or below.
+  *Spec:* where the bottom screen's tab bar goes is its own option, OPTIONS -> TABS (TOP / BOTTOM),
+  next to THEME (owner, 2026-10-13); every theme is only a palette (FOREST used to move the bar).
+  Saved as `ui_tabs_bottom`; a config without it and with FOREST keeps the bar below.
+  *Done when:* the owner switches it on the console in each theme.
 
 ## Phase 3: performance (60 fps, New 3DS and Old 3DS, no 3D)
 
@@ -614,6 +621,9 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   the GPU renderer repeats BG3 in Full View like the software one; and the "native bounds" rule for
   BG3 under HBlank DMA (issue #5) applies only while Vaati's appearing manager exists, since the
   other HBlank BG3 effects (rays in their other state, steam) are overlays of the whole screen.
+- **2026-10-13** The tab bar's place is its own option (TABS), not part of a theme (owner): the
+  themes are palettes, FOREST no longer moves the bar. SHOW FPS moved to a fifth OPTIONS row to make
+  room beside THEME.
 - **2026-10-13** The R prompt follows the HUD: the button at the right, the game's label art
   (in the game's language) over it to its left, measured on a scratch strip first because
   `Port_SecondScreenTheme_DrawActionLabel` places by its centre.

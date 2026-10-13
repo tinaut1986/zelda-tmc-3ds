@@ -38,6 +38,9 @@ int Port_Config_GetFramePacing(void) { return sPacing; }
 void Port_Config_SetFramePacing(int p) { sPacing = p; }
 int Port_Config_GetUiTheme(void) { return sUiTheme; }
 void Port_Config_SetUiTheme(int theme) { sUiTheme = theme; }
+static bool sTabsBottom;
+bool Port_Config_GetUiTabsBottom(void) { return sTabsBottom; }
+void Port_Config_SetUiTabsBottom(bool bottom) { sTabsBottom = bottom; }
 static int sAspect = 0, sStyle = 2, sBackdrop = 0;
 static bool sColor = true, sHideHud = false, sHold = true, sCrests = true, sFloor = true, sFollow = true;
 static bool sSwap = false, sFps = false, sWide = true, sAuto = true;
@@ -182,3 +185,7 @@ bool Port_Config_DebugLogDirect(void) { return sDbgDirect; }
 void Port_Config_SetDebugLogDirect(bool on) { sDbgDirect = on; }
 bool Port_Config_DebugFtpOn(void) { return sDbgFtp; }
 void Port_Config_SetDebugFtpOn(bool on) { sDbgFtp = on; }
+
+/* ---- X/Y soft slots (port/port_softslots.c): none assigned ---- */
+uint8_t Port_SoftSlots_GetAssignment(int slot) { (void)slot; return 0; }
+void Port_SoftSlots_SetAssignment(int slot, uint8_t itemId) { (void)slot; (void)itemId; }
