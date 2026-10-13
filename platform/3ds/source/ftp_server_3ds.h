@@ -24,6 +24,11 @@ enum { FTP_SERVER_PORT = 5000 };
 
 bool FtpServer_Start(void);
 void FtpServer_Stop(void);
+/* From another thread (the audio worker's watchdog): logs to tmc3ds.log once when the server
+ * thread has been inside one command for 30 s. */
+void FtpServer_WatchdogPoll(void);
+/* "waiting for a command for 3.2 s", "command PEEK for 41.0 s", or "off". */
+void FtpServer_DescribeStage(char* out, unsigned cap);
 bool FtpServer_Running(void);
 /* "192.168.1.50:5000", or a short reason when it is not serving. */
 void FtpServer_Address(char* out, unsigned cap);

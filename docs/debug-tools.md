@@ -83,6 +83,16 @@ and drops them). An FTP server left on starts again by itself, retrying every ~2
 Wi-Fi is up; tapping its button while it waits cancels it. The perf recorder and GPU CHECK
 are one-shot captures and always start off.
 
+Stopping it waits up to 3 s for the server thread (a link request waiting for the game gives up
+at once). A thread that does not end is left running
+(the cell says `STUCK, RESTART THE GAME` and no new server starts until the game is restarted):
+freeing it, or the network service under it, froze the game. `tmc3ds.log` (written straight to
+the SD card, so it survives switching the console off) records each stop (`ftp stop: server
+thread <what it was doing>`, `ftp stop: done`), a thread busy in one command for 30 s
+(`WATCHDOG: ftp server thread busy: command PEEK for 30.2 s`), and, when the main thread stops,
+what the server thread was doing (`WATCHDOG: main thread stopped at stage N ... (ftp server:
+...)`; stages 30-34 are the steps of the stop itself).
+
 - Anonymous: any user name and password.
 - `/` is the root of the SD card; the game's files are in
   `/3ds/Minish Cap 3DS/` (`debug/`, saves, `tmc3ds.ini`).

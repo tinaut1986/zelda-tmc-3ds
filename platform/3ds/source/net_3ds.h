@@ -1,7 +1,9 @@
 #pragma once
 /* The socket service, shared by the updater and the debug FTP server.
  * socInit can run only once at a time, so both take it through this
- * reference count; the last release shuts it down. Thread-safe. */
+ * reference count. The service is started by the first acquire and never
+ * shut down (socExit could hang, net_3ds.c); the process exit closes it.
+ * Thread-safe. */
 #include <stdbool.h>
 
 /* Brings up AC and SOC on the first acquire. False when either fails. */

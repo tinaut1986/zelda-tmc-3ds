@@ -3,6 +3,7 @@
 #include "debug_files_3ds.h"
 #include "debug_log_3ds.h"
 #include "debug_switches_3ds.h"
+#include "ftp_server_3ds.h"
 #include "platform_3ds.h"
 #include "port_second_screen_3ds.h"
 #include "port_second_screen_state.h"
@@ -20,6 +21,7 @@
 /* A request the main thread never takes (game hung). Not an enum: 5e9 does
  * not fit in an int, and the truncated value gave up after 0.7 s. */
 #define LINK_WAIT_NS 5000000000LL
+#define LINK_WAIT_SLICE_NS 50000000LL
 
 enum {
     LINK_PEEK_MAX = 256,
@@ -125,7 +127,16 @@ static void RunOnMainThread(LinkOp op, char* reply, unsigned cap) {
     LightEvent_Clear(&sDone);
     sResult[0] = 0;
     __atomic_store_n(&sOp, op, __ATOMIC_RELEASE);
-    if (LightEvent_WaitTimeout(&sDone, LINK_WAIT_NS) != 0) {
+    /* In slices, giving up as soon as the server stops: FtpServer_Stop runs on the main
+     * thread, so a request waiting for it could only time out, and the stop waited for it. */
+    bool done = false;
+    for (long long waited = 0; waited < LINK_WAIT_NS && FtpServer_Running(); waited += LINK_WAIT_SLICE_NS) {
+        if (LightEvent_WaitTimeout(&sDone, LINK_WAIT_SLICE_NS) == 0) {
+            done = true;
+            break;
+        }
+    }
+    if (!done) {
         __atomic_store_n(&sOp, LINK_OP_NONE, __ATOMIC_RELEASE);
         snprintf(reply, cap, "451 The game did not take the request (stopped?).");
     } else {
