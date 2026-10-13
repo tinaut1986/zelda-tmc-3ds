@@ -2285,12 +2285,15 @@ void Port_Widescreen_UpdateShadows(void) {
      * the copy, so gMessage can name rows the box is not on (the item-get box
      * in the throne room sits at row 14, gMessage says 12, and its last two
      * rows were left unshifted). */
-    if ((gMessage.state & MESSAGE_ACTIVE) != 0) {
-        const Message* box = &gTextRender.message;
-        int x0 = (int)box->textWindowPosX * 8;
-        int x1 = ((int)box->textWindowPosX + (int)box->textWindowWidth + 2) * 8;
-        int y0 = (int)box->textWindowPosY * 8;
-        int y1 = ((int)box->textWindowPosY + (int)box->textWindowHeight + 2) * 8;
+    int boxX, boxY, boxW, boxH;
+    /* The box as drawn (gCurrentWindow), not where it ends up: while it opens
+     * and closes the HUD around it (the hearts) is still on screen in that
+     * band, and moving the final box's band moved the hearts with it. */
+    if ((gMessage.state & MESSAGE_ACTIVE) != 0 && Port_Message_DrawnWindow(&boxX, &boxY, &boxW, &boxH)) {
+        int x0 = boxX * 8;
+        int x1 = (boxX + boxW) * 8;
+        int y0 = boxY * 8;
+        int y1 = (boxY + boxH) * 8;
         if (x0 < 0)
             x0 = 0;
         if (x1 > 240)
