@@ -169,6 +169,7 @@ enum {
     SS_ACT_UPDATE_CHANNEL, SS_ACT_UPDATE_RELEASE, SS_ACT_UPDATE_ACTION,
     SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT,
     SS_ACT_THEME, /* OPTIONS -> THEME (bottom_compact_3ds.inc) */
+    SS_ACT_TABS,  /* OPTIONS -> TABS: tab bar on top or below */
     SS_ACT_DEBUG, /* DEBUG tab command, arg = DBG_CMD_* (bottom_compact_3ds.inc) */
     SS_ACT_STATES, /* STATES tab command, arg = STATES_CMD_* (bottom_compact_3ds.inc) */
 #endif
@@ -3318,6 +3319,9 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
 #ifdef TMC_3DS
         case SS_ACT_THEME:
             Compact_NextTheme();
+            break;
+        case SS_ACT_TABS:
+            Compact_ToggleTabsBottom();
             break;
 #if TMC3DS_DEBUG_TOOLS
         case SS_ACT_DEBUG:
