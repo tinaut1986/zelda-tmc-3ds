@@ -230,6 +230,7 @@ typedef struct PpuGpu3DSFrameView {
     int wsHudRightAnchor, wsHudRightNativeX;
     int wsMsgShift, wsMsgX0, wsMsgX1, wsMsgY0, wsMsgY1;
     bool bg3Repeat;
+    bool bg1Repeat; /* virtuappu_mode1_bg1_repeat */
     /* Full View (Wide + Pixel Perfect): the shadow tilemaps cover the whole
      * view from x=0, not only the columns past 240 (virtuappu_mode1_ws_full_view). */
     bool wsFullView;

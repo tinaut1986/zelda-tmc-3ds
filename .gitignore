@@ -46,6 +46,7 @@ tools/binutils
 !tools/generate_sounds_embed.py
 !tools/gen_state_symbols.py
 !tools/state-census/census.py
+!tools/portal-strips/make_strips.py
 *.pl
 
 # graphics

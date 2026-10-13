@@ -46,6 +46,7 @@ int virtuappu_mode1_ws_full_view = 0;
 bool virtuappu_mode1_bg3_hdma_native_bounds = false;
 int virtuappu_mode1_bg3_hofs_base = -1;
 bool virtuappu_mode1_bg3_repeat = false;
+bool virtuappu_mode1_bg1_repeat = false;
 int virtuappu_mode1_ws_hud_right_anchor = 0;
 const uint16_t* virtuappu_mode1_ws_win0_lines = NULL;
 /* Widescreen message-box centering (see mode1.h). All zero = inactive. */
@@ -1014,8 +1015,9 @@ static void mode1_render_text_bg_compact_tokens(int bg_index, int line, uint16_t
     const bool shadow_active = map_width_tiles < 64 &&
                                virtuappu_mode1_ws_shadow[bg_index] != NULL &&
                                mode1_shadow_geometry_for_bg(bg_index, &shadow_cols, &shadow_stride);
-    const bool repeat_full_view_overlay = bg_index == 3 &&
-        (mode1_shadow_covers_full_view() || virtuappu_mode1_bg3_repeat);
+    const bool repeat_full_view_overlay = (bg_index == 3 &&
+        (mode1_shadow_covers_full_view() || virtuappu_mode1_bg3_repeat)) ||
+        (bg_index == 1 && virtuappu_mode1_bg1_repeat);
     const bool native_bounds = bg_index == 3 && mode1_bg3_native_bounds_active();
     const int native_left = frame_width > MODE1_GBA_BG_CLIP_X
                                 ? (frame_width - MODE1_GBA_BG_CLIP_X) / 2
@@ -1200,8 +1202,9 @@ void virtuappu_mode1_render_text_bg_line(int bg_index, int line, uint32_t* line_
                                   (virtuappu_mode1_ws_shadow[bg_index] != NULL) &&
                                   mode1_shadow_geometry_for_bg(bg_index, &ws_shadow_cols,
                                                               &ws_shadow_stride);
-    const bool repeat_full_view_overlay = bg_index == 3 &&
-        (mode1_shadow_covers_full_view() || virtuappu_mode1_bg3_repeat);
+    const bool repeat_full_view_overlay = (bg_index == 3 &&
+        (mode1_shadow_covers_full_view() || virtuappu_mode1_bg3_repeat)) ||
+        (bg_index == 1 && virtuappu_mode1_bg1_repeat);
     int render_max_x = (map_width_tiles >= 64 || repeat_full_view_overlay)
                            ? frame_width
                            : (ws_shadow_active ? frame_width : MODE1_GBA_BG_CLIP_X);

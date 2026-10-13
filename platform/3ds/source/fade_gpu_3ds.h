@@ -7,6 +7,10 @@
  * True when they are exactly gPaletteBuffer faded by one (intensity, color)
  * for all 32 palettes. Then *bgPalette / *objPalette are the unfaded palettes
  * to decode from and the picture is blended toward grey *level by *weight/255. */
+/* The fade the next presentation shows (the last boundary's snapshot), whatever PAL_RAM
+ * holds: for pictures the presenter adds over the game's frame. */
+bool FadeGpu3DS_Shown(uint8_t* weight, uint8_t* level);
+
 bool FadeGpu3DS_State(const uint16_t* palRamBg, const uint16_t* palRamObj, const uint16_t** bgPalette,
                       const uint16_t** objPalette, uint8_t* weight, uint8_t* level);
 

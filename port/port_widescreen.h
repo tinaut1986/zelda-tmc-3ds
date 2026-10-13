@@ -102,6 +102,12 @@ int Port_Message_DrawnWindow(int* x, int* y, int* width, int* height);
 void Port_Widescreen_ForgetIris(const void* table);
 void Port_Widescreen_NoteIris(void);
 void Port_Widescreen_NoteWindowCircle(int x, int y, int radius);
+/* The Minish portal's falling cutscene drawn at 400x240 (port_linked_stubs.c). Wide: the game
+ * produces it this tick; ViewLive: the published frame is it; Strips: the picture's top-left
+ * on screen, for the presenter's side strips. */
+int Port_Widescreen_PortalCutsceneWide(void);
+int Port_Widescreen_CutsceneViewLive(void);
+int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY);
 int Port_Widescreen_Win0Lines(int width, int height, unsigned short* out);
 
 /* EnterRoomTextboxManager writes its location banner directly to BG0 rather

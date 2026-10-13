@@ -31,6 +31,7 @@
 #include "script.h"
 #include "sound.h"
 #include "structures.h"
+#include "subtask.h"
 
 #include "port_entity_ctx.h"
 #include "port_collision_fidelity.h"
@@ -1443,6 +1444,43 @@ static int Port_WidescreenRead3DSView(u32* roomKey, Port3DSFullViewMode* mode) {
     return 0;
 }
 
+/* The Minish portal's falling cutscene (SUBTASK_PORTALCUTSCENE) in Full View: its
+ * 256x320 picture (BG1) centred in a 400x240 view, the game's scroll set for it
+ * (src/enterPortalSubtask.c), BG1 repeated across the view and its wrapped
+ * columns covered by the presenter's side strips (Port_Widescreen_CutsceneStrips).
+ * Published under its own key, so no static is added here: these sit among the
+ * game's globals, and growing them breaks states saved by other builds (#19). */
+#define WS_CUTSCENE_VIEW_KEY 0xC0715CE5u
+
+int Port_Widescreen_PortalCutsceneWide(void) {
+#ifdef TMC_3DS
+    return Port_Config_3DSFullViewComboEnabled() && gMain.task == TASK_GAME &&
+           gMain.substate == GAMEMAIN_SUBTASK && gUI.lastState == SUBTASK_PORTALCUTSCENE &&
+           gArea.filler3[0] != 0;
+#else
+    return 0;
+#endif
+}
+
+int Port_Widescreen_CutsceneViewLive(void) {
+    u32 key;
+    Port3DSFullViewMode mode;
+    return Port_WidescreenRead3DSView(&key, &mode) && key == WS_CUTSCENE_VIEW_KEY &&
+           mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
+}
+
+int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {
+    if (!Port_Widescreen_CutsceneViewLive()) return 0;
+    /* Where the picture's top-left lands on screen: BG1's offsets in the registers the shown
+     * frame was drawn from (gScreen is already the next tick's, a frame ahead: the strips
+     * slid against the picture). 9-bit, so 0x1B0 is -80. */
+    const int hofs = (gIoMem[REG_OFFSET_BG1HOFS] | (gIoMem[REG_OFFSET_BG1HOFS + 1] << 8)) & 0x1ff;
+    const int vofs = (gIoMem[REG_OFFSET_BG1VOFS] | (gIoMem[REG_OFFSET_BG1VOFS + 1] << 8)) & 0x1ff;
+    if (pictureX) *pictureX = -(hofs >= 256 ? hofs - 512 : hofs);
+    if (pictureY) *pictureY = -(vofs >= 256 ? vofs - 512 : vofs);
+    return 1;
+}
+
 void Port_Widescreen_SetEnterRoomBannerActive(int active) {
     Port_WidescreenBannerState_Set(&sWsEnterRoomBanner, active, gRoomControls.area, gRoomControls.room);
 }
@@ -1728,10 +1766,10 @@ Port3DSFullViewMode Port_Widescreen_3DSViewMode(void) {
      * current IO/OAM/shadows. Live policy can change during the following
      * game tick; revalidating it here would combine new geometry with the
      * previous generation's already-produced frame. */
-    if (!Port_WidescreenRead3DSView(NULL, &publishedMode) ||
-        !Port_Widescreen_ShadowsLive()) {
-        return PORT_3DS_FULL_VIEW_FALLBACK;
-    }
+    u32 publishedKey;
+    if (!Port_WidescreenRead3DSView(&publishedKey, &publishedMode)) return PORT_3DS_FULL_VIEW_FALLBACK;
+    if (publishedKey == WS_CUTSCENE_VIEW_KEY) return publishedMode; /* no map shadows there */
+    if (!Port_Widescreen_ShadowsLive()) return PORT_3DS_FULL_VIEW_FALLBACK;
     return publishedMode;
 }
 
@@ -1865,6 +1903,7 @@ static Port3DSFullViewMode Port_WidescreenGameplayMode(void) {
 }
 
 int Port_Widescreen_GameplayViewWidth(void) {
+    if (Port_Widescreen_PortalCutsceneWide()) return 400;
     switch (Port_WidescreenGameplayMode()) {
         case PORT_3DS_FULL_VIEW_OUTDOOR_1X:
             return 400;
@@ -1876,6 +1915,7 @@ int Port_Widescreen_GameplayViewWidth(void) {
 }
 
 int Port_Widescreen_GameplayViewHeight(void) {
+    if (Port_Widescreen_PortalCutsceneWide()) return 240;
     switch (Port_WidescreenGameplayMode()) {
         case PORT_3DS_FULL_VIEW_OUTDOOR_1X:
             return 240;
@@ -2038,6 +2078,7 @@ int Port_Widescreen_HudRightAnchor(void) {
 }
 
 int Port_Widescreen_ProducerViewWidth(void) {
+    if (Port_Widescreen_PortalCutsceneWide()) return 400;
     /* Producer geometry is the camera/gameplay mode already prepared for
      * this tick. Live policy may change after that preparation; UpdateShadows
      * intentionally commits the completed producer generation once before
@@ -2053,6 +2094,7 @@ int Port_Widescreen_ProducerViewWidth(void) {
 }
 
 int Port_Widescreen_ProducerViewHeight(void) {
+    if (Port_Widescreen_PortalCutsceneWide()) return 240;
     switch (Port_WidescreenGameplayMode()) {
         case PORT_3DS_FULL_VIEW_OUTDOOR_1X:
             return 240;
@@ -2337,6 +2379,13 @@ void Port_Widescreen_UpdateShadows(void) {
     virtuappu_mode1_ws_msg_shift = 0;
     virtuappu_mode1_ws_full_view = 0;
     Port_WidescreenPublish3DSView(roomKey, PORT_3DS_FULL_VIEW_FALLBACK);
+#ifdef TMC_3DS
+    if (Port_Widescreen_PortalCutsceneWide()) {
+        virtuappu_mode1_ws_full_view = 1;
+        Port_WidescreenPublish3DSView(WS_CUTSCENE_VIEW_KEY, PORT_3DS_FULL_VIEW_OUTDOOR_1X);
+        return;
+    }
+#endif
 
     /* Refresh painted bounds before choosing geometry. Both dimensions are
      * ratcheted per room so streaming can only make the experimental mode
@@ -2530,6 +2579,17 @@ void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
     (void)direction;
 }
 int Port_Widescreen_AdvanceScroll(void) {
+    return 0;
+}
+int Port_Widescreen_PortalCutsceneWide(void) {
+    return 0;
+}
+int Port_Widescreen_CutsceneViewLive(void) {
+    return 0;
+}
+int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {
+    (void)pictureX;
+    (void)pictureY;
     return 0;
 }
 void Port_Widescreen_UpdateShadows(void) { /* no-op at native 240 */

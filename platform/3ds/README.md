@@ -60,6 +60,11 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
   zoom). Dialogues keep the 400x240 view (the text box is centred); room-name
   banners, transitions and unsupported
   effects fall back safely to the established presentation.
+- The Minish portal cutscene (falling into the mushroom ring) is drawn at 400x240 in Full View
+  too: its 256x320 picture centred, 240 lines of it at once. The columns left and right of the
+  picture are black unless `portal-cutscene-strips.bin` is in the data folder: the player's own
+  extension of the picture, made with `tools/portal-strips/make_strips.py` from a 400x320 PNG
+  (`--ip` uploads it over the game's FTP server). Nothing derived from the game's art ships.
 - Bottom screen: 320x240 map, dungeon/status information and touch item UI.
 - Rendering: PICA200/Citro2D presenter fed by the software GBA PPU.
 - Performance profile: selected automatically from the detected console model.

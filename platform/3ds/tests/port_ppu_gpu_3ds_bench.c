@@ -292,6 +292,7 @@ static int compare_against_software(PpuGpu3DSFrameView* frame,
     ppu.mode = (frame->frameDispcnt & 7u) == 0u ? 1 : 2;
 
     virtuappu_mode1_bg3_repeat = frame->bg3Repeat;
+    virtuappu_mode1_bg1_repeat = frame->bg1Repeat;
     virtuappu_mode1_bind_gba_memory(&frame->memory);
     virtuappu_mode1_set_output_buffer(gSoftwarePixels, 512);
     virtuappu_mode1_set_color_correction(false);
