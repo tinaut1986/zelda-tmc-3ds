@@ -962,6 +962,14 @@ void ButtonUIElement_Action1(UIElement* element) {
 
     if (element->type2 == 0 && (((gHUD.hideFlags >> element->type) & 1) || (gMessage.state & MESSAGE_ACTIVE) != 0)) {
         y = (s16)gHUD.buttonY[element->type] - 0x28;
+#ifdef TMC_3DS
+        /* The diamond sits lower than the game's A/B row (0x1c): hide every
+         * button as far up as A/B went, or B, Y and the bottom of A stay on
+         * screen through a message. X (above A) follows A off the top. */
+        if (y > 0x1c - 0x28) {
+            y = 0x1c - 0x28;
+        }
+#endif
     } else {
         y = (s16)gHUD.buttonY[element->type];
     }
