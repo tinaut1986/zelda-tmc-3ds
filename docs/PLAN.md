@@ -64,8 +64,8 @@ states of other scenes than Hyrule Field and Link's house (run `tools/state-cens
 of each; a holder nobody listed crashes on load into a different build).
 
 **Start here (2026-10-13, later):** everything is merged into `release/v0.1.2` and pushed (light
-rays, TABS, the X/Y diamond, the Chuchu guard, `tmc-link --elf`). Next, in this order: the owner
-checks P2.6 in normal and Wide (only Full View seen) and P2.7's switch; issue #13 (closing the
+rays, TABS, the X/Y diamond, the Chuchu guard, `tmc-link --elf`). P2.6 and P2.7 confirmed by the
+owner. Next, in this order: issue #13 (closing the
 pause menu after loading a state saved in it: who writes `0x160` into the Chuchu, garbled Link);
 issue #4 (the relaunch after `SITE INSTALL` sometimes fails); the two checks left on issue #11.
 
@@ -313,7 +313,7 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   in ITEMS; a second tap on X/Y's item clears it. Kept for every save file (`tmc.softslots` in
   the data folder); an item the save does not own does nothing.
   *Done when:* the owner fires items with X and Y on the console (2026-10-13, sword and shield).
-- [ ] **P2.6** A/B/X/Y in the in-game HUD.
+- [x] **P2.6** A/B/X/Y in the in-game HUD.
   *Spec:* the top screen's HUD shows four item buttons in the console's diamond (X on top, Y
   left, A right, B below; owner's choice, 2026-10-13) in the style of the game's A/B buttons:
   the button bubbles of sprite 505 (504 on EU), frames 0/1, with X/Y letters drawn into a copy
@@ -321,13 +321,14 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   item, `src/ui.c` ButtonUIElement / the item elements). Where the HUD is anchored right in
   Wide / Full View the diamond follows it. Done in the engine (`DrawHudXY`, `port/port_hud_xy.h`):
   see the decisions log, 2026-10-13.
-  *Done when:* the owner sees the four buttons with their items in normal, Wide and Full View.
+  *Done when:* the owner sees the four buttons with their items in normal, Wide and Full View
+  (2026-10-13).
 
-- [ ] **P2.7** Tab bar on top or below.
+- [x] **P2.7** Tab bar on top or below.
   *Spec:* where the bottom screen's tab bar goes is its own option, OPTIONS -> TABS (TOP / BOTTOM),
   next to THEME (owner, 2026-10-13); every theme is only a palette (FOREST used to move the bar).
   Saved as `ui_tabs_bottom`; a config without it and with FOREST keeps the bar below.
-  *Done when:* the owner switches it on the console in each theme.
+  *Done when:* the owner switches it on the console in each theme (2026-10-13).
 
 ## Phase 3: performance (60 fps, New 3DS and Old 3DS, no 3D)
 
