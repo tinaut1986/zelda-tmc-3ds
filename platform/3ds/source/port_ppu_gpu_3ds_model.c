@@ -1659,21 +1659,11 @@ static bool build_affine_scaled_bg(const PpuGpu3DSFrameView* frame,
     ((int32_t)((((int64_t)(target) - (ref)) <= 0) \
                    ? -((-((int64_t)(target) - (ref))) / (step)) \
                    : ((((int64_t)(target) - (ref)) + (step) - 1) / (step))))
-    /* Screen coordinate where the source reaches `s` (in pixels): the inverse of
-     * s = (ref + step * (X - 0.5 - origin)) / 256, nudged by half a source
-     * fixed-point step so an exact texel start rounds into its texel. */
-    const float nudge = 1.0f / 300.0f;
     const float invAtlas = 1.0f / PPU_GPU3DS_ATLAS_SIDE;
     const unsigned tilesPerRow = PPU_GPU3DS_ATLAS_SIDE / PPU_GPU3DS_TILE_SIDE;
     for (int32_t ty = ty0; ty <= ty1; ++ty) {
-        const float top = (256.0f * ((float)(ty * 8) - nudge) - (float)refY0) / (float)pd + 0.5f;
-        const float bottom =
-                (256.0f * ((float)(ty * 8 + 8) - nudge) - (float)refY0) / (float)pd + 0.5f;
         const int32_t mapY = wrap ? (ty & (mapTiles - 1)) : ty;
         for (int32_t tx = tx0; tx <= tx1; ++tx) {
-            const float left = (256.0f * ((float)(tx * 8) - nudge) - (float)refX) / (float)pa + 0.5f;
-            const float right =
-                    (256.0f * ((float)(tx * 8 + 8) - nudge) - (float)refX) / (float)pa + 0.5f;
             const int32_t mapX = wrap ? (tx & (mapTiles - 1)) : tx;
             const uint32_t mapOffset = (uint32_t)mapY * (unsigned)mapTiles + (uint32_t)mapX;
             uint8_t tile = 0;
@@ -1694,11 +1684,21 @@ static bool build_affine_scaled_bg(const PpuGpu3DSFrameView* frame,
                 slotY = (slot / tilesPerRow) * PPU_GPU3DS_TILE_SIDE;
             }
             if (!perTexel) {
+                /* The quad's edges between pixels: at the first pixel whose source reaches
+                 * the tile, as the texel path below places them. Edges through pixel centres
+                 * (the GBA's +0.5) left the GPU rounding which tile a pixel on them took: it
+                 * sampled the next slot of the atlas (black dots and gaps along the title's
+                 * sword), and insetting the UVs moved texels instead. */
+                const float tileLeft = (float)FIRST_REACHING((int64_t)tx * 8 * 256, refX, pa);
+                const float tileRight = (float)FIRST_REACHING((int64_t)(tx * 8 + 8) * 256, refX, pa);
+                const float tileTop = (float)FIRST_REACHING((int64_t)ty * 8 * 256, refY0, pd);
+                const float tileBottom = (float)FIRST_REACHING((int64_t)(ty * 8 + 8) * 256, refY0, pd);
+                if (tileRight <= tileLeft || tileBottom <= tileTop) continue;
                 const float u0 = (float)slotX * invAtlas;
                 const float u1 = (float)(slotX + PPU_GPU3DS_TILE_SIDE) * invAtlas;
                 const float v0 = 1.0f - (float)slotY * invAtlas;
                 const float v1 = 1.0f - (float)(slotY + PPU_GPU3DS_TILE_SIDE) * invAtlas;
-                emit_uv_quad(frame, cmd, emit, left, top, right, bottom, 0.0f, u0, v0, u1,
+                emit_uv_quad(frame, cmd, emit, tileLeft, tileTop, tileRight, tileBottom, 0.0f, u0, v0, u1,
                              v1, false, vertexCursor, indexCursor);
                 continue;
             }
@@ -2424,8 +2424,9 @@ static void emit_ring_quad(const PpuGpu3DSFrameView* frame, PpuGpu3DSCommandBuff
     *indexCursor += 6;
 }
 
-/* BG1 from the picture texture (the title's extended forest): one quad over the band's lines,
- * across the whole frame, as BG1 for priority, windows and blending. */
+/* The picture texture as part of BG1 (the title's forest extended around the game's): one quad
+ * over the band's lines, across the whole frame, after BG1's own batches, as BG1 for priority,
+ * windows and blending; its transparent texels (alpha test) leave BG1's tiles. */
 static bool build_bg1_picture(const PpuGpu3DSFrameView* frame, PpuGpu3DSCommandBuffer* cmd,
                               const PpuGpu3DSBand* band, const uint8_t* io, unsigned priority,
                               const PpuGpu3DSRegion* regions, size_t regionCount, bool emit,
@@ -4217,12 +4218,6 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                 const size_t regionCount =
                         build_regions(frame, oam, band, regions);
                 PROFILE_END(PPU_GPU3DS_PHASE_REGIONS);
-                if (bg == 1 && frame->bg1Picture) {
-                    if (!build_bg1_picture(frame, cmd, band, io, (unsigned)priority, regions, regionCount,
-                                           emit, vertexCursor, indexCursor, batchCursor))
-                        return false;
-                    continue;
-                }
                 PROFILE_BEGIN(PPU_GPU3DS_PHASE_BG);
                 const bool built =
                         frame->affine && bg == 2
@@ -4238,6 +4233,11 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                                                 batchCursor);
                 PROFILE_END(PPU_GPU3DS_PHASE_BG);
                 if (!built) return false;
+                /* The picture over BG1's own tiles (its transparent texels let them show). */
+                if (bg == 1 && frame->bg1Picture &&
+                    !build_bg1_picture(frame, cmd, band, io, (unsigned)priority, regions, regionCount, emit,
+                                       vertexCursor, indexCursor, batchCursor))
+                    return false;
             }
         }
         PROFILE_BEGIN(PPU_GPU3DS_PHASE_OBJ);

@@ -208,7 +208,7 @@ void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsi
     for (unsigned y = 0; y < height; ++y)
         for (unsigned x = 0; x < width; ++x)
             texels[((y >> 3) * (PPU_GPU3DS_PICTURE_TEX_WIDTH >> 3) + (x >> 3)) * 64u +
-                   PpuGpu3DS_MortonIndex(x & 7u, y & 7u)] = PpuGpu3DS_PackRgba5551(gbaPixels[y * width + x], true);
+                   PpuGpu3DS_MortonIndex(x & 7u, y & 7u)] = PpuGpu3DS_PackRgba5551(gbaPixels[y * width + x], gbaPixels[y * width + x] != 0);
     C3D_TexFlush(&sPictureTex);
     C3D_TexSetFilter(&sPictureTex, GPU_NEAREST, GPU_NEAREST);
     C3D_TexSetWrap(&sPictureTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);

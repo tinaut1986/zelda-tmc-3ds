@@ -204,8 +204,8 @@ static void HandleNintendoCapcomLogos(void) {
 /* Full View draws the title at 400x240 (Port_Widescreen_TitleWide): the GBA's screen goes in the
  * middle (+80, +40): the logo's entities through the camera, the PRESS START sprites by hand; the
  * light rays repeat across the view from its top; the forest is drawn from the extended picture by
- * the renderers. The sword (affine BG2) is centred in the view by the renderers themselves; its map
- * must not wrap, or it repeats beside itself past 256 pixels. */
+ * the renderers. The sword (affine BG2) is centred through its affine origin; its map must not wrap,
+ * or it repeats beside itself past 256 pixels. */
 static int TitleViewX(void) {
     return Port_Widescreen_TitleWide() ? 80 : 0;
 }
@@ -220,8 +220,11 @@ static void UpdateTitleView(void) {
     gRoomControls.scroll_x = (s16)-TitleViewX(); /* the title's entities (logo pieces) */
     gRoomControls.scroll_y = (s16)-TitleViewY();
     gScreen.bg0.xOffset = (u16)-TitleViewX();
+    gScreen.bg1.xOffset = (u16)-TitleViewX(); /* the forest's own tiles in the middle */
+    gScreen.bg1.yOffset = (u16)-TitleViewY();
     if (wide) gScreen.bg2.control &= ~BGCNT_WRAP;
     else if (sWide && (gScreen.bg2.control & BGCNT_256COLOR)) gScreen.bg2.control |= BGCNT_WRAP;
+    if (wide != sWide) UpdateSwordBgAffineData(); /* its origin moves with the view */
     sWide = wide;
 }
 #else
@@ -367,8 +370,8 @@ static void UpdateSwordBgAffineData(void) {
     struct BgAffineSrcData aff;
     aff.texY = 0x8000;
     aff.texX = 0x8000;
-    aff.scrX = DISPLAY_WIDTH / 2;
-    aff.scrY = DISPLAY_HEIGHT / 2 - 8;
+    aff.scrX = DISPLAY_WIDTH / 2 + TitleViewX();
+    aff.scrY = DISPLAY_HEIGHT / 2 - 8 + TitleViewY();
     aff.alpha = 0;
     aff.sy = aff.sx = gIntroState.swordBgScaleRatio;
     BgAffineSet(&aff, (struct BgAffineDstData*)&gScreen.controls, 1);
@@ -454,6 +457,7 @@ static void ExitTitlescreen(void) {
 #ifdef PC_PORT
     gRoomControls.scroll_x = gRoomControls.scroll_y = 0; /* UpdateTitleView's offsets stay behind */
     gScreen.bg0.xOffset = 0;
+    gScreen.bg1.xOffset = gScreen.bg1.yOffset = 0;
 #endif
     if (!gFadeControl.active) {
         SetTask(TASK_FILE_SELECT);

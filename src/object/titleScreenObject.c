@@ -6,6 +6,9 @@
  */
 #include "object.h"
 #include "asm.h"
+#ifdef PC_PORT
+#include "port_widescreen.h"
+#endif
 
 void TitleScreenObject_Type0(Entity*);
 void TitleScreenObject_Type1(Entity*);
@@ -101,6 +104,13 @@ void sub_080A2340(Entity* this) {
     ptr = &gUnk_08125014[this->type];
     this->x.HALF.HI = ptr->unk_0;
     this->y.HALF.HI = ptr->unk_2;
+#ifdef PC_PORT
+    /* Drawn in screen coordinates: in the 400x240 title (src/title.c) the GBA's screen is in the middle. */
+    if (Port_Widescreen_TitleWide()) {
+        this->x.HALF.HI += 80;
+        this->y.HALF.HI += 40;
+    }
+#endif
     this->frameIndex = ptr->unk_4;
     this->spritePriority.b0 = ptr->unk_6;
     this->spriteRendering.b3 = 1;

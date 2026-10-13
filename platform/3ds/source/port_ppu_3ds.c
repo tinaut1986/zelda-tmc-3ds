@@ -208,7 +208,7 @@ static TopFrameState SelectTopFrame(void) {
     const Port3DSFullViewMode requested = Port_Widescreen_3DSViewMode();
     if (requested == PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
         MODE1_GBA_WIDTH >= 400 && MODE1_GBA_HEIGHT >= 240 &&
-        (Port_Widescreen_ShadowsLive() || Port_Widescreen_CutsceneViewLive())) {
+        (Port_Widescreen_ShadowsLive() || Port_Widescreen_CutsceneViewLive() || Port_Widescreen_TitleViewLive())) {
         state.width = 400;
         state.height = 240;
         state.validSourceWidth = 400;
@@ -1261,8 +1261,8 @@ static void PresentFrame(void) {
     {
         const bool wideFrame = sTopPresentMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
         const bool title = wideFrame && Port_Widescreen_TitleViewLive();
-        virtuappu_mode1_bg_repeat_mask = wideFrame && Port_Widescreen_CutsceneViewLive() ? 0x2u : title ? 0x1u : 0u;
-        virtuappu_mode1_bg1_picture = title ? ScenePictures_TitleAbgr() : NULL;
+        virtuappu_mode1_bg_repeat_mask = wideFrame && Port_Widescreen_CutsceneViewLive() ? 0x2u : title ? 0x3u : 0u;
+        virtuappu_mode1_bg1_picture = title ? ScenePictures_TitleAbgr() : NULL; /* faded below if the CPU draws */
         PortPpuGpu3DS_SetBg1Picture(title ? ScenePictures_Title555() : NULL, SCENE_TITLE_W, SCENE_TITLE_H);
         if (!title && !Port_Widescreen_TitleWide()) ScenePictures_Release();
     }
@@ -1291,6 +1291,7 @@ static void PresentFrame(void) {
         if (parityFrame) {
             Platform3DS_MarkFrameDiscontinuity(
                 OLD3DS_FRAME_PACER_DISCONTINUITY_DUMP);
+            if (virtuappu_mode1_bg1_picture) virtuappu_mode1_bg1_picture = ScenePictures_TitleAbgrFaded();
             virtuappu_render_frame();
             PortPpuGpu3DS_CaptureParityReference(
                 sTopUpload, sTopUploadPitch, sTopPresentWidth, sTopPresentHeight);
@@ -1365,7 +1366,12 @@ static void PresentFrame(void) {
     Platform3DS_SetStage(4);
     const uint64_t softwareStartTick = Platform3DS_SystemTick();
     if (holdTop) port_hdma_vblank_reset();
-    else if (!gpuReady) virtuappu_render_frame();
+    else if (!gpuReady) {
+        /* The CPU draws from PAL_RAM, faded by the game: so must the scene picture be (the GPU
+         * renderer fades its whole frame instead). Only when it draws: it costs a few ms. */
+        if (virtuappu_mode1_bg1_picture) virtuappu_mode1_bg1_picture = ScenePictures_TitleAbgrFaded();
+        virtuappu_render_frame();
+    }
     Platform3DS_SetStage(5);
     const uint64_t renderEndTick = Platform3DS_SystemTick();
 

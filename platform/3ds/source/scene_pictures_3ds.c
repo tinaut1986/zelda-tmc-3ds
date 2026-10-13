@@ -2,6 +2,7 @@
 
 #include "app_paths_3ds.h"
 #include "cpu/mode1.h"
+#include "fade_gpu_3ds.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,8 @@ extern bool Port_Config_GetColorCorrection(void);
 #define TITLE_ROMFS "romfs:/wide-scenes/title-forest.bin"
 
 static int sAvailable = -1; /* -1 not looked, 0 none, 1 a file */
+static uint16_t* sFaded555;  /* scratch for the software renderer's faded copy */
+static uint32_t* sFadedAbgr;
 static uint16_t* sTitle555;
 static uint32_t* sTitleAbgr;
 static bool sAbgrCorrected;
@@ -55,15 +58,32 @@ const uint32_t* ScenePictures_TitleAbgr(void) {
     }
     if (sAbgrCorrected != corrected) {
         for (unsigned i = 0; i < SCENE_TITLE_W * SCENE_TITLE_H; ++i)
-            sTitleAbgr[i] = virtuappu_mode1_rgb555_to_abgr8888(gba[i]);
+            sTitleAbgr[i] = gba[i] != 0 ? virtuappu_mode1_rgb555_to_abgr8888(gba[i]) : 0u;
         sAbgrCorrected = corrected;
     }
     return sTitleAbgr;
 }
 
+const uint32_t* ScenePictures_TitleAbgrFaded(void) {
+    const uint16_t* gba = ScenePictures_Title555();
+    if (gba == NULL) return NULL;
+    const size_t count = SCENE_TITLE_W * SCENE_TITLE_H;
+    if (sFaded555 == NULL) sFaded555 = malloc(count * sizeof(uint16_t));
+    if (sFadedAbgr == NULL) sFadedAbgr = malloc(count * sizeof(uint32_t));
+    if (sFaded555 == NULL || sFadedAbgr == NULL || !FadeGpu3DS_FadeShown(gba, sFaded555, count))
+        return ScenePictures_TitleAbgr();
+    for (size_t i = 0; i < count; ++i)
+        sFadedAbgr[i] = sFaded555[i] != 0 ? virtuappu_mode1_rgb555_to_abgr8888(sFaded555[i]) : 0u;
+    return sFadedAbgr;
+}
+
 void ScenePictures_Release(void) {
     free(sTitle555);
     free(sTitleAbgr);
+    free(sFaded555);
+    free(sFadedAbgr);
     sTitle555 = NULL;
     sTitleAbgr = NULL;
+    sFaded555 = NULL;
+    sFadedAbgr = NULL;
 }

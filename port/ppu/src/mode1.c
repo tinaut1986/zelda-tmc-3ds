@@ -2364,13 +2364,15 @@ static bool mode1_render_old3ds_title_alpha_line(int line, uint16_t dispcnt, int
     uint8_t winning_bg_priority[MODE1_GBA_WIDTH];
     memset(winning_bg_priority, 0xFF, (size_t)frame_width);
 
+    virtuappu_mode1_render_text_bg_line(1, line, out_row, winning_bg_priority);
     if (virtuappu_mode1_bg1_picture != NULL) {
-        /* BG1 (priority 3 here) from the picture: the title's extended forest. */
-        memcpy(out_row, virtuappu_mode1_bg1_picture + (size_t)line * (size_t)frame_width,
-               (size_t)frame_width * sizeof(uint32_t));
-        memset(winning_bg_priority, 3, (size_t)frame_width);
-    } else {
-        virtuappu_mode1_render_text_bg_line(1, line, out_row, winning_bg_priority);
+        /* The picture's pixels over BG1's own (priority 3 here): the title's forest extended. */
+        const uint32_t* picture = virtuappu_mode1_bg1_picture + (size_t)line * (size_t)frame_width;
+        for (int x = 0; x < frame_width; ++x) {
+            if (picture[x] == 0u) continue;
+            out_row[x] = picture[x];
+            winning_bg_priority[x] = 3u;
+        }
     }
 
     uint16_t bg0_tokens[MODE1_GBA_WIDTH];
@@ -3094,13 +3096,13 @@ static void mode1_render_lines(const Mode1RenderLinesContext* context, int first
             virtuappu_mode1_render_text_bg_line(0, line, bg_layers[0], NULL);
         }
         if ((line_dispcnt & MODE1_DISP_BG1_ON) != 0u) {
+            memset(bg_layers[1], 0, (size_t)context->frame_width * sizeof(uint32_t));
+            virtuappu_mode1_render_text_bg_line(1, line, bg_layers[1], NULL);
             if (virtuappu_mode1_bg1_picture != NULL) {
-                /* BG1 from the picture (the title's extended forest), frame_width wide. */
-                memcpy(bg_layers[1], virtuappu_mode1_bg1_picture + (size_t)line * (size_t)context->frame_width,
-                       (size_t)context->frame_width * sizeof(uint32_t));
-            } else {
-                memset(bg_layers[1], 0, (size_t)context->frame_width * sizeof(uint32_t));
-                virtuappu_mode1_render_text_bg_line(1, line, bg_layers[1], NULL);
+                /* The picture's pixels over BG1's own (the title's forest extended around it). */
+                const uint32_t* picture = virtuappu_mode1_bg1_picture + (size_t)line * (size_t)context->frame_width;
+                for (int x = 0; x < context->frame_width; ++x)
+                    if (picture[x] != 0u) bg_layers[1][x] = picture[x];
             }
         }
         if ((line_dispcnt & MODE1_DISP_BG2_ON) != 0u) {

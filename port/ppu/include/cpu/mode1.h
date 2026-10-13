@@ -104,9 +104,9 @@ extern bool virtuappu_mode1_bg3_repeat;
 /* BGs (bit n = BGn) repeated across the whole view: a scene's 256-wide picture or
  * overlay drawn in a wider view (the portal cutscene's BG1, the title's light rays). */
 extern uint8_t virtuappu_mode1_bg_repeat_mask;
-/* BG1 drawn from this picture (ABGR, frame_width x frame_height, row-major) instead of
- * its tiles, at BG1's priority and blending: the title's forest extended to the view
- * (Port_Widescreen_TitleWide). NULL: BG1 as the game has it. */
+/* A picture drawn as part of BG1 over BG1's own tiles (ABGR, frame_width x frame_height,
+ * row-major, 0 = none: BG1's tile shows), at BG1's priority and blending: the title's forest
+ * extended around the game's (Port_Widescreen_TitleWide). NULL: BG1 as the game has it. */
 extern const uint32_t* virtuappu_mode1_bg1_picture;
 
 /* Staged alongside the engine OAM mirror, then committed with its VBlank DMA.
