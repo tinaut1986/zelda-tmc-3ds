@@ -101,6 +101,7 @@ int Port_Message_DrawnWindow(int* x, int* y, int* width, int* height);
  * HBlank DMA feeding WIN0 this frame is a noted iris; 0 otherwise. */
 void Port_Widescreen_ForgetIris(const void* table);
 void Port_Widescreen_NoteIris(void);
+void Port_Widescreen_NoteWindowCircle(int x, int y, int radius);
 int Port_Widescreen_Win0Lines(int width, int height, unsigned short* out);
 
 /* EnterRoomTextboxManager writes its location banner directly to BG0 rather

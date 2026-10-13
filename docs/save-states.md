@@ -50,7 +50,8 @@ with the same layout fingerprint.
 ## What to keep in mind when changing the game's code
 
 **Adding, removing, renaming or resizing a global is safe** (renaming loses its value in old
-states).
+states). Except while issue #19 is open: a resize that moves the globals after it (the statics
+of `port/port_linked_stubs.c` sit among the game's) left a state of the Minish Woods drawing wrong tiles.
 
 **A new global that holds a pointer** needs to be covered, or a state keeps a stale address
 after a rebuild and the game crashes on load. `state_pointers_3ds.c` has the rules:
