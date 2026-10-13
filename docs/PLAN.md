@@ -61,7 +61,7 @@ boxes below. History: `git log` and the decisions log.
 | `fix/fullview-iris` (cut from `release/v0.1.2`) | issue #16: the iris fade (circle wipe) drawn across the whole wide view instead of dropping to 266x160 (`docs/gpu-fade.md`, "Iris fades in a wide view") | on the 2DS by Claude and the owner (Link's iris); Ezlo's (centre near the view's edge) after the radius change by Claude and the owner (2026-10-13) | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `fix/msg-shift-drawn-box` (cut from `release/v0.1.2`) | issue #17: Wide/Full View: while a text box opened or closed the hearts jumped 80 px right; the centred band is now the box as drawn (`gCurrentWindow`) | on the 2DS by Claude (heart piece, 00/00: opening and closing) and the owner (2026-10-13) | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `feat/dev-ftp-install` (cut from `release/v0.1.3`) | production builds run an install-only FTP server when `dev-ftp.txt` is in the data folder (only `update/`, no remote control, CANCEL bar), anonymous; `--install` sends either mode (ported from `../mzm` without its login) | on the 2DS by Claude: the path limits and SITE refusals, debug -> production -> debug installs through it; the bar and CANCEL checked by the owner on a production build (2026-10-13). `dev-ftp.txt` is left on the 2DS | _(merged into `release/v0.1.3` 2026-10-13)_ |
-| `fix/updater-beta-labels` (cut from `release/v0.1.3`) | issue #18: updater: `X.Y.Z-dev` < `X.Y.Z BETA` < `X.Y.Z` (a dev build was told it was up to date with its beta out); OPTIONS -> UPDATES shows BETA on the release found and the installed build's label | host check of `Update_IsNewer` (no host jansson for the full test); screen in `tools/ui-preview` (`UPDATE_BETA=1`), whose tab indices are fixed; the same BETA label merged into `../mzm` and `../sm-3ds` | _(merged into `release/v0.1.3` 2026-10-13)_ |
+| `fix/updater-beta-labels` (cut from `release/v0.1.3`) | issue #18: updater: `X.Y.Z-dev` < `X.Y.Z BETA` < `X.Y.Z` (a dev build was told it was up to date with its beta out); OPTIONS -> UPDATES shows BETA on the release found and the installed build's label | host check of `Update_IsNewer` (no host jansson for the full test); labels checked by the owner on the 2DS (2026-10-13), the dev < beta offer not seen yet; screen in `tools/ui-preview` (`UPDATE_BETA=1`), whose tab indices are fixed; the same BETA label merged into `../mzm` and `../sm-3ds` | _(merged into `release/v0.1.3` 2026-10-13)_ |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
@@ -72,9 +72,9 @@ it (issue #13).
 **Start here (2026-10-13, after the v0.1.2 beta):** `v0.1.2` is published as a beta and every
 branch of the day is merged into `release/v0.1.3` and pushed (no worktree, nothing uncommitted).
 Checked by the owner on the 2DS the same day: Ezlo's iris (#16), the hearts with a text box (#17),
-the scroll's button jump (#11), the install-only FTP bar and its CANCEL. Still to check on the
-console: the updater's order and labels (#18): needs a build with `fix/updater-beta-labels` (the
-2DS's predates it) and a dev build of a number whose beta is out. Next, in this order:
+the scroll's button jump (#11), the install-only FTP bar and its CANCEL. The updater's labels
+(#18) too (V0.1.2 BETA, INSTALLED V0.1.3-DEV...); its dev < beta offer is still to see, with a
+0.1.3-dev build installed once `v0.1.3` is out as a beta. Next, in this order:
 1. Issue #13: closing the pause menu after loading a state saved in it writes `0x160` (the OBJ
    tile of gfx slot 2, Link's) into a Chuchu's child and garbles Link: find who writes it.
 2. Issue #4 (reopened 2026-10-13, Luma dump 7: the loader ran out of memory again after an
@@ -85,8 +85,7 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
 
 **On the owner's consoles now (2026-10-13):**
 - Old 3DS/2DS, **`192.168.1.132`** (`.3ds_ftp_ip` holds it): a debug build of `release/v0.1.3`
-  with `feat/dev-ftp-install` (`076b951`) but not yet `fix/updater-beta-labels`; it calls itself
-  `0.1.2` (built while the branch tip was the tag). Full View (`widescreen=1`,
+  at `36e7e44`, `0.1.3-dev.72+36e7e44` (2026-10-13), UPDATES channel + BETAS. Full View (`widescreen=1`,
   `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT, FRAMES = AUTO.
   **`/3ds/Minish Cap 3DS/dev-ftp.txt` is there** (Claude left it, to try the install-only server
   with a production build; a debug build ignores it). The owner plays on it (Minish Woods, sword
