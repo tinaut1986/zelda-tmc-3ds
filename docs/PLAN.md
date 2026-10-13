@@ -65,6 +65,9 @@ boxes below. History: `git log` and the decisions log.
 | `fix/fullview-portal-camera` (cut from `release/v0.1.3`, worktree: the main checkout) | issue #21: Full View through a Minish portal's shrink and closing circle | on the 2DS by Claude and the owner (the circle closing evenly from the whole view, 2026-10-13); growing back checked by Claude | _(merged into `release/v0.1.3` 2026-10-13)_ |
 | `fix/bottom-hud-live` (cut from `release/v0.1.3`, worktree `../zelda-tmc-3ds-bottom`) | issue #22: BOTTOM CORE AUTO (core 1 on the Old 3DS), HUD painted at once, taps kept during a repaint, save notice before the save, R label and heart edge as the HUD | on the 2DS by Claude (paint 500 -> 70 ms, same fps; hearts and R label seen) and the owner (R label, taps, the save notice, audio; 2026-10-13) | _(merged into `release/v0.1.3` 2026-10-13)_ |
 | `feat/portal-cutscene-wide` (cut from `release/v0.1.3`, worktree `../zelda-tmc-3ds-cutscene`) | P4.3: the portal cutscene at 400x240, side strips from `portal-cutscene-strips.bin` (`tools/portal-strips/`); merging it after `fix/fullview-portal-camera` conflicts in `port/port_widescreen.h` (keep both declarations) | on the 2DS by Claude (black sides, a test pattern) and the owner (2026-10-13, with their generated picture 1: colours and scrolling matched after `ac64d71`) | _(merged into `release/v0.1.3` 2026-10-13)_ |
+| `fix/fullview-after-soft-reset` (cut from `release/v0.1.3`) | issue #23: Full View off after a soft reset (the intro was drawn at 400x240 over the last room) | on the 2DS by Claude (soft reset from the Minish Woods: intro and title at 240x160) | _(merged into `release/v0.1.3` 2026-10-13)_ |
+| `feat/scene-recorder` (cut from `release/v0.1.3`) | P1.6: `tmc-link.py scenerec`, `tools/scene-rec/decode.py` | on the 2DS by Claude (89 frames decoded to PNG and GIF) | _(merged into `release/v0.1.3` 2026-10-13)_ |
+| `fix/install-relaunch` (cut from `release/v0.1.3`) | issue #4: relaunch 10 s after `SITE INSTALL` through libctru's chainloader (Luma dumps 7 and 8, `0xD86007F3`), as `../legend-of-doom-3ds` fixed it | builds; to try with several installs in a row when the owner is not playing; `../mzm` jumps at once too | waits for the check |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
@@ -262,9 +265,12 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   overwritten). GPU CHECK draws one frame with both renderers and saves both.
   *Done when:* a dump with a note and a GPU CHECK pair are fetched over FTP.
 - [ ] **P1.6** Scene recorder.
-  *Spec:* RAM ring of the shown top screen (60/30/15 Hz), written on stop as
-  `tmc-rec-NNNN.bin` (sm-3ds format); `tools/scene-rec/decode.py` → PNG/mp4.
-  *Done when:* a few seconds of play decode to a video on the PC.
+  *Spec:* RAM ring of the shown top screen, one frame in N, written on stop as
+  `tmc-scene-NNNN.bin` (400x240 RGB565, not sm-3ds's RLE); `tools/scene-rec/decode.py` → PNG/GIF.
+  Driven over the link (`tmc-link.py scenerec`); no DEBUG cell yet.
+  Done in `feat/scene-recorder` (merged 2026-10-13): 89 frames (3 s at 30 fps) on the 2DS.
+  *Done when:* a few seconds of play decode to a video on the PC, and the README's before/after
+  GIF of the portal (owner's request, 2026-10-13) is recorded on the New 3DS (more memory).
 - [ ] **P1.7** Warp and cheats for testing.
   *Spec:* teleport to any area/room (list by area name), refill hearts / max
   rupees / all items toggles, invincibility; a `CHT` mark on the top bar while on.
@@ -411,6 +417,11 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   *Done when:* the owner sees the cutscene at 400x240 on the 2DS, black sides and with a strips
   file made from a generated extension of the picture.
 
+- [ ] **P4.4** The title screen in Full View (owner's request, 2026-10-13).
+  *Spec:* the intro/title at 400x240: only the forest background extended (a picture the owner
+  generates from a dump, read from the SD card as in P4.3), the logo, sword and the rest centred as
+  they are; the light rays between the trees stretched or repeated to the edges if they can be.
+  *Done when:* the owner sees the title at 400x240 on the console.
 ---
 
 ## Baseline measurements (P0.2)
