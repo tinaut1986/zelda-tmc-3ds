@@ -47,6 +47,7 @@ bool virtuappu_mode1_bg3_hdma_native_bounds = false;
 int virtuappu_mode1_bg3_hofs_base = -1;
 bool virtuappu_mode1_bg3_repeat = false;
 int virtuappu_mode1_ws_hud_right_anchor = 0;
+const uint16_t* virtuappu_mode1_ws_win0_lines = NULL;
 /* Widescreen message-box centering (see mode1.h). All zero = inactive. */
 int virtuappu_mode1_ws_msg_shift = 0;
 int virtuappu_mode1_ws_msg_x0 = 0;
@@ -1754,6 +1755,13 @@ void virtuappu_mode1_composite_line(int line, uint32_t bg_layers[MODE1_GBA_BG_CO
         win1_bottom = mode1_frame_height;
     }
 
+    if (virtuappu_mode1_ws_win0_lines != NULL) {
+        win0_left = virtuappu_mode1_ws_win0_lines[line * 2];
+        win0_right = virtuappu_mode1_ws_win0_lines[line * 2 + 1];
+        win0_top = 0;
+        win0_bottom = mode1_frame_height;
+    }
+
     win0_h_wrap = win0_left > win0_right;
     /* GBA: WINxV with top > bottom is an inverted/wrapped vertical span,
      * active for (line >= top || line < bottom) — mirrors the horizontal
@@ -2502,6 +2510,13 @@ static bool mode1_render_native_compact_line(int line, uint16_t dispcnt, int fra
         if (win0_bottom > mode1_frame_height) win0_bottom = mode1_frame_height;
         if (win1_right > frame_width) win1_right = frame_width;
         if (win1_bottom > mode1_frame_height) win1_bottom = mode1_frame_height;
+
+        if (virtuappu_mode1_ws_win0_lines != NULL) {
+            win0_left = virtuappu_mode1_ws_win0_lines[line * 2];
+            win0_right = virtuappu_mode1_ws_win0_lines[line * 2 + 1];
+            win0_top = 0;
+            win0_bottom = mode1_frame_height;
+        }
 
         win0_h_wrap = win0_left > win0_right;
         win1_h_wrap = win1_left > win1_right;

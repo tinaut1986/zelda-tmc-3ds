@@ -39,6 +39,7 @@
 #include "port_rom.h"
 #include "port_runtime_config.h"
 #include "port_widescreen.h"
+#include "port_hdma.h"
 #include "port_widescreen_banner_state.h"
 #include "port_horizontal_minish_path.h"
 
@@ -997,6 +998,131 @@ void UpdateScrollVram(void) {
     }
 }
 
+/* The iris fade (src/fade.c) draws WIN0 from an HBlank table of 160 8-bit
+ * spans, so it cannot reach past x=255 or y=159. Each table it hands to the
+ * VBlank DMA is noted here with its circle; a wider or taller view then draws
+ * the same circle across the whole view (Port_Widescreen_Win0Lines). The game
+ * double-buffers the tables, so they are told apart by address. */
+typedef struct {
+    const void* table;
+    s32 x, y;
+    u32 size;
+} PortWsIris;
+static PortWsIris sWsIris[2];
+/* The circle of the last frame drawn with one: the game tears the HBlank DMA
+ * down in the tick that ends the iris (sub_0801E104), but the frame presented
+ * next still has the registers of the VBlank before, window on. */
+static PortWsIris sWsIrisDrawn;
+static u8 sWsIrisNext;
+static u8 sWsIrisLatest;
+
+void Port_Widescreen_ForgetIris(const void* table) {
+    int i;
+    for (i = 0; i < 2; i++) {
+        if (sWsIris[i].table == table) {
+            sWsIris[i].table = NULL;
+        }
+    }
+    sWsIrisLatest = 0;
+}
+
+void Port_Widescreen_NoteIris(void) {
+    const void* table = gScreen.vBlankDMA.src;
+    PortWsIris* slot = &sWsIris[0];
+    if (sWsIris[0].table != table) {
+        if (sWsIris[1].table == table) {
+            slot = &sWsIris[1];
+        } else {
+            slot = &sWsIris[sWsIrisNext];
+            sWsIrisNext ^= 1;
+        }
+    }
+    slot->table = table;
+    slot->x = (s16)gFadeControl.iris_x;
+    slot->y = (s16)gFadeControl.iris_y;
+    slot->size = gFadeControl.iris_size;
+    sWsIrisLatest = 1;
+}
+
+/* The window the game drives now is a noted iris. */
+static int Port_WidescreenIrisLive(void) {
+    return sWsIrisLatest && (gScreen.lcd.displayControl & (DISPCNT_WIN0_ON | DISPCNT_WIN1_ON | DISPCNT_OBJWIN_ON)) ==
+                                DISPCNT_WIN0_ON;
+}
+
+static u32 Port_WidescreenIsqrt(u32 v) {
+    u32 r = 0, bit = 1u << 30;
+    while (bit > v)
+        bit >>= 2;
+    while (bit != 0) {
+        if (v >= r + bit) {
+            v -= r + bit;
+            r = (r >> 1) + bit;
+        } else {
+            r >>= 1;
+        }
+        bit >>= 2;
+    }
+    return r;
+}
+
+int Port_Widescreen_Win0Lines(int width, int height, u16* out) {
+    const void* table;
+    const PortWsIris* iris = NULL;
+    u32 radius;
+    int line, i;
+    const u16 dispcnt = (u16)(gIoMem[REG_OFFSET_DISPCNT] | (gIoMem[REG_OFFSET_DISPCNT + 1] << 8));
+    if ((width <= 240 && height <= 160) || height > 240 ||
+        (dispcnt & (DISPCNT_WIN0_ON | DISPCNT_WIN1_ON | DISPCNT_OBJWIN_ON)) != DISPCNT_WIN0_ON) {
+        sWsIrisDrawn.table = NULL;
+        return 0;
+    }
+    /* The iris's settings (SetFadeIris): everything inside, the backdrop alone
+     * outside. The GPU renderer draws it as that mask. */
+    if ((gIoMem[REG_OFFSET_WININ] & 0x3f) != 0x3f || (gIoMem[REG_OFFSET_WINOUT] & 0x3f) != 0)
+        return 0;
+    table = port_hdma_source_for_dest(&gIoMem[REG_OFFSET_WIN0H]);
+    for (i = 0; i < 2 && table != NULL; i++) {
+        if (sWsIris[i].table == table)
+            iris = &sWsIris[i];
+    }
+    if (iris == NULL && table == NULL && sWsIrisDrawn.table != NULL)
+        iris = &sWsIrisDrawn;
+    if (iris == NULL) {
+        sWsIrisDrawn.table = NULL;
+        return 0;
+    }
+    sWsIrisDrawn = *iris;
+    /* The game opens the iris up to 150 and then drops the window: on 240x160
+     * around the middle that clears the corners. Scale 150 to this view's
+     * farthest corner from the centre, or an iris away from the middle (Ezlo
+     * near a room's edge) jumps from a circle to the whole view at its end. */
+    {
+        const s32 dx = iris->x > width / 2 ? iris->x : width - iris->x;
+        const s32 dy = iris->y > height / 2 ? iris->y : height - iris->y;
+        radius = iris->size * Port_WidescreenIsqrt((u32)(dx * dx + dy * dy)) / 150u + 1u;
+    }
+    for (line = 0; line < height; line++) {
+        const s32 dy = line - iris->y;
+        const u32 ady = (u32)(dy < 0 ? -dy : dy);
+        s32 left = 0, right = 0;
+        if (ady < radius) {
+            const s32 half = (s32)Port_WidescreenIsqrt(radius * radius - ady * ady);
+            left = iris->x - half;
+            right = iris->x + half;
+            if (left < 0)
+                left = 0;
+            if (right > width)
+                right = width;
+            if (left >= right)
+                left = right = 0;
+        }
+        out[line * 2] = (u16)left;
+        out[line * 2 + 1] = (u16)right;
+    }
+    return 1;
+}
+
 #if defined(MODE1_GBA_WIDTH) && (MODE1_GBA_WIDTH > 240)
 #include "cpu/mode1.h"
 
@@ -1366,6 +1492,9 @@ static int Port_WidescreenFullViewUiOverlayActive(void) {
      * Port_Widescreen_UpdateShadows centres with ws_msg_shift at any view width. Counting it
      * as an overlay dropped Full View to E2 for the whole banner (about four seconds) and the
      * camera then snapped to the 400-wide rest position when it ended. */
+    /* The iris fade is drawn across the whole view (Port_Widescreen_Win0Lines). */
+    if (Port_WidescreenIrisLive())
+        return 0;
     return Port3DSFullViewPolicy_NativeWindowActive(gScreen.lcd.displayControl);
 }
 
