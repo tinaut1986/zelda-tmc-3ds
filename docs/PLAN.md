@@ -64,7 +64,7 @@ boxes below. History: `git log` and the decisions log.
 | `fix/updater-beta-labels` (cut from `release/v0.1.3`) | issue #18: updater: `X.Y.Z-dev` < `X.Y.Z BETA` < `X.Y.Z` (a dev build was told it was up to date with its beta out); OPTIONS -> UPDATES shows BETA on the release found and the installed build's label | host check of `Update_IsNewer` (no host jansson for the full test); labels checked by the owner on the 2DS (2026-10-13), the dev < beta offer not seen yet; screen in `tools/ui-preview` (`UPDATE_BETA=1`), whose tab indices are fixed; the same BETA label merged into `../mzm` and `../sm-3ds` | _(merged into `release/v0.1.3` 2026-10-13)_ |
 | `fix/fullview-portal-camera` (cut from `release/v0.1.3`, worktree: the main checkout) | issue #21: Full View through a Minish portal's shrink and closing circle | on the 2DS by Claude and the owner (the circle closing evenly from the whole view, 2026-10-13); growing back checked by Claude | waits for the owner's word to merge |
 | `fix/bottom-hud-live` (cut from `release/v0.1.3`, worktree `../zelda-tmc-3ds-bottom`) | issue #22: BOTTOM CORE AUTO (core 1 on the Old 3DS), HUD painted at once, taps kept during a repaint, save notice before the save, R label and heart edge as the HUD | on the 2DS by Claude (paint 500 -> 70 ms, same fps; hearts and R label seen); taps, the notice and audio not checked by the owner yet | waits for the owner's check |
-| `feat/portal-cutscene-wide` (cut from `release/v0.1.3`, worktree `../zelda-tmc-3ds-cutscene`) | P4.3: the portal cutscene at 400x240, side strips from `portal-cutscene-strips.bin` (`tools/portal-strips/`); merging it after `fix/fullview-portal-camera` conflicts in `port/port_widescreen.h` (keep both declarations) | on the 2DS by Claude (black sides, a test pattern, then the owner's generated picture 1) | waits for the owner's check |
+| `feat/portal-cutscene-wide` (cut from `release/v0.1.3`, worktree `../zelda-tmc-3ds-cutscene`) | P4.3: the portal cutscene at 400x240, side strips from `portal-cutscene-strips.bin` (`tools/portal-strips/`); merging it after `fix/fullview-portal-camera` conflicts in `port/port_widescreen.h` (keep both declarations) | on the 2DS by Claude (black sides, a test pattern) and the owner (2026-10-13, with their generated picture 1: colours and scrolling matched after `ac64d71`) | checked by the owner; waits for the merge |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
@@ -89,7 +89,7 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
 **On the owner's consoles now (2026-10-13):**
 - Old 3DS/2DS, **`192.168.1.132`** (`.3ds_ftp_ip` holds it): a debug build of `release/v0.1.3` with
   `fix/fullview-portal-camera`, `fix/bottom-hud-live` and `feat/portal-cutscene-wide` merged on top
-  (uncommitted combination, 2026-10-13; the same code as the three branches), BOTTOM CORE = AUTO,
+  (a local merge, 2026-10-13; the same code as the three branches with `ac64d71`), BOTTOM CORE = AUTO,
   `portal-cutscene-strips.bin` from the owner's generated picture 1 (`~/Imágenes/minish-portal-cutscene/`,
   never in the repository: it is derived from the ROM's art). `debug/` cleared of old dumps and checks
   (1245 files made listing it hang the FTP server).
