@@ -1451,6 +1451,28 @@ static int Port_WidescreenRead3DSView(u32* roomKey, Port3DSFullViewMode* mode) {
  * Published under its own key, so no static is added here: these sit among the
  * game's globals, and growing them breaks states saved by other builds (#19). */
 #define WS_CUTSCENE_VIEW_KEY 0xC0715CE5u
+#define WS_TITLE_VIEW_KEY 0x717E5CE5u
+
+/* The title screen in Full View (Western layout: the forest on BG1): drawn at 400x240 with the
+ * GBA's screen centred (src/title.c moves the light rays, sword and sprites), the forest from the
+ * extended picture (platform/3ds/source/scene_pictures_3ds.c) as BG1, the light rays repeated
+ * across the view and from its top. Only with a picture to draw the forest from. */
+int Port_Widescreen_TitleWide(void) {
+#ifdef TMC_3DS
+    extern bool ScenePictures_TitleAvailable(void);
+    return Port_Config_3DSFullViewComboEnabled() && gMain.task == TASK_TITLE && gUI.lastState == 1 &&
+           gSaveHeader->language != 0 && ScenePictures_TitleAvailable();
+#else
+    return 0;
+#endif
+}
+
+int Port_Widescreen_TitleViewLive(void) {
+    u32 key;
+    Port3DSFullViewMode mode;
+    return Port_WidescreenRead3DSView(&key, &mode) && key == WS_TITLE_VIEW_KEY &&
+           mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
+}
 
 int Port_Widescreen_PortalCutsceneWide(void) {
 #ifdef TMC_3DS
@@ -1784,7 +1806,8 @@ Port3DSFullViewMode Port_Widescreen_3DSViewMode(void) {
      * previous generation's already-produced frame. */
     u32 publishedKey;
     if (!Port_WidescreenRead3DSView(&publishedKey, &publishedMode)) return PORT_3DS_FULL_VIEW_FALLBACK;
-    if (publishedKey == WS_CUTSCENE_VIEW_KEY) return publishedMode; /* no map shadows there */
+    if (publishedKey == WS_CUTSCENE_VIEW_KEY || publishedKey == WS_TITLE_VIEW_KEY)
+        return publishedMode; /* no map shadows there */
     if (!Port_Widescreen_ShadowsLive()) return PORT_3DS_FULL_VIEW_FALLBACK;
     return publishedMode;
 }
@@ -1919,7 +1942,7 @@ static Port3DSFullViewMode Port_WidescreenGameplayMode(void) {
 }
 
 int Port_Widescreen_GameplayViewWidth(void) {
-    if (Port_Widescreen_PortalCutsceneWide()) return 400;
+    if (Port_Widescreen_PortalCutsceneWide() || Port_Widescreen_TitleWide()) return 400;
     switch (Port_WidescreenGameplayMode()) {
         case PORT_3DS_FULL_VIEW_OUTDOOR_1X:
             return 400;
@@ -1931,7 +1954,7 @@ int Port_Widescreen_GameplayViewWidth(void) {
 }
 
 int Port_Widescreen_GameplayViewHeight(void) {
-    if (Port_Widescreen_PortalCutsceneWide()) return 240;
+    if (Port_Widescreen_PortalCutsceneWide() || Port_Widescreen_TitleWide()) return 240;
     switch (Port_WidescreenGameplayMode()) {
         case PORT_3DS_FULL_VIEW_OUTDOOR_1X:
             return 240;
@@ -2094,7 +2117,7 @@ int Port_Widescreen_HudRightAnchor(void) {
 }
 
 int Port_Widescreen_ProducerViewWidth(void) {
-    if (Port_Widescreen_PortalCutsceneWide()) return 400;
+    if (Port_Widescreen_PortalCutsceneWide() || Port_Widescreen_TitleWide()) return 400;
     /* Producer geometry is the camera/gameplay mode already prepared for
      * this tick. Live policy may change after that preparation; UpdateShadows
      * intentionally commits the completed producer generation once before
@@ -2110,7 +2133,7 @@ int Port_Widescreen_ProducerViewWidth(void) {
 }
 
 int Port_Widescreen_ProducerViewHeight(void) {
-    if (Port_Widescreen_PortalCutsceneWide()) return 240;
+    if (Port_Widescreen_PortalCutsceneWide() || Port_Widescreen_TitleWide()) return 240;
     switch (Port_WidescreenGameplayMode()) {
         case PORT_3DS_FULL_VIEW_OUTDOOR_1X:
             return 240;
@@ -2405,6 +2428,11 @@ void Port_Widescreen_UpdateShadows(void) {
         Port_WidescreenPublish3DSView(WS_CUTSCENE_VIEW_KEY, PORT_3DS_FULL_VIEW_OUTDOOR_1X);
         return;
     }
+    if (Port_Widescreen_TitleWide()) {
+        virtuappu_mode1_ws_full_view = 1;
+        Port_WidescreenPublish3DSView(WS_TITLE_VIEW_KEY, PORT_3DS_FULL_VIEW_OUTDOOR_1X);
+        return;
+    }
 #endif
 
     /* Refresh painted bounds before choosing geometry. Both dimensions are
@@ -2608,6 +2636,12 @@ int Port_Widescreen_CutsceneViewLive(void) {
     return 0;
 }
 int Port_Widescreen_TitleForestShown(void) {
+    return 0;
+}
+int Port_Widescreen_TitleWide(void) {
+    return 0;
+}
+int Port_Widescreen_TitleViewLive(void) {
     return 0;
 }
 int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {

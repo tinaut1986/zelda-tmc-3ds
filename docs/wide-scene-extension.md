@@ -86,7 +86,7 @@ own picture, scrolled with it, through the game's colour conversion and fades.
 | Scene | File (romfs `wide-scenes/`, or the data folder) | `to_console.py` scene; pictures | Code |
 |---|---|---|---|
 | Minish portal cutscene (P4.3) | `portal-cutscene-strips.bin` (80 + 64 columns x 320) | `portal`; shipped: `portal-cutscene-1.png` (the owner's pick; `-2` the plainer variant) | `Port_Widescreen_CutsceneStrips`, `DrawScenePictures` (`platform_gpu_3ds.c`) |
-| Title screen (P4.4) | `title-forest.bin` (400x240, the centre not drawn) | `title`; shipped: `title-forest-a.png` (`-b` the framed variant). The forest (BG1, 240x160, 22 colours) needs all four sides (`extract_bg.py DUMP 1 --top 40 --bottom 40`); the light rays, the logo and the sword stay inside the game's screen | `Port_Widescreen_TitleForestShown`, `DrawScenePictures` |
+| Title screen (P4.4) | `title-forest.bin` (400x240) | `title`; shipped: `title-forest-a.png` (`-b` the framed variant). The forest (BG1, 240x160, 22 colours) needs all four sides (`extract_bg.py DUMP 1 --top 40 --bottom 40`). The title is drawn at 400x240 (`Port_Widescreen_TitleWide`, `src/title.c`): the picture *is* BG1 in both renderers (`virtuappu_mode1_bg1_picture`, the GPU's picture texture), so the light rays blend over it and the sword and sprites go over it; the rays repeat across the view from its top | `scene_pictures_3ds.c`, `PortPpuGpu3DS_SetBg1Picture` |
 
 A new scene needs its view at 400x240 first (the scene's own layout: how the picture and the
 sprites are centred, which BG repeats), then a strips file and its converter as for the portal.

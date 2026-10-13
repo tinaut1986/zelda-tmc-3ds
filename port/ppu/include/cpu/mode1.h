@@ -101,9 +101,13 @@ extern bool virtuappu_mode1_bg3_hdma_native_bounds;
 extern int virtuappu_mode1_bg3_hofs_base;
 /* Repeat a known seamless BG3 overlay beyond the native 240px canvas. */
 extern bool virtuappu_mode1_bg3_repeat;
-/* Repeat BG1 across the whole view (a cutscene's 256-wide picture drawn in a
- * wider view; what wraps is covered by the presenter, Port_Widescreen_CutsceneView). */
-extern bool virtuappu_mode1_bg1_repeat;
+/* BGs (bit n = BGn) repeated across the whole view: a scene's 256-wide picture or
+ * overlay drawn in a wider view (the portal cutscene's BG1, the title's light rays). */
+extern uint8_t virtuappu_mode1_bg_repeat_mask;
+/* BG1 drawn from this picture (ABGR, frame_width x frame_height, row-major) instead of
+ * its tiles, at BG1's priority and blending: the title's forest extended to the view
+ * (Port_Widescreen_TitleWide). NULL: BG1 as the game has it. */
+extern const uint32_t* virtuappu_mode1_bg1_picture;
 
 /* Staged alongside the engine OAM mirror, then committed with its VBlank DMA.
  * Raw OAM Y=160..239 is otherwise ambiguous in a 240-line viewport. */

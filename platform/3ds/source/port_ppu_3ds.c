@@ -32,6 +32,7 @@
 #include "ndsp_psg_offload.h"
 
 #include "virtuappu.h"
+#include "scene_pictures_3ds.h"
 #include "scene_rec_3ds.h"
 #include "cpu/mode1.h"
 #include "main.h"
@@ -282,7 +283,8 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     /* As mode1.c's repeat_full_view_overlay: in Full View BG3 (light rays, steam,
      * clouds) covers the whole view, not just the native 240 columns. */
     view->bg3Repeat = virtuappu_mode1_bg3_repeat || virtuappu_mode1_ws_full_view != 0;
-    view->bg1Repeat = virtuappu_mode1_bg1_repeat;
+    view->bgRepeatMask = virtuappu_mode1_bg_repeat_mask;
+    view->bg1Picture = virtuappu_mode1_bg1_picture != NULL;
     view->wsFullView = virtuappu_mode1_ws_full_view != 0;
     /* The software PPU's rule (mode1_bg3_native_bounds_active). */
     view->bg3HofsBase = virtuappu_mode1_bg3_hofs_base;
@@ -1253,8 +1255,17 @@ static void PresentFrame(void) {
      * Wide mode must extend them past x=240 just as Full View already does. */
     virtuappu_mode1_bg3_repeat = gMain.task == TASK_GAME &&
         gRoomControls.area == AREA_HYRULE_FIELD && gScreen.bg3.control == 0x1e05;
-    /* The portal cutscene's picture across the 400 view; the presenter covers what wraps. */
-    virtuappu_mode1_bg1_repeat = sTopPresentMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X && Port_Widescreen_CutsceneViewLive();
+    /* Scenes drawn wider than the GBA's screen: the portal cutscene's picture across the 400 view
+     * (the presenter covers what wraps), the title's light rays, and its forest from the extended
+     * picture (scene_pictures_3ds.c) as BG1. */
+    {
+        const bool wideFrame = sTopPresentMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
+        const bool title = wideFrame && Port_Widescreen_TitleViewLive();
+        virtuappu_mode1_bg_repeat_mask = wideFrame && Port_Widescreen_CutsceneViewLive() ? 0x2u : title ? 0x1u : 0u;
+        virtuappu_mode1_bg1_picture = title ? ScenePictures_TitleAbgr() : NULL;
+        PortPpuGpu3DS_SetBg1Picture(title ? ScenePictures_Title555() : NULL, SCENE_TITLE_W, SCENE_TITLE_H);
+        if (!title && !Port_Widescreen_TitleWide()) ScenePictures_Release();
+    }
     /* Only Vaati's appearing effect is placed on the native screen (BG3 drawn at an
      * entity's screen position); the other BG3 HBlank effects (Minish Woods light
      * rays, steam) are overlays that must cover the whole view. */

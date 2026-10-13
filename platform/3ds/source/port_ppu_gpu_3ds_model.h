@@ -230,7 +230,10 @@ typedef struct PpuGpu3DSFrameView {
     int wsHudRightAnchor, wsHudRightNativeX;
     int wsMsgShift, wsMsgX0, wsMsgX1, wsMsgY0, wsMsgY1;
     bool bg3Repeat;
-    bool bg1Repeat; /* virtuappu_mode1_bg1_repeat */
+    uint8_t bgRepeatMask; /* virtuappu_mode1_bg_repeat_mask */
+    /* BG1 drawn from the picture texture (PortPpuGpu3DS_SetBg1Picture), as
+     * virtuappu_mode1_bg1_picture. */
+    bool bg1Picture;
     /* Full View (Wide + Pixel Perfect): the shadow tilemaps cover the whole
      * view from x=0, not only the columns past 240 (virtuappu_mode1_ws_full_view). */
     bool wsFullView;
@@ -440,6 +443,10 @@ void PpuGpu3DS_RingSetStorage(PpuGpu3DSCache* cache, unsigned index, uint16_t* p
  * platform to flush; false when nothing was. */
 bool PpuGpu3DS_RingTakeDirty(PpuGpu3DSCache* cache, unsigned index, size_t* offset, size_t* bytes);
 enum { PPU_GPU3DS_RING_COUNT = MODE1_GBA_BG_COUNT * 2 };
+/* PpuGpu3DSBatch.texture of BG1 drawn from a picture (PpuGpu3DSFrameView::bg1Picture): a
+ * PPU_GPU3DS_PICTURE_TEX_WIDTH x _HEIGHT RGBA5551 texture, rows from v = 1 down. */
+enum { PPU_GPU3DS_PICTURE_TEXTURE = 1 + PPU_GPU3DS_RING_COUNT, PPU_GPU3DS_PICTURE_TEX_WIDTH = 512,
+       PPU_GPU3DS_PICTURE_TEX_HEIGHT = 256 };
 void PpuGpu3DS_CacheInit(PpuGpu3DSCache* cache);
 void PpuGpu3DS_CacheClearDirty(PpuGpu3DSCache* cache);
 void PpuGpu3DS_CacheBeginFrame(PpuGpu3DSCache* cache, const uint16_t* bgPalette,

@@ -32,6 +32,9 @@ typedef struct PortPpuGpu3DSStats {
 
 bool PortPpuGpu3DS_Init(void);
 void PortPpuGpu3DS_Shutdown(void);
+/* BG1 drawn from this picture (GBA 15-bit colours, row-major, up to 512x256) in frames whose view
+ * has bg1Picture set; NULL frees it. The texture is remade when the pointer or colour correction changes. */
+void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsigned height);
 bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame);
 bool PortPpuGpu3DS_DrawPrepared(void);
 bool PortPpuGpu3DS_BindPresentShader(void);

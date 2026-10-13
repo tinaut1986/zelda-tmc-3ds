@@ -63,7 +63,8 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
 - Scenes the GBA drew as one fixed 240x160 picture are extended in Full View with generated
   pictures in the romfs (`docs/wide-scene-extension.md`): the Minish portal cutscene (falling into
   the mushroom ring) at 400x240, its 256x320 picture centred, 240 lines of it at once; the title
-  screen, its forest going on around the 240x160 screen. A picture of one's own in the data folder
+  screen at 400x240, its forest extended to the whole view, the light rays coming from the top
+  and the sword moving away across it. A picture of one's own in the data folder
   (`portal-cutscene-strips.bin`, `title-forest.bin`, from `tools/scene-extend/to_console.py`)
   replaces the shipped one.
 - Bottom screen: 320x240 map, dungeon/status information and touch item UI.

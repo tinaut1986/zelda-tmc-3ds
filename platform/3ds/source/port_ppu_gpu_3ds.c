@@ -61,6 +61,10 @@ static C3D_Tex sAtlas;
 /* One view ring per background (port_ppu_gpu_3ds_model.h), sampled by the
  * batches whose `texture` field is 1 + the background. */
 static C3D_Tex sRingTex[PPU_GPU3DS_RING_COUNT];
+/* BG1 drawn from a picture (PortPpuGpu3DS_SetBg1Picture): made when one is set, freed when cleared. */
+static C3D_Tex sPictureTex;
+static const uint16_t* sPicturePixels;
+static bool sPictureCorrected;
 static unsigned sBoundTexture;
 static C3D_Tex sOutputTexture;
 static C3D_RenderTarget* sOutputTarget;
@@ -139,6 +143,9 @@ void PortPpuGpu3DS_Shutdown(void) {
 
     if (sOutputTarget) C3D_RenderTargetDelete(sOutputTarget);
     if (sOutputTexture.data) C3D_TexDelete(&sOutputTexture);
+    if (sPictureTex.data) C3D_TexDelete(&sPictureTex);
+    memset(&sPictureTex, 0, sizeof(sPictureTex));
+    sPicturePixels = NULL;
     if (sProgramInitialized) shaderProgramFree(&sProgram);
     if (sShader) DVLB_Free(sShader);
     for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring)
@@ -180,6 +187,34 @@ void PortPpuGpu3DS_Shutdown(void) {
     sProgram = (shaderProgram_s){ 0 };
     sAttributes = (C3D_AttrInfo){ 0 };
     sBuffers = (C3D_BufInfo){ 0 };
+}
+
+extern bool Port_Config_GetColorCorrection(void);
+
+void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsigned height) {
+    const bool corrected = Port_Config_GetColorCorrection();
+    if (gbaPixels == sPicturePixels && (gbaPixels == NULL || corrected == sPictureCorrected)) return;
+    if (sPictureTex.data) C3D_TexDelete(&sPictureTex);
+    memset(&sPictureTex, 0, sizeof(sPictureTex));
+    sPicturePixels = NULL;
+    if (gbaPixels == NULL || width > PPU_GPU3DS_PICTURE_TEX_WIDTH || height > PPU_GPU3DS_PICTURE_TEX_HEIGHT) return;
+    if (!C3D_TexInit(&sPictureTex, PPU_GPU3DS_PICTURE_TEX_WIDTH, PPU_GPU3DS_PICTURE_TEX_HEIGHT, GPU_RGBA5551)) {
+        memset(&sPictureTex, 0, sizeof(sPictureTex));
+        return;
+    }
+    /* 8x8 Morton tiles, tile rows from the top (v = 1), as the rings are laid out. */
+    uint16_t* texels = (uint16_t*)sPictureTex.data;
+    memset(texels, 0, sPictureTex.size);
+    for (unsigned y = 0; y < height; ++y)
+        for (unsigned x = 0; x < width; ++x)
+            texels[((y >> 3) * (PPU_GPU3DS_PICTURE_TEX_WIDTH >> 3) + (x >> 3)) * 64u +
+                   PpuGpu3DS_MortonIndex(x & 7u, y & 7u)] = PpuGpu3DS_PackRgba5551(gbaPixels[y * width + x], true);
+    C3D_TexFlush(&sPictureTex);
+    C3D_TexSetFilter(&sPictureTex, GPU_NEAREST, GPU_NEAREST);
+    C3D_TexSetWrap(&sPictureTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+    sPicturePixels = gbaPixels;
+    sPictureCorrected = corrected;
+    sBoundTexture = UINT8_MAX; /* rebind */
 }
 
 bool PortPpuGpu3DS_Init(void) {
@@ -696,7 +731,9 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
     }
     if (batch->texture != sBoundTexture) {
         sBoundTexture = batch->texture;
-        C3D_TexBind(0, batch->texture == 0 ? &sAtlas : &sRingTex[batch->texture - 1u]);
+        C3D_TexBind(0, batch->texture == 0                            ? &sAtlas
+                       : batch->texture == PPU_GPU3DS_PICTURE_TEXTURE ? &sPictureTex
+                                                                      : &sRingTex[batch->texture - 1u]);
     }
     SetBatchOffset(batch->offsetX, batch->offsetY);
     const u32 yOffset = sViewportOffset;

@@ -151,6 +151,7 @@ add_executable(tmc-3ds
     source/debug_log_3ds.c
     source/debug_perf_3ds.c
     source/scene_rec_3ds.c
+    source/scene_pictures_3ds.c
     source/net_3ds.c
     source/ftp_server_3ds.c
     source/debug_link_3ds.c

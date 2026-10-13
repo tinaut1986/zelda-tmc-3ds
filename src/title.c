@@ -19,6 +19,7 @@
 #include "sound.h"
 #ifdef PC_PORT
 #include "../port/port_tts.h"
+#include "port_widescreen.h"
 #endif
 
 extern void FlushSprites(void);
@@ -199,11 +200,43 @@ static void HandleNintendoCapcomLogos(void) {
     }
 }
 
+#ifdef PC_PORT
+/* Full View draws the title at 400x240 (Port_Widescreen_TitleWide): the GBA's screen goes in the
+ * middle (+80, +40): the logo's entities through the camera, the PRESS START sprites by hand; the
+ * light rays repeat across the view from its top; the forest is drawn from the extended picture by
+ * the renderers. The sword (affine BG2) is centred in the view by the renderers themselves; its map
+ * must not wrap, or it repeats beside itself past 256 pixels. */
+static int TitleViewX(void) {
+    return Port_Widescreen_TitleWide() ? 80 : 0;
+}
+
+static int TitleViewY(void) {
+    return Port_Widescreen_TitleWide() ? 40 : 0;
+}
+
+static void UpdateTitleView(void) {
+    static int sWide;
+    const int wide = Port_Widescreen_TitleWide();
+    gRoomControls.scroll_x = (s16)-TitleViewX(); /* the title's entities (logo pieces) */
+    gRoomControls.scroll_y = (s16)-TitleViewY();
+    gScreen.bg0.xOffset = (u16)-TitleViewX();
+    if (wide) gScreen.bg2.control &= ~BGCNT_WRAP;
+    else if (sWide && (gScreen.bg2.control & BGCNT_256COLOR)) gScreen.bg2.control |= BGCNT_WRAP;
+    sWide = wide;
+}
+#else
+#define TitleViewX() 0
+#define TitleViewY() 0
+#endif
+
 static void HandleTitlescreen(void) {
     int advance;
     u32 paletteGroup;
 
     gIntroState.counter++;
+#ifdef PC_PORT
+    if (gIntroState.state != 0) UpdateTitleView();
+#endif
     switch (gIntroState.state) {
         case 0:
             gIntroState.state = 1;
@@ -296,15 +329,15 @@ static void HandleTitlescreen(void) {
             gOamCmd._4 = 0;
             gOamCmd._6 = 0;
             gOamCmd._8 = 0xE020;
-            gOamCmd.x = 120;
-            gOamCmd.y = 152;
+            gOamCmd.x = 120 + TitleViewX();
+            gOamCmd.y = 152 + TitleViewY();
             DrawDirect(510, 1);
         } else {
             UpdatePressStartIcon();
         }
             if ((gIntroState.timer & 0x20) == 0) {
                 gOamCmd._8 = 0xe000;
-                gOamCmd.y = 0x84;
+                gOamCmd.y = 0x84 + TitleViewY();
                 if (REGION_IS_EU) {
                 DrawDirect(0x1fe, 0);
                 } else {
@@ -325,8 +358,8 @@ static void UpdatePressStartIcon(void) {
     gOamCmd._4 = 0;
     gOamCmd._6 = 0;
     gOamCmd._8 = 0xE020;
-    gOamCmd.x = 120;
-    gOamCmd.y = 152;
+    gOamCmd.x = 120 + TitleViewX();
+    gOamCmd.y = 152 + TitleViewY();
     DrawDirect(511, 1);
 }
 
@@ -418,6 +451,10 @@ static void HandleTitlescreenAnimationIntro(void) {
     }
 }
 static void ExitTitlescreen(void) {
+#ifdef PC_PORT
+    gRoomControls.scroll_x = gRoomControls.scroll_y = 0; /* UpdateTitleView's offsets stay behind */
+    gScreen.bg0.xOffset = 0;
+#endif
     if (!gFadeControl.active) {
         SetTask(TASK_FILE_SELECT);
     }
