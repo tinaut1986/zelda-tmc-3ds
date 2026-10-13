@@ -62,6 +62,9 @@ boxes below. History: `git log` and the decisions log.
 | `fix/msg-shift-drawn-box` (cut from `release/v0.1.2`) | issue #17: Wide/Full View: while a text box opened or closed the hearts jumped 80 px right; the centred band is now the box as drawn (`gCurrentWindow`) | on the 2DS by Claude (heart piece, 00/00: opening and closing) and the owner (2026-10-13) | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `feat/dev-ftp-install` (cut from `release/v0.1.3`) | production builds run an install-only FTP server when `dev-ftp.txt` is in the data folder (only `update/`, no remote control, CANCEL bar), anonymous; `--install` sends either mode (ported from `../mzm` without its login) | on the 2DS by Claude: the path limits and SITE refusals, debug -> production -> debug installs through it; the bar and CANCEL checked by the owner on a production build (2026-10-13). `dev-ftp.txt` is left on the 2DS | _(merged into `release/v0.1.3` 2026-10-13)_ |
 | `fix/updater-beta-labels` (cut from `release/v0.1.3`) | issue #18: updater: `X.Y.Z-dev` < `X.Y.Z BETA` < `X.Y.Z` (a dev build was told it was up to date with its beta out); OPTIONS -> UPDATES shows BETA on the release found and the installed build's label | host check of `Update_IsNewer` (no host jansson for the full test); labels checked by the owner on the 2DS (2026-10-13), the dev < beta offer not seen yet; screen in `tools/ui-preview` (`UPDATE_BETA=1`), whose tab indices are fixed; the same BETA label merged into `../mzm` and `../sm-3ds` | _(merged into `release/v0.1.3` 2026-10-13)_ |
+| `fix/fullview-portal-camera` (cut from `release/v0.1.3`, worktree: the main checkout) | issue #21: Full View through a Minish portal's shrink and closing circle | on the 2DS by Claude and the owner (the circle closing evenly from the whole view, 2026-10-13); growing back checked by Claude | waits for the owner's word to merge |
+| `fix/bottom-hud-live` (cut from `release/v0.1.3`, worktree `../zelda-tmc-3ds-bottom`) | issue #22: BOTTOM CORE AUTO (core 1 on the Old 3DS), HUD painted at once, taps kept during a repaint, save notice before the save, R label and heart edge as the HUD | on the 2DS by Claude (paint 500 -> 70 ms, same fps; hearts and R label seen); taps, the notice and audio not checked by the owner yet | waits for the owner's check |
+| `feat/portal-cutscene-wide` (cut from `release/v0.1.3`, worktree `../zelda-tmc-3ds-cutscene`) | P4.3: the portal cutscene at 400x240, side strips from `portal-cutscene-strips.bin` (`tools/portal-strips/`); merging it after `fix/fullview-portal-camera` conflicts in `port/port_widescreen.h` (keep both declarations) | on the 2DS by Claude (black sides, a test pattern, then the owner's generated picture 1) | waits for the owner's check |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
@@ -84,15 +87,20 @@ the scroll's button jump (#11), the install-only FTP bar and its CANCEL. The upd
 To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
 **On the owner's consoles now (2026-10-13):**
-- Old 3DS/2DS, **`192.168.1.132`** (`.3ds_ftp_ip` holds it): a debug build of `release/v0.1.3`
-  at `36e7e44`, `0.1.3-dev.72+36e7e44` (2026-10-13), UPDATES channel + BETAS. Full View (`widescreen=1`,
+- Old 3DS/2DS, **`192.168.1.132`** (`.3ds_ftp_ip` holds it): a debug build of `release/v0.1.3` with
+  `fix/fullview-portal-camera`, `fix/bottom-hud-live` and `feat/portal-cutscene-wide` merged on top
+  (uncommitted combination, 2026-10-13; the same code as the three branches), BOTTOM CORE = AUTO,
+  `portal-cutscene-strips.bin` from the owner's generated picture 1 (`~/Imágenes/minish-portal-cutscene/`,
+  never in the repository: it is derived from the ROM's art). `debug/` cleared of old dumps and checks
+  (1245 files made listing it hang the FTP server).
+  UPDATES channel + BETAS. Full View (`widescreen=1`,
   `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT, FRAMES = AUTO.
   **`/3ds/Minish Cap 3DS/dev-ftp.txt` is there** (Claude left it, to try the install-only server
   with a production build; a debug build ignores it). The owner plays on it (Minish Woods, sword
   and shield only) and keeps save states at spots that reproduce bugs: never overwrite or delete
   one (protect their place with a *new* state: `savestate`, then `loadstate 1` and `delstate 1`
-  after the install). Newest first: 1 = 00/00 in front of a piece of heart (#17), 2 = 03/04 below
-  the scroll up (#11), 4 = 00/00 in the "¡Socorro!" dialogue before Ezlo's iris (#15, #16).
+  after the install). Of the 13 (2026-10-13): 2 = 00/00 on the Minish Woods stump (#21, P4.3),
+  4 = 03/04 below the scroll up (#11).
   Loading a state switches the bottom screen to MAP: tap another tab after it, not before.
 - New 3DS, `192.168.1.133` (not in `.3ds_ftp_ip`: pass `--ip`): not touched since 2026-10-12.
 - The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP); 7 is
@@ -394,6 +402,14 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   *Spec:* a wider logical view (e.g. 266x160, 16:9 at 1.5x) scaled to fill 400x240,
   with the same extended world as P4.1.
   *Done when:* as P4.1.
+- [ ] **P4.3** Cutscenes in Full View: the Minish portal (owner's request, 2026-10-13).
+  *Spec:* the portal's falling cutscene (`SUBTASK_PORTALCUTSCENE`) at 400x240: its 256x320
+  picture (BG1) centred, the camera following Link over 240 lines, BG1 repeated across the view
+  and the wrapped columns covered by the presenter's side strips: black, or the player's own
+  picture from `portal-cutscene-strips.bin` (`tools/portal-strips/`), faded with the game's fades.
+  Port side only through the published view key (no static added, issue #19).
+  *Done when:* the owner sees the cutscene at 400x240 on the 2DS, black sides and with a strips
+  file made from a generated extension of the picture.
 
 ---
 
@@ -690,3 +706,12 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   off on untrusted networks.
 - **2026-10-13** Fixes to the updater and to shared tools go to `../mzm` and `../sm-3ds` as well
   when they have the same bug (owner, 2026-10-13): the updater's BETA label went to all three.
+- **2026-10-13** The bottom-screen painter runs on core 1 on the Old 3DS (BOTTOM CORE = AUTO): on
+  core 0 the main thread starved it to 350-550 ms a paint in Full View, the root of the bottom
+  screen's lag (#22); on core 1 it is about 70 ms with the same frame rate. The New 3DS keeps core 0
+  until measured there.
+- **2026-10-13** Cutscenes the GBA drew at 240x160 can be widened only where the picture exists:
+  the portal's falling scene (P4.3) is 256x320, so its sides come from a picture the owner made
+  with generative AI from a screen dump (palette kept, centre untouched). It is read from the SD
+  card (`portal-cutscene-strips.bin`), never shipped: it is derived from the game's art. Without
+  it the sides are black.
