@@ -4,7 +4,7 @@
 Talks to the game's own FTP server (DEBUG -> FTP SERVER, port 5000) with the
 SITE commands of platform/3ds/source/debug_link_3ds.h. Standard library only.
 
-    tmc-link.py [--ip IP] COMMAND [ARGS]
+    tmc-link.py [--ip IP] [--elf ELF] COMMAND [ARGS]
 
     wait [SECONDS]            until the game answers (after an install or boot); default 120
     state                     frame, in game, area, room, Link's position, health
@@ -30,7 +30,9 @@ SITE commands of platform/3ds/source/debug_link_3ds.h. Standard library only.
     run FILE                  one command per line ('#' comments), stops at the first error
 
 The IP defaults to .3ds_ftp_ip in the repository (the build assistant's last).
-Symbols come from build-3ds/game/tmc-3ds.elf through arm-none-eabi-nm.
+Symbols come from build-3ds/game/tmc-3ds.elf through arm-none-eabi-nm, or from
+--elf: always the ELF of the build running on the console (a build made in another
+worktree has its own), or peek/poke by symbol read and write the wrong addresses.
 """
 import ftplib
 import io
@@ -54,8 +56,9 @@ class LinkError(Exception):
 
 
 class Link:
-    def __init__(self, ip):
+    def __init__(self, ip, elf=ELF):
         self.ip = ip
+        self.elf = elf
         self.ftp = None
         self.symbols = None
 
@@ -113,14 +116,14 @@ class Link:
         except ValueError:
             pass
         if self.symbols is None:
-            out = subprocess.run([NM, '-C', ELF], capture_output=True, text=True, check=True).stdout
+            out = subprocess.run([NM, '-C', self.elf], capture_output=True, text=True, check=True).stdout
             self.symbols = {}
             for line in out.splitlines():
                 parts = line.split()
                 if len(parts) >= 3:
                     self.symbols[parts[2]] = int(parts[0], 16)
         if what not in self.symbols:
-            raise LinkError('no symbol %s in %s' % (what, ELF))
+            raise LinkError('no symbol %s in %s' % (what, self.elf))
         return self.symbols[what]
 
 
@@ -291,8 +294,16 @@ def main():
         print(__doc__)
         return 0
     ip = None
-    if argv[0] == '--ip':
-        ip, argv = argv[1], argv[2:]
+    elf = ELF
+    while len(argv) >= 2 and argv[0] in ('--ip', '--elf'):
+        if argv[0] == '--ip':
+            ip = argv[1]
+        else:
+            elf = os.path.abspath(argv[1])
+            if not os.path.isfile(elf):
+                print('no ELF at %s' % elf, file=sys.stderr)
+                return 2
+        argv = argv[2:]
     if ip is None:
         try:
             with open(os.path.join(REPO, '.3ds_ftp_ip')) as f:
@@ -300,7 +311,7 @@ def main():
         except OSError:
             print('no --ip and no .3ds_ftp_ip', file=sys.stderr)
             return 2
-    link = Link(ip)
+    link = Link(ip, elf)
     try:
         run(link, argv)
     except LinkError as e:

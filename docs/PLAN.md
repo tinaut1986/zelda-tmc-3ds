@@ -53,6 +53,7 @@ merged into `main`) and `v0.1.0` (2026-10-11, beta).
 | `feat/tabbar-position` (cut from `release/v0.1.2`) | P2.7: OPTIONS -> TABS (top / bottom) next to THEME; FOREST is a palette like the others; `tools/ui-preview` links again (soft-slot stubs) | on the 2DS by Claude (the cell shows TABS = TOP); the switch itself not tried yet |
 | `feat/hud-xy-diamond` (cut from `release/v0.1.2`) | P2.6: X/Y in the top HUD, A/B/X/Y as a diamond; X/Y sprites drawn by the engine, their tiles in OBJ VRAM only while the frame renders | on the 2DS by Claude and the owner (combined build, Minish Woods 00/00): the diamond with sword on X and shield on Y, A/B slide into it from a state saved with the old layout, GPU CHECK 0 structural |
 | `fix/chuchu-bad-child` (cut from `release/v0.1.2`) | a Chuchu no longer reads its FX child unless it is an entity: closing the pause menu after loading a state saved in it left `0x160` there and crashed (Luma dumps 2 and 3, `chuchu.c:84`); who writes the value is not known yet (issue #13) | on the 2DS by Claude: same state, no crash |
+| `chore/tmc-link-elf` (cut from `release/v0.1.2`) | `tmc-link.py --elf`: symbols from the ELF of the build the console runs (a worktree's build has other addresses) | tried against the 2DS (peek by symbol with the combined build's ELF) |
 
 **Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
 Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
