@@ -17,6 +17,9 @@
 
 #ifdef PC_PORT
 #include "cpu/mode1.h"
+#ifdef TMC_3DS
+#include "port_hud_xy.h"
+#endif
 #endif
 
 extern void CreateSparkle(Entity* entity);
@@ -110,6 +113,9 @@ void UpdateDisplayControls(void) {
         /* Publish signed-Y and swamp clipping metadata with the same OAM
          * generation copied above; the renderer never observes a torn pair. */
         virtuappu_mode1_commit_obj_metadata();
+#ifdef TMC_3DS
+        Port_HudXY_CommitOam();
+#endif
 #endif
 
     }

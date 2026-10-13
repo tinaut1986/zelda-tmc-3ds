@@ -49,6 +49,7 @@ merged into `main`) and `v0.1.0` (2026-10-11, beta).
 | `feat/game-style-windows` (cut from `release/v0.1.2`) | the bottom screen's own menu style in every tab: cells, buttons and tabs with the game windows' rounded corners at 1x in the theme's colours, toasts / busy / modals in the message window's frame, the world map without the stone frame (its own box, Link's head as the marker), the quest lists' and wells' slab and stone through the same boxes (`Port_SecondScreenTheme_SetBoxPainter`) | on the 2DS by Claude (screenshots of every tab, both map views); the quest sub-lists (kinstones, techniques) not seen: the save on the console has neither | _(merged into `release/v0.1.2` 2026-10-13 on the owner's word)_ |
 | `fix/fullview-border-scroll` (cut from `release/v0.1.2`) | issue #11: a room-border scroll keeps Full View (400x240 snapshot of the outgoing room, the scroll ends on the 400x240 view's edge, the view carried across the room change) instead of dropping to 266x160 | checked by the owner and by Claude on the 2DS, Hyrule Field 03/06 <-> 03/05 (right and left: every recorded frame 400x240); up and down not tried yet | _(merged into `release/v0.1.2` 2026-10-13)_ |
 | `feat/sidebar-game-hud` (cut from `release/v0.1.2`) | P2.5: X/Y (and ZL/ZR) fire soft-slot items on 3DS; the sidebar's A/B/X/Y diamond with a selected button; R always shown with the game's label over it; rupees/keys in the HUD font | checked by the owner on the 2DS (X/Y with sword and shield: the only items the save has) | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `feat/hud-xy-diamond` (cut from `release/v0.1.2`) | P2.6: X/Y in the top HUD, A/B/X/Y as a diamond; X/Y sprites drawn by the engine, their tiles in OBJ VRAM only while the frame renders | on the 2DS by Claude and the owner (combined build, Minish Woods 00/00): the diamond with sword on X and shield on Y, A/B slide into it from a state saved with the old layout, GPU CHECK 0 structural |
 
 **Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
 Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
@@ -313,10 +314,8 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   the button bubbles of sprite 505 (504 on EU), frames 0/1, with X/Y letters drawn into a copy
   of the bubble, and each button's item icon as the HUD draws A/B's (gfx loaded per equipped
   item, `src/ui.c` ButtonUIElement / the item elements). Where the HUD is anchored right in
-  Wide / Full View the diamond follows it. Open: whether to do it in the engine (two more UI
-  elements and OBJ VRAM tiles composed at runtime, so both renderers draw it) or as an overlay
-  on the GPU top screen (start by reading `src/ui.c` and the HUD right-anchor,
-  `virtuappu_mode1_ws_hud_right_anchor`).
+  Wide / Full View the diamond follows it. Done in the engine (`DrawHudXY`, `port/port_hud_xy.h`):
+  see the decisions log, 2026-10-13.
   *Done when:* the owner sees the four buttons with their items in normal, Wide and Full View.
 
 ## Phase 3: performance (60 fps, New 3DS and Old 3DS, no 3D)
@@ -604,6 +603,17 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   polled them: its VBlankIntrWait writes KEYINPUT from the platform directly and skips
   `Port_UpdateInput`, where PC polls them. Assignment selection is sticky (owner): the tapped
   button stays selected, A by default.
+- **2026-10-13** X/Y in the top HUD (P2.6) are game sprites, not an overlay on the 3DS screen: the
+  engine draws them after A/B with DrawDirect (the A bubble, sprite 505 frame 0, and the item's
+  sprite-322 icon), so both renderers, the palette fades, the Wide/Full View anchor and the message
+  slide treat them as the game's own HUD. OBJ VRAM has no 24 free tiles in gameplay (0x136-0x13F
+  is all), so their OAM entries point at the top tiles 0x3E0-0x3F7 and `hud_xy_3ds.c` writes the
+  tiles there only around the top screen's render (`Port_PPU_PresentFrame`) and puts the bytes
+  back: the game never sees them. It checks that OAM still holds the entries drawn and that no
+  other sprite uses those tiles that frame (a crowded scene: X/Y are hidden for the frame). The X
+  and Y letters are drawn into a copy of the A bubble (4x5, the A's outline colour). Layout: A keeps
+  its column, the diamond's middle row at y=42 under R and its label, 12 px steps (half the
+  original A-B distance); X/Y are placed from A's live position.
 - **2026-10-13** The R prompt follows the HUD: the button at the right, the game's label art
   (in the game's language) over it to its left, measured on a scratch strip first because
   `Port_SecondScreenTheme_DrawActionLabel` places by its centre.

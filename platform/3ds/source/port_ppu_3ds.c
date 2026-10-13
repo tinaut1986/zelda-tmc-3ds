@@ -1,6 +1,7 @@
 #include "port_ppu.h"
 
 #include "port_gba_mem.h"
+#include "port_hud_xy.h"
 #include "port_config.h"
 #include "port_collision_diagnostics.h"
 #include "port_hdma.h"
@@ -1128,9 +1129,19 @@ static void RecTick(int viewW, int viewH, bool hold, int mode) {
 }
 #endif
 
+static void PresentFrame(void);
+
+/* The X and Y HUD buttons' tiles live in OBJ VRAM only while the frame renders
+ * (port/port_hud_xy.h). */
 void Port_PPU_PresentFrame(void) {
     if (!sInitialized)
         return;
+    Port_HudXY_BeginRender();
+    PresentFrame();
+    Port_HudXY_EndRender();
+}
+
+static void PresentFrame(void) {
     ApplyUploadLayoutSwitch();
     PortPpuGpu3DS_FinishParityCheck();
     PortPpuGpu3DS_WriteFrameCapture(Port_PPU_3DS_LastDumpPrefix());
