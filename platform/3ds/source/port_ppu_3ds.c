@@ -32,6 +32,7 @@
 #include "ndsp_psg_offload.h"
 
 #include "virtuappu.h"
+#include "scene_rec_3ds.h"
 #include "cpu/mode1.h"
 #include "main.h"
 #include "entity.h"
@@ -1405,6 +1406,7 @@ static void PresentFrame(void) {
     }
 #if TMC3DS_DEBUG_TOOLS
     RecTick(topFrame.width, topFrame.height, holdTop, (int)topFrame.mode);
+    SceneRec_Tick((uint32_t)sFrameNumber);
 #endif
     const uint64_t topEndTick = Platform3DS_SystemTick();
 

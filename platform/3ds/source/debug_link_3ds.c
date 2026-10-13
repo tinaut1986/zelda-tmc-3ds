@@ -8,6 +8,7 @@
 #include "port_second_screen_3ds.h"
 #include "port_second_screen_state.h"
 #include "save_state_3ds.h"
+#include "scene_rec_3ds.h"
 #include "port_ppu_gpu_3ds.h"
 
 #include <3ds.h>
@@ -36,6 +37,7 @@ typedef enum LinkOp {
     LINK_OP_SWITCH,
     LINK_OP_POKE,
     LINK_OP_REC,
+    LINK_OP_SCENEREC,
 } LinkOp;
 
 /* One request at a time: the FTP server serves one client and one command. */
@@ -255,6 +257,21 @@ bool DebugLink_Command(const char* verb, const char* args, char* reply, unsigned
         RunOnMainThread(LINK_OP_REC, reply, cap);
         return true;
     }
+    if (!strcmp(verb, "SCENEREC")) {
+        /* SCENEREC START [N]: the top screen, one frame in N, into RAM; SCENEREC STOP: to a file. */
+        int every = 2;
+        if (args && (args[0] == 's' || args[0] == 'S') && (args[2] == 'a' || args[2] == 'A')) {
+            sscanf(args + 5, "%d", &every);
+            sArgA = every;
+        } else if (args && (args[0] == 's' || args[0] == 'S') && (args[2] == 'o' || args[2] == 'O')) {
+            sArgA = 0;
+        } else {
+            snprintf(reply, cap, "501 SCENEREC START [1-6] | STOP");
+            return true;
+        }
+        RunOnMainThread(LINK_OP_SCENEREC, reply, cap);
+        return true;
+    }
     if (!strcmp(verb, "SAVESTATE") || !strcmp(verb, "LOADSTATE") || !strcmp(verb, "DELSTATE") ||
         !strcmp(verb, "STATES")) {
         StateCommand(verb, args, reply, cap);
@@ -370,6 +387,10 @@ static void RunRequest(LinkOp op) {
             Port_PPU_3DS_ArmFrameRecorder(sArgA != 0, sResult, sizeof(sResult));
             break;
         }
+        case LINK_OP_SCENEREC:
+            if (sArgA > 0) SceneRec_Start(sArgA, sResult, sizeof(sResult));
+            else SceneRec_Stop(sResult, sizeof(sResult));
+            break;
         case LINK_OP_DUMP: {
             /* Written at the next frame boundary; debug/tmc-dump-last.txt then
              * holds its number (tmc-link.py dump waits for it). */
