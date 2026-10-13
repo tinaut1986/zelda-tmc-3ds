@@ -846,6 +846,22 @@ static void MsgChangeLine(u32 lineNo) {
     PaletteChange(&gTextRender, gTextRender._8f | 0x40);
 }
 
+#ifdef PC_PORT
+/* The box as drawn on BG0 now, in tiles including its border: it opens and
+ * closes in steps (ChangeWindowSize), so the HUD under the final box's place
+ * still shows around it meanwhile. 0 when none is drawn. */
+int Port_Message_DrawnWindow(int* x, int* y, int* width, int* height) {
+    const Window* window = &gCurrentWindow;
+    if (!window->active || window->width == 0xff || window->height == 0xff)
+        return 0;
+    *x = window->xPos;
+    *y = window->yPos;
+    *width = window->width + 2;
+    *height = window->height + 2;
+    return 1;
+}
+#endif
+
 static void SetState(u32 status) {
     gMessage.state = gTextRender.message.state = status;
 }

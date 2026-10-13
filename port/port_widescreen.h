@@ -92,6 +92,8 @@ int Port_Widescreen_HudTargetViewHeight(void);
 /* True while the map BGs are what the PPU renders (>=1 shadow registered);
  * overlay screens (storybook, pause) drop this to 0 -> present native 240. */
 int Port_Widescreen_ShadowsLive(void);
+/* src/message.c: the text box as drawn now, in BG0 tiles with its border. */
+int Port_Message_DrawnWindow(int* x, int* y, int* width, int* height);
 
 /* The iris fade's WIN0 table (src/fade.c): SetVBlankDMA forgets the table it is
  * handed, the fade notes its circle after building one. Win0Lines fills
