@@ -109,6 +109,14 @@ void FadeGpu3DS_OnFrameBoundary(void) {
     snapshot->color = gUnk_020354C0[0].unk1;
 }
 
+bool FadeGpu3DS_Shown(uint8_t* weight, uint8_t* level) {
+    const FadeSnapshot* snapshot = &sSnapshot[sCurrent ^ 1u];
+    if (snapshot->intensity == 0 || snapshot->intensity > 256) return false;
+    *weight = (uint8_t)((snapshot->intensity * 255u + 128u) / 256u);
+    *level = snapshot->color;
+    return true;
+}
+
 bool FadeGpu3DS_State(const uint16_t* palRamBg, const uint16_t* palRamObj, const uint16_t** bgPalette,
                       const uint16_t** objPalette, uint8_t* weight, uint8_t* level) {
     /* The game steps the fade and animates palettes in its logic, and only the

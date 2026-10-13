@@ -4,6 +4,9 @@
 #include "port_ppu_gpu_3ds.h"
 #include "ppu_gpu_3ds_budget.h"
 #include "port_second_screen_3ds.h"
+#include "port_widescreen.h"
+#include "app_paths_3ds.h"
+#include "fade_gpu_3ds.h"
 
 #include <3ds.h>
 #include <citro2d.h>
@@ -148,6 +151,7 @@ static void DrawStatusText(float x, float y, float scale, const char* text) {
 }
 
 static void DrawFpsOverlay(void);
+static void DrawCutsceneStrips(bool abgrAfter);
 
 static u32 TextureTransfer(void) {
     return GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(1) |
@@ -545,7 +549,99 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
         ConfigureAbgrTextureEnv();
         if (plan.useSharpBilinear) ++sStats.sharpBilinearFallbacks;
     }
+    DrawCutsceneStrips(true);
     if (Port_Config_GetShowFps()) DrawFpsOverlay();
+}
+
+/* The Minish portal cutscene in Full View (Port_Widescreen_CutsceneStrips): its 256x320 picture
+ * is centred in the 400x240 view and BG1 repeats past its edges, so the presenter covers the
+ * columns left and right of the picture. With CUTSCENE_STRIPS_FILE in the data folder (made by
+ * tools/portal-strips/make_strips.py from a 400x320 picture: the 80 columns left of the original
+ * and the 64 right of it, 144x320 RGB565) they are drawn from it, scrolling with the picture; else
+ * they are black. The file is the player's own: nothing derived from the game's art is shipped.
+ * Its texture lives only while the cutscene is on screen. */
+#define CUTSCENE_STRIPS_FILE TMC3DS_APP_DIR "/portal-cutscene-strips.bin"
+enum { STRIPS_LEFT_W = 80, STRIPS_RIGHT_W = 64, STRIPS_W = STRIPS_LEFT_W + STRIPS_RIGHT_W, STRIPS_H = 320,
+       STRIPS_TEX_W = 256, STRIPS_TEX_H = 512, PICTURE_W = 256 };
+static C3D_Tex sStripsTexture;
+static int sStripsState; /* 0 not tried, 1 loaded, -1 no file (black) */
+
+static void LoadCutsceneStrips(void) {
+    sStripsState = -1;
+    FILE* f = fopen(CUTSCENE_STRIPS_FILE, "rb");
+    if (f == NULL) return;
+    static uint16_t pixels[STRIPS_W * STRIPS_H];
+    const size_t got = fread(pixels, sizeof(uint16_t), STRIPS_W * STRIPS_H, f);
+    fclose(f);
+    if (got != (size_t)STRIPS_W * STRIPS_H) return;
+    /* Into the texture the way the game's frame goes (DrawTopImage): a linear RGBA8 picture in
+     * the frame's pixel order, tiled by the display transfer, drawn with the ABGR env. */
+    uint32_t* linear = linearAlloc((size_t)STRIPS_TEX_W * STRIPS_TEX_H * sizeof(uint32_t));
+    if (linear == NULL) return;
+    memset(linear, 0, (size_t)STRIPS_TEX_W * STRIPS_TEX_H * sizeof(uint32_t));
+    for (unsigned r = 0; r < STRIPS_H; ++r) {
+        for (unsigned x = 0; x < STRIPS_W; ++x) {
+            const uint16_t c = pixels[r * STRIPS_W + x];
+            const uint32_t red = ((c >> 11) & 31u) * 255u / 31u, green = ((c >> 5) & 63u) * 255u / 63u,
+                           blue = (c & 31u) * 255u / 31u;
+            linear[r * STRIPS_TEX_W + x] = 0xFF000000u | (blue << 16) | (green << 8) | red;
+        }
+    }
+    if (!C3D_TexInit(&sStripsTexture, STRIPS_TEX_W, STRIPS_TEX_H, GPU_RGBA8)) {
+        linearFree(linear);
+        return;
+    }
+    Platform3DS_CleanDataCache(linear, (size_t)STRIPS_TEX_W * STRIPS_TEX_H * sizeof(uint32_t));
+    C3D_SyncDisplayTransfer((u32*)linear, GX_BUFFER_DIM(STRIPS_TEX_W, STRIPS_TEX_H), (u32*)sStripsTexture.data,
+                            GX_BUFFER_DIM(STRIPS_TEX_W, STRIPS_TEX_H), TextureTransfer());
+    linearFree(linear);
+    C3D_TexSetFilter(&sStripsTexture, GPU_NEAREST, GPU_NEAREST);
+    sStripsState = 1;
+}
+
+static void DrawCutsceneStrip(int screenX, int width, int srcX, int pictureY) {
+    if (width <= 0) return;
+    if (sStripsState != 1) {
+        C2D_DrawRectSolid((float)screenX, 0.0f, 0.5f, (float)width, 240.0f, C2D_Color32(0, 0, 0, 255));
+        return;
+    }
+    const Tex3DS_SubTexture sub = {
+        .width = (u16)width,
+        .height = STRIPS_H,
+        .left = (float)srcX / STRIPS_TEX_W,
+        .top = 1.0f,
+        .right = (float)(srcX + width) / STRIPS_TEX_W,
+        .bottom = 1.0f - (float)STRIPS_H / STRIPS_TEX_H,
+    };
+    const C2D_Image image = { .tex = &sStripsTexture, .subtex = &sub };
+    C2D_DrawImageAt(image, (float)screenX, (float)pictureY, 0.5f, NULL, 1.0f, 1.0f);
+}
+
+/* abgrAfter: the texture env the caller leaves set (ABGR or identity) is put back. */
+static void DrawCutsceneStrips(bool abgrAfter) {
+    int pictureX, pictureY;
+    if (!Port_Widescreen_CutsceneStrips(&pictureX, &pictureY)) {
+        if (sStripsState == 1) C3D_TexDelete(&sStripsTexture);
+        sStripsState = 0;
+        return;
+    }
+    if (sStripsState == 0) LoadCutsceneStrips();
+    /* Citro2D sends a batch when the texture changes, with the env set then: send the
+     * frame's quad under its own env before the strips change it. */
+    C2D_Flush();
+    if (sStripsState == 1) ConfigureAbgrTextureEnv(); /* the strips are in the frame's pixel order */
+    /* Left of the picture, then right of it; each strip is drawn from its own columns. */
+    DrawCutsceneStrip(pictureX - STRIPS_LEFT_W, STRIPS_LEFT_W, 0, pictureY);
+    DrawCutsceneStrip(pictureX + PICTURE_W, STRIPS_RIGHT_W, STRIPS_LEFT_W, pictureY);
+    C2D_Flush();
+    if (sStripsState == 1 && !abgrAfter) ConfigureIdentityTextureEnv();
+    /* The game's fades (in from black, out to white) are in its frame, under the strips. */
+    uint8_t weight, level;
+    if (FadeGpu3DS_Shown(&weight, &level)) {
+        const uint32_t veil = C2D_Color32(level, level, level, weight);
+        C2D_DrawRectSolid(0.0f, 0.0f, 0.5f, (float)pictureX, 240.0f, veil);
+        C2D_DrawRectSolid((float)(pictureX + PICTURE_W), 0.0f, 0.5f, (float)(400 - pictureX - PICTURE_W), 240.0f, veil);
+    }
 }
 
 /* The numbers box (SHOW FPS), after ../mzm and ../sm-3ds: four small lines in a dim box at the
@@ -883,6 +979,7 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
     }
     if (configureAbgr) ConfigureAbgrTextureEnv();
 
+    DrawCutsceneStrips(configureAbgr);
     if (Port_Config_GetShowFps()) DrawFpsOverlay();
 }
 

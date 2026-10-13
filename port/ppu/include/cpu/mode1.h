@@ -101,6 +101,9 @@ extern bool virtuappu_mode1_bg3_hdma_native_bounds;
 extern int virtuappu_mode1_bg3_hofs_base;
 /* Repeat a known seamless BG3 overlay beyond the native 240px canvas. */
 extern bool virtuappu_mode1_bg3_repeat;
+/* Repeat BG1 across the whole view (a cutscene's 256-wide picture drawn in a
+ * wider view; what wraps is covered by the presenter, Port_Widescreen_CutsceneView). */
+extern bool virtuappu_mode1_bg1_repeat;
 
 /* Staged alongside the engine OAM mirror, then committed with its VBlank DMA.
  * Raw OAM Y=160..239 is otherwise ambiguous in a 240-line viewport. */

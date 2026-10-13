@@ -1262,7 +1262,8 @@ static bool build_wide_tile_geometry(const PpuGpu3DSFrameView* frame, PpuGpu3DSC
     const bool shadow = frame->wsShadowBaseTile[bg] >= 0;
     const bool fullView = frame->wsFullView && shadow;
     const unsigned renderWidth =
-            (shadow || (bg == 3u && frame->bg3Repeat)) ? frame->width : MODE1_GBA_BG_CLIP_X;
+            (shadow || (bg == 3u && frame->bg3Repeat) || (bg == 1u && frame->bg1Repeat)) ? frame->width
+                                                                                  : MODE1_GBA_BG_CLIP_X;
     const int fine = (int)(scrollX & 7u);
     const unsigned firstTileX = scrollX >> 3u;
     const unsigned bandBottom = band->firstLine + band->lineCount;
@@ -1364,7 +1365,7 @@ static bool build_widescreen_bg_geometry(
             mosaicEnabled ? ((mosaic >> 4u) & 0x0fu) + 1u : 1u;
     unsigned nativeRenderWidth =
             mapWidthTiles == 64u || frame->wsShadowBaseTile[bg] >= 0 ||
-            (bg == 3u && frame->bg3Repeat)
+            (bg == 3u && frame->bg3Repeat) || (bg == 1u && frame->bg1Repeat)
                     ? frame->width
                     : MODE1_GBA_BG_CLIP_X;
     if (nativeRenderWidth > frame->width) nativeRenderWidth = frame->width;
@@ -2296,7 +2297,7 @@ static bool build_bg_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
         RING_PIECE(MODE1_GBA_BG_CLIP_X, width, 0, 1);
         nativeEnd = MODE1_GBA_BG_CLIP_X;
         extensionFrom = MODE1_GBA_BG_CLIP_X;
-    } else if (bg == 3u && frame->bg3Repeat) {
+    } else if ((bg == 3u && frame->bg3Repeat) || (bg == 1u && frame->bg1Repeat)) {
         RING_PIECE(0, width, 0, 0);
         nativeEnd = width;
     } else if (hudRight) {
@@ -3967,6 +3968,7 @@ static bool build_bg3_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCa
     native.wsHudRightAnchor = 0;
     native.wsMsgShift = 0;
     native.bg3Repeat = false;
+    native.bg1Repeat = false;
     native.bg3NativeBounds = false;
     PpuGpu3DSBand part = *band;
     part.firstLine = (uint16_t)(lo - top);

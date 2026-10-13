@@ -200,7 +200,7 @@ static TopFrameState SelectTopFrame(void) {
     const Port3DSFullViewMode requested = Port_Widescreen_3DSViewMode();
     if (requested == PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
         MODE1_GBA_WIDTH >= 400 && MODE1_GBA_HEIGHT >= 240 &&
-        Port_Widescreen_ShadowsLive()) {
+        (Port_Widescreen_ShadowsLive() || Port_Widescreen_CutsceneViewLive())) {
         state.width = 400;
         state.height = 240;
         state.validSourceWidth = 400;
@@ -275,6 +275,7 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     /* As mode1.c's repeat_full_view_overlay: in Full View BG3 (light rays, steam,
      * clouds) covers the whole view, not just the native 240 columns. */
     view->bg3Repeat = virtuappu_mode1_bg3_repeat || virtuappu_mode1_ws_full_view != 0;
+    view->bg1Repeat = virtuappu_mode1_bg1_repeat;
     view->wsFullView = virtuappu_mode1_ws_full_view != 0;
     /* The software PPU's rule (mode1_bg3_native_bounds_active). */
     view->bg3HofsBase = virtuappu_mode1_bg3_hofs_base;
@@ -1230,6 +1231,8 @@ static void PresentFrame(void) {
      * Wide mode must extend them past x=240 just as Full View already does. */
     virtuappu_mode1_bg3_repeat = gMain.task == TASK_GAME &&
         gRoomControls.area == AREA_HYRULE_FIELD && gScreen.bg3.control == 0x1e05;
+    /* The portal cutscene's picture across the 400 view; the presenter covers what wraps. */
+    virtuappu_mode1_bg1_repeat = sTopPresentMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X && Port_Widescreen_CutsceneViewLive();
     /* Only Vaati's appearing effect is placed on the native screen (BG3 drawn at an
      * entity's screen position); the other BG3 HBlank effects (Minish Woods light
      * rays, steam) are overlays that must cover the whole view. */
