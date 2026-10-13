@@ -1006,8 +1006,12 @@ void UpdateScrollVram(void) {
 typedef struct {
     const void* table;
     s32 x, y;
-    u32 size;
+    u32 size; /* the iris's 0..150 opening, or a radius in pixels | WS_CIRCLE_RADIUS_PX */
 } PortWsIris;
+/* size holds a radius in pixels (a Minish portal's closing circle). A flag bit and
+ * not a field: these statics sit among the game's globals, and growing them moves
+ * every global after them, which breaks loading states saved by other builds. */
+#define WS_CIRCLE_RADIUS_PX 0x80000000u
 static PortWsIris sWsIris[2];
 /* The circle of the last frame drawn with one: the game tears the HBlank DMA
  * down in the tick that ends the iris (sub_0801E104), but the frame presented
@@ -1026,7 +1030,7 @@ void Port_Widescreen_ForgetIris(const void* table) {
     sWsIrisLatest = 0;
 }
 
-void Port_Widescreen_NoteIris(void) {
+static void Port_WidescreenNoteCircle(s32 x, s32 y, u32 size) {
     const void* table = gScreen.vBlankDMA.src;
     PortWsIris* slot = &sWsIris[0];
     if (sWsIris[0].table != table) {
@@ -1038,10 +1042,21 @@ void Port_Widescreen_NoteIris(void) {
         }
     }
     slot->table = table;
-    slot->x = (s16)gFadeControl.iris_x;
-    slot->y = (s16)gFadeControl.iris_y;
-    slot->size = gFadeControl.iris_size;
+    slot->x = x;
+    slot->y = y;
+    slot->size = size;
     sWsIrisLatest = 1;
+}
+
+void Port_Widescreen_NoteIris(void) {
+    Port_WidescreenNoteCircle((s16)gFadeControl.iris_x, (s16)gFadeControl.iris_y, gFadeControl.iris_size);
+}
+
+/* The Minish portal's closing circle (src/object/minishPortalCloseup.c) is the
+ * iris's window with a radius in pixels: centred on the portal in view pixels,
+ * it is drawn across a wide view the same way. */
+void Port_Widescreen_NoteWindowCircle(int x, int y, int radius) {
+    Port_WidescreenNoteCircle(x, y, (u32)radius | WS_CIRCLE_RADIUS_PX);
 }
 
 /* The window the game drives now is a noted iris. */
@@ -1079,7 +1094,7 @@ int Port_Widescreen_Win0Lines(int width, int height, u16* out) {
     }
     /* The iris's settings (SetFadeIris): everything inside, the backdrop alone
      * outside. The GPU renderer draws it as that mask. */
-    if ((gIoMem[REG_OFFSET_WININ] & 0x3f) != 0x3f || (gIoMem[REG_OFFSET_WINOUT] & 0x3f) != 0)
+    if ((gIoMem[REG_OFFSET_WINOUT] & 0x3f) != 0)
         return 0;
     table = port_hdma_source_for_dest(&gIoMem[REG_OFFSET_WIN0H]);
     for (i = 0; i < 2 && table != NULL; i++) {
@@ -1092,6 +1107,10 @@ int Port_Widescreen_Win0Lines(int width, int height, u16* out) {
         sWsIrisDrawn.table = NULL;
         return 0;
     }
+    /* The portal's circle hides BG3 inside as well: the software PPU honours that
+     * (WININ), the GPU renderer's mask shows BG3 inside. */
+    if ((gIoMem[REG_OFFSET_WININ] & 0x3f) != 0x3f && !(iris->size & WS_CIRCLE_RADIUS_PX))
+        return 0;
     sWsIrisDrawn = *iris;
     /* The game opens the iris up to 150 and then drops the window: on 240x160
      * around the middle that clears the corners. Scale 150 to this view's
@@ -1100,7 +1119,18 @@ int Port_Widescreen_Win0Lines(int width, int height, u16* out) {
     {
         const s32 dx = iris->x > width / 2 ? iris->x : width - iris->x;
         const s32 dy = iris->y > height / 2 ? iris->y : height - iris->y;
-        radius = iris->size * Port_WidescreenIsqrt((u32)(dx * dx + dy * dy)) / 150u + 1u;
+        const u32 farthest = Port_WidescreenIsqrt((u32)(dx * dx + dy * dy));
+        if (iris->size & WS_CIRCLE_RADIUS_PX) {
+            /* The portal's circle starts at 128 px (MinishPortalCloseup_Init) and
+             * closes 2 px a frame. Its start is scaled to this view's farthest
+             * corner, so the first frame with the window still shows the whole
+             * view and it closes evenly from there: unscaled, a portal near the
+             * view's edge started as a half-screen circle; scaled to the GBA's
+             * 144 px corner, the first frame already cut a corner off. */
+            radius = (iris->size & ~WS_CIRCLE_RADIUS_PX) * farthest / 128u;
+        } else {
+            radius = iris->size * farthest / 150u + 1u;
+        }
     }
     for (line = 0; line < height; line++) {
         const s32 dy = line - iris->y;
@@ -1519,6 +1549,24 @@ static int Port_WidescreenRoomTransitionActive(void) {
     return Port3DSFullViewPolicy_RoomTransitionActive(0, 0, gRoomControls.reload_flags, gRoomControls.scrollAction);
 }
 
+static Port3DSFullViewMode Port_WidescreenGameplayMode(void);
+static int Port_WidescreenCameraRestXForMode(int target_x, Port3DSFullViewMode mode);
+static int Port_WidescreenCameraRestYForMode(int target_y, Port3DSFullViewMode mode);
+
+/* The game freezes the camera by clearing its target (a Minish portal's shrink and
+ * growth, some cutscenes): the view is meant to stay where it is. Full View already
+ * on keeps it while the frozen 400x240 window lies inside the room; dropping to
+ * 266x160 there kept the 400 view's top-left corner and left Link out of sight.
+ * Without a target there is nothing to centre a new 400 view on, so it is never
+ * entered that way. */
+static int Port_WidescreenFrozenCameraKeepsFullView(void) {
+    if (Port_WidescreenGameplayMode() != PORT_3DS_FULL_VIEW_OUTDOOR_1X) return 0;
+    return Port_WidescreenCameraRestXForMode(gRoomControls.scroll_x + 200, PORT_3DS_FULL_VIEW_OUTDOOR_1X) ==
+               gRoomControls.scroll_x &&
+           Port_WidescreenCameraRestYForMode(gRoomControls.scroll_y + 120, PORT_3DS_FULL_VIEW_OUTDOOR_1X) ==
+               gRoomControls.scroll_y;
+}
+
 static Port3DSFullViewInputs Port_WidescreenFullViewInputs(void) {
     Port3DSFullViewInputs inputs;
     memset(&inputs, 0, sizeof(inputs));
@@ -1533,7 +1581,10 @@ static Port3DSFullViewInputs Port_WidescreenFullViewInputs(void) {
     inputs.fixedCanvas = Port_WidescreenFixedCanvasSubtask();
     inputs.uiOverlay = Port_WidescreenFullViewUiOverlayActive();
     inputs.transitioning = Port_WidescreenRoomTransitionActive();
-    inputs.playerValid = gPlayerEntity.base.kind == PLAYER && gRoomControls.camera_target != NULL;
+    /* A Minish portal's closing circle runs with every entity erased
+     * (GameMain_MinishPortal), the room still drawn behind it. */
+    inputs.playerValid = (gPlayerEntity.base.kind == PLAYER || gMain.substate == GAMEMAIN_MINISHPORTAL) &&
+                         (gRoomControls.camera_target != NULL || Port_WidescreenFrozenCameraKeepsFullView());
     /* Mt. Crenel room 2 uses a non-tileable 32x32 static BG3 landscape.
      * Repeating it across 400 pixels creates a visible seam; keep the entire
      * scene on E2 until that overlay has a semantic 64-column map. */
@@ -1890,8 +1941,20 @@ int Port_Widescreen_CameraRestY(int target_y) {
 }
 
 static void Port_WidescreenSnapGameplayCamera(Port3DSFullViewMode mode) {
+    const Port3DSFullViewMode previous = Port_WidescreenGameplayMode();
     sWsGameplayMode = mode;
     if (gRoomControls.camera_target == NULL) {
+        /* A frozen camera leaving Full View (a portal's closing window, a script
+         * moving it out of the room's 400x240 range): centre the narrower view on
+         * Link, as the GBA camera was before it froze, not on the 400 view's
+         * top-left corner. Effects aimed at Link's screen position then land in it. */
+        if (previous == PORT_3DS_FULL_VIEW_OUTDOOR_1X && mode == PORT_3DS_FULL_VIEW_FALLBACK) {
+            const int cx = gPlayerEntity.base.kind == PLAYER ? gPlayerEntity.base.x.HALF.HI : gRoomControls.scroll_x + 200;
+            const int cy = gPlayerEntity.base.kind == PLAYER ? gPlayerEntity.base.y.HALF.HI : gRoomControls.scroll_y + 120;
+            gRoomControls.scroll_x = (s16)Port_WidescreenCameraRestXForMode(cx, mode);
+            gRoomControls.scroll_y = (s16)Port_WidescreenCameraRestYForMode(cy, mode);
+            gUpdateVisibleTiles = 1;
+        }
         return;
     }
     gRoomControls.scroll_x = (s16)Port_WidescreenCameraRestXForMode(
