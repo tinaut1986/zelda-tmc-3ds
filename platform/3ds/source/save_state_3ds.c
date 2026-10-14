@@ -13,6 +13,8 @@
 #include "sound.h"
 #include "port_config.h"
 #include "port_audio_3ds.h"
+#include "port_entity_ctx.h"
+#include "port_second_screen_3ds.h"
 #include "state_pointers_3ds.h"
 #include "state_symbols_3ds.h"
 #include "tmc3ds_version.h"
@@ -289,6 +291,7 @@ static unsigned Number(uint32_t id) {
 static volatile uint32_t sPending; /* SaveStateJob, NONE when free */
 static uint32_t sPendingId;
 static volatile uint32_t sGeneration;
+static volatile uint32_t sNoticeGeneration; /* the bottom paint that shows the job's notice */
 static char sMessage[48];
 static bool sLastOk;
 static uint32_t sLastId;
@@ -301,6 +304,8 @@ bool SaveState_Request(SaveStateJob job, uint32_t id) {
         return false;
     sPendingId = id;
     __atomic_store_n(&sPending, (uint32_t)job, __ATOMIC_RELEASE);
+    /* The paint after this one shows the busy notice (it reads the pending job). */
+    __atomic_store_n(&sNoticeGeneration, Port_SecondScreen_3DS_RequestRefresh(), __ATOMIC_RELEASE);
     return true;
 }
 
@@ -648,6 +653,22 @@ static void MoveRomPointers(uintptr_t oldBase) {
  * (the widescreen's shadows, the map layers) reads a wrong control word. The pointers the
  * game keeps there are always one of the BG settings; one that is not is put back on the
  * BG the game uses for that layer (the top layer on BG1, the bottom one on BG2). */
+/* Each entity keeps its script context twice: in gEntityScriptCtxTable (a holder the state
+ * relocates) and in its own scriptContext field (+0x84), which points into the middle of
+ * gScriptExecutionContextArray. States written before that array was a relocation target
+ * (2026-10-13) hold the field as the writing build's address; once the array has moved, an
+ * entity runs a script from whatever is there now (a house door in Lon Lon Ranch: a data abort
+ * in GetNextScriptCommandHalfword). Put the field back from the table, which Port_SetEntityScriptCtx
+ * keeps equal to it. */
+static void RepairEntityScriptContexts(void) {
+    for (int slot = 1; slot < PC_MAX_ENTITY_SLOTS; ++slot) {
+        ScriptExecutionContext* ctx = gEntityScriptCtxTable[slot];
+        Entity* ent = Port_EntityFromSlot(slot);
+        if (ctx != NULL && ent != NULL && ent->next != NULL)
+            ((GenericEntity*)ent)->scriptContext = ctx;
+    }
+}
+
 static void RepairScreenPointers(void) {
     BgSettings* const valid[4] = { &gScreen.bg0, &gScreen.bg1, (BgSettings*)&gScreen.bg2, (BgSettings*)&gScreen.bg3 };
     BgSettings** const holders[4] = { &gMapTop.bgSettings, &gMapBottom.bgSettings, &gUI.mapTopBgSettings,
@@ -735,6 +756,7 @@ static void LoadNamed(FILE* f, const StateHeader* h, uint32_t id) {
     free(body);
     Port_Audio_3DSSetPaused(false);
     RepairScreenPointers();
+    RepairEntityScriptContexts();
     /* The players' state came back with everything else; start the saved
      * room music afresh so the mixer and the game agree on it. */
     const u32 bgm = gSoundPlayingInfo.currentBgm;
@@ -808,10 +830,12 @@ static void Delete(uint32_t id) {
 void SaveState_Service(void) {
     const uint32_t job = __atomic_load_n(&sPending, __ATOMIC_ACQUIRE);
     if (job == SAVE_STATE_JOB_NONE || job == JOB_CLAIMED) return;
-    /* A job that stops the game for a while waits for the bottom screen's notice to be shown:
-     * the game is not drawing while it runs. About a tenth of a second. */
+    /* A job that stops the game for a while waits until the bottom screen shows its notice:
+     * nothing is drawn while it runs. A fixed tenth of a second was shorter than a slow paint,
+     * so the notice came up only after the job, for a frame. At most a second. */
     static unsigned sPreroll;
-    if (job != SAVE_STATE_JOB_SCAN && sPreroll < 8u) {
+    if (job != SAVE_STATE_JOB_SCAN && sPreroll < 60u &&
+        !Port_SecondScreen_3DS_IsShown(__atomic_load_n(&sNoticeGeneration, __ATOMIC_ACQUIRE))) {
         ++sPreroll;
         return;
     }

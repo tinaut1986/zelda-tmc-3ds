@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "updater.h"
@@ -38,6 +39,9 @@ int Port_Config_GetFramePacing(void) { return sPacing; }
 void Port_Config_SetFramePacing(int p) { sPacing = p; }
 int Port_Config_GetUiTheme(void) { return sUiTheme; }
 void Port_Config_SetUiTheme(int theme) { sUiTheme = theme; }
+static bool sTabsBottom;
+bool Port_Config_GetUiTabsBottom(void) { return sTabsBottom; }
+void Port_Config_SetUiTabsBottom(bool bottom) { sTabsBottom = bottom; }
 static int sAspect = 0, sStyle = 2, sBackdrop = 0;
 static bool sColor = true, sHideHud = false, sHold = true, sCrests = true, sFloor = true, sFollow = true;
 static bool sSwap = false, sFps = false, sWide = true, sAuto = true;
@@ -86,7 +90,16 @@ void Updater_Check(void) {}
 void Updater_Download(void) {}
 void Updater_SetChannel(bool prerelease) { (void)prerelease; }
 unsigned Updater_GetNotes(char* out, unsigned capacity) { if (capacity) out[0] = 0; return 0; }
-void Updater_GetStatus(UpdateStatus* out) { memset(out, 0, sizeof(*out)); }
+/* UPDATE_BETA=1: a beta found on the + BETAS channel, to preview the RELEASE cell. */
+void Updater_GetStatus(UpdateStatus* out) {
+    memset(out, 0, sizeof(*out));
+    if (getenv("UPDATE_BETA")) {
+        out->state = UPDATE_AVAILABLE;
+        out->prerelease = true;
+        snprintf(out->version, sizeof(out->version), "v0.1.2");
+        snprintf(out->message, sizeof(out->message), "UPDATE AVAILABLE");
+    }
+}
 unsigned Update_FormatNotes(const char* md, char lines[][43], unsigned capacity) {
     (void)md; (void)lines; (void)capacity; return 0;
 }
@@ -156,6 +169,9 @@ void FtpServer_Address(char* out, unsigned cap) { snprintf(out, cap, "192.168.1.
 void FtpServer_Stats(unsigned* a, unsigned* b, bool* c) { *a = 3; *b = 1; *c = false; }
 bool FtpServer_Start(void) { return true; }
 void FtpServer_Stop(void) {}
+/* DEVFTP=1 previews the install-only server's bar (production builds with dev-ftp.txt). */
+bool FtpServer_InstallOnly(void) { return getenv("DEVFTP") != NULL; }
+void FtpServer_Cancel(void) {}
 
 /* ---- save states, FTP and debug switches added since (save_state_3ds.c, ftp_server_3ds.c) ---- */
 #include "save_state_3ds.h"
@@ -182,3 +198,7 @@ bool Port_Config_DebugLogDirect(void) { return sDbgDirect; }
 void Port_Config_SetDebugLogDirect(bool on) { sDbgDirect = on; }
 bool Port_Config_DebugFtpOn(void) { return sDbgFtp; }
 void Port_Config_SetDebugFtpOn(bool on) { sDbgFtp = on; }
+
+/* ---- X/Y soft slots (port/port_softslots.c): none assigned ---- */
+uint8_t Port_SoftSlots_GetAssignment(int slot) { (void)slot; return 0; }
+void Port_SoftSlots_SetAssignment(int slot, uint8_t itemId) { (void)slot; (void)itemId; }

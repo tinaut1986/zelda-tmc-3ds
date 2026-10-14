@@ -99,8 +99,10 @@ Minor = milestone, patch = fix round. Ask before a minor bump; never infer one.
   shown next to ours (boot console, dumps, OPTIONS footer).
 - This fork installs as **its own application**: title ID `0x5A22E`
   (`cia/tmc3ds.rsf`; upstream is `0x5A22D`), name "Minish Cap 3DS", data folder
-  `sdmc:/3ds/Minish Cap 3DS/` (`source/app_paths_3ds.h`). It never touches the
-  upstream app's folder, so both can be installed side by side.
+  `sdmc:/3ds/Minish Cap 3DS/` (`source/app_paths_3ds.h`). It never writes to the
+  upstream app's folder (`sdmc:/3ds/The Minish Cap 3DS/`), so both can be installed
+  side by side; it only reads the ROM there when ours has none and offers once to
+  copy its saves (`source/upstream_import_3ds.c`).
 
 ### Releases (installer on GitHub)
 
@@ -161,9 +163,11 @@ A **stable** release lists everything since the previous *stable* tag, betas inc
 The workflow passes `TMC3DS_CHANNEL=beta|release` to `platform/3ds/build.sh`. The
 generated `tmc3ds_version.h` then carries `TMC_PORT_IS_BETA` and
 `TMC_PORT_VERSION_LABEL` ("X.Y.Z BETA"); `TMC_PORT_VERSION` stays the plain number
-(user-agent, file names, comparisons). The updater treats an installed beta as
-older than the stable release of its own number, and never offers a beta its own
-pre-release page.
+(user-agent, file names, comparisons). The updater orders one number's builds
+`X.Y.Z-dev.N` < `X.Y.Z BETA` < `X.Y.Z`: a dev build is offered the beta of its number
+(it predates the tag, the branch being renamed after it), an installed beta the stable
+release, and a beta is never offered its own pre-release page. OPTIONS -> UPDATES shows
+the release found with BETA when it is one, and the installed build's label.
 
 ### After tagging
 
@@ -185,7 +189,7 @@ git push origin --delete release/v0.1.0
   contains them. `.gitignore` covers `*.gba`, `*.sav`, `baserom.gba`.
 - Supported ROMs: USA (`BZME`, sha1 `b4bd50e4131b027c334547b4524e2dbbd4227130`) and
   Europe (`BZMP`, sha1 `cff199b36ff173fb6faf152653d1bccf87c26fb7`). The ROM is read
-  at runtime from `sdmc:/3ds/Minish Cap 3DS/`.
+  at runtime from `sdmc:/3ds/Minish Cap 3DS/`, or else from the upstream app's folder.
 - License: GPL-3.0 (see `LICENSE`, `COPYRIGHT.md`, `THIRD-PARTY-LICENSES.md`), agbplay
   LGPLv3. Keep the notices; the build copies them into the romfs.
 
@@ -236,6 +240,8 @@ tools/tmc-link/tmc-link.py wait && tools/tmc-link/tmc-link.py run SCRIPT   # dri
 - `tools/tmc-link/tmc-link.py` (docs/debug-tools.md, "Remote control") presses buttons,
   taps, saves and loads save states (`savestate`, `loadstate N`; docs/save-states.md),
   takes screenshots (`shot`, then look at the PNGs), reads state and memory by symbol.
+  `peek`/`poke` by symbol use this checkout's `build-3ds/game/tmc-3ds.elf`: when the console runs
+  a build made in another worktree, pass that build's ELF with `--elf`.
   A state survives rebuilds that only change the port (renderer, UI, platform), so the
   loop is: save a state once, then install, `wait`, `loadstate`, play the scenario, measure. Use it to reproduce and check on the console without
   the owner; say before driving the game while the owner is playing.
@@ -243,15 +249,20 @@ tools/tmc-link/tmc-link.py wait && tools/tmc-link/tmc-link.py run SCRIPT   # dri
 - `--install` uploads to `/3ds/Minish Cap 3DS/update/dev.cia` and sends `SITE INSTALL`
   after the transfer (`curl -Q "-SITE INSTALL <path>"`; the leading `-` means "after").
   The game refuses a CIA with another title ID, installs over itself
-  (`cia_install_3ds.c`), replies `200` and jumps into the new build
-  (`Platform3DS_RequestRelaunch`). The relaunched game turns the FTP server back on by
-  itself (`debug_ftp` in `tmc3ds.ini`), so installs and fetches can follow one another;
-  give it a few seconds after the relaunch.
+  (`cia_install_3ds.c`), replies `200` and relaunches into the new build 10 s later
+  (`Platform3DS_RequestRelaunch`, libctru's chainloader; jumping at once crashed the system
+  loader, issue #4). The relaunched game turns the FTP server back on by itself (`debug_ftp`
+  in `tmc3ds.ini`), so installs and fetches can follow one another: `tmc-link.py wait`, but only
+  after ~12 s, or it answers from the old build still running out its 10 s.
+- A **production** build installed on the console has no DEBUG tab, but if
+  `/3ds/Minish Cap 3DS/dev-ftp.txt` exists it runs an install-only server (only `update/`, no
+  remote control, a CANCEL bar on the bottom screen): `--install` works on it with either build
+  mode, `tmc-link.py` and fetching `debug/` do not (docs/debug-tools.md, "FTP server").
 - Any unsaved progress is lost on relaunch: say so before installing while the owner plays.
-- With two consoles on the network (owner's New 3DS and 2DS) `.3ds_ftp_ip` holds only the last
-  one the build assistant used. Pass the address explicitly (`tmc-link.py --ip IP ...`, `curl
-  ftp://IP:5000/...`) for the other one, and do not overwrite the file by sending a CIA to
-  it with `curl`. Which one is which is in PLAN's Status.
+- With two consoles on the network (the game's SD log header says Old or New 3DS) `.3ds_ftp_ip`
+  holds only the last one the build assistant used. Pass the address explicitly (`tmc-link.py
+  --ip IP ...`, `curl ftp://IP:5000/...`) for the other one, and do not overwrite the file by
+  sending a CIA to it with `curl`. Which one is which is in PLAN's Status.
 - If the IP is unknown or the connection is refused, ask the owner for the address the
   FTP SERVER cell shows; do not scan the network without need.
 - The protocol and the server are documented in `docs/debug-tools.md` ("FTP server") and

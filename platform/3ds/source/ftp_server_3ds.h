@@ -1,10 +1,11 @@
 #pragma once
-/* A small FTP server inside the game, for debug-tools builds (DEBUG -> FTP):
+/* A small FTP server inside the game, for debug-tools builds (DEBUG -> FTP), and an
+ * install-only variant for production builds (dev-ftp.txt, below):
  * fetch logs, perf recordings and dumps, or drop files on the SD card, while
  * the game keeps running. No FBI or ftpd round trip.
  *
  * Anonymous (any user and password), one client at a time, passive mode only,
- * the whole SD card as "/". Commands: USER PASS SYST FEAT TYPE MODE STRU PWD
+ * the whole SD card as "/" (install-only mode: /3ds/Minish Cap 3DS/update alone). Commands: USER PASS SYST FEAT TYPE MODE STRU PWD
  * CWD CDUP PASV EPSV LIST NLST MLSD RETR STOR APPE DELE MKD RMD RNFR RNTO SIZE
  * MDTM NOOP QUIT OPTS. Enough for FileZilla, WinSCP, curl and lftp.
  *
@@ -23,7 +24,19 @@
 enum { FTP_SERVER_PORT = 5000 };
 
 bool FtpServer_Start(void);
+/* Production builds: the install-only server, started when dev-ftp.txt is in the data folder. Only
+ * /3ds/Minish Cap 3DS/update is reachable, the remote control (SITE but INSTALL) is off, and the
+ * bottom screen shows the address with a CANCEL button (FtpServer_Cancel). Not started again
+ * after a cancel: the player has to leave the game and open it again. */
+bool FtpServer_StartInstallOnly(void);
+bool FtpServer_InstallOnly(void); /* serving in that mode right now */
+void FtpServer_Cancel(void);
 void FtpServer_Stop(void);
+/* From another thread (the audio worker's watchdog): logs to tmc3ds.log once when the server
+ * thread has been inside one command for 30 s. */
+void FtpServer_WatchdogPoll(void);
+/* "waiting for a command for 3.2 s", "command PEEK for 41.0 s", or "off". */
+void FtpServer_DescribeStage(char* out, unsigned cap);
 bool FtpServer_Running(void);
 /* "192.168.1.50:5000", or a short reason when it is not serving. */
 void FtpServer_Address(char* out, unsigned cap);

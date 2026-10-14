@@ -46,6 +46,10 @@ tools/binutils
 !tools/generate_sounds_embed.py
 !tools/gen_state_symbols.py
 !tools/state-census/census.py
+!tools/scene-rec/decode.py
+!tools/scene-extend/extract_bg.py
+!tools/scene-extend/check_extension.py
+!tools/scene-extend/to_console.py
 *.pl
 
 # graphics

@@ -16,10 +16,16 @@ tmc-3ds-v1.3-E3.cia
 Then create this directory on the SD card:
 
 ```text
-sdmc:/3ds/The Minish Cap 3DS/
+sdmc:/3ds/Minish Cap 3DS/
 ```
 
 Place a legally obtained clean ROM there. Any `.gba` filename is accepted.
+Without a ROM there, the one in the original port's folder
+(`sdmc:/3ds/The Minish Cap 3DS/`) is read in place, so it is not on the SD
+twice. At the first launch with no save of its own, if the original port's
+folder has saves (`*.sav`), the bottom screen asks whether to copy them here
+(A) or not (B); the answer is kept in `upstream-import.txt` and not asked
+again. The original folder is never written to.
 The port detects USA and European game codes at runtime and activates the
 matching internal data profile before boot. Expected SHA-1 values:
 
@@ -33,6 +39,15 @@ The ROM is read locally from the SD card and is never copied into the CIA.
 Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
 `Dump DSP firmware` option if homebrew audio is unavailable.
 
+## Controls
+
+- A, B, R, L, START, SELECT and the D-pad / Circle Pad as on the GBA.
+- **X and Y** (also ZL and ZR) use an item of their own, like B. Assign it on the bottom
+  screen: tap A, B, X or Y in the right-hand column (the button stays selected), then the
+  item in ITEMS; tapping X's or Y's item again clears that button. X/Y assignments are kept
+  for every save file (`tmc.softslots` in the data folder); in a save without that item the
+  button does nothing.
+
 ## Display
 
 - Top screen: selectable Wide, Original, and Stretch aspect ratios.
@@ -40,11 +55,18 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
   and centered one-pixel-per-source-pixel Pixel Perfect. Fresh installations
   start with Bilinear and Stretch; valid saved choices are restored on later
   launches.
-- Experimental Full View: on New 3DS, selecting Wide + Pixel Perfect renders
+- Experimental Full View: on New 3DS and Old 3DS/2DS, selecting Wide + Pixel Perfect renders
   compatible outdoor rooms at 400x240; interiors keep the 1x Wide view (no
   zoom). Dialogues keep the 400x240 view (the text box is centred); room-name
   banners, transitions and unsupported
   effects fall back safely to the established presentation.
+- Scenes the GBA drew as one fixed 240x160 picture are extended in Full View with generated
+  pictures in the romfs (`docs/wide-scene-extension.md`): the Minish portal cutscene (falling into
+  the mushroom ring) at 400x240, its 256x320 picture centred, 240 lines of it at once; the title
+  screen at 400x240, its forest extended to the whole view, the light rays coming from the top
+  and the sword moving away across it. A picture of one's own in the data folder
+  (`portal-cutscene-strips.bin`, `title-forest.bin`, from `tools/scene-extend/to_console.py`)
+  replaces the shipped one.
 - Bottom screen: 320x240 map, dungeon/status information and touch item UI.
 - Rendering: PICA200/Citro2D presenter fed by the software GBA PPU.
 - Performance profile: selected automatically from the detected console model.

@@ -42,6 +42,8 @@ ResamplerType str2res(const std::string &str)
         return ResamplerType::BLEP;
     else if (str == "blamp")
         return ResamplerType::BLAMP;
+    else if (str == "box")
+        return ResamplerType::BOX;
     return ResamplerType::LINEAR;
 }
 
@@ -57,6 +59,8 @@ std::string res2str(ResamplerType t)
         return "blep";
     else if (t == ResamplerType::BLAMP)
         return "blamp";
+    else if (t == ResamplerType::BOX)
+        return "box";
     return "linear";
 }
 

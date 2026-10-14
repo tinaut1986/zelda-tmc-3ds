@@ -81,7 +81,10 @@ void Port_SoftSlots_Update(void) {
     int newlyPressed = -1;
 
     for (int i = 0; i < PORT_SOFTSLOT_COUNT; i++) {
-        nowHeld[i] = Port_Config_SoftSlotPressed(i) && sAssignments[i] != 0;
+        /* Assignments are kept for every save file: a slot whose item this
+         * save does not own stays silent rather than creating the item. */
+        nowHeld[i] = Port_Config_SoftSlotPressed(i) && sAssignments[i] != 0 &&
+                     GetInventoryValue(sAssignments[i]) != 0;
         if (nowHeld[i] && !sPrevHeld[i]) {
             /* Later iterations overwrite, giving last-iterated == highest-
              * index newly-pressed slot priority. */

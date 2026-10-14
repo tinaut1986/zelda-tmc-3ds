@@ -48,6 +48,9 @@ void Port_Config_SetShowFps(bool on);
 /* Bottom-screen theme (platform/3ds/source/bottom_compact_3ds.inc). */
 int Port_Config_GetUiTheme(void);
 void Port_Config_SetUiTheme(int theme);
+/* OPTIONS -> TABS: the bottom screen's tab bar below the content (3DS). */
+bool Port_Config_GetUiTabsBottom(void);
+void Port_Config_SetUiTabsBottom(bool bottom);
 #include "../platform/3ds/source/frame_pacing_3ds.h"
 #endif
 /* Android touch overlay master switch. Off both hides it and stops it

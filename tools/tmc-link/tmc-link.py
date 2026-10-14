@@ -4,7 +4,7 @@
 Talks to the game's own FTP server (DEBUG -> FTP SERVER, port 5000) with the
 SITE commands of platform/3ds/source/debug_link_3ds.h. Standard library only.
 
-    tmc-link.py [--ip IP] COMMAND [ARGS]
+    tmc-link.py [--ip IP] [--elf ELF] COMMAND [ARGS]
 
     wait [SECONDS]            until the game answers (after an install or boot); default 120
     state                     frame, in game, area, room, Link's position, health
@@ -20,6 +20,12 @@ SITE commands of platform/3ds/source/debug_link_3ds.h. Standard library only.
     dump                      screen dump: debug/tmc-dump-NNNN-* (written at the next frame)
     switch NAME               cycle a DEBUG -> SWITCHES value ("FRAME SYNC")
     shot [DIR]                screenshots of both screens as PNG, default /tmp/tmc-shot
+    perf start                the perf recorder (one row a presented frame, into RAM)
+    perf stop [DIR]           write debug/tmc-perf-NNNN.csv and fetch it to DIR (default
+                              /tmp/tmc-debug); tools/perf-csv/analyze.py summarises it
+    scenerec start [N]        the top screen, full size, one frame in N (default 2), into RAM
+    scenerec stop [DIR]       write it (debug/tmc-scene-NNNN.bin), fetch it to DIR (default
+                              /tmp/tmc-scene); tools/scene-rec/decode.py makes PNGs and a GIF
     rec [now]                 record the top screen around the next room change, HUD hide or fade start (now: no trigger)
     recfetch [DIR]            wait for the recording, write DIR/frames.png (a contact sheet) and list the frames
     peek WHAT LENGTH          hex bytes; WHAT is a hex address or a symbol of the ELF
@@ -30,7 +36,9 @@ SITE commands of platform/3ds/source/debug_link_3ds.h. Standard library only.
     run FILE                  one command per line ('#' comments), stops at the first error
 
 The IP defaults to .3ds_ftp_ip in the repository (the build assistant's last).
-Symbols come from build-3ds/game/tmc-3ds.elf through arm-none-eabi-nm.
+Symbols come from build-3ds/game/tmc-3ds.elf through arm-none-eabi-nm, or from
+--elf: always the ELF of the build running on the console (a build made in another
+worktree has its own), or peek/poke by symbol read and write the wrong addresses.
 """
 import ftplib
 import io
@@ -54,8 +62,9 @@ class LinkError(Exception):
 
 
 class Link:
-    def __init__(self, ip):
+    def __init__(self, ip, elf=ELF):
         self.ip = ip
+        self.elf = elf
         self.ftp = None
         self.symbols = None
 
@@ -113,14 +122,14 @@ class Link:
         except ValueError:
             pass
         if self.symbols is None:
-            out = subprocess.run([NM, '-C', ELF], capture_output=True, text=True, check=True).stdout
+            out = subprocess.run([NM, '-C', self.elf], capture_output=True, text=True, check=True).stdout
             self.symbols = {}
             for line in out.splitlines():
                 parts = line.split()
                 if len(parts) >= 3:
                     self.symbols[parts[2]] = int(parts[0], 16)
         if what not in self.symbols:
-            raise LinkError('no symbol %s in %s' % (what, ELF))
+            raise LinkError('no symbol %s in %s' % (what, self.elf))
         return self.symbols[what]
 
 
@@ -227,6 +236,53 @@ def run(link, argv):
             with open(path, 'wb') as f:
                 f.write(bmp_to_png(buf.getvalue()))
             print(path)
+    elif cmd == 'scenerec':
+        # start [N]: record; stop [DIR]: write it on the console, wait for the file, fetch it to DIR
+        def last_scene():
+            buf = io.BytesIO()
+            try:
+                link.connect().retrbinary('RETR %s/debug/tmc-scene-last.txt' % DATA, buf.write)
+                return int(buf.getvalue())
+            except Exception:
+                return -1
+        if not args or args[0].lower() not in ('start', 'stop'):
+            raise LinkError('scenerec start [N] | stop [DIR]')
+        if args[0].lower() == 'start':
+            print(link.site('SCENEREC START ' + (args[1] if len(args) > 1 else '2')))
+        else:
+            before = last_scene()
+            print(link.site('SCENEREC STOP'))
+            out = args[1] if len(args) > 1 else '/tmp/tmc-scene'
+            os.makedirs(out, exist_ok=True)
+            end = time.time() + 300
+            while True:  # the number is taken when the write starts, the .bin appears when it ends
+                number = last_scene()
+                if number != before and number >= 0:
+                    name = 'tmc-scene-%04d.bin' % number
+                    try:
+                        link.connect().size('%s/debug/%s' % (DATA, name))
+                        break
+                    except Exception:
+                        pass
+                if time.time() > end:
+                    raise LinkError('no scene recording written')
+                time.sleep(1)
+            path = os.path.join(out, name)
+            with open(path, 'wb') as f:
+                link.connect().retrbinary('RETR %s/debug/%s' % (DATA, name), f.write)
+            print(path)
+    elif cmd == 'perf':
+        if not args or args[0].lower() not in ('start', 'stop'):
+            raise LinkError('perf start | stop [DIR]')
+        reply = link.site('PERF ' + args[0].upper())
+        print(reply)
+        if args[0].lower() == 'stop':
+            name = reply.split()[0]
+            out = args[1] if len(args) > 1 else '/tmp/tmc-debug'
+            os.makedirs(out, exist_ok=True)
+            path = os.path.join(out, name)
+            link.retrieve('%s/debug/%s' % (DATA, name), path)
+            print(path)
     elif cmd == 'rec':
         print(link.site(('REC ' + (args[0] if args else '')).strip()))  # rec now: no trigger, the next 36 frames
     elif cmd == 'recfetch':
@@ -291,8 +347,16 @@ def main():
         print(__doc__)
         return 0
     ip = None
-    if argv[0] == '--ip':
-        ip, argv = argv[1], argv[2:]
+    elf = ELF
+    while len(argv) >= 2 and argv[0] in ('--ip', '--elf'):
+        if argv[0] == '--ip':
+            ip = argv[1]
+        else:
+            elf = os.path.abspath(argv[1])
+            if not os.path.isfile(elf):
+                print('no ELF at %s' % elf, file=sys.stderr)
+                return 2
+        argv = argv[2:]
     if ip is None:
         try:
             with open(os.path.join(REPO, '.3ds_ftp_ip')) as f:
@@ -300,7 +364,7 @@ def main():
         except OSError:
             print('no --ip and no .3ds_ftp_ip', file=sys.stderr)
             return 2
-    link = Link(ip)
+    link = Link(ip, elf)
     try:
         run(link, argv)
     except LinkError as e:

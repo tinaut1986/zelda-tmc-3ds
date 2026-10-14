@@ -23,7 +23,7 @@ FLAGS="-std=gnu11 -O1 -w -DPC_PORT -DNON_MATCHING -DMULTI_REGION -DUSA -DENGLISH
     "$ROOT/port/port_second_screen.c" "$ROOT/port/port_second_screen_theme.c" \
     "$ROOT/port/port_second_screen_render.c" "$ROOT/port/port_second_screen_quest.c" \
     "$ROOT/port/port_second_screen_dungeonmap.c" "$ROOT/port/port_second_screen_worldmap.c" \
-    "$ROOT/platform/3ds/source/ui_font_3ds.c" "$ROOT/tools/ui-preview/preview.c" -c)
+    "$ROOT/port/port_text_i18n.c" "$ROOT/platform/3ds/source/ui_font_3ds.c" "$ROOT/tools/ui-preview/preview.c" -c)
 gcc -std=gnu11 -O1 -w -I"$ROOT/platform/3ds/source" -I"$ROOT/port/ppu/include" -c "$ROOT/tools/ui-preview/stubs.c" -o "$OUT/gen/stubs.o"
 gcc "$OUT"/gen/*.o -o "$OUT/preview" -lm -lpthread
 # name:taps (x,y in bottom-screen pixels or tN = Nth tab, ';'-separated, replayed from the MAP tab)
@@ -31,11 +31,14 @@ SHOTS=(
   "map:"
   "items:t1"
   "quest:t2"
-  "options:t3"
-  "options_frames:t3;200,40;200,40"
-  "updates:t3;240,110"
+  "quest_kinstones:t2;35,50"
+  "quest_techniques:t2;155,50"
+  "states:t3"
+  "options:t4"
+  "options_frames:t4;200,40;200,40"
+  "updates:t4;240,110"
 )
-[ "${TMC3DS_DEBUG_TOOLS:-1}" = 1 ] && SHOTS+=("debug:t4" "debug_recording:t4;300,107" "debug_switches:t4;280,63;100,64;100,120")
+[ "${TMC3DS_DEBUG_TOOLS:-1}" = 1 ] && SHOTS+=("debug:t5" "debug_recording:t5;300,107" "debug_switches:t5;280,63;100,64;100,120")
 rm -f "$OUT"/*.ppm "$OUT"/*.png
 "$OUT/preview" "$OUT" "${SHOTS[@]}" > /dev/null
 python3 "$ROOT/tools/ui-preview/ppm2png.py" "$OUT"/*.ppm

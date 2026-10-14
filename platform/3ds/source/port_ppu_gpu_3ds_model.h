@@ -230,6 +230,16 @@ typedef struct PpuGpu3DSFrameView {
     int wsHudRightAnchor, wsHudRightNativeX;
     int wsMsgShift, wsMsgX0, wsMsgX1, wsMsgY0, wsMsgY1;
     bool bg3Repeat;
+    uint8_t bgRepeatMask; /* virtuappu_mode1_bg_repeat_mask */
+    /* BGs (bit n = BGn; one at a time) with the picture texture drawn over their
+     * tiles across the whole frame: the title's forest as BG1
+     * (virtuappu_mode1_bg1_picture, PortPpuGpu3DS_SetBg1Picture), the file
+     * select's cave as BG3 (PortPpuGpu3DS_SetIndexedPicture). */
+    uint8_t pictureMask;
+    /* BGs (bit n = BGn) drawn only in the GBA's 240x160 screen centred in a
+     * bigger view, at their own scroll (the file select's windows and text,
+     * whose 256-wide maps would repeat across it). */
+    uint8_t bgNativeMask;
     /* Full View (Wide + Pixel Perfect): the shadow tilemaps cover the whole
      * view from x=0, not only the columns past 240 (virtuappu_mode1_ws_full_view). */
     bool wsFullView;
@@ -252,6 +262,12 @@ typedef struct PpuGpu3DSFrameView {
     bool bg3NativeBounds;
     /* BG3HOFS before any HBlank DMA step (virtuappu_mode1_bg3_hofs_base), -1 unknown. */
     int bg3HofsBase;
+    /* The iris fade in a wide view (virtuappu_mode1_ws_win0_lines: {left,
+     * right} per line), or NULL. The frame is then built without WIN0 and the
+     * renderer paints the backdrop colour outside each line's span, which is
+     * what the iris's window settings (inside everything, outside nothing)
+     * show; splitting the frame into a band per line cost the Old 3DS 40 ms. */
+    const uint16_t* irisLines;
 } PpuGpu3DSFrameView;
 
 typedef struct PpuGpu3DSInterval {
@@ -375,6 +391,15 @@ typedef struct PpuGpu3DSCommandBuffer {
     uint32_t mapRefresh;
     uint32_t mapRebuild[PPU_GPU3DS_MAP_REBUILD_COUNT];
     uint16_t bandCount;
+    /* A scaled affine BG2 drawn for the whole screen once a frame; bands with
+     * the same matrix and origin reuse its indices under their own scissor. */
+    struct {
+        bool valid;
+        uint16_t bgcnt;
+        int32_t pa, pd, refX, refY0;
+        uint32_t firstIndex, indexCount;
+        uint8_t texture; /* 0 the atlas (a quad a tile), else 1 + the ring it was decoded into */
+    } affineShare;
     /* What the frame asked for, which on overflow exceeds the capacities. */
     uint32_t requiredVertices, requiredBatches;
 } PpuGpu3DSCommandBuffer;
@@ -425,6 +450,12 @@ void PpuGpu3DS_RingSetStorage(PpuGpu3DSCache* cache, unsigned index, uint16_t* p
  * platform to flush; false when nothing was. */
 bool PpuGpu3DS_RingTakeDirty(PpuGpu3DSCache* cache, unsigned index, size_t* offset, size_t* bytes);
 enum { PPU_GPU3DS_RING_COUNT = MODE1_GBA_BG_COUNT * 2 };
+/* BG2's native ring: an affine BG2 has no text ring, so a scaled one is decoded there. */
+enum { PPU_GPU3DS_AFFINE_RING = 2 * 2 };
+/* PpuGpu3DSBatch.texture of a BG drawn from a picture (PpuGpu3DSFrameView::pictureMask): a
+ * PPU_GPU3DS_PICTURE_TEX_WIDTH x _HEIGHT RGBA5551 texture, rows from v = 1 down. */
+enum { PPU_GPU3DS_PICTURE_TEXTURE = 1 + PPU_GPU3DS_RING_COUNT, PPU_GPU3DS_PICTURE_TEX_WIDTH = 512,
+       PPU_GPU3DS_PICTURE_TEX_HEIGHT = 256 };
 void PpuGpu3DS_CacheInit(PpuGpu3DSCache* cache);
 void PpuGpu3DS_CacheClearDirty(PpuGpu3DSCache* cache);
 void PpuGpu3DS_CacheBeginFrame(PpuGpu3DSCache* cache, const uint16_t* bgPalette,

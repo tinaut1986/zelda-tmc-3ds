@@ -92,6 +92,49 @@ int Port_Widescreen_HudTargetViewHeight(void);
 /* True while the map BGs are what the PPU renders (>=1 shadow registered);
  * overlay screens (storybook, pause) drop this to 0 -> present native 240. */
 int Port_Widescreen_ShadowsLive(void);
+/* src/message.c: the text box as drawn now, in BG0 tiles with its border. */
+int Port_Message_DrawnWindow(int* x, int* y, int* width, int* height);
+
+/* The iris fade's WIN0 table (src/fade.c): SetVBlankDMA forgets the table it is
+ * handed, the fade notes its circle after building one. Win0Lines fills
+ * {left, right} per line (out: height * 2) for a view past 240x160 when the
+ * HBlank DMA feeding WIN0 this frame is a noted iris; 0 otherwise. */
+void Port_Widescreen_ForgetIris(const void* table);
+void Port_Widescreen_NoteIris(void);
+void Port_Widescreen_NoteWindowCircle(int x, int y, int radius);
+/* The Minish portal's falling cutscene drawn at 400x240 (port_linked_stubs.c). Wide: the game
+ * produces it this tick; ViewLive: the published frame is it; Strips: the picture's top-left
+ * on screen, for the presenter's side strips. */
+int Port_Widescreen_PortalCutsceneWide(void);
+int Port_Widescreen_CutsceneViewLive(void);
+int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY);
+/* The title screen's forest is on the shown frame (the presenter extends it). */
+int Port_Widescreen_TitleForestShown(void);
+/* The shown frame is a plain screen around its middle (the Nintendo/Capcom logos, a blank frame of
+ * the title or file select): 1 the presenter stretches its edges over the 400x240 screen in Full
+ * View, 0 not, -1 as on the frame before (port_linked_stubs.c). */
+int Port_Widescreen_StretchEdges(void);
+/* The file select screen's cave (BG3) is on the shown frame, 240x160 in Full View: the presenter
+ * draws the extension around it from fileselect-cave.bin (port_linked_stubs.c). */
+int Port_Widescreen_FileSelectCaveShown(void);
+/* The file select drawn at 400x240 by the GPU renderer (port_linked_stubs.c): its windows and text
+ * (BG0-BG2) and its cave (BG3) in the middle, the cave extended around them as BG3, the sprites
+ * moved into the middle by port_draw.c. Wide: the game produces it this tick; ViewLive: the
+ * published frame is it. */
+int Port_Widescreen_FileSelectWide(void);
+int Port_Widescreen_FileSelectViewLive(void);
+/* port_draw.c: what is drawn between these moves into that view as one thing (each entity and each
+ * DrawDirect is one by itself), e.g. a button and its label. Begin returns what End takes. */
+int Port_Draw_WideGroupBegin(void);
+void Port_Draw_WideGroupEnd(int group);
+/* The title drawn at 400x240 (port_linked_stubs.c): Wide, the game produces it this tick;
+ * ViewLive, the published frame is it. */
+int Port_Widescreen_TitleWide(void);
+int Port_Widescreen_TitleViewLive(void);
+/* The title's light rays extended over the 400x240 view in VRAM (platform/3ds/source/
+ * title_rays_3ds.c): the screen block of BG0's 512x256 map, or 0 (BG0 as the game has it). */
+int Port_Widescreen_TitleRays(void);
+int Port_Widescreen_Win0Lines(int width, int height, unsigned short* out);
 
 /* EnterRoomTextboxManager writes its location banner directly to BG0 rather
  * than opening gMessage.  Publish that separate lifecycle so wide rendering

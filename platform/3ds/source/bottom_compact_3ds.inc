@@ -19,39 +19,50 @@
 #include <time.h>
 
 /* Colours, RGBA_8888 as the compositor stores them (RGB() above). A theme is
- * a palette plus where the tab bar goes; the owner picks one (2026-10-11:
- * proposals rendered with tools/ui-preview, THEME=n). */
+ * a palette; the owner picks one (2026-10-11: proposals rendered with
+ * tools/ui-preview, THEME=n). Where the tab bar goes is its own option (TABS). */
 typedef struct CcTheme {
     const char* name;
     uint32_t bg, bar, tab, tabEdge, tabOn, tabOnEdge, tabOnText, cell, cellEdge, btn, btnEdge;
     uint32_t text, dim, faint, good, warn, bad, accent;
-    uint8_t tabsBottom;
+    /* The status icons (clock, Wi-Fi, battery) sit on `bar`, which can be dark in a light
+     * theme: they have their own colours. */
+    uint32_t barText, barDim, barFaint, barGood, barWarn, barBad;
     uint8_t backdrop; /* SS_BACKDROP_* the map/items/quest panels sit on */
 } CcTheme;
 
 static const CcTheme kCcThemes[] = {
     { "SLATE", RGB(16, 20, 26), RGB(10, 13, 18), RGB(32, 40, 52), RGB(60, 74, 92), RGB(40, 112, 68),
       RGB(110, 200, 130), RGB(232, 236, 240), RGB(26, 32, 42), RGB(64, 80, 100), RGB(22, 56, 42),
-      RGB(70, 150, 100), RGB(232, 236, 240), RGB(140, 150, 166), RGB(84, 94, 110), RGB(120, 220, 130),
-      RGB(240, 200, 80), RGB(240, 110, 100), RGB(110, 200, 240), 0, SS_BACKDROP_SLATE },
+      RGB(70, 150, 100), RGB(232, 236, 240), RGB(140, 150, 166), RGB(104, 114, 130), RGB(120, 220, 130),
+      RGB(240, 200, 80), RGB(240, 110, 100), RGB(110, 200, 240), RGB(232, 236, 240), RGB(140, 150, 166),
+      RGB(104, 114, 130), RGB(120, 220, 130), RGB(240, 200, 80), RGB(240, 110, 100), SS_BACKDROP_SLATE },
     { "PARCHMENT", RGB(226, 212, 172), RGB(88, 60, 36), RGB(196, 176, 128), RGB(120, 92, 60), RGB(54, 112, 56),
-      RGB(24, 64, 28), RGB(244, 240, 220), RGB(242, 232, 200), RGB(150, 118, 76), RGB(70, 128, 70),
-      RGB(36, 78, 38), RGB(50, 38, 28), RGB(122, 96, 68), RGB(168, 146, 112), RGB(30, 120, 44),
-      RGB(160, 100, 14), RGB(176, 46, 36), RGB(36, 86, 156), 0, SS_BACKDROP_PARCHMENT },
+      RGB(24, 64, 28), RGB(244, 240, 220), RGB(242, 232, 200), RGB(150, 118, 76), RGB(214, 224, 176),
+      RGB(36, 78, 38), RGB(50, 38, 28), RGB(100, 76, 52), RGB(140, 116, 84), RGB(30, 120, 44),
+      RGB(160, 100, 14), RGB(176, 46, 36), RGB(36, 86, 156), RGB(244, 236, 214), RGB(210, 190, 150),
+      RGB(150, 118, 82), RGB(120, 210, 110), RGB(240, 190, 70), RGB(240, 110, 90), SS_BACKDROP_PARCHMENT },
     { "NIGHT GOLD", RGB(12, 16, 34), RGB(6, 8, 20), RGB(26, 34, 70), RGB(52, 66, 120), RGB(142, 104, 26),
       RGB(240, 200, 90), RGB(255, 246, 220), RGB(20, 26, 54), RGB(56, 70, 124), RGB(40, 50, 100),
-      RGB(110, 130, 210), RGB(236, 236, 246), RGB(140, 148, 180), RGB(76, 84, 120), RGB(120, 220, 150),
-      RGB(250, 210, 90), RGB(240, 110, 100), RGB(110, 190, 255), 0, SS_BACKDROP_NAVY },
+      RGB(110, 130, 210), RGB(236, 236, 246), RGB(140, 148, 180), RGB(106, 114, 156), RGB(120, 220, 150),
+      RGB(250, 210, 90), RGB(240, 110, 100), RGB(110, 190, 255), RGB(236, 236, 246), RGB(140, 148, 180),
+      RGB(106, 114, 156), RGB(120, 220, 150), RGB(250, 210, 90), RGB(240, 110, 100), SS_BACKDROP_NAVY },
     { "FOREST", RGB(14, 26, 18), RGB(8, 16, 10), RGB(28, 48, 32), RGB(56, 90, 60), RGB(60, 140, 70),
       RGB(150, 220, 140), RGB(240, 246, 230), RGB(22, 38, 26), RGB(60, 100, 66), RGB(40, 90, 50),
-      RGB(110, 180, 110), RGB(236, 240, 224), RGB(150, 170, 140), RGB(80, 100, 80), RGB(150, 230, 120),
-      RGB(240, 200, 80), RGB(240, 110, 100), RGB(120, 210, 230), 1, SS_BACKDROP_DARK },
+      RGB(110, 180, 110), RGB(236, 240, 224), RGB(150, 170, 140), RGB(116, 140, 116), RGB(150, 230, 120),
+      RGB(240, 200, 80), RGB(240, 110, 100), RGB(120, 210, 230), RGB(236, 240, 224), RGB(150, 170, 140),
+      RGB(116, 140, 116), RGB(150, 230, 120), RGB(240, 200, 80), RGB(240, 110, 100), SS_BACKDROP_DARK },
 };
 enum { CC_THEME_COUNT = (int)(sizeof(kCcThemes) / sizeof(kCcThemes[0])) };
 static const CcTheme* sCc = &kCcThemes[0];
+static uint8_t sCcTabsBottom; /* OPTIONS -> TABS: the tab bar below the content */
 
 void Port_SecondScreen_3DS_SetUiTheme(int theme) {
     sCc = &kCcThemes[theme >= 0 && theme < CC_THEME_COUNT ? theme : 0];
+}
+
+void Port_SecondScreen_3DS_SetUiTabsBottom(int bottom) {
+    sCcTabsBottom = bottom ? 1u : 0u;
 }
 
 /* For tools/ui-preview: the theme's name and the row a tab tap lands on. */
@@ -78,6 +89,9 @@ int Port_SecondScreen_3DS_UiTabCenterY(int height);
 #define CC_WARN        (sCc->warn)
 #define CC_BAD         (sCc->bad)
 #define CC_ACCENT      (sCc->accent)
+#define CC_BAR_TEXT    (sCc->barText)
+#define CC_BAR_DIM     (sCc->barDim)
+#define CC_BAR_FAINT   (sCc->barFaint)
 
 enum {
     CC_TAB_H = 24,     /* tab bar height; the content starts 2 px away from it */
@@ -86,15 +100,15 @@ enum {
     CC_CELL_H = 25,    /* name row + value row */
 };
 
-/* Where the tab bar and the content go for the current theme. */
+/* Where the tab bar and the content go (OPTIONS -> TABS). */
 static int32_t CcTabY(int32_t h) {
-    return sCc->tabsBottom ? h - CC_TAB_H : 0;
+    return sCcTabsBottom ? h - CC_TAB_H : 0;
 }
 static int32_t CcContentTop(void) {
-    return sCc->tabsBottom ? 0 : CC_TAB_H;
+    return sCcTabsBottom ? 0 : CC_TAB_H;
 }
 static int32_t CcContentBottom(int32_t h) {
-    return sCc->tabsBottom ? h - CC_TAB_H : h;
+    return sCcTabsBottom ? h - CC_TAB_H : h;
 }
 int Port_SecondScreen_3DS_UiTabCenterY(int height) {
     return CcTabY(height) + CC_TAB_H / 2;
@@ -149,11 +163,80 @@ static void CTextCentered(const SSurf* s, int32_t cx, int32_t y, uint32_t color,
 
 /* ---- boxes ---- */
 
-/* 1 px border, flat body, a 1 px lighter line under the top edge (mzm style). */
+/* One pixel of a box corner, (cx, cy) counted inward from the corner the
+ * flips name: the four corners are one drawing mirrored. */
+static void CCornerPixel(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h, int right, int bottom,
+                         int32_t cx, int32_t cy, uint32_t color) {
+    const int32_t px = right ? x + w - 1 - cx : x + cx;
+    const int32_t py = bottom ? y + h - 1 - cy : y + cy;
+    FillRect(s, px, py, px + 1, py + 1, color);
+}
+
+/* A filled rectangle whose corners follow `inset`: row i from the top and
+ * the bottom starts inset[i] pixels in (n rows); the rows between are full. */
+static void CRoundFill(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h, const uint8_t* inset, int n,
+                       uint32_t color) {
+    if (w <= 0 || h <= 0) return;
+    if (2 * n > h) n = h / 2;
+    for (int i = 0; i < n; i++) {
+        FillRect(s, x + inset[i], y + i, x + w - inset[i], y + i + 1, color);
+        FillRect(s, x + inset[i], y + h - 1 - i, x + w - inset[i], y + h - i, color);
+    }
+    FillRect(s, x, y + n, x + w, y + h - n, color);
+}
+
+/* The rounding of the message window's outer corners (DispMessageFrame,
+ * border_type 0): the curve the game draws its windows with. */
+static const uint8_t kCcRound[3] = { 3, 1, 1 };
+static const uint8_t kCcRoundInner[2] = { 2, 1 };
+static const uint8_t kCcRoundCore[1] = { 1 };
+
+/* Cells, buttons and tabs: the window's rounded corners at 1x in the theme's
+ * colours, a one-pixel edge following the curve and a softer line inside it
+ * (the pause menu chips' keyline and shade). Geometry only, no game pixels. */
 static void CBox(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t body, uint32_t edge) {
-    FillRect(s, x, y, x + w, y + h, edge);
-    FillRect(s, x + 1, y + 1, x + w - 1, y + h - 1, body);
-    FillRect(s, x + 1, y + 1, x + w - 1, y + 2, MixColor(body, edge, 96));
+    if (w < 8 || h < 8) {
+        FillRect(s, x, y, x + w, y + h, edge);
+        FillRect(s, x + 1, y + 1, x + w - 1, y + h - 1, body);
+        return;
+    }
+    CRoundFill(s, x, y, w, h, kCcRound, 3, edge);
+    CRoundFill(s, x + 1, y + 1, w - 2, h - 2, kCcRoundInner, 2, MixColor(body, edge, 96));
+    CRoundFill(s, x + 2, y + 2, w - 4, h - 4, kCcRoundCore, 1, body);
+}
+
+/* The message window's frame (DispMessageFrame, border_type 0) at 1x in the
+ * theme's colours: a five-pixel band rounded at the outer corners, a thin
+ * rim outside it and a dark line inside. For the windows that open over a
+ * panel (toast, busy, modal). */
+static void CWindow(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t body, uint32_t band) {
+    if (w < 12 || h < 12) {
+        CBox(s, x, y, w, h, body, band);
+        return;
+    }
+    const uint32_t rim = MixColor(band, body, 72);
+    const uint32_t inner = MixColor(band, body, 168);
+    /* The band with its rounded outer corners (rows 0..2 inset 3, 2, 1). */
+    FillRect(s, x + 3, y, x + w - 3, y + h, band);
+    FillRect(s, x + 1, y + 2, x + w - 1, y + h - 2, band);
+    FillRect(s, x + 2, y + 1, x + w - 2, y + h - 1, band);
+    FillRect(s, x, y + 3, x + w, y + h - 3, band);
+    /* Rim: the outermost pixel all round, following the rounding. */
+    FillRect(s, x + 4, y, x + w - 4, y + 1, rim);
+    FillRect(s, x + 4, y + h - 1, x + w - 4, y + h, rim);
+    FillRect(s, x, y + 4, x + 1, y + h - 4, rim);
+    FillRect(s, x + w - 1, y + 4, x + w, y + h - 4, rim);
+    for (int corner = 0; corner < 4; corner++) {
+        const int right = corner & 1, bottom = corner >> 1;
+        CCornerPixel(s, x, y, w, h, right, bottom, 3, 0, MixColor(rim, band, 128));
+        CCornerPixel(s, x, y, w, h, right, bottom, 0, 3, MixColor(rim, band, 128));
+        CCornerPixel(s, x, y, w, h, right, bottom, 2, 1, rim);
+        CCornerPixel(s, x, y, w, h, right, bottom, 1, 2, rim);
+    }
+    /* Inner line and body, the inner corner rounded by one pixel. */
+    FillRect(s, x + 5, y + 4, x + w - 5, y + h - 4, inner);
+    FillRect(s, x + 4, y + 5, x + w - 4, y + h - 5, inner);
+    FillRect(s, x + 5, y + 5, x + w - 5, y + h - 5, body);
 }
 
 /* A two-line cell: the name dimmed on top, the value under it in `valueColor`.
@@ -238,7 +321,7 @@ static void CIcon(const SSurf* s, int32_t cx, int32_t cy, const char* const* row
 }
 
 static void CStatus(const SSurf* s, int32_t ty) {
-    const uint32_t frame = CC_DIM, dim = CC_FAINT;
+    const uint32_t frame = CC_BAR_DIM, dim = CC_BAR_FAINT;
     const int32_t cy = ty + CC_TAB_H / 2;
     /* Battery: 15x8 shell and a 2x4 nub, far right. */
     const int32_t bx = s->w - 21, by = cy - 4;
@@ -250,7 +333,7 @@ static void CStatus(const SSurf* s, int32_t ty) {
     uint8_t level = 0, charging = 0;
     if (Platform3DS_BatteryStatus(&level, &charging)) {
         int32_t w = level * 11 / 5;
-        uint32_t fill = charging ? CC_GOOD : level <= 1 ? CC_BAD : level == 2 ? CC_WARN : CC_GOOD;
+        uint32_t fill = charging ? sCc->barGood : level <= 1 ? sCc->barBad : level == 2 ? sCc->barWarn : sCc->barGood;
         if (w > 0) FillRect(s, bx + 2, by + 2, bx + 2 + w, by + 6, fill);
         if (charging) {
             /* A lightning bolt over the battery, dark edge so it reads on any fill. */
@@ -264,7 +347,7 @@ static void CStatus(const SSurf* s, int32_t ty) {
                             FillRect(s, px - 1, py, px + 2, py + 1, CC_BAR);
                             FillRect(s, px, py - 1, px + 1, py + 2, CC_BAR);
                         } else {
-                            FillRect(s, px, py, px + 1, py + 1, CC_WARN);
+                            FillRect(s, px, py, px + 1, py + 1, sCc->barWarn);
                         }
                     }
                 }
@@ -285,7 +368,7 @@ static void CStatus(const SSurf* s, int32_t ty) {
     time_t t = time(NULL);
     struct tm* tm = gmtime(&t);
     if (tm) snprintf(buf, sizeof(buf), "%02d:%02d", tm->tm_hour, tm->tm_min);
-    CText(s, wx - 5 - CTextWidth(buf), cy - 3, CC_TEXT, buf);
+    CText(s, wx - 5 - CTextWidth(buf), cy - 3, CC_BAR_TEXT, buf);
 }
 
 /* What the status icons last showed: the tab bar is repainted when they change
@@ -313,7 +396,7 @@ static void Compact_PaintTabBar(const SSurf* s, TargetList* tl, int activeTab, i
     int n = CompactTabCount();
     int32_t ty = CcTabY(s->h);
     FillRect(s, 0, ty, s->w, ty + CC_TAB_H, CC_BAR);
-    FillRect(s, 0, sCc->tabsBottom ? ty : ty + CC_TAB_H - 1, s->w, sCc->tabsBottom ? ty + 1 : ty + CC_TAB_H,
+    FillRect(s, 0, sCcTabsBottom ? ty : ty + CC_TAB_H - 1, s->w, sCcTabsBottom ? ty + 1 : ty + CC_TAB_H,
              CC_TAB_EDGE);
     sCompactChromeKey = CompactChromeKey();
     CStatus(s, ty);
@@ -330,9 +413,24 @@ static void Compact_PaintTabBar(const SSurf* s, TargetList* tl, int activeTab, i
     /* The theme is picked in OPTIONS (THEME); the tab bar has no shortcut. */
 }
 
+/* The pause menu's parchment, slab and wells, where the shared screens ask
+ * for them (the quest lists and their wells): this screen's own background
+ * and boxes instead, so every tab is drawn the same way. */
+static void Compact_BoxPainter(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x, int32_t y,
+                               int32_t w, int32_t h, int kind) {
+    const SSurf surf = { pixels, bufW, bufH, stride };
+    switch (kind) {
+        case SS_BOX_BACKDROP: FillRect(&surf, x, y, x + w, y + h, CC_BG); break;
+        case SS_BOX_PLATE: CBox(&surf, x, y, w, h, CC_CELL, CC_CELL_EDGE); break;
+        default: CBox(&surf, x, y, w, h, MixColor(CC_CELL, CC_BG, 128), CC_TAB_EDGE); break;
+    }
+}
+
 /* The theme picked in the config, and its panel backdrop with it. */
 static void Compact_ApplyThemeFromConfig(void) {
+    Port_SecondScreenTheme_SetBoxPainter(Compact_BoxPainter);
     Port_SecondScreen_3DS_SetUiTheme(Port_Config_GetUiTheme());
+    Port_SecondScreen_3DS_SetUiTabsBottom(Port_Config_GetUiTabsBottom());
     /* The theme owns the panel backdrop; there is no separate option. */
     if (Port_Config_GetSecondScreenBackdrop() != sCc->backdrop) Port_Config_SetSecondScreenBackdrop(sCc->backdrop);
 }
@@ -342,6 +440,11 @@ static void Compact_NextTheme(void) {
     Port_Config_SetUiTheme(next);
     Port_SecondScreen_3DS_SetUiTheme(next);
     Port_Config_SetSecondScreenBackdrop(sCc->backdrop);
+}
+
+static void Compact_ToggleTabsBottom(void) {
+    Port_Config_SetUiTabsBottom(!sCcTabsBottom);
+    Port_SecondScreen_3DS_SetUiTabsBottom(!sCcTabsBottom);
 }
 
 /* ---- OPTIONS ---- */
@@ -412,8 +515,10 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
         int32_t x, w;
         CColumn(s->w, 4, 0, 1, &x, &w);
         CCell(s, tl, x, CRowY(3), w, CC_CELL_H, "THEME", sCc->name, CC_ACCENT, SS_ACT_THEME, 0);
+        CColumn(s->w, 4, 1, 1, &x, &w);
+        CCell(s, tl, x, CRowY(3), w, CC_CELL_H, "TABS", sCcTabsBottom ? "BOTTOM" : "TOP", CC_TEXT, SS_ACT_TABS, 0);
     }
-    CSettingCell(s, tl, 3, 1, 1, "SHOW FPS", SS_SET_SHOW_FPS);
+    CSettingCell(s, tl, 4, 0, 1, "SHOW FPS", SS_SET_SHOW_FPS);
     {
         int32_t x, w;
         CColumn(s->w, 4, 2, 2, &x, &w);
@@ -451,17 +556,12 @@ static void Compact_Toast(const char* fmt, ...) {
 
 static uint8_t sToastOnScreen;
 
-#if TMC3DS_DEBUG_TOOLS
 #include "ftp_server_3ds.h"
-#endif
 
-/* A notice that holds the toast while it lasts: a build arriving over FTP. */
+/* A notice that holds the toast while it lasts: a build arriving over FTP (the DEBUG tab's
+ * server, or the install-only one of a production build). */
 static const char* Compact_StandingNotice(void) {
-#if TMC3DS_DEBUG_TOOLS
     return FtpServer_Notice();
-#else
-    return NULL;
-#endif
 }
 
 static int Compact_ToastVisible(void) {
@@ -478,10 +578,11 @@ static void Compact_PaintToast(const SSurf* s) {
     if (notice) Compact_Toast("%s", notice);
     sToastOnScreen = (uint8_t)Compact_ToastVisible();
     if (!sToastOnScreen) return;
-    int32_t w = CTextWidth(sToast) + 12, h = 15;
+    /* The window's band is five pixels: three more around the text. */
+    int32_t w = CTextWidth(sToast) + 2 * 8, h = kUiGlyphH + 2 * 8;
     int32_t x = (s->w - w) / 2, y = CcContentBottom(s->h) - h - 4;
-    CBox(s, x, y, w, h, CC_BAR, CC_ACCENT);
-    CTextCentered(s, s->w / 2, y + 4, CC_TEXT, sToast);
+    CWindow(s, x, y, w, h, CC_BAR, CC_BAR_DIM);
+    CTextCentered(s, s->w / 2, y + 8, CC_BAR_TEXT, sToast);
 }
 
 /* ---- STATES: save states (save_state_3ds.h), as in ../mzm and ../sm-3ds ----
@@ -511,6 +612,36 @@ static int Compact_BusyNeedsPaint(void) {
     return Compact_BusyText() != NULL || sBusyOnScreen;
 }
 
+/* ---- install-only FTP (production builds with dev-ftp.txt, ftp_server_3ds.h) ----
+ * A bar over the bottom of every tab: what is serving, its address, and CANCEL, which stops it
+ * until the game is opened again. Taps under the bar go nowhere but CANCEL. */
+
+enum { DEVFTP_BAR_H = 36 };
+static uint8_t sDevFtpOnScreen;
+static char sDevFtpAddress[48];
+
+static int Compact_DevFtpNeedsPaint(void) {
+    if (!FtpServer_InstallOnly()) return sDevFtpOnScreen;
+    char address[48];
+    FtpServer_Address(address, sizeof(address));
+    return !sDevFtpOnScreen || strcmp(address, sDevFtpAddress) != 0;
+}
+
+static void Compact_PaintDevFtp(const SSurf* s, TargetList* tl) {
+    sDevFtpOnScreen = (uint8_t)FtpServer_InstallOnly();
+    if (!sDevFtpOnScreen) return;
+    FtpServer_Address(sDevFtpAddress, sizeof(sDevFtpAddress));
+    const int32_t y = CcContentBottom(s->h) - DEVFTP_BAR_H;
+    int kept = 0;
+    for (int i = 0; i < tl->n; ++i)
+        if (tl->t[i].y1 <= y) tl->t[kept++] = tl->t[i];
+    tl->n = kept;
+    CWindow(s, 2, y, s->w - 4, DEVFTP_BAR_H - 2, CC_BAR, CC_BAR_DIM);
+    CText(s, 12, y + 7, CC_WARN, "FTP - INSTALL ONLY");
+    CText(s, 12, y + 19, CC_BAR_TEXT, sDevFtpAddress);
+    CButton(s, tl, s->w - 12 - 72, y + 7, 72, 20, "CANCEL", CC_TEXT, SS_ACT_DEVFTP_CANCEL, 0);
+}
+
 /* Last in the paint: it takes every tap (the target list is emptied) and draws over the panel. */
 static void Compact_PaintBusy(const SSurf* s, TargetList* tl) {
     const char* text = Compact_BusyText();
@@ -520,14 +651,14 @@ static void Compact_PaintBusy(const SSurf* s, TargetList* tl) {
     const int32_t w = 156, h = 56;
     const int32_t x = (s->w - w) / 2, y = (s->h - h) / 2;
     FillRect(s, x - 2, y - 2, x + w + 2, y + h + 2, CC_BG);
-    CBox(s, x, y, w, h, CC_BAR, CC_ACCENT);
-    CTextCentered(s, s->w / 2, y + 14, CC_TEXT, text);
-    CTextCentered(s, s->w / 2, y + 30, CC_DIM, "PLEASE WAIT");
+    CWindow(s, x, y, w, h, CC_BAR, CC_BAR_DIM);
+    CTextCentered(s, s->w / 2, y + 14, CC_BAR_TEXT, text);
+    CTextCentered(s, s->w / 2, y + 30, CC_BAR_DIM, "PLEASE WAIT");
     /* A row of dots that fills and empties, so a frozen screen can be told from a slow one. */
     const int lit = (int)((sCompactTick / 2u) % 6u);
     for (int i = 0; i < 5; ++i) {
         const int32_t dx = s->w / 2 - 20 + i * 10;
-        FillRect(s, dx, y + 43, dx + 4, y + 47, i < lit ? CC_ACCENT : CC_TAB);
+        FillRect(s, dx, y + 43, dx + 4, y + 47, i < lit ? CC_BAR_TEXT : CC_BAR_FAINT);
     }
 }
 
@@ -857,10 +988,10 @@ static void CRunCell(const SSurf* s, TargetList* tl, int32_t x, int32_t y, int32
     CText(s, x + 4, y + 4, CC_DIM, name);
     CText(s, x + 4, y + 14, valueColor, value);
     int32_t bx = x + w - bw - 2, by = y + 2, bh = CC_CELL_H - 4;
-    CBox(s, bx, by, bw, bh, running ? CC_BAR : CC_BTN, running ? CC_BAD : CC_BTN_EDGE);
+    CBox(s, bx, by, bw, bh, running ? CC_BAR : CC_BTN, running ? sCc->barBad : CC_BTN_EDGE);
     int32_t cx = bx + bw / 2, cy = by + bh / 2;
     if (running) {
-        FillRect(s, cx - 3, cy - 3, cx + 4, cy + 4, CC_BAD);
+        FillRect(s, cx - 3, cy - 3, cx + 4, cy + 4, sCc->barBad);
     } else {
         for (int i = 0; i < 7; i++) FillRect(s, cx - 3 + i, cy - 3 + i / 2, cx - 2 + i, cy + 4 - i / 2, CC_GOOD);
     }
@@ -1090,8 +1221,8 @@ static void Compact_PaintModal(const SSurf* s, TargetList* tl, const char* title
     for (int32_t y = 0; y < s->h; y += 2) FillRect(s, 0, y, s->w, y + 1, CC_BG);
     const int32_t w = 260, h = 30 + nLines * 10 + 36;
     const int32_t x = (s->w - w) / 2, y = (s->h - h) / 2;
-    CBox(s, x, y, w, h, CC_CELL, CC_CELL_EDGE);
-    CTextCentered(s, s->w / 2, y + 8, CC_ACCENT, title);
+    CWindow(s, x, y, w, h, CC_CELL, CC_CELL_EDGE);
+    CTextCentered(s, s->w / 2, y + 9, CC_ACCENT, title);
     for (int i = 0; i < nLines; ++i) CTextCentered(s, s->w / 2, y + 24 + i * 10, CC_TEXT, lines[i]);
     const int32_t by = y + h - 28, bw = right ? (w - 12 - CC_GAP) / 2 : w - 8;
     CButton(s, tl, x + 4, by, bw, 24, left, CC_TEXT, leftAction, 0);
@@ -1114,25 +1245,41 @@ static void Compact_MapChip(const SSurf* s, const char* label, float cx, float c
     out[3] = (float)(y + h);
 }
 
-/* The A/B cell: its letter, the equipped item's icon and its ammo; tapping it
- * arms it for the next item tapped. */
+/* The box around the whole world map: the map is drawn over its inside. */
+static void Compact_MapFrame(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h) {
+    CBox(s, x, y, w, h, CC_CELL, CC_CELL_EDGE);
+}
+
+/* An item button's cell: its letter, the item's icon and its ammo; tapping it
+ * arms it for the next item tapped. `button` is 0 A, 1 B (the game's two
+ * equip slots), 2 X, 3 Y (the port's soft slots, port_softslots.h). */
+static const char* const kCcButtonNames[4] = { "A", "B", "X", "Y" };
+
+static uint8_t Compact_ButtonItem(const SecondScreenSnapshot* snap, int button) {
+    switch (button) {
+        case 0: return snap->equippedA;
+        case 1: return snap->equippedB;
+        default: return Port_SoftSlots_GetAssignment(button - 2);
+    }
+}
+
 static void Compact_EquipCell(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, int32_t x,
-                              int32_t y, int32_t w, int32_t h, int isA, int armed, uint32_t tick) {
-    const uint32_t pulse = armed ? ((tick / 12u) & 1u ? CC_WARN : CC_ACCENT) : CC_CELL_EDGE;
-    CBox(s, x, y, w, h, CC_CELL, pulse);
-    if (armed) FillRect(s, x + 1, y + 1, x + w - 1, y + h - 1, MixColor(CC_CELL, CC_WARN, 40));
-    CText(s, x + 4, y + 4, CC_DIM, isA ? "A" : "B");
-    uint8_t itemId = isA ? snap->equippedA : snap->equippedB;
+                              int32_t y, int32_t w, int32_t h, int button, int armed, uint32_t tick) {
+    /* The selected button: where the items tapped in ITEMS go. */
+    (void)tick;
+    CBox(s, x, y, w, h, armed ? MixColor(CC_CELL, CC_ACCENT, 48) : CC_CELL, armed ? CC_ACCENT : CC_CELL_EDGE);
+    CText(s, x + 4, y + 4, CC_DIM, kCcButtonNames[button]);
+    uint8_t itemId = Compact_ButtonItem(snap, button);
     if (itemId >= ITEMID_BOTTLE1 && itemId < ITEMID_BOTTLE1 + 4) {
         const uint8_t content = snap->bottleContents[itemId - ITEMID_BOTTLE1];
         if (content != 0) itemId = content;
     }
     if (itemId != 0) {
-        const int32_t ix = x + w - 36, iy = y + 3;
-        Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, 2, itemId);
-        DrawItemAmmoCount(s, snap, itemId, x + 4, y + h - 11, 1);
+        const int32_t ix = x + w - 4 - 16, iy = y + (h - 16) / 2;
+        Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, 1, itemId);
+        DrawItemAmmoCount(s, snap, itemId, x + 3, y + h - 11, 1);
     }
-    AddTarget(tl, (float)x, (float)y, (float)(x + w), (float)(y + h), SS_ACT_RING, (uint8_t)(isA ? 1 : 2));
+    AddTarget(tl, (float)x, (float)y, (float)(x + w), (float)(y + h), SS_ACT_RING, (uint8_t)(button + 1));
 }
 
 static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, int32_t x,
@@ -1141,11 +1288,23 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
     const int32_t ix = x + 3, iw = w - 6;
     int32_t cy = y + 2;
 
-    /* Hearts, eight to a row, the game's own sprites. */
+    /* Hearts as the HUD draws them: a row starts with the game's edge tile (the
+     * first heart's left outline), then up to eight hearts. */
     int maxHearts = snap->maxHealth / 8;
     if (maxHearts > 20) maxHearts = 20;
     if (maxHearts < 1) maxHearts = 1;
-    const int cols = iw / 8 < 8 ? iw / 8 : 8;
+    const SecondScreenThemeSprite* edge = Port_SecondScreenTheme_Get(SST_HEART_EDGE);
+    int32_t edgeInk = 0; /* the edge tile's inked columns, at its right */
+    if (edge && edge->px) {
+        for (int32_t c = 0; c < edge->w && edgeInk == 0; c++)
+            for (int32_t r = 0; r < edge->h; r++)
+                if (edge->px[r * edge->w + c] != 0) { /* BlitSprite's transparency */
+                    edgeInk = edge->w - c;
+                    break;
+                }
+    }
+    const int32_t hx = ix + edgeInk;
+    const int cols = (iw - edgeInk) / 8 < 8 ? (iw - edgeInk) / 8 : 8;
     const int quarters = snap->health == 1 ? 1 : snap->health / 2;
     const int full = quarters / 4, frac = quarters & 3;
     for (int i = 0; i < maxHearts; i++) {
@@ -1153,7 +1312,8 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
         if (i < full) state = SST_HEART_FULL;
         else if (i == full && frac != 0) state = SST_HEART_Q1 + (frac - 1);
         const SecondScreenThemeSprite* hs = Port_SecondScreenTheme_Get(state);
-        if (hs) BlitSprite(s, hs, ix + (i % cols) * 8, cy + (i / cols) * 8, 1);
+        if (edgeInk && i % cols == 0) BlitSprite(s, edge, hx - 8, cy + (i / cols) * 8, 1);
+        if (hs) BlitSprite(s, hs, hx + (i % cols) * 8, cy + (i / cols) * 8, 1);
     }
     cy += ((maxHearts + cols - 1) / cols) * 8 + 4;
 
@@ -1167,39 +1327,51 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
             const int32_t cx = ix + c * (cell + 1);
             FillRect(s, cx, cy, cx + cell, cy + 8, CC_CELL_EDGE);
             FillRect(s, cx + 1, cy + 1, cx + cell - 1, cy + 7, CC_BAR);
-            if (q) FillRect(s, cx + 1, cy + 1, cx + 1 + (cell - 2) * q / 4, cy + 7, CC_WARN);
+            if (q) FillRect(s, cx + 1, cy + 1, cx + 1 + (cell - 2) * q / 4, cy + 7, sCc->barWarn);
         }
-    } else if (snap->rActionFrame != 0) {
-        /* Words of ActionRButton (include/player.h). */
-        static const char* const kWords[] = { NULL,    "CANCEL", "DROP", "THROW", "READ", "CHECK", "OPEN",
-                                              "SPEAK", "GRAB",   "LIFT", "GROW",  "SHRINK", "ROLL" };
-        const char* word = snap->rActionId < (uint8_t)(sizeof(kWords) / sizeof(kWords[0]))
-                               ? kWords[snap->rActionId] : NULL;
-        char line[24];
-        snprintf(line, sizeof(line), "R %s", word ? word : "");
-        CBox(s, ix, cy, iw, 14, CC_BTN, CC_BTN_EDGE);
-        CTextCentered(s, ix + iw / 2, cy + 4, CC_TEXT, line);
+    } else {
+        /* The HUD's R button, always there as on the GBA's HUD, with the game's
+         * own label for what it does now (SPEAK, READ, LIFT..., in the game's
+         * language) laid out as the HUD has them: one element position, each
+         * sprite at its own piece offsets, the label's outline over the
+         * button's edge. The button sits at the sidebar's right edge whatever
+         * the label, which runs to its left. */
+        int32_t box[4];
+        if (Port_SecondScreenTheme_RButtonBounds(0, box)) {
+            Port_SecondScreenTheme_DrawRButtonAt(s->px, s->w, s->h, s->stride, ix + iw - box[2], cy - box[1],
+                                                 snap->rActionFrame);
+        } else {
+            const int32_t rw = 18, rx = ix + iw - rw;
+            CBox(s, rx, cy, rw, 14, CC_BTN, CC_BTN_EDGE);
+            CTextCentered(s, rx + rw / 2, cy + 4, CC_TEXT, "R");
+        }
     }
-    cy += 18;
+    cy += 20;
 
-    /* A and B, stacked. */
-    const int32_t cellH = 44;
-    Compact_EquipCell(s, snap, tl, ix, cy, iw, cellH, 1, armedRing == 1, tick);
-    Compact_EquipCell(s, snap, tl, ix, cy + cellH + 3, iw, cellH, 0, armedRing == 2, tick);
+    /* A, B, X and Y as the console has them: a diamond, X on top, Y left,
+     * A right, B below. */
+    {
+        const int selected = armedRing != 0 ? armedRing : 1; /* A until another is picked */
+        const int32_t cw = (iw - 2) / 2, ch = 30;
+        const int32_t mid = ix + (iw - cw) / 2;
+        Compact_EquipCell(s, snap, tl, mid, cy, cw, ch, 2, selected == 3, tick);
+        Compact_EquipCell(s, snap, tl, ix, cy + ch + 2, cw, ch, 3, selected == 4, tick);
+        Compact_EquipCell(s, snap, tl, ix + iw - cw, cy + ch + 2, cw, ch, 0, selected == 1, tick);
+        Compact_EquipCell(s, snap, tl, mid, cy + 2 * (ch + 2), cw, ch, 1, selected == 2, tick);
+    }
 
     /* Rupees, and keys in a dungeon, along the bottom. */
     const int dungeon = (snap->areaFlags & SECOND_SCREEN_AR_HAS_KEYS) != 0;
+    /* In the HUD's own counter font, three digits as the HUD pads them,
+     * yellow when the wallet is full. */
     int32_t by = y + h - (dungeon ? 34 : 17);
-    char num[16];
     const SecondScreenThemeSprite* wallet = Port_SecondScreenTheme_Get(SST_RUPEE_WALLET0 + (snap->walletType & 3));
     if (wallet) BlitSprite(s, wallet, ix, by, 1);
-    snprintf(num, sizeof(num), "%u", (unsigned)snap->rupees);
-    CText(s, ix + 20, by + 5, snap->walletMax != 0 && snap->rupees >= snap->walletMax ? CC_GOOD : CC_TEXT, num);
+    DrawHudNumber(s, ix + 18 + 3 * 8, by, 1, snap->rupees, 3, snap->walletMax != 0 && snap->rupees >= snap->walletMax);
     if (dungeon) {
         const SecondScreenThemeSprite* key = Port_SecondScreenTheme_Get(SST_KEY);
         if (key) BlitSprite(s, key, ix, by + 17, 1);
-        snprintf(num, sizeof(num), "%u", (unsigned)snap->dungeonKeys);
-        CText(s, ix + 20, by + 22, CC_TEXT, num);
+        DrawHudNumber(s, ix + 18 + 8, by + 17, 1, snap->dungeonKeys, 1, 0);
     }
 }
 
@@ -1222,9 +1394,11 @@ static void Compact_PaintItems(const SSurf* s, const SecondScreenSnapshot* snap,
     FillRect(s, (int32_t)rx0 - 1, (int32_t)ry0 - 2, (int32_t)rx1 + 1, (int32_t)ry1 + 2, CC_BG);
     int32_t gx, gy;
     const int32_t cell = Compact_GridCell(rx0, ry0, rx1, ry1, &gx, &gy);
-    int pulseSlot = -1;
-    if (armedRing == 1) pulseSlot = snap->equippedSlotA;
-    if (armedRing == 2) pulseSlot = snap->equippedSlotB;
+    /* The selected button stays selected (it is not a one-shot assignment),
+     * so nothing in the grid blinks for it. */
+    (void)armedRing;
+    const int pulseSlot = -1;
+    const uint8_t softX = Port_SoftSlots_GetAssignment(0), softY = Port_SoftSlots_GetAssignment(1);
     for (int slot = 0; slot < SECOND_SCREEN_ITEM_SLOTS; slot++) {
         const int32_t x = gx + (slot % 4) * (cell + CC_GAP), y = gy + (slot / 4) * (cell + CC_GAP);
         const bool equippedA = slot == snap->equippedSlotA, equippedB = slot == snap->equippedSlotB;
@@ -1245,9 +1419,15 @@ static void Compact_PaintItems(const SSurf* s, const SecondScreenSnapshot* snap,
         const int32_t ix = x + (cell - 16 * scale) / 2, iy = y + (cell - 16 * scale) / 2 - 2;
         Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, scale, iconId);
         DrawItemAmmoCount(s, snap, itemId, x + 2, y + cell - 10, 1);
-        if (equippedA || equippedB) {
-            CText(s, x + 3, y + 3, CC_ACCENT, equippedA ? "A" : "B");
-        }
+        /* Its buttons, A B X Y in that order, along the top. */
+        char letters[5];
+        int nl = 0;
+        if (equippedA) letters[nl++] = 'A';
+        if (equippedB) letters[nl++] = 'B';
+        if (itemId == softX) letters[nl++] = 'X';
+        if (itemId == softY) letters[nl++] = 'Y';
+        letters[nl] = 0;
+        if (nl) CText(s, x + 4, y + 4, CC_ACCENT, letters);
         AddTarget(tl, (float)x, (float)y, (float)(x + cell), (float)(y + cell), SS_ACT_ITEM, itemId);
     }
 }
@@ -1364,7 +1544,7 @@ static void Compact_PaintDungeonView(const SSurf* s, const SecondScreenSnapshot*
             char up[40];
             snprintf(up, sizeof(up), "%s", dname);
             CBox(s, (int32_t)rx0, top, (int32_t)(rx1 - rx0), 16, CC_BAR, CC_TAB_EDGE);
-            CTextCentered(s, (int32_t)(rx0 + rx1) / 2, top + 4, CC_TEXT, up);
+            CTextCentered(s, (int32_t)(rx0 + rx1) / 2, top + 4, CC_BAR_TEXT, up);
             top += 19;
         }
         const int8_t topFloor = snap->dungeonIdx < 7 ? kDungeonTopFloor[snap->dungeonIdx] : 2;

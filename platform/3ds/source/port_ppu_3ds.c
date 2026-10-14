@@ -1,6 +1,7 @@
 #include "port_ppu.h"
 
 #include "port_gba_mem.h"
+#include "port_hud_xy.h"
 #include "port_config.h"
 #include "port_collision_diagnostics.h"
 #include "port_hdma.h"
@@ -20,8 +21,9 @@
 #include "debug_log_3ds.h"
 #include "debug_perf_3ds.h"
 #include "debug_switches_3ds.h"
-#include "ftp_server_3ds.h"
 #endif
+#include "app_paths_3ds.h"
+#include "ftp_server_3ds.h"
 #include "platform_gpu_3ds.h"
 #include "top_view_3ds.h"
 #include "port_ppu_gpu_3ds.h"
@@ -30,8 +32,12 @@
 #include "ndsp_psg_offload.h"
 
 #include "virtuappu.h"
+#include "scene_pictures_3ds.h"
+#include "scene_rec_3ds.h"
 #include "cpu/mode1.h"
 #include "main.h"
+#include "entity.h"
+#include "manager.h"
 #include "map.h"
 #include "area.h"
 #include "screen.h"
@@ -44,6 +50,7 @@
 #include "vram.h"
 
 #include <stdbool.h>
+#include <unistd.h>
 #include <stdint.h>
 #include <errno.h>
 #include <stdio.h>
@@ -87,6 +94,12 @@ static uint64_t sPerfBottomTicks;
 static uint64_t sPerfTotalTicks;
 static uint64_t sPerfSamples;
 static uint64_t sPerfBottomSamples;
+/* The SD log's bottom line: paints shown, their paint time, and how long each
+ * took from being scheduled to being submitted (what a tap or a HUD change
+ * waits for). Maxima are since the last read. */
+static uint64_t sBottomWorkerScheduledTick, sBottomFrontScheduledTick;
+static uint64_t sBottomStatPaints, sBottomStatPaintTicks, sBottomStatPaintMax;
+static uint64_t sBottomStatLatencyTicks, sBottomStatLatencyMax;
 static uint64_t sPerfRenderMaxTicks;
 static uint64_t sPerfTopMaxTicks;
 /* Frequency buckets for the presentation span; thresholds are derived from the
@@ -134,6 +147,8 @@ static bool sGpuSnapshotValid;
 static uint64_t sTopDrawTicks;
 static uint64_t sTopBlitTicks;
 static uint16_t sGpuDispcntPerLine[MODE1_GBA_HEIGHT];
+/* The iris fade's WIN0 in view pixels (virtuappu_mode1_ws_win0_lines). */
+static uint16_t sWin0Lines[MODE1_GBA_HEIGHT * 2];
 static int32_t sGpuAffRefX[MODE1_GBA_HEIGHT];
 static int32_t sGpuAffRefY[MODE1_GBA_HEIGHT];
 static uint16_t
@@ -193,7 +208,8 @@ static TopFrameState SelectTopFrame(void) {
     const Port3DSFullViewMode requested = Port_Widescreen_3DSViewMode();
     if (requested == PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
         MODE1_GBA_WIDTH >= 400 && MODE1_GBA_HEIGHT >= 240 &&
-        Port_Widescreen_ShadowsLive()) {
+        (Port_Widescreen_ShadowsLive() || Port_Widescreen_CutsceneViewLive() || Port_Widescreen_TitleViewLive() ||
+         Port_Widescreen_FileSelectViewLive())) {
         state.width = 400;
         state.height = 240;
         state.validSourceWidth = 400;
@@ -225,6 +241,10 @@ static TopFrameState SelectTopFrame(void) {
     }
     return state;
 }
+
+/* The frame being built is the file select at 400x240 (Port_Widescreen_FileSelectViewLive): its four
+ * BGs in the middle, the cave's extension (PortPpuGpu3DS_SetIndexedPicture) as BG3 around them. */
+static bool sFileSelectFrame;
 
 static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     memset(view, 0, sizeof(*view));
@@ -265,10 +285,16 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     view->wsMsgX1 = virtuappu_mode1_ws_msg_x1;
     view->wsMsgY0 = virtuappu_mode1_ws_msg_y0;
     view->wsMsgY1 = virtuappu_mode1_ws_msg_y1;
-    view->bg3Repeat = virtuappu_mode1_bg3_repeat;
+    /* As mode1.c's repeat_full_view_overlay: in Full View BG3 (light rays, steam,
+     * clouds) covers the whole view, not just the native 240 columns. */
+    view->bg3Repeat = virtuappu_mode1_bg3_repeat || virtuappu_mode1_ws_full_view != 0;
+    view->bgRepeatMask = virtuappu_mode1_bg_repeat_mask;
+    view->pictureMask = virtuappu_mode1_bg1_picture != NULL ? 0x2u : sFileSelectFrame ? 0x8u : 0u;
+    view->bgNativeMask = sFileSelectFrame ? 0xFu : 0u;
     view->wsFullView = virtuappu_mode1_ws_full_view != 0;
     /* The software PPU's rule (mode1_bg3_native_bounds_active). */
     view->bg3HofsBase = virtuappu_mode1_bg3_hofs_base;
+    view->irisLines = virtuappu_mode1_ws_win0_lines;
     view->bg3NativeBounds = virtuappu_mode1_ws_full_view != 0 && virtuappu_mode1_bg3_hdma_native_bounds &&
                             (view->width > MODE1_GBA_BG_CLIP_X ||
                              (unsigned)virtuappu_mode1_frame_height() > MODE1_GBA_NATIVE_HEIGHT);
@@ -923,7 +949,22 @@ void Port_PPU_3DS_RenderBottomWorker(void) {
     sBottomWorkerLastTicks = Platform3DS_SystemTick() - startTick;
 }
 
+void Port_PPU_3DS_TakeBottomStats(uint64_t out[5]) {
+    out[0] = sBottomStatPaints;
+    out[1] = sBottomStatPaintTicks;
+    out[2] = sBottomStatPaintMax;
+    out[3] = sBottomStatLatencyTicks;
+    out[4] = sBottomStatLatencyMax;
+    sBottomStatPaintMax = 0;
+    sBottomStatLatencyMax = 0;
+}
+
 static void RecordBottomWorkerTiming(void) {
+    sBottomFrontScheduledTick = sBottomWorkerScheduledTick;
+    ++sBottomStatPaints;
+    sBottomStatPaintTicks += sBottomWorkerLastTicks;
+    if (sBottomWorkerLastTicks > sBottomStatPaintMax)
+        sBottomStatPaintMax = sBottomWorkerLastTicks;
     if (sFrameNumber < 120u)
         return;
     ++sPerfBottomSamples;
@@ -1128,9 +1169,19 @@ static void RecTick(int viewW, int viewH, bool hold, int mode) {
 }
 #endif
 
+static void PresentFrame(void);
+
+/* The X and Y HUD buttons' tiles live in OBJ VRAM only while the frame renders
+ * (port/port_hud_xy.h). */
 void Port_PPU_PresentFrame(void) {
     if (!sInitialized)
         return;
+    Port_HudXY_BeginRender();
+    PresentFrame();
+    Port_HudXY_EndRender();
+}
+
+static void PresentFrame(void) {
     ApplyUploadLayoutSwitch();
     PortPpuGpu3DS_FinishParityCheck();
     PortPpuGpu3DS_WriteFrameCapture(Port_PPU_3DS_LastDumpPrefix());
@@ -1210,10 +1261,33 @@ void Port_PPU_PresentFrame(void) {
      * Wide mode must extend them past x=240 just as Full View already does. */
     virtuappu_mode1_bg3_repeat = gMain.task == TASK_GAME &&
         gRoomControls.area == AREA_HYRULE_FIELD && gScreen.bg3.control == 0x1e05;
+    /* Scenes drawn wider than the GBA's screen: the portal cutscene's picture across the 400 view
+     * (the presenter covers what wraps), the title's light rays, and its forest from the extended
+     * picture (scene_pictures_3ds.c) as BG1. */
+    {
+        const bool wideFrame = sTopPresentMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
+        const bool title = wideFrame && Port_Widescreen_TitleViewLive();
+        virtuappu_mode1_bg_repeat_mask = wideFrame && Port_Widescreen_CutsceneViewLive() ? 0x2u : title ? 0x3u : 0u;
+        virtuappu_mode1_bg1_picture = title ? ScenePictures_TitleAbgr() : NULL; /* faded below if the CPU draws */
+        PortPpuGpu3DS_SetBg1Picture(title ? ScenePictures_Title555() : NULL, SCENE_TITLE_W, SCENE_TITLE_H);
+        if (!title && !Port_Widescreen_TitleWide()) ScenePictures_Release();
+        sFileSelectFrame = wideFrame && Port_Widescreen_FileSelectViewLive();
+        PortPpuGpu3DS_SetIndexedPicture(sFileSelectFrame ? ScenePictures_CaveIndices() : NULL, SCENE_CAVE_W,
+                                        SCENE_CAVE_H, SCENE_CAVE_FIRST_PALETTE);
+        if (gMain.task != TASK_FILE_SELECT) ScenePictures_ReleaseCave();
+    }
+    /* Only Vaati's appearing effect is placed on the native screen (BG3 drawn at an
+     * entity's screen position); the other BG3 HBlank effects (Minish Woods light
+     * rays, steam) are overlays that must cover the whole view. */
     virtuappu_mode1_bg3_hdma_native_bounds =
-        port_hdma_dest_overlaps(gIoMem + MODE1_IO_BG3HOFS, gIoMem + MODE1_IO_BG3VOFS + 2) != 0;
+        port_hdma_dest_overlaps(gIoMem + MODE1_IO_BG3HOFS, gIoMem + MODE1_IO_BG3VOFS + 2) != 0 &&
+        DeepFindEntityByID(MANAGER, VAATI_APPARATE_MANAGER) != NULL;
     /* BG3HOFS before any HBlank DMA step of this frame. */
     virtuappu_mode1_bg3_hofs_base = (int)((gIoMem[MODE1_IO_BG3HOFS] | (gIoMem[MODE1_IO_BG3HOFS + 1] << 8)) & 0x1ff);
+    /* The game's iris (WIN0 from an HBlank table: 8-bit, 160 lines) redrawn
+     * for the whole view; both renderers take WIN0 from here then. */
+    virtuappu_mode1_ws_win0_lines =
+        Port_Widescreen_Win0Lines(sTopPresentWidth, sTopPresentHeight, sWin0Lines) ? sWin0Lines : NULL;
 
     Platform3DS_Heartbeat();
     Platform3DS_SetStage(1);
@@ -1227,6 +1301,7 @@ void Port_PPU_PresentFrame(void) {
         if (parityFrame) {
             Platform3DS_MarkFrameDiscontinuity(
                 OLD3DS_FRAME_PACER_DISCONTINUITY_DUMP);
+            if (virtuappu_mode1_bg1_picture) virtuappu_mode1_bg1_picture = ScenePictures_TitleAbgrFaded();
             virtuappu_render_frame();
             PortPpuGpu3DS_CaptureParityReference(
                 sTopUpload, sTopUploadPitch, sTopPresentWidth, sTopPresentHeight);
@@ -1244,6 +1319,12 @@ void Port_PPU_PresentFrame(void) {
         virtuappu_mode1_prepare_frame(
             &virtuappu_registers, sGpuIoPerLine[0], sGpuDispcntPerLine,
             sGpuAffRefX, sGpuAffRefY, &frameView.frameDispcnt);
+        if (frameView.irisLines != NULL) {
+            /* Drawn as a mask over a windowless frame (PpuGpu3DSFrameView::irisLines). */
+            for (int line = 0; line < MODE1_GBA_HEIGHT; ++line)
+                sGpuDispcntPerLine[line] &= (uint16_t)~MODE1_DISP_WIN0_ON;
+            frameView.frameDispcnt &= (uint16_t)~MODE1_DISP_WIN0_ON;
+        }
         sGpuSnapshotValid = true;
         /* Claim the GPU frame first: preflight writes the vertex, index and
          * atlas buffers the previous frame may still be drawing from, so this
@@ -1295,7 +1376,12 @@ void Port_PPU_PresentFrame(void) {
     Platform3DS_SetStage(4);
     const uint64_t softwareStartTick = Platform3DS_SystemTick();
     if (holdTop) port_hdma_vblank_reset();
-    else if (!gpuReady) virtuappu_render_frame();
+    else if (!gpuReady) {
+        /* The CPU draws from PAL_RAM, faded by the game: so must the scene picture be (the GPU
+         * renderer fades its whole frame instead). Only when it draws: it costs a few ms. */
+        if (virtuappu_mode1_bg1_picture) virtuappu_mode1_bg1_picture = ScenePictures_TitleAbgrFaded();
+        virtuappu_render_frame();
+    }
     Platform3DS_SetStage(5);
     const uint64_t renderEndTick = Platform3DS_SystemTick();
 
@@ -1347,6 +1433,7 @@ void Port_PPU_PresentFrame(void) {
     }
 #if TMC3DS_DEBUG_TOOLS
     RecTick(topFrame.width, topFrame.height, holdTop, (int)topFrame.mode);
+    SceneRec_Tick((uint32_t)sFrameNumber);
 #endif
     const uint64_t topEndTick = Platform3DS_SystemTick();
 
@@ -1417,6 +1504,19 @@ void Port_PPU_PresentFrame(void) {
         ftpRetry = 0;
         FtpServer_Start();
     }
+#else
+    {
+        /* dev-ftp.txt in the data folder: the install-only server, so a new build can be sent
+         * over FTP to a production install (docs/debug-tools.md). Tried every ~2 s until Wi-Fi
+         * is up; never again after its CANCEL. */
+        static int devFtp = -1;
+        static unsigned ftpRetry = 120;
+        if (devFtp < 0) devFtp = access(TMC3DS_APP_DIR "/dev-ftp.txt", F_OK) == 0;
+        if (devFtp && !FtpServer_Running() && ++ftpRetry >= 120) {
+            ftpRetry = 0;
+            FtpServer_StartInstallOnly();
+        }
+    }
 #endif
 
     /* Every third presentation cost 2759 repaints in 8336 frames, each a
@@ -1440,14 +1540,20 @@ void Port_PPU_PresentFrame(void) {
     if (cadenceDue) {
         ++sBottomTick;
     }
-    const bool forcedUpdate = !sBottomReady || Port_SecondScreen_3DS_NeedsRefresh();
-    if (!sBottomWorkerPending && (forcedUpdate || cadenceDue)) {
+    bool forcedUpdate = !sBottomReady || Port_SecondScreen_3DS_NeedsRefresh();
+    if (!sBottomWorkerPending && (forcedUpdate || cadenceDue || sBottomSnapshotValid)) {
         SecondScreenSnapshot nextSnapshot;
         Port_SecondScreenState_Read(&nextSnapshot);
+        /* The HUD (the R prompt while Link runs, hearts, rupees) is painted as soon
+         * as the painter is free, not at the next cadence tick. */
+        if (!forcedUpdate && sBottomSnapshotValid &&
+            Port_SecondScreen_3DS_HudChanged(&sBottomWorkerSnapshot, &nextSnapshot))
+            forcedUpdate = true;
 
-        const bool snapshotChanged = Port_SecondScreen_3DS_SnapshotChangeNeedsRefresh(
+        const bool considered = forcedUpdate || cadenceDue; /* else only the HUD check above */
+        const bool snapshotChanged = considered && Port_SecondScreen_3DS_SnapshotChangeNeedsRefresh(
             &sBottomWorkerSnapshot, &nextSnapshot, sBottomSnapshotValid);
-        const bool animationRequired = Port_SecondScreen_3DS_NeedsPeriodicRefresh(
+        const bool animationRequired = considered && Port_SecondScreen_3DS_NeedsPeriodicRefresh(
             &nextSnapshot, sBottomTick, sBottomWorkerTick, 320, 240);
         const bool schedulePaint = BottomFrameState3DS_ShouldSchedulePaint(
             sBottomWorkerPending, forcedUpdate, cadenceDue, bottomChanged, snapshotChanged, animationRequired);
@@ -1470,6 +1576,7 @@ void Port_PPU_PresentFrame(void) {
             sBottomSnapshotValid = true;
             sBottomWorkerTick = sBottomTick;
             sBottomWorkerGeneration = 0;
+            sBottomWorkerScheduledTick = Platform3DS_SystemTick();
             if (Platform3DS_SubmitBottomWorker()) {
                 sBottomWorkerPending = true;
             } else {
@@ -1494,6 +1601,13 @@ void Port_PPU_PresentFrame(void) {
     if (PlatformGpu3DS_EndBottom(sBottomUploads[sBottomFrontBuffer], sBottomTextureDirty)) {
         if (sBottomTextureDirty) {
             sBottomTextureDirty = false;
+            if (sBottomFrontScheduledTick != 0) {
+                const uint64_t latency = Platform3DS_SystemTick() - sBottomFrontScheduledTick;
+                sBottomStatLatencyTicks += latency;
+                if (latency > sBottomStatLatencyMax)
+                    sBottomStatLatencyMax = latency;
+                sBottomFrontScheduledTick = 0;
+            }
             Port_SecondScreen_3DS_MarkSubmitted(sBottomBufferGeneration[sBottomFrontBuffer],
                                                 sBottomBufferInGame[sBottomFrontBuffer]);
         }

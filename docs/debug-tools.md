@@ -8,7 +8,8 @@ the plan for the rest is PLAN phase 1.
 
 Everything below exists only in a debug-tools build (the SD log and perf recorder
 code is compiled into every build, but nothing reaches it without the DEBUG tab;
-there is no button chord any more: upstream's L+R+A is gone):
+there is no button chord any more: upstream's L+R+A is gone). The one exception is the
+install-only FTP server of a production build (`dev-ftp.txt`, "FTP server" below):
 
 ```sh
 ./build_3ds.sh                                 # asks; debug is the default
@@ -59,7 +60,7 @@ blue: changed). None needs a restart.
 | VBLANK LOCK | `vblank_phase_lock` | ON / OFF | lock the presentation to the next vblank instead of a pending one |
 | STATIC QUAD | `gpu_static_quad` | ON / OFF | reuse the presenter's quad |
 | MAP SKIP | `bottom_map_skip` | ON / OFF | skip MAP-tab repaints that would draw the same picture |
-| BOTTOM CORE | `bottom_core` | CORE 0 / CORE 1 | where the bottom-screen painter runs; its thread is recreated before the next paint |
+| BOTTOM CORE | `bottom_core` | AUTO / CORE 0 / CORE 1 | where the bottom-screen painter runs (AUTO: core 1 on the Old 3DS, core 0 on the New 3DS); its thread is recreated before the next paint |
 | AUDIO CORE | `audio_core` | AUTO / CORE 0 / CORE 1 | where the audio refill thread runs; it is recreated at once (the queued buffers cover the gap) |
 | COMPACT UP | `compact_upload` | ON / OFF | smaller upload surfaces, Old 3DS only; taken at the start of the next frame |
 | CPU LIMIT | `app_cpu_limit` | AUTO / 80 / 70 / 50 / 30 % | the app's share of core 1 (the rest goes to GSP and the sysmodules); the cell shows the share granted |
@@ -83,6 +84,16 @@ and drops them). An FTP server left on starts again by itself, retrying every ~2
 Wi-Fi is up; tapping its button while it waits cancels it. The perf recorder and GPU CHECK
 are one-shot captures and always start off.
 
+Stopping it waits up to 3 s for the server thread (a link request waiting for the game gives up
+at once). A thread that does not end is left running
+(the cell says `STUCK, RESTART THE GAME` and no new server starts until the game is restarted):
+freeing it, or the network service under it, froze the game. `tmc3ds.log` (written straight to
+the SD card, so it survives switching the console off) records each stop (`ftp stop: server
+thread <what it was doing>`, `ftp stop: done`), a thread busy in one command for 30 s
+(`WATCHDOG: ftp server thread busy: command PEEK for 30.2 s`), and, when the main thread stops,
+what the server thread was doing (`WATCHDOG: main thread stopped at stage N ... (ftp server:
+...)`; stages 30-34 are the steps of the stop itself).
+
 - Anonymous: any user name and password.
 - `/` is the root of the SD card; the game's files are in
   `/3ds/Minish Cap 3DS/` (`debug/`, saves, `tmc3ds.ini`).
@@ -96,12 +107,32 @@ wget -r -nH --cut-dirs=3 ftp://<3ds-ip>:5000/3ds/Minish%20Cap%203DS/debug/   # t
 ```
 
 `SITE INSTALL <path>` installs a CIA of this game that is already on the SD card
-over the running game and relaunches into the new build (the FTP server comes back on with it).
+over the running game and relaunches into the new build 10 s later, through libctru's chainloader
+(jumping at once made the system loader crash out of memory, issue #4); the FTP server comes back
+on with it.
 `./build_3ds.sh --install IP` builds, uploads to
 `/3ds/Minish Cap 3DS/update/dev.cia` and installs in one go; the interactive menu
 offers it as "Install into the running game". Any unsaved progress is lost. While a
 `.cia` is being received and while it installs, the bottom screen says so
 (`RECEIVING NEW BUILD...`, then `INSTALLING NEW BUILD - GAME WILL RESTART`) on any tab.
+Keep `debug/` small: a listing of it with over a thousand files (old dumps and GPU checks) hung the
+server; fetch known names (`tmc-dump-NNNN-vram.bin`, `tmc-check-last.txt`) instead of listing.
+
+**Install-only server in a production build.** A production build has no DEBUG tab, so a new
+build could only be installed with FBI. If `dev-ftp.txt` (any content, empty is fine) is in
+`/3ds/Minish Cap 3DS/`, a production build starts a reduced server once Wi-Fi is up (it retries
+every ~2 s): still anonymous, but only `/3ds/Minish Cap 3DS/update/` can be listed, read or
+written (any other path answers `550 Not allowed.`; its parent folders can be entered to walk
+down to it), and the remote control (every `SITE` but INSTALL) answers `504`. So
+`./build_3ds.sh --install IP` works on it as on a debug build, with either build mode. The bottom
+screen shows a bar over every tab, `FTP - INSTALL ONLY` with the address and CANCEL; taps under
+the bar reach nothing else. CANCEL stops the server for the rest of the session (leave the game
+and open it again to get it back). A debug build ignores the file (it has the DEBUG tab's server).
+Create the file once, while a debug build has its FTP on:
+`curl -T /dev/null ftp://<ip>:5000/3ds/Minish%20Cap%203DS/dev-ftp.txt`. Delete it to turn it
+off. Anyone on the same network can send a CIA while the server runs, and the title-ID check
+only stops a CIA of *another* app (`cia/tmc3ds.rsf` is public): keep the file off on networks
+you do not trust. Players never see it and it is not in the release notes.
 
 Its thread runs on core 1 below the game's priority and sleeps on the network,
 so it costs nothing while idle; a transfer competes with the game for the SD
@@ -127,12 +158,19 @@ tools/tmc-link/tmc-link.py loadstate            # the newest save state; `loadst
 tools/tmc-link/tmc-link.py states               # number=area/room for each
 tools/tmc-link/tmc-link.py shot                 # /tmp/tmc-shot/top.png and bottom.png
 tools/tmc-link/tmc-link.py peek gRoomControls 16    # symbols from build-3ds/game/tmc-3ds.elf
+tools/tmc-link/tmc-link.py --elf ../wt/build-3ds/game/tmc-3ds.elf peek gHUD 8   # a build made elsewhere
 tools/tmc-link/tmc-link.py switch "FRAME SYNC"
 tools/tmc-link/tmc-link.py gpucheck             # next frame by both renderers: differing=N structural=N
+tools/tmc-link/tmc-link.py perf start / perf stop [DIR]   # the perf recorder; stop fetches the CSV
 tools/tmc-link/tmc-link.py poke gPpuGpu3DSRingDisable 0f   # bit per BG: draw it from quads again (00 = rings on)
 tools/tmc-link/tmc-link.py log                  # flush (MARK) and fetch the newest SD log
 tools/tmc-link/tmc-link.py run tools/tmc-link/examples/walk-left.txt
 ```
+
+Symbols are looked up in the ELF of `build-3ds/` in this checkout unless `--elf` names another
+(goes before the command, with `--ip`). It must be the ELF of the build the console is running:
+a build made in another worktree has other addresses, and `peek`/`poke` by symbol would read and
+write the wrong memory.
 
 Buttons are added to the real ones and counted in logic frames, so a held direction
 moves Link exactly as far each time. Touches, screenshots, dumps,
@@ -158,7 +196,10 @@ the phase that needed the tile). `ring digest` and `cells` (inside `maps`) are t
 change detection and cell updates. A `scene:` line follows: bands, vertices and quads of the last
 GPU frame, `ring why` per BG (0: drawn from its ring; 1 not wide / disabled, 2 message or HUD+shadow,
 3 control or mosaic or size, 4 bands disagree on the scroll column, 5 too many rows, 6 and 7 a ring
-could not be brought up to date), and the cells decoded and changed character chunks since boot. BUFFERED (default): lines collect in a 16 KB buffer, written when
+could not be brought up to date), and the cells decoded and changed character chunks since boot. A `bottom:` line
+gives the bottom screen's paints in those 5 s, their paint time (wall time on the painter thread, so it
+grows when that thread is starved) and the wait from a paint being scheduled to being submitted: what a
+tap or a HUD change waits for. BUFFERED (default): lines collect in a 16 KB buffer, written when
 it fills, on a mark, on a mode change, on stop and on exit. DIRECT: each line is
 written and flushed at once, so a hang cannot swallow the last lines.
 
@@ -195,13 +236,26 @@ and the worst frames with their parts.
 
 ## Frame recorder (SITE REC)
 
-For a glitch that lasts a few frames at a room change. `tmc-link.py rec` arms it: it keeps the
+For a glitch that lasts a few frames at a room change (on the Old 3DS the game drops to ~20 fps
+while it is armed: tell the owner if they are playing). `tmc-link.py rec` arms it: it keeps the
 last 24 frames of the top screen as shown (200x120), and when the room changes (or the HUD is hidden) records 36
 more and writes `debug/frames.bin`. A change of the HUD's hide flags (a cutscene taking the
 buttons away) starts the recording as well. `tmc-link.py recfetch [DIR]` waits for the file, deletes
 it on the console and writes `DIR/frames.png`, a contact sheet of the 60 frames, and prints
 each frame's view size, Full View mode and whether the top screen was being held. Read the
 sheet left to right, top to bottom.
+
+## Scene recorder (SITE SCENEREC)
+
+For a video of the top screen, full size (PLAN P1.6, after `../sm-3ds`): `tmc-link.py scenerec start [N]`
+keeps one presented frame in N (default 2: 30 fps) in a RAM ring as large as free memory allows
+with 8 MB left over (on the 2DS in a game about 90 frames, 3 s at N = 2; the New 3DS holds more);
+`tmc-link.py scenerec stop [DIR]` writes the ring to `debug/tmc-scene-NNNN.bin` at the next frame
+(the game stops while it does) and fetches it to DIR. `tools/scene-rec/decode.py REC.bin [OUTDIR]
+[--gif OUT.gif] [--first N] [--last N] [--crop X,Y,W,H] [--scale N]` writes the frames as PNG and,
+with `--gif`, an animated GIF at the rate they were taken. The file: a header (`SCN1`, frame count,
+400, 240, N), then per frame its number and 400x240 RGB565 in the framebuffer's order (columns from
+the left, each bottom to top). A capture costs a few ms a recorded frame.
 
 ## Screen dump
 

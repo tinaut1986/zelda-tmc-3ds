@@ -61,6 +61,17 @@ static C3D_Tex sAtlas;
 /* One view ring per background (port_ppu_gpu_3ds_model.h), sampled by the
  * batches whose `texture` field is 1 + the background. */
 static C3D_Tex sRingTex[PPU_GPU3DS_RING_COUNT];
+/* BG1 drawn from a picture (PortPpuGpu3DS_SetBg1Picture): made when one is set, freed when cleared. */
+static C3D_Tex sPictureTex;
+static const uint16_t* sPicturePixels;
+static bool sPictureCorrected;
+/* Or from palette indices (PortPpuGpu3DS_SetIndexedPicture): the indices in the texture's
+ * layout, and the palettes the texels were last made from. */
+static const uint8_t* sPictureIndices;
+static uint8_t* sPictureSwizzled;
+static unsigned sPictureFirstPalette, sPictureTileRows, sPictureTileCols;
+static uint16_t sPicturePalettes[64];
+static bool sPicturePalettesValid;
 static unsigned sBoundTexture;
 static C3D_Tex sOutputTexture;
 static C3D_RenderTarget* sOutputTarget;
@@ -86,6 +97,48 @@ static unsigned sParityWidth;
 static unsigned sParityHeight;
 /* The prepared frame's screen fade (PpuGpu3DSFrameView::fadeWeight/fadeLevel). */
 static uint8_t sFadeWeight, sFadeLevel;
+/* The prepared frame's iris mask (PpuGpu3DSFrameView::irisLines): quads of
+ * the backdrop colour outside each line's {left, right}, one per run of equal
+ * lines and side, appended after the frame's geometry and drawn in one call. */
+static size_t sIrisFirstIndex, sIrisIndexCount;
+static uint16_t sIrisColor;
+
+static void AppendIrisQuad(unsigned left, unsigned top, unsigned right, unsigned bottom, unsigned width,
+                           unsigned height) {
+    PpuGpu3DSVertex* quad = sVertices + sCommands.vertexCount;
+    const float x0 = 2.0f * (float)left / (float)width - 1.0f, x1 = 2.0f * (float)right / (float)width - 1.0f;
+    const float y0 = 1.0f - 2.0f * (float)top / (float)height, y1 = 1.0f - 2.0f * (float)bottom / (float)height;
+    quad[0] = (PpuGpu3DSVertex){ x0, y0, 0.0f, 0, 0 };
+    quad[1] = (PpuGpu3DSVertex){ x1, y0, 0.0f, 0, 0 };
+    quad[2] = (PpuGpu3DSVertex){ x1, y1, 0.0f, 0, 0 };
+    quad[3] = (PpuGpu3DSVertex){ x0, y1, 0.0f, 0, 0 };
+    sCommands.vertexCount += 4;
+    sIrisIndexCount += 6;
+}
+
+static void AppendIrisMask(const PpuGpu3DSFrameView* frame) {
+    sIrisIndexCount = 0;
+    if (frame->irisLines == NULL) return;
+    /* The static index pattern draws quad q from vertices 4q..4q+3 (indices 6q..). */
+    sCommands.vertexCount = (sCommands.vertexCount + 3u) & ~(size_t)3u;
+    sIrisFirstIndex = sCommands.vertexCount / 4u * 6u;
+    sIrisColor = (uint16_t)(frame->memory.bg_palette[0] & 0x7fffu);
+    unsigned first = 0;
+    for (unsigned line = 1; line <= frame->height; ++line) {
+        const uint16_t* a = &frame->irisLines[first * 2u];
+        if (line < frame->height && frame->irisLines[line * 2u] == a[0] && frame->irisLines[line * 2u + 1u] == a[1])
+            continue;
+        if (sCommands.vertexCount + 8u > PPU_GPU3DS_BUILD_VERTICES) break;
+        const unsigned left = a[0], right = a[1];
+        if (left >= right) {
+            AppendIrisQuad(0, first, frame->width, line, frame->width, frame->height);
+        } else {
+            if (left > 0) AppendIrisQuad(0, first, left, line, frame->width, frame->height);
+            if (right < frame->width) AppendIrisQuad(right, first, frame->width, line, frame->width, frame->height);
+        }
+        first = line;
+    }
+}
 /* Debug: poke 1 to skip the fade's full-screen quad (the picture then shows the
  * unfaded palettes), to time it (tmc-link.py poke gPpuGpu3DSFadeQuadDisable 01). */
 volatile uint8_t gPpuGpu3DSFadeQuadDisable;
@@ -97,6 +150,12 @@ void PortPpuGpu3DS_Shutdown(void) {
 
     if (sOutputTarget) C3D_RenderTargetDelete(sOutputTarget);
     if (sOutputTexture.data) C3D_TexDelete(&sOutputTexture);
+    if (sPictureTex.data) C3D_TexDelete(&sPictureTex);
+    memset(&sPictureTex, 0, sizeof(sPictureTex));
+    sPicturePixels = NULL;
+    free(sPictureSwizzled);
+    sPictureSwizzled = NULL;
+    sPictureIndices = NULL;
     if (sProgramInitialized) shaderProgramFree(&sProgram);
     if (sShader) DVLB_Free(sShader);
     for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring)
@@ -138,6 +197,103 @@ void PortPpuGpu3DS_Shutdown(void) {
     sProgram = (shaderProgram_s){ 0 };
     sAttributes = (C3D_AttrInfo){ 0 };
     sBuffers = (C3D_BufInfo){ 0 };
+}
+
+extern bool Port_Config_GetColorCorrection(void);
+
+/* The picture texture, the colour one or the indexed one, gone. */
+static void ReleasePicture(void) {
+    if (sPictureTex.data) C3D_TexDelete(&sPictureTex);
+    memset(&sPictureTex, 0, sizeof(sPictureTex));
+    sPicturePixels = NULL;
+    free(sPictureSwizzled);
+    sPictureSwizzled = NULL;
+    sPictureIndices = NULL;
+    sBoundTexture = UINT8_MAX;
+}
+
+static bool MakePictureTexture(void) {
+    if (!C3D_TexInit(&sPictureTex, PPU_GPU3DS_PICTURE_TEX_WIDTH, PPU_GPU3DS_PICTURE_TEX_HEIGHT, GPU_RGBA5551)) {
+        memset(&sPictureTex, 0, sizeof(sPictureTex));
+        return false;
+    }
+    memset(sPictureTex.data, 0, sPictureTex.size);
+    C3D_TexSetFilter(&sPictureTex, GPU_NEAREST, GPU_NEAREST);
+    C3D_TexSetWrap(&sPictureTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+    sBoundTexture = UINT8_MAX; /* rebind */
+    return true;
+}
+
+void PortPpuGpu3DS_SetIndexedPicture(const uint8_t* indices, unsigned width, unsigned height, unsigned firstPalette) {
+    if (indices == sPictureIndices && (indices == NULL || firstPalette == sPictureFirstPalette)) return;
+    if (sPictureIndices != NULL || indices != NULL) ReleasePicture();
+    if (indices == NULL || width > PPU_GPU3DS_PICTURE_TEX_WIDTH || height > PPU_GPU3DS_PICTURE_TEX_HEIGHT ||
+        firstPalette + 4u > 16u)
+        return;
+    sPictureSwizzled = calloc(PPU_GPU3DS_PICTURE_TEX_WIDTH * PPU_GPU3DS_PICTURE_TEX_HEIGHT, 1);
+    if (sPictureSwizzled == NULL || !MakePictureTexture()) {
+        ReleasePicture();
+        return;
+    }
+    /* In the texture's layout (8x8 Morton tiles, tile rows from the top, as the rings), so the
+     * texels are remade by one walk over the tiles the picture covers. */
+    for (unsigned y = 0; y < height; ++y)
+        for (unsigned x = 0; x < width; ++x)
+            sPictureSwizzled[((y >> 3) * (PPU_GPU3DS_PICTURE_TEX_WIDTH >> 3) + (x >> 3)) * 64u +
+                             PpuGpu3DS_MortonIndex(x & 7u, y & 7u)] = indices[y * width + x];
+    sPictureIndices = indices;
+    sPictureFirstPalette = firstPalette;
+    sPictureTileRows = (height + 7u) >> 3;
+    sPictureTileCols = (width + 7u) >> 3;
+    sPicturePalettesValid = false;
+}
+
+/* The indexed picture's texels from the palettes the frame is drawn with (unfaded under a GPU
+ * fade, as the tiles), when they or the colour correction changed. Run once the GPU frame is
+ * claimed, as the atlas's writes are. */
+static bool RefreshIndexedPicture(const PpuGpu3DSFrameView* frame) {
+    if (sPictureIndices == NULL || sPictureTex.data == NULL) return true;
+    const uint16_t* palettes = frame->memory.bg_palette + sPictureFirstPalette * 16u;
+    const bool corrected = Port_Config_GetColorCorrection();
+    if (sPicturePalettesValid && corrected == sPictureCorrected &&
+        memcmp(palettes, sPicturePalettes, sizeof(sPicturePalettes)) == 0)
+        return true;
+    memcpy(sPicturePalettes, palettes, sizeof(sPicturePalettes));
+    sPictureCorrected = corrected;
+    sPicturePalettesValid = true;
+    uint16_t colours[64];
+    for (unsigned i = 0; i < 64; ++i) colours[i] = (i & 15u) ? PpuGpu3DS_PackRgba5551(palettes[i], true) : 0;
+    uint16_t* texels = (uint16_t*)sPictureTex.data;
+    const size_t rowTexels = (size_t)(PPU_GPU3DS_PICTURE_TEX_WIDTH >> 3) * 64u;
+    const size_t used = (size_t)sPictureTileCols * 64u;
+    for (unsigned row = 0; row < sPictureTileRows; ++row) {
+        const uint8_t* in = sPictureSwizzled + row * rowTexels;
+        uint16_t* out = texels + row * rowTexels;
+        for (size_t i = 0; i < used; ++i) out[i] = in[i] ? colours[in[i] & 63u] : 0;
+    }
+    return Platform3DS_CleanDataCache(texels, sPictureTileRows * rowTexels * sizeof(uint16_t));
+}
+
+void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsigned height) {
+    const bool corrected = Port_Config_GetColorCorrection();
+    if (sPictureIndices != NULL) {
+        if (gbaPixels == NULL) return; /* the indexed picture is not this one's to clear */
+        ReleasePicture();
+    }
+    if (gbaPixels == sPicturePixels && (gbaPixels == NULL || corrected == sPictureCorrected)) return;
+    ReleasePicture();
+    if (gbaPixels == NULL || width > PPU_GPU3DS_PICTURE_TEX_WIDTH || height > PPU_GPU3DS_PICTURE_TEX_HEIGHT ||
+        !MakePictureTexture())
+        return;
+    /* 8x8 Morton tiles, tile rows from the top (v = 1), as the rings are laid out. */
+    uint16_t* texels = (uint16_t*)sPictureTex.data;
+    for (unsigned y = 0; y < height; ++y)
+        for (unsigned x = 0; x < width; ++x)
+            texels[((y >> 3) * (PPU_GPU3DS_PICTURE_TEX_WIDTH >> 3) + (x >> 3)) * 64u +
+                   PpuGpu3DS_MortonIndex(x & 7u, y & 7u)] = PpuGpu3DS_PackRgba5551(gbaPixels[y * width + x], gbaPixels[y * width + x] != 0);
+    C3D_TexFlush(&sPictureTex);
+    sPicturePixels = gbaPixels;
+    sPictureCorrected = corrected;
 }
 
 bool PortPpuGpu3DS_Init(void) {
@@ -421,6 +577,12 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
         PpuGpu3DS_CacheClearDirty(sCache);
     Platform3DS_SetStage(23);
     }
+    if ((frame->pictureMask & 0x8u) && !RefreshIndexedPicture(frame)) {
+        sCommands.vertexCount = 0;
+        sCommands.indexCount = 0;
+        sCommands.batchCount = 0;
+        return FinishPreflight(false, startTick);
+    }
     for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring) {
         size_t offset, bytes;
         if (!PpuGpu3DS_RingTakeDirty(sCache, ring, &offset, &bytes)) continue;
@@ -438,7 +600,10 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
      * from last frame is only re-flushed when it sits between two that were
      * not, which costs bytes rather than calls. */
     Platform3DS_SetStage(24);
+    const size_t irisFirstVertex = sCommands.vertexCount;
+    AppendIrisMask(frame);
     size_t geometryFirstVertex = sCommands.dynamicFirstVertex;
+    if (sIrisIndexCount != 0 && irisFirstVertex < geometryFirstVertex) geometryFirstVertex = irisFirstVertex;
     size_t geometryFirstIndex = sCommands.dynamicFirstIndex;
     for (unsigned bg = 0; bg < 4u; ++bg) {
         if ((sCommands.mapDirtyMask & (1u << bg)) == 0) continue;
@@ -651,7 +816,9 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
     }
     if (batch->texture != sBoundTexture) {
         sBoundTexture = batch->texture;
-        C3D_TexBind(0, batch->texture == 0 ? &sAtlas : &sRingTex[batch->texture - 1u]);
+        C3D_TexBind(0, batch->texture == 0                            ? &sAtlas
+                       : batch->texture == PPU_GPU3DS_PICTURE_TEXTURE ? &sPictureTex
+                                                                      : &sRingTex[batch->texture - 1u]);
     }
     SetBatchOffset(batch->offsetX, batch->offsetY);
     const u32 yOffset = sViewportOffset;
@@ -839,6 +1006,27 @@ bool PortPpuGpu3DS_DrawPrepared(void) {
         else
             C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_COLOR);
         DrawBatch(batch);
+    }
+
+    /* The iris (PpuGpu3DSFrameView::irisLines): the backdrop outside the circle,
+     * before the fade quad so a fade darkens it as PAL_RAM's backdrop was. */
+    if (sIrisIndexCount != 0) {
+        for (int stage = 0; stage < 3; ++stage)
+            C3D_TexEnvInit(C3D_GetTexEnv(stage));
+        C3D_TexEnv* env = C3D_GetTexEnv(0);
+        const u32 r = sIrisColor & 31u, g = (sIrisColor >> 5u) & 31u, b = (sIrisColor >> 10u) & 31u;
+        C3D_TexEnvSrc(env, C3D_Both, GPU_CONSTANT, GPU_CONSTANT, GPU_CONSTANT);
+        C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+        C3D_TexEnvColor(env, ((r << 3u) | (r >> 2u)) | (((g << 3u) | (g >> 2u)) << 8u) |
+                                     (((b << 3u) | (b >> 2u)) << 16u) | 0xff000000u);
+        C3D_BlendingColor(0);
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+        C3D_AlphaTest(false, GPU_ALWAYS, 0);
+        C3D_StencilTest(false, GPU_ALWAYS, 0, 0xff, 0);
+        C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_COLOR);
+        SetBatchOffset(0.0f, 0.0f);
+        SetScissorCached(0, yOffset, sPreparedWidth, yOffset + sPreparedHeight);
+        C3D_DrawElements(GPU_TRIANGLES, (int)sIrisIndexCount, C3D_UNSIGNED_SHORT, sIndices + sIrisFirstIndex);
     }
 
     /* A uniform screen fade (docs/gpu-fade.md): the picture above was drawn from

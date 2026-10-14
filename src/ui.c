@@ -18,6 +18,10 @@
 #include "port_offset_remap.h"
 #include "port_widescreen.h"
 #endif
+#ifdef TMC_3DS
+#include "port_hud_xy.h"
+#include "port_softslots.h"
+#endif
 
 extern void sub_0805ECEC(u32, u32, u32, u32);
 extern u32 sub_08000E44(u32);
@@ -61,6 +65,11 @@ UIElement* FindUIElement(u32);
 void sub_0801CAD0(UIElement*);
 void sub_0801CAB8(UIElement*, Frame*);
 void EraseChargeBar(void);
+
+#ifdef TMC_3DS
+#define HUD_XY_STEP 12        /* half the A-B distance of the game's layout */
+#define HUD_XY_DIAMOND_Y 0x2a /* the middle row of the diamond (A and Y) */
+#endif
 
 static s16 HudButtonTargetX(u32 type) {
     s16 x = (s16)gHUD.buttonX[type];
@@ -210,6 +219,82 @@ void DrawUIElements(void) {
     }
 }
 
+#ifdef TMC_3DS
+/* P2.6: X and Y (the port's soft slots, port_softslots.c) beside A and B in the
+ * console's diamond, drawn like the game's own: the A bubble with the letter
+ * changed and the item's icon over it (port/port_hud_xy.h for their tiles). */
+static u32 HudXYItem(int slot) {
+    u32 itemId = Port_SoftSlots_GetAssignment(slot);
+    if (itemId == 0 || GetInventoryValue(itemId) == 0) {
+        return 0;
+    }
+    if (ItemIsBottle(itemId)) {
+        itemId = gSave.stats.bottles[itemId - ITEM_BOTTLE1];
+    }
+    return itemId < 128 ? itemId : 0;
+}
+
+static void DrawHudXYButton(unsigned slot, s16 x, s16 y) {
+    const UIElementDefinition* button = &gUIElementDefinitions[UI_ELEMENT_BUTTON_A];
+    const UIElementDefinition* item = &gUIElementDefinitions[UI_ELEMENT_ITEM_A];
+    const u32 itemId = HudXYItem(slot);
+    u32 first;
+
+    gOamCmd.x = x;
+    gOamCmd.y = y;
+    if (itemId != 0 && gSpriteAnimations_322[itemId] != NULL) {
+        const Frame* frame = gSpriteAnimations_322[itemId];
+        const SpritePtr* sprite = Port_GetSpritePtr(item->spriteIndex);
+        int count = -1;
+        u32 max = 1;
+        switch (itemId) {
+            case 7:
+            case 8:
+                count = gSave.stats.bombCount;
+                max = gBombBagSizes[gSave.stats.bombBagType];
+                break;
+            case 9:
+            case 10:
+                count = gSave.stats.arrowCount;
+                max = gQuiverSizes[gSave.stats.quiverType];
+                break;
+        }
+        if (sprite != NULL && sprite->frames != NULL && sprite->ptr != NULL &&
+            sprite->frames[frame->index].numTiles <= PORT_HUD_XY_ICON_MAX_TILES) {
+            const SpriteFrame* tiles = &sprite->frames[frame->index];
+            first = gOAMControls.updated;
+            gOamCmd._4 = item->unk_0;
+            gOamCmd._6 = item->unk_2;
+            gOamCmd._8 = ((count >= 0 && (u32)count >= max) ? 4 : 3) << 12 | PORT_HUD_XY_ICON_TILE(slot);
+            DrawDirect(item->spriteIndex, frame->index);
+            Port_HudXY_AddIcon(slot, first, gOAMControls.updated, (const u8*)sprite->ptr + tiles->firstTileIndex * 0x20,
+                               tiles->numTiles, count);
+        }
+    }
+    first = gOAMControls.updated;
+    gOamCmd._4 = button->unk_0;
+    gOamCmd._6 = button->unk_2;
+    gOamCmd._8 = PORT_HUD_XY_BUBBLE_TILE(slot);
+    DrawDirect(button->spriteIndex, 0);
+    Port_HudXY_AddBubble(slot, first, gOAMControls.updated);
+}
+
+static void DrawHudXY(void) {
+    /* InitUI lays out the diamond on every room load; a save state written with
+     * the old side-by-side layout gets it here, and A/B slide into place. */
+    gHUD.buttonY[0] = HUD_XY_DIAMOND_Y;
+    gHUD.buttonX[1] = 0xd0 - HUD_XY_STEP;
+    gHUD.buttonY[1] = HUD_XY_DIAMOND_Y + HUD_XY_STEP;
+    const UIElement* a = FindUIElement(UI_ELEMENT_BUTTON_A);
+    if (a == NULL || a->unk_0_1 != 1) {
+        return;
+    }
+    /* They follow A: its Wide anchor, and its slide off the top for messages. */
+    DrawHudXYButton(0, a->x - HUD_XY_STEP, a->y - HUD_XY_STEP);
+    DrawHudXYButton(1, a->x - 2 * HUD_XY_STEP, a->y);
+}
+#endif
+
 #ifdef PC_PORT
 /* The gameplay-view face of DrawUIElements, suppressible by the
  * hide_top_hud runtime flag. Every renderer of the live gameplay frame
@@ -223,6 +308,9 @@ void DrawUIElementsGameplay(void) {
     extern bool Port_Config_GetHideTopHud(void);
     if (!Port_Config_GetHideTopHud()) {
         DrawUIElements();
+#ifdef TMC_3DS
+        DrawHudXY();
+#endif
     }
 }
 #endif
@@ -349,6 +437,14 @@ void InitUI(bool32 keepHealthAndRupees) {
     gHUD.buttonY[0] = 0x1c;
     gHUD.buttonY[1] = 0x1c;
     gHUD.buttonY[2] = 0xe;
+#ifdef TMC_3DS
+    /* A, B, X and Y as the console's diamond (P2.6): A keeps its column, B goes
+     * below between A and Y, X above; Y and X are drawn from A (DrawHudXY). The
+     * diamond sits under R and its label. */
+    gHUD.buttonY[0] = HUD_XY_DIAMOND_Y;
+    gHUD.buttonX[1] = 0xd0 - HUD_XY_STEP;
+    gHUD.buttonY[1] = HUD_XY_DIAMOND_Y + HUD_XY_STEP;
+#endif
     // TODO why is this array cleared again? Is it filled by the function calls in the mean time?
     MemClear(gHUD.elements, sizeof(gHUD.elements));
     CreateUIElement(UI_ELEMENT_TEXT_R, 9);
@@ -866,6 +962,14 @@ void ButtonUIElement_Action1(UIElement* element) {
 
     if (element->type2 == 0 && (((gHUD.hideFlags >> element->type) & 1) || (gMessage.state & MESSAGE_ACTIVE) != 0)) {
         y = (s16)gHUD.buttonY[element->type] - 0x28;
+#ifdef TMC_3DS
+        /* The diamond sits lower than the game's A/B row (0x1c): hide every
+         * button as far up as A/B went, or B, Y and the bottom of A stay on
+         * screen through a message. X (above A) follows A off the top. */
+        if (y > 0x1c - 0x28) {
+            y = 0x1c - 0x28;
+        }
+#endif
     } else {
         y = (s16)gHUD.buttonY[element->type];
     }

@@ -14,17 +14,13 @@ change (what goes where: the table in `CLAUDE.md`).
   audio offload, an updater, a quick memory dump (L+R+A) and an experimental New 3DS
   "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors; the 2x indoor zoom is gone, see the decisions log).
 
-## Status (2026-10-12)
+## Status (2026-10-14)
 
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.1.1` (on origin). Published: **`v0.1.0`** (2026-10-11, **beta**,
-not on `main`; GitHub release with the CIA and QR, the 3DSX asset deleted afterwards): the fork
-setup, the compact bottom screen with themes, FRAMES, the DEBUG tab tools and the GPU renderer on
-both models (branches `chore/fork-setup`, `feat/compact-ui`, `feat/debug-tools`, merged into
-`release/v0.1.0` before the tag; none of it checked on the console yet). `main` is still upstream's
-v2.2-E1: nothing stable published.
+**Release line:** `release/v0.1.3` (on origin). Published: **`v0.1.2`** (2026-10-13, beta),
+`v0.1.1` (2026-10-12, **stable**, merged into `main`) and `v0.1.0` (2026-10-11, beta).
 
 **Branches:**
 
@@ -46,33 +42,84 @@ v2.2-E1: nothing stable published.
 | `chore/debug-sm3ds-style` (cut from `perf/full-view-old3ds`, needs its c3fbc8f..9dbf7cd for the console) | upstream's debug options out, sm-3ds style in: L+R+A gone (debug builds only now), SCREEN DUMP numbered `debug/tmc-dump-NNNN-*` and deferred to the frame boundary, LOAD STATE and `port_dump_state_3ds.c` out (STATES tab), GPU CHECK writes `tmc-check-NNNN-*`, FRAME LOG and the TMC_3DS_DIAGNOSTICS blocks out, SITE INSTALL refused 15 s after a dump (issue #4) | builds (debug, production, UI preview); not installed on the console yet (installs paused while issue #4 is looked at) | _(merged into `release/v0.1.1` 2026-10-12: checked on the 2DS by Claude, build debug and production)_
 | `perf/palette-anim-tile-cache` (cut from `perf/full-view-old3ds`) | issue #3, the dialogue fade-in in the castle garden (28 fps): ring cells copy an identical cell decoded earlier in the frame; **uniform screen fades on the GPU** (`docs/gpu-fade.md`: unfaded palettes + one blended quad, `src/` untouched so save states survive); perf recorder rows with the builder's counters | on the 2DS by Claude over the link: fade windows 28 -> 47-54 fps, no tile decoded during a fade (cells 0), 387/387 fades recognised; GPU CHECK still shows large structural differences on some fade frames (I=256, cause not found yet: the console went off the network before the new parity log line could be read). Not checked by the owner | _(merged into `release/v0.1.1` 2026-10-12: fade on the GPU checked on the 2DS, with fix/fullscreen-quad-corners)_
 | `feat/port-ui-language` (cut from `release/v0.1.1`) | the port's own text (bottom screen, updater) follows the language chosen in-game: EN/FR/DE/ES/IT, `port/port_text_i18n.c`; accents fall back to the plain letter when the font lacks them | builds; not checked on the console (EU ROM: accents, widths of the longer FR/DE/ES/IT strings) |
+| `fix/fullview-room-hold` (cut from `release/v0.1.2`) | Full View through the fade-in of an area change: no 266x160 frames before the 400x240 view, the fade-in from white visible again | on the 2DS by Claude over the link (castle garden <-> 03/06, both ways, frame recorder and view log) | _(merged into `release/v0.1.2` 2026-10-13: checked by the owner)_ |
+| `fix/theme-contrast` (cut from `release/v0.1.2`) | bottom-screen themes readable: own colours for what sits on the tab bar (clock, battery, Wi-Fi, toast, busy window), PARCHMENT buttons light; `tools/ui-preview` builds again | on the 2DS by Claude (screenshots of MAP and STATES in PARCHMENT); the other themes only in `tools/ui-preview` | _(merged into `release/v0.1.2` 2026-10-13: checked by the owner)_ |
+| `fix/ftp-stop-freeze` (cut from `release/v0.1.2`) | issue #9: stopping the FTP server froze the game (socExit with a client connected); stop, link waits and polls made safe, stop and watchdog logged in `tmc3ds.log` | on the 2DS by Claude and the owner (stop during a link request, stop with an idle client) | _(merged into `release/v0.1.2` 2026-10-13; the same fix merged into `../mzm` `release/v0.7.7` and `../sm-3ds` `release/v0.6.6`, not run in those games yet)_ |
+| `fix/updater-audio` (cut from `release/v0.1.2`) | the update check broke up the sound on the Old 3DS: the updater worker one priority below the game thread instead of at the audio worker's | checked by the owner on the 2DS: no dropouts during a check | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `feat/game-style-windows` (cut from `release/v0.1.2`) | the bottom screen's own menu style in every tab: cells, buttons and tabs with the game windows' rounded corners at 1x in the theme's colours, toasts / busy / modals in the message window's frame, the world map without the stone frame (its own box, Link's head as the marker), the quest lists' and wells' slab and stone through the same boxes (`Port_SecondScreenTheme_SetBoxPainter`) | on the 2DS by Claude (screenshots of every tab, both map views); the quest sub-lists (kinstones, techniques) not seen: the save on the console has neither | _(merged into `release/v0.1.2` 2026-10-13 on the owner's word)_ |
+| `fix/fullview-border-scroll` (cut from `release/v0.1.2`) | issue #11: a room-border scroll keeps Full View (400x240 snapshot of the outgoing room, the scroll ends on the 400x240 view's edge, the view carried across the room change) instead of dropping to 266x160 | checked by the owner and by Claude on the 2DS, Hyrule Field 03/06 <-> 03/05 (right and left: every recorded frame 400x240); up and down not tried yet | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `feat/sidebar-game-hud` (cut from `release/v0.1.2`) | P2.5: X/Y (and ZL/ZR) fire soft-slot items on 3DS; the sidebar's A/B/X/Y diamond with a selected button; R always shown with the game's label over it; rupees/keys in the HUD font | checked by the owner on the 2DS (X/Y with sword and shield: the only items the save has) | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/light-rays-full-view` (cut from `release/v0.1.2`) | the Minish Woods light rays in Full View: BG3 anchored to the view's right edge (they started mid-view and were cut at x=240 on the GPU renderer); BG3 in Full View drawn across the whole view by the GPU renderer as by the software one; BG3 HBlank effects in the native canvas only for Vaati's appearing | on the 2DS by Claude with the owner's state (00/00): rays enter from the right edge, GPU CHECK 0; in the combined build on the owner's 2DS | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `feat/tabbar-position` (cut from `release/v0.1.2`) | P2.7: OPTIONS -> TABS (top / bottom) next to THEME; FOREST is a palette like the others; `tools/ui-preview` links again (soft-slot stubs) | on the 2DS by Claude (the cell shows TABS = TOP); the switch itself not tried yet | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `feat/hud-xy-diamond` (cut from `release/v0.1.2`) | P2.6: X/Y in the top HUD, A/B/X/Y as a diamond; X/Y sprites drawn by the engine, their tiles in OBJ VRAM only while the frame renders | on the 2DS by Claude and the owner (combined build, Minish Woods 00/00): the diamond with sword on X and shield on Y, A/B slide into it from a state saved with the old layout, GPU CHECK 0 structural | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/chuchu-bad-child` (cut from `release/v0.1.2`) | a Chuchu no longer reads its FX child unless it is an entity: closing the pause menu after loading a state saved in it left `0x160` there and crashed (Luma dumps 2 and 3, `chuchu.c:84`); who writes the value is not known yet (issue #13) | on the 2DS by Claude: same state, no crash | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `chore/tmc-link-elf` (cut from `release/v0.1.2`) | `tmc-link.py --elf`: symbols from the ELF of the build the console runs (a worktree's build has other addresses) | tried against the 2DS (peek by symbol with the combined build's ELF) | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/fullview-scroll-align` (cut from `release/v0.1.2`) | issue #11: a Full View border scroll first lines the camera up across the scroll inside the outgoing room, so the 400x240 window never shows black outside a narrower or offset incoming room | on the 2DS by Claude, Hyrule Field: down 03/05 -> 03/04 (lines up left, then scrolls; before: a black strip), up 03/04 -> 03/05 (no line-up needed), right 03/06 -> 03/05; every recorded frame 400x240 with the HUD; a sideways scroll that needs a vertical line-up not forced | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/state-script-context` (cut from `release/v0.1.2`) | save states: an entity's script context (+0x84) is relocated when saved and repaired from `gEntityScriptCtxTable` on load; a state from another build crashed in a house door's script (Lon Lon Ranch, 03/05, walking down) | on the 2DS by Claude and the owner: the owner's state 4 (03/05), which crashed, plays on | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/fullview-scroll-hud-jump` (cut from `release/v0.1.2`) | issue #11 (comment): Full View border scroll: on the tick the scroll starts (the room switches mid-tick) A/B/R/X/Y jumped for one frame to the middle of the top edge; the gameplay mode now carries the 400 view before the next VBlank commits it | on the 2DS by Claude (owner's state 03/04 going up, FRAMES = no skips): 1 of 3 recordings showed the jump before, 0 of 3 after; checked by the owner (2026-10-13) | _(merged into `release/v0.1.2` 2026-10-13 on the owner's word)_ |
+| `fix/hud-diamond-hide` (cut from `release/v0.1.2`) | issue #15: the A/B/X/Y diamond sits lower than the game's A/B row, so the buttons' slide off the top for a message left B, Y and A's bottom on screen: every button now goes as high as A/B did | on the 2DS by Claude in Full View and VISTA = ORIGINAL (Minish Woods "¡Socorro!") | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/fullview-iris` (cut from `release/v0.1.2`) | issue #16: the iris fade (circle wipe) drawn across the whole wide view instead of dropping to 266x160 (`docs/gpu-fade.md`, "Iris fades in a wide view") | on the 2DS by Claude and the owner (Link's iris); Ezlo's (centre near the view's edge) after the radius change by Claude and the owner (2026-10-13) | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `fix/msg-shift-drawn-box` (cut from `release/v0.1.2`) | issue #17: Wide/Full View: while a text box opened or closed the hearts jumped 80 px right; the centred band is now the box as drawn (`gCurrentWindow`) | on the 2DS by Claude (heart piece, 00/00: opening and closing) and the owner (2026-10-13) | _(merged into `release/v0.1.2` 2026-10-13)_ |
+| `feat/dev-ftp-install` (cut from `release/v0.1.3`) | production builds run an install-only FTP server when `dev-ftp.txt` is in the data folder (only `update/`, no remote control, CANCEL bar), anonymous; `--install` sends either mode (ported from `../mzm` without its login) | on the 2DS by Claude: the path limits and SITE refusals, debug -> production -> debug installs through it; the bar and CANCEL checked by the owner on a production build (2026-10-13). `dev-ftp.txt` is left on the 2DS | _(merged into `release/v0.1.3` 2026-10-13)_ |
+| `fix/updater-beta-labels` (cut from `release/v0.1.3`) | issue #18: updater: `X.Y.Z-dev` < `X.Y.Z BETA` < `X.Y.Z` (a dev build was told it was up to date with its beta out); OPTIONS -> UPDATES shows BETA on the release found and the installed build's label | host check of `Update_IsNewer` (no host jansson for the full test); labels checked by the owner on the 2DS (2026-10-13), the dev < beta offer not seen yet; screen in `tools/ui-preview` (`UPDATE_BETA=1`), whose tab indices are fixed; the same BETA label merged into `../mzm` and `../sm-3ds` | _(merged into `release/v0.1.3` 2026-10-13)_ |
+| `fix/fullview-portal-camera` (cut from `release/v0.1.3`, worktree: the main checkout) | issue #21: Full View through a Minish portal's shrink and closing circle | on the 2DS by Claude and the owner (the circle closing evenly from the whole view, 2026-10-13); growing back checked by Claude | _(merged into `release/v0.1.3` 2026-10-13)_ |
+| `fix/bottom-hud-live` (cut from `release/v0.1.3`, worktree `../zelda-tmc-3ds-bottom`) | issue #22: BOTTOM CORE AUTO (core 1 on the Old 3DS), HUD painted at once, taps kept during a repaint, save notice before the save, R label and heart edge as the HUD | on the 2DS by Claude (paint 500 -> 70 ms, same fps; hearts and R label seen) and the owner (R label, taps, the save notice, audio; 2026-10-13) | _(merged into `release/v0.1.3` 2026-10-13)_ |
+| `feat/portal-cutscene-wide` (cut from `release/v0.1.3`, worktree `../zelda-tmc-3ds-cutscene`) | P4.3: the portal cutscene at 400x240, side strips from `portal-cutscene-strips.bin` (`tools/portal-strips/`); merging it after `fix/fullview-portal-camera` conflicts in `port/port_widescreen.h` (keep both declarations) | on the 2DS by Claude (black sides, a test pattern) and the owner (2026-10-13, with their generated picture 1: colours and scrolling matched after `ac64d71`) | _(merged into `release/v0.1.3` 2026-10-13)_ |
+| `fix/fullview-after-soft-reset` (cut from `release/v0.1.3`) | issue #23: Full View off after a soft reset (the intro was drawn at 400x240 over the last room) | on the 2DS by Claude (soft reset from the Minish Woods: intro and title at 240x160) | _(merged into `release/v0.1.3` 2026-10-13)_ |
+| `feat/scene-recorder` (cut from `release/v0.1.3`) | P1.6: `tmc-link.py scenerec`, `tools/scene-rec/decode.py` | on the 2DS by Claude (89 frames decoded to PNG and GIF) | _(merged into `release/v0.1.3` 2026-10-13)_ |
+| `fix/install-relaunch` (cut from `release/v0.1.3`) | issue #4: relaunch 10 s after `SITE INSTALL` through libctru's chainloader (Luma dumps 7 and 8, `0xD86007F3`), as `../legend-of-doom-3ds` fixed it | builds; to try with several installs in a row; the same fix went to `../mzm` | _(merged into `release/v0.1.3` 2026-10-13 on the owner's word, before the install test)_ |
+| `feat/title-wide` (cut from `release/v0.1.3`) | P4.4 and P4.5 (the file select's cave around its 240x160 screen, shimmering with the palettes: on the console .141 by Claude, `0.1.3-dev.96.20+cave`, edges and centre change on the same frames, no seam): the title at 400x240 in Full View (forest picture as BG1, sword and logo centred; issue #24, GPU dots on the scaled sword); the light rays continued to the edges and four new rays in the gaps, computed in VRAM (`title_rays_3ds.c`); the title fades out after START still at 400x240 (it dropped to 240x160 with everything moved); the Nintendo/Capcom logos' edges stretched to the screen's | on the console at 192.168.1.141 by Claude (`0.1.3-dev.96.8+rays`, scene recordings, 2026-10-14): the rays with four new ones (left: a wide one, a thin one, a wide one in the corner, uneven gaps; lower right: a wide one), no seam, shimmer with the originals, 59.7 fps (GPU CHECK 0 structural on the 2DS .139 with two of them); START fades the title to white at 400x240, centred (the fade-out is told by the title's layers, which stay until DispReset), and the blank frame before file select is white across the screen; a reset (and the boot) is white across the screen from its first frame (`0.1.3-dev.96.19+rays`, every frame recorded); the logos fill the 400x240 screen with no step at the frame's edges through their fades, and they fade out at 240x160 centred (they were drawn wide in the corner, with a black-barred frame, once lastState named the title). Left: a one-step flicker (246/255) of the near-white while the logos fade to white, from the GPU fade quad, there before. Checked by the owner on the console (2026-10-14) | _(merged into `release/v0.1.3` 2026-10-14)_ |
+| `feat/link-perf` (cut from `release/v0.1.3`) | `tmc-link.py perf start` / `perf stop [DIR]`: the DEBUG tab's perf recorder over the link (`SITE PERF`), the CSV fetched | used on the .141 by Claude (perf 0035-0039) | _(merged into `release/v0.1.3` 2026-10-14)_ |
+| `perf/title-rings` (cut from `release/v0.1.3`) | the title at 400x240 ran at 37-41 fps on the Old 3DS, all on the GPU (no software frame): BG0/BG1 take their view rings in mode-1 frames too (only BG2/BG3 are affine there), rings read 512x256 maps, and a scaled affine BG2 of at most 256x256 that does not wrap is decoded into BG2's free ring and drawn as one quad (the sword was 7 ms of a 17 ms build) | on the .141 (Old 3DS) by Claude: the whole intro 59.7-60 fps, build 17 -> 5.5 ms; GPU CHECK 0 structural on the settled title (the one-step pixels are the rays' blend, by phase); the sword's zoom recorded clean. Host model test passes (its `test_affine_obj_texel_boundaries` failed before this branch too) checked by the owner on the console (2026-10-14) | _(merged into `release/v0.1.3` 2026-10-14)_ |
+| `feat/fileselect-wide` (cut from `release/v0.1.3`) | P4.5: the file select at 400x240 with the GPU renderer: BG0-BG3 in the centred 240x160, the cave as BG3's picture, sprites moved by `port_draw.c` and carried out by the wide screen's edge | on the .141 by Claude (language menu, R options, scene recordings) and the owner (name entry, copy, erase; 2026-10-14) | _(merged into `release/v0.1.3` 2026-10-14)_ |
 
-**Where work stands (2026-10-12):** everything is merged into `release/v0.1.1` and pushed.
-Latest, checked on the console by the owner and by Claude over the link: the boot screen (a
-triforce turning on the bottom screen, the whole splash on top, no console text, no fixed delay),
-the SHOW FPS box of four lines, save states from older builds (view and crash fixes, see the
-decisions log) and taps on the tab bar. Still to check by the owner: the STATES tab itself, and
-states of other scenes than Hyrule Field and Link's house (run `tools/state-census` on a state
-of each; a holder nobody listed crashes on load into a different build).
+**Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
+Link's house and the Minish Woods are untested in builds other than their writer's (run
+`tools/state-census` on a state of each; a holder nobody listed crashes on load into a different
+build, as the house door did: issue #14). A state saved inside the pause menu breaks on closing
+it (issue #13).
 
-**On the owner's consoles now (2026-10-12):** both run the debug build `v0.1.1-dev.84+a354c0a`
-(`release/v0.1.1`, pushed as `2a26c55`, whose source is the same plus the docs).
-- New 3DS, `192.168.1.133` (the one `.3ds_ftp_ip` holds): three save states (Hyrule Field
-  03/01 twice, Link's house 22/10), format 2.
-- Old 3DS/2DS, `192.168.1.139`, installed with FBI (CIA sent with ftpd to `sdmc:/cias/`). Not
-  in `.3ds_ftp_ip`: Claude drives it with `tools/tmc-link/tmc-link.py --ip 192.168.1.139`
-  (and the same `--ip` for the debug files). Its settings are the factory ones: `widescreen=0`,
-  `screen_aspect=stretch`, `display_style=bilinear`. First measurement, Hyrule Field 03/01
-  standing still: 59.6-59.9 fps shown, 0 frames skipped, 300 GPU frames / 0 fallback per
-  5 s, work 0.85-0.9 ms, **vblank wait only 0.14-1.9 ms per frame**: the normal 240x160 view
-  already has almost no margin on the 2DS.
+**Start here (2026-10-14, end of the day):** everything is merged into `release/v0.1.3` and pushed
+(`feat/title-wide`, `feat/link-perf`, `perf/title-rings`); no worktree, nothing uncommitted. Next, in
+this order:
+1. The README's before/after GIF of the portal shrink (owner's request): record it with the scene
+   recorder (`tmc-link.py scenerec`, P1.6) once VISTA = ORIGINAL and once Full View; then rewrite
+   the README (performance, Full View, bottom screen, states, updater) with the GIFs (2026-10-13).
+2. Issue #25 (GPU fade: one-step flicker of the near-white during the logos' fade), when it suits.
+3. Issue #4: the relaunch fix is merged; a few more installs without a loader dump, then close
+   (this session installed some 20 builds on the .141 without one). Issue #23: resets from the
+   title look right in recordings; a reset from inside a game is still to see.
+4. Issue #19 (states break when the port's statics grow), #13, #11 as before.
+Scene pictures (portal, title, file select): procedure in `docs/wide-scene-extension.md`; the owner's material
+in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/intro-titulo/` and `~/Imágenes/elige-archivo/`
+(never in the repository).
+To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
-**Next after that:** check `perf/full-view-old3ds` on both consoles (the owner), then the
-rest of the 2DS list: Wide (266x160, interiors and map edges) and the location-name banner at
-the gate of Hyrule Town, other areas (Minish Woods, Deepwood, Mt. Crenel), and what is left per
-frame on the 2DS: the rings cost 3 ms (character-data digest 1.3 ms, cell compare 1.5 ms) and
-the OBJ/other quads ~0.5 ms; VRAM write tracking in the PPU model would drop the digest.
-Ask the owner before driving the 2DS: they may be playing on it.
+**On the owner's consoles now (2026-10-14):**
+- Old 3DS/2DS, **`192.168.1.139`** (its address changed; `.3ds_ftp_ip` holds it): a debug build of
+  `feat/title-wide` with the first extended rays, `0.1.3-dev.96.5+rays` (2026-10-14), BOTTOM CORE = AUTO, UPDATES channel + BETAS, Full View
+  (`widescreen=1`, `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT, FRAMES = AUTO.
+  `portal-cutscene-strips.bin` from the owner's picture 1 is in the data folder (the same as the
+  shipped one). **`dev-ftp.txt` is there** (install-only server for production builds). `debug/` was
+  cleared of 1053 old dumps and checks (listing a folder that size hung the FTP server).
+  The owner plays on it (Minish Woods, sword and shield only) and keeps save states at spots that
+  reproduce bugs: never overwrite or delete one (protect their place with a *new* state:
+  `savestate`, then `loadstate 1` and `delstate 1` after the install). Of the 14 (2026-10-13):
+  **1 is Claude's**, the owner's place before the evening installs (00/00, to load and delete);
+  3 = 00/00 on the Minish Woods stump (#21, P4.3); 5 = 03/04 below the scroll up (#11).
+  Loading a state switches the bottom screen to MAP: tap another tab after it, not before.
+- **`192.168.1.141`** (pass `--ip`): **an Old 3DS** by its own log and perf headers (it was noted as the
+  New 3DS before). The owner's console for the title and file select work: a debug build of
+  `perf/title-rings` (the code of `release/v0.1.3` at 8972f9c), Full View, SHOW FPS on, theme
+  default. Its state 1 is Claude's, the owner's place (area 0x15) before the 2026-10-13 install.
+  `debug/` holds checks up to `tmc-check-0198` and perf CSVs up to `tmc-perf-0039`.
+- The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP); 8 is
+  the newest on the 2DS (#4, before the relaunch fix).
+
+**Older notes (2026-10-12), still open:** check `perf/full-view-old3ds`-era Wide (266x160,
+interiors and map edges) and other areas (Deepwood, Mt. Crenel) on the 2DS; per-frame cost left
+there: the rings 3 ms (character-data digest 1.3 ms, cell compare 1.5 ms), OBJ/other quads
+~0.5 ms; VRAM write tracking in the PPU model would drop the digest.
 
 **Owner's request, 2026-10-12 (P3.4): everything through the GPU.** The message shift (dialogues
 and the location-name banner, `virtuappu_mode1_ws_msg_*`), the HUD right-anchor and Wide BGs
@@ -82,8 +129,7 @@ visit to an area hit.
 
 **Smaller open items:**
 - The busy window of a save state job (SAVING / LOADING / DELETING STATE) is bottom screen only
-  and was never seen on the console (the link's SHOT runs on the game thread, which the job
-  stops); the owner may want a notice on the top screen as well.
+  (since #22 the job waits until it is shown); the owner may want a notice on the top screen too.
 - Re-save the older states (see the decisions log of 2026-10-12): repaired on load, but they
   may keep other stale words.
 
@@ -91,11 +137,10 @@ visit to an area hit.
 (BG3 under HDMA, "native bounds"): issue #5 and
 [`docs/investigations/bg3-dissolve-wide.md`](investigations/bg3-dissolve-wide.md) (reproduction,
 findings, images, branches). Read it before touching BG3 / `mode1_bg3_native_bounds_active`.
-Branches not in the release: `fix/affine-obj-uv-inset` (sword, checked), `fix/bg3-native-bounds-gpu`
-(partial), `wip/bg3-vertical-experiment` (experiment, not a fix). The 2DS at 192.168.1.139 runs the
-experiment build, FRAMES = SIN SALTOS, VISTA = ANCHO.
+Not in the release: `fix/bg3-native-bounds-gpu` (partial, on origin); `wip/bg3-vertical-experiment`
+(an experiment) is in neither this checkout nor origin any more.
 
-**Priority** (owner's order, 2026-10-11): P0.1 → P1 debug tools and P2 bottom UI (so
+**Priority** (owner's order, 2026-10-11; 2026-10-13: P2.6 first, then issue #4): P0.1 → P1 debug tools and P2 bottom UI (so
 that P3 can be measured) → P0.2 baseline → P3.4 Full View on the GPU, and Full View on the
 Old 3DS (P4.1) → the rest of P3 → P4.2.
 
@@ -225,9 +270,12 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   overwritten). GPU CHECK draws one frame with both renderers and saves both.
   *Done when:* a dump with a note and a GPU CHECK pair are fetched over FTP.
 - [ ] **P1.6** Scene recorder.
-  *Spec:* RAM ring of the shown top screen (60/30/15 Hz), written on stop as
-  `tmc-rec-NNNN.bin` (sm-3ds format); `tools/scene-rec/decode.py` → PNG/mp4.
-  *Done when:* a few seconds of play decode to a video on the PC.
+  *Spec:* RAM ring of the shown top screen, one frame in N, written on stop as
+  `tmc-scene-NNNN.bin` (400x240 RGB565, not sm-3ds's RLE); `tools/scene-rec/decode.py` → PNG/GIF.
+  Driven over the link (`tmc-link.py scenerec`); no DEBUG cell yet.
+  Done in `feat/scene-recorder` (merged 2026-10-13): 89 frames (3 s at 30 fps) on the 2DS.
+  *Done when:* a few seconds of play decode to a video on the PC, and the README's before/after
+  GIF of the portal (owner's request, 2026-10-13) is recorded on the New 3DS (more memory).
 - [ ] **P1.7** Warp and cheats for testing.
   *Spec:* teleport to any area/room (list by area name), refill hearts / max
   rupees / all items toggles, invincibility; a `CHT` mark on the top bar while on.
@@ -289,6 +337,35 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   SYSTEM (updates channel/check/what's new, CPU clock on New 3DS, FPS counter,
   reset). Randomizer row removed while it does nothing.
   *Done when:* checked on the console.
+- [x] **P2.4** The bottom screen's own menu style.
+  *Spec:* the same boxes in every tab (rounded corners of the game windows, 1x, theme colours),
+  toasts and windows in the message window's frame, the world map without the stone frame
+  (Link's head as its marker), the quest lists' slab and wells through the same boxes; no game
+  pixels scaled (decisions log, 2026-10-13).
+  *Done when:* the owner approves it on the console (2026-10-13, merged).
+- [x] **P2.5** X and Y item buttons.
+  *Spec:* X and Y (also ZL/ZR) fire items like B through the port's soft slots
+  (`port/port_softslots.c`, wired into the 3DS input path in `port/port_bios.c`), assigned
+  from the bottom screen: tap A/B/X/Y in the sidebar's diamond (it stays selected), then an item
+  in ITEMS; a second tap on X/Y's item clears it. Kept for every save file (`tmc.softslots` in
+  the data folder); an item the save does not own does nothing.
+  *Done when:* the owner fires items with X and Y on the console (2026-10-13, sword and shield).
+- [x] **P2.6** A/B/X/Y in the in-game HUD.
+  *Spec:* the top screen's HUD shows four item buttons in the console's diamond (X on top, Y
+  left, A right, B below; owner's choice, 2026-10-13) in the style of the game's A/B buttons:
+  the button bubbles of sprite 505 (504 on EU), frames 0/1, with X/Y letters drawn into a copy
+  of the bubble, and each button's item icon as the HUD draws A/B's (gfx loaded per equipped
+  item, `src/ui.c` ButtonUIElement / the item elements). Where the HUD is anchored right in
+  Wide / Full View the diamond follows it. Done in the engine (`DrawHudXY`, `port/port_hud_xy.h`):
+  see the decisions log, 2026-10-13.
+  *Done when:* the owner sees the four buttons with their items in normal, Wide and Full View
+  (2026-10-13).
+
+- [x] **P2.7** Tab bar on top or below.
+  *Spec:* where the bottom screen's tab bar goes is its own option, OPTIONS -> TABS (TOP / BOTTOM),
+  next to THEME (owner, 2026-10-13); every theme is only a palette (FOREST used to move the bar).
+  Saved as `ui_tabs_bottom`; a config without it and with FOREST keeps the bar below.
+  *Done when:* the owner switches it on the console in each theme (2026-10-13).
 
 ## Phase 3: performance (60 fps, New 3DS and Old 3DS, no 3D)
 
@@ -336,8 +413,43 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   *Spec:* a wider logical view (e.g. 266x160, 16:9 at 1.5x) scaled to fill 400x240,
   with the same extended world as P4.1.
   *Done when:* as P4.1.
+- [ ] **P4.3** Cutscenes in Full View: the Minish portal (owner's request, 2026-10-13).
+  *Spec:* the portal's falling cutscene (`SUBTASK_PORTALCUTSCENE`) at 400x240: its 256x320
+  picture (BG1) centred, the camera following Link over 240 lines, BG1 repeated across the view
+  and the wrapped columns covered by the presenter's side strips from `portal-cutscene-strips.bin`
+  (shipped in the romfs, or the player's own; `tools/scene-extend/to_console.py`), faded with the
+  game's fades.
+  Port side only through the published view key (no static added, issue #19).
+  *Done when:* the owner sees the cutscene at 400x240 on the 2DS, black sides and with a strips
+  file made from a generated extension of the picture.
 
+- [x] **P4.4** The title screen in Full View (owner's request, 2026-10-13).
+  *Spec:* the intro/title at 400x240: only the forest background extended (a picture the owner
+  generates from a dump, read from the SD card as in P4.3), the logo, sword and the rest centred as
+  they are; the light rays between the trees stretched or repeated to the edges if they can be.
+  The forest is 240x160, so it needs all four sides (80 left and right, 40 above and below). The
+  picture's procedure (dump, template, prompt, check): `docs/wide-scene-extension.md`; the owner's
+  material and the Antigravity prompt: `~/Imágenes/intro-titulo/` (never in the repository).
+  *Done when:* the owner sees the title at 400x240 on the console.
 ---
+
+- [x] **P4.5** The file select screen in Full View (owner's request, 2026-10-14).
+  *Spec:* the cave around the screen from the owner's generated extension, shimmering with the
+  original's palette cycling (`docs/wide-scene-extension.md`, "A generated picture over a
+  palette-cycled background"), shipped in the romfs: **done** (the presenter draws it around the
+  240x160 frame, `CaveReady` in `platform_gpu_3ds.c`). **Still to do:** what slides must leave by
+  the 400x240 screen's edge, not vanish at the GBA screen's: the file rows and the language row
+  (sprites to x = -72 when another is chosen), the header (type 18, to x = -96), the R "options"
+  button and its label (`HideButtonR`, x = 0x140; slides 4 px a frame). All are sprites (OBJ):
+  `src/object/fileScreenObjects.c` (`sub_0808EF6C` moves them, `gUnk_08121D54` starts them),
+  `src/fileselect.c` (`HideButtonR` / `ShowButtonR`), `src/ui.c` (`ButtonUIElement_Action1`).
+  Agreed design (2026-10-14), GPU renderer only: the frame at 400x240 like the title; BG0-BG2 (the
+  windows and text, 256-wide maps that would repeat) drawn only in the centred 240x160; the cave
+  as BG3 under the sprites (the picture as palette indices, from the BG palettes the frame uses,
+  replacing the presenter's); sprites placed +80, +40, and past the GBA screen's edge carried on
+  faster so a sprite the game parks at x = -72 really leaves the 400 view (the game's logic
+  untouched). The software renderer does not have to follow (owner: everything through the GPU).
+  *Done when:* the owner sees the menus slide out by the wide screen's edge on the console.
 
 ## Baseline measurements (P0.2)
 
@@ -549,3 +661,116 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   world map's stone frame (crop it inside the frame instead of the jagged edge), the two quest
   sub-lists (kinstones, techniques) still use the game's art, the region zoom, the load-state and
   notice modals are reachable only from dead pages.
+- **2026-10-13** Leaving the castle garden (an area change, white fade) showed ~5 frames at
+  266x160 before Full View, and the fade-in from white was lost: `GameMain_ChangeRoom` lasts the
+  whole fade-in of an area change, and counting all of it as a room transition kept Full View
+  off until the fade had ended, under the top hold. CHANGEROOM counts only for its first two
+  ticks now (the room is loaded by then), and the hold may run 24 ticks past its 16 while the
+  policy wants Full View and only the latch is missing. The first half of the fade-in is still
+  under the hold (white).
+- **2026-10-13** The network service (SOC and AC, `net_3ds.c`) is never shut down while the game
+  runs: `socExit` hung the main thread when the FTP server stopped with a client connected
+  (issue #9). It costs the 1 MB SOC buffer from the first FTP start or update check until the
+  game exits; the kernel closes the sessions at process exit. The same change went into the
+  sibling ports (mzm, sm-3ds, Legend of Doom), which share the code.
+- **2026-10-13** The bottom screen is its own menu, the same in every tab (owner's choice over
+  copying the pause menu's screens: those are laid out for 240x160 and the whole screen, the
+  tabs here are not the game's, and a tab that imitates the original next to ones that do not
+  reads as a change of style). The game supplies the content (item icons, fonts, the map, Link's
+  head, sprites) and the shapes: the boxes copy the message windows' corner curve and the pause
+  menu chips' keyline as geometry, drawn at 1x in the theme's colours, never the game's pixels
+  scaled (upstream's attempt scaled 720p art and cropped it). The world map drops the stone
+  frame; its crop is the map inside it (x 41..198, y 13..139 of the composite).
+- **2026-10-13** X/Y items reuse the PC port's soft slots instead of new engine slots: the B
+  dispatch and the held-item check already honour them (`Port_SoftSlots_GetEffectiveBItem`,
+  `IsBHeld`), so held items keep their semantics without touching the save. The 3DS had never
+  polled them: its VBlankIntrWait writes KEYINPUT from the platform directly and skips
+  `Port_UpdateInput`, where PC polls them. Assignment selection is sticky (owner): the tapped
+  button stays selected, A by default.
+- **2026-10-13** The Minish Woods light rays (LightRayManager, gfx group 0x25) are a screen-fixed
+  BG3 picture filling only the right half of its 256 px map, ending at the GBA screen's right edge.
+  Full View repeats a 32-column BG from the view's left edge (mode1.c, `repeat_full_view_overlay`),
+  which put a hard edge through the view; the GPU renderer did not even repeat it (only Hyrule
+  Field's clouds had `bg3Repeat`) and cut it at x=240. Now a BG3 shadow anchors the one copy to the
+  view's right edge (`Port_WidescreenLightRayShadow`), rows past the map's 32 read from gBG3Buffer;
+  the GPU renderer repeats BG3 in Full View like the software one; and the "native bounds" rule for
+  BG3 under HBlank DMA (issue #5) applies only while Vaati's appearing manager exists, since the
+  other HBlank BG3 effects (rays in their other state, steam) are overlays of the whole screen.
+- **2026-10-13** The tab bar's place is its own option (TABS), not part of a theme (owner): the
+  themes are palettes, FOREST no longer moves the bar. SHOW FPS moved to a fifth OPTIONS row to make
+  room beside THEME.
+- **2026-10-13** X/Y in the top HUD (P2.6) are game sprites, not an overlay on the 3DS screen: the
+  engine draws them after A/B with DrawDirect (the A bubble, sprite 505 frame 0, and the item's
+  sprite-322 icon), so both renderers, the palette fades, the Wide/Full View anchor and the message
+  slide treat them as the game's own HUD. OBJ VRAM has no 24 free tiles in gameplay (0x136-0x13F
+  is all), so their OAM entries point at the top tiles 0x3E0-0x3F7 and `hud_xy_3ds.c` writes the
+  tiles there only around the top screen's render (`Port_PPU_PresentFrame`) and puts the bytes
+  back: the game never sees them. It checks that OAM still holds the entries drawn and that no
+  other sprite uses those tiles that frame (a crowded scene: X/Y are hidden for the frame). The X
+  and Y letters are drawn into a copy of the A bubble (4x5, the A's outline colour). Layout: A keeps
+  its column, the diamond's middle row at y=42 under R and its label, 12 px steps (half the
+  original A-B distance); X/Y are placed from A's live position.
+- **2026-10-13** Full View border scrolls (issue #11): the 400x240 window could stick out of the
+  incoming room across the scroll (03/05 -> 03/04: the room below is narrower, a black strip on the
+  right until the camera caught up afterwards). The camera now first moves across the scroll to
+  the nearest position that fits both rooms (inside the outgoing one, which has the tiles), within
+  the retail duration (4 px a tick, at most 20 ticks), then scrolls straight; when the incoming
+  room is wider no line-up is needed. Only Full View does it: it only scrolls into rooms of at
+  least 400x240, so a position that fits exists unless the rooms barely overlap.
+- **2026-10-13** A save state loaded into a build whose globals had moved crashed in a house
+  door's script (Luma dump 4: GetNextScriptCommandHalfword, houseDoorExterior.c:244). Every entity
+  keeps its script context in `gEntityScriptCtxTable` (relocated, a kInner holder) and in its own
+  field at +0x84, a pointer into the middle of `gScriptExecutionContextArray` that no rule covered.
+  New states relocate it (`kInnerTargets`); on load every live entity's field is put back from
+  the table, which also repairs the states already on the SD card.
+- **2026-10-13** The R prompt follows the HUD: the button at the right, the game's label art
+  (in the game's language) over it to its left, measured on a scratch strip first because
+  `Port_SecondScreenTheme_DrawActionLabel` places by its centre.
+- **2026-10-13** The iris fade in a wide view is drawn by the port, not through the GBA window
+  path: WIN0H is 8-bit and the game's table has 160 lines. The GPU renderer draws it as a mask
+  (backdrop quads outside the circle over a windowless frame), which is exact for the iris's
+  settings (inside everything, outside the backdrop): a band per line through the window path
+  cost the Old 3DS ~40 ms of building and a scissored full-screen quad per run ~99 ms of GPU
+  wait. 150, where the game ends the iris, is scaled to the farthest corner from the circle's
+  centre, so an off-centre iris (Ezlo near a room's edge) does not jump at its end.
+- **2026-10-13** The updater orders `X.Y.Z-dev` < `X.Y.Z BETA` < `X.Y.Z`. The first test
+  (2026-10-11) had dev and beta level for no stated reason; with the release branch renamed after
+  every tag a dev build of X.Y.Z always predates its tag, so it is offered the beta.
+- **2026-10-13** The install-only FTP server of production builds (`dev-ftp.txt`) is anonymous,
+  on the owner's word ("solo se está compartiendo la carpeta update"), after being told that the
+  title-ID check only stops a CIA of another app: anyone on the network can install a CIA built
+  with our title ID while it runs. `../mzm` has a login for it; a hardcoded password was refused
+  by Claude Code's permission check here and the owner chose none. The docs say to keep the file
+  off on untrusted networks.
+- **2026-10-13** Fixes to the updater and to shared tools go to `../mzm` and `../sm-3ds` as well
+  when they have the same bug (owner, 2026-10-13): the updater's BETA label went to all three.
+- **2026-10-13** The bottom-screen painter runs on core 1 on the Old 3DS (BOTTOM CORE = AUTO): on
+  core 0 the main thread starved it to 350-550 ms a paint in Full View, the root of the bottom
+  screen's lag (#22); on core 1 it is about 70 ms with the same frame rate. The New 3DS keeps core 0
+  until measured there.
+- **2026-10-13** Cutscenes the GBA drew at 240x160 can be widened only where the picture exists:
+  the portal's falling scene (P4.3) is 256x320, so its sides come from a picture the owner made
+  with generative AI from a screen dump (palette kept, centre untouched). It is read from the SD
+  card (`portal-cutscene-strips.bin`), never shipped: it is derived from the game's art. Without
+  it the sides are black.
+- **2026-10-13** The generated scene extensions ship after all (owner, so players have them):
+  only the generated parts, the original area transparent (`platform/3ds/assets/wide-scenes/`),
+  converted into the romfs; a file of the same name in the data folder replaces them. This
+  replaces the entry above that kept them on the SD card only. Dumps, templates and whole
+  pictures (with the game's art) stay off the repository.
+- **2026-10-14** The title's light rays are extended by copying the rays themselves, not by a
+  generative AI (owner): every ray is at 45 degrees, its upper half repeats along its diagonal, so
+  each cut diagonal is continued to the view's edge with a stretch of it; the gaps the GBA's screen
+  never showed (left, lower right) get copies of whole rays (owner, same day). Unlike the forest,
+  the added pixels are the ROM's own art, so nothing ships: the game computes the extension at the
+  title from the BG0 it loaded and writes it into VRAM as tiles and a 512x256 map
+  (`title_rays_3ds.c`), which both renderers draw as BG0 with the palette rotation, blend and fades.
+  `tools/scene-extend/extend_rays.py` makes the same picture on the PC (preview, placements).
+  GPU CHECK on the title: 0 structural; the one-step blend differences (7000-14000 pixels, by
+  phase of the rays' blend) were there before the change.
+- **2026-10-14** Everything through the GPU renderer (owner): the software renderer is kept as the
+  reference for GPU CHECK and as the fallback, but new screens (the file select at 400x240) are
+  built for the GPU only. The title's slowness was the GPU path itself, not a fallback: mode-1
+  frames kept every layer off the view rings, and the scaled sword was a quad a tile rebuilt each
+  frame. The `192.168.1.141` console reports itself as an Old 3DS.
+

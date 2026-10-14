@@ -296,11 +296,13 @@ static void start(bool downloading) {
   __atomic_store_n(&busy, true, __ATOMIC_RELEASE);
   publish(downloading ? UPDATE_DOWNLOADING : UPDATE_CHECKING,
           downloading ? "DOWNLOADING UPDATE" : "CHECKING FOR UPDATES");
-  // Let the I/O worker run when data arrives even if rendering stays runnable.
-  // Socket and SD waits yield to the menu; no HTTP work runs on its thread.
+  // Below the game thread (and so below the audio worker, one above it on the
+  // same core): at the audio worker's priority the TLS handshake held core 0 for
+  // whole buffers and the sound broke up on the Old 3DS while checking. It runs
+  // in the time the game leaves each frame.
   s32 caller_priority = 0x30;
   svcGetThreadPriority(&caller_priority, CUR_THREAD_HANDLE);
-  int network_priority = caller_priority > 0x18 ? caller_priority - 1 : caller_priority;
+  int network_priority = caller_priority < 0x3F ? caller_priority + 1 : caller_priority;
   worker = threadCreate(run_job, NULL, 96 * 1024, network_priority, 0, false);
   if (!worker) { __atomic_store_n(&busy, false, __ATOMIC_RELEASE); publish(UPDATE_ERROR, "CANNOT START UPDATE"); }
 }

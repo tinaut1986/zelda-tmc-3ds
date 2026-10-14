@@ -46,6 +46,7 @@
  */
 
 #include "port_second_screen.h"
+#include "port_softslots.h"
 #include "port_second_screen_camera.h"
 #include "port_second_screen_dungeonmap.h"
 #include "port_second_screen_quest.h"
@@ -168,8 +169,10 @@ enum {
     SS_ACT_UPDATE_CHANNEL, SS_ACT_UPDATE_RELEASE, SS_ACT_UPDATE_ACTION,
     SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT,
     SS_ACT_THEME, /* OPTIONS -> THEME (bottom_compact_3ds.inc) */
+    SS_ACT_TABS,  /* OPTIONS -> TABS: tab bar on top or below */
     SS_ACT_DEBUG, /* DEBUG tab command, arg = DBG_CMD_* (bottom_compact_3ds.inc) */
     SS_ACT_STATES, /* STATES tab command, arg = STATES_CMD_* (bottom_compact_3ds.inc) */
+    SS_ACT_DEVFTP_CANCEL, /* the install-only FTP bar's CANCEL (bottom_compact_3ds.inc) */
 #endif
 };
 
@@ -1003,18 +1006,25 @@ static void PaintSchematic(const SSurf* s, const SecondScreenSnapshot* snap, int
 /*  Overworld map (MAP tab)                                            */
 /* ------------------------------------------------------------------ */
 
-/* Stone-frame bounding box within the decoded 240x160 map-screen
+/* The map inside the stone frame, within the decoded 240x160 map-screen
  * composite. The composite replicates the whole GBA screen, so it carries
- * the map screen's OWN parchment margins (plus their doodles) around the
- * frame; rendered over this panel's re-stamped parchment those margins
- * read as a hard halo band (owner feedback). Only the frame+map region is
- * ever sampled. Coordinates measured on the composed image: the frame's
- * outer outline spans x 16..222, y 3..147 inclusive (its rounded corners
- * leave sub-pixel cream slivers that match our backdrop cream anyway). */
+ * the map screen's own parchment margins and its carved stone frame around
+ * the map. On 3DS the bottom screen draws its own frame (CBox, the theme's
+ * colours, as every other tab), so only the map is sampled: inside the
+ * frame's inner dark outline, x 41..198, y 13..139, read from the composite
+ * in the console's memory (2026-10-13). Elsewhere the crop keeps the stone
+ * frame (its outer outline, x 16..222, y 3..147). */
+#ifdef TMC_3DS
+#define WMAP_CROP_X0 41
+#define WMAP_CROP_Y0 13
+#define WMAP_CROP_X1 199
+#define WMAP_CROP_Y1 140
+#else
 #define WMAP_CROP_X0 16
 #define WMAP_CROP_Y0 3
 #define WMAP_CROP_X1 223
 #define WMAP_CROP_Y1 148
+#endif
 
 /* Nearest-neighbor blit of the map image under transform (ox, oy, scale),
  * clipped to the given rect; samples only the frame crop of the source.
@@ -1037,7 +1047,7 @@ static void BlitMapRegion(const SSurf* s, const uint32_t* img, int32_t imgW, int
      * tab, so it is the average paint cost rather than a spike.
      *
      * 16.16 fixed point turns the step into an integer add and a shift. Only
-     * sx >= sxMin (WMAP_CROP_X0 = 16) is ever written, so for every pixel that
+     * sx >= sxMin (WMAP_CROP_X0 > 0) is ever written, so for every pixel that
      * reaches the buffer the shift's floor and the cast's truncate-toward-zero
      * agree; negative sx is skipped by the bounds test in both forms.
      *
@@ -1091,6 +1101,7 @@ static void BlitMapRegion(const SSurf* s, const uint32_t* img, int32_t imgW, int
  * affordance. Returns the rect it covered so callers can make it tappable. */
 #ifdef TMC_3DS
 static void Compact_MapChip(const SSurf* s, const char* label, float cx, float cyBottom, float* out);
+static void Compact_MapFrame(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h);
 #endif
 static void DrawMapChip(const SSurf* s, const char* label, float cx, float cyBottom, float u, float* out) {
 #ifdef TMC_3DS
@@ -1162,7 +1173,9 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
     float wholeScale = (rw / cw < rh / chh) ? rw / cw : rh / chh;
     float followScale = wholeScale * 2.1f;
 #ifdef TMC_3DS
-    wholeScale = WholeMapScale(rw, rh);
+    /* The whole view leaves the ZOOM chip's row free under the map's frame. */
+    enum { WHOLE_MAP_CHIP_ROOM = 24 };
+    wholeScale = WholeMapScale(rw, rh - WHOLE_MAP_CHIP_ROOM);
 #endif
 
     /* Camera target: follow Link unless the whole map is asked for (or the
@@ -1173,10 +1186,11 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
     if (wantWhole) {
 #ifdef TMC_3DS
         tx = WholeMapCenterX(rw, wholeScale);
+        ty = WMAP_CROP_Y0 + chh / 2.0f + WHOLE_MAP_CHIP_ROOM / 2.0f / wholeScale;
 #else
         tx = WMAP_CROP_X0 + cw / 2.0f;
-#endif
         ty = WMAP_CROP_Y0 + chh / 2.0f;
+#endif
     } else {
         float halfW = rw / (2.0f * tScale), halfH = rh / (2.0f * tScale);
         tx = (float)sLastFix.mapX;
@@ -1214,6 +1228,19 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
 
     float ox = (rx0 + rx1) / 2.0f - sCam.x * sCam.scale;
     float oy = (ry0 + ry1) / 2.0f - sCam.y * sCam.scale;
+#ifdef TMC_3DS
+    /* The frame around the map while the whole of it is in view (and through
+     * the glide while it still fits): a box like the other tabs' instead of
+     * the game's stone frame. Zoomed in, the map is the whole panel. */
+    {
+        const int32_t fx0 = (int32_t)(ox + WMAP_CROP_X0 * sCam.scale) - 3;
+        const int32_t fy0 = (int32_t)(oy + WMAP_CROP_Y0 * sCam.scale) - 3;
+        const int32_t fx1 = (int32_t)(ox + WMAP_CROP_X1 * sCam.scale + 0.999f) + 3;
+        const int32_t fy1 = (int32_t)(oy + WMAP_CROP_Y1 * sCam.scale + 0.999f) + 3;
+        if (fx0 >= (int32_t)rx0 && fy0 >= (int32_t)ry0 && fx1 <= (int32_t)rx1 && fy1 <= (int32_t)ry1)
+            Compact_MapFrame(s, fx0, fy0, fx1 - fx0, fy1 - fy0);
+    }
+#endif
     BlitMapRegion(s, img, imgW, imgH, ox, oy, sCam.scale, (int32_t)rx0, (int32_t)ry0, (int32_t)rx1,
                   (int32_t)ry1);
 
@@ -1282,6 +1309,18 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
         uint32_t c = (snap->areaFlags & SECOND_SCREEN_AR_IS_OVERWORLD)
                          ? ((tick & 8) ? RGB(0xF8, 0xF8, 0xF8) : gold)
                          : gold;
+#ifdef TMC_3DS
+        /* Link's head, the marker the game's own world map draws for him
+         * (sub_080A6378: DrawDirect frame 0x59, with his cap), at the hints'
+         * size and ringed like them. The diamond stays while it can't be
+         * decoded. */
+        int32_t lscale = (int32_t)(wholeScale * 0.75f + 0.5f);
+        if (lscale < 1) lscale = 1;
+        if (!Port_SecondScreenWorldMap_DrawMarker(s->px, s->w, s->h, s->stride, (int32_t)(px - 8 * lscale),
+                                                  (int32_t)(py - 8 * lscale), lscale, 0x59u,
+                                                  SECOND_SCREEN_WORLDMAP_NO_REGION,
+                                                  Port_SecondScreenTheme_Color(SSC_MENU_INK)))
+#endif
         DrawMapMarker(s, (int32_t)px, (int32_t)py, base, c);
     }
 
@@ -3172,6 +3211,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     SS_MARK(SS_PHASE_SIDEBAR);
     Compact_PaintTabBar(&s, &tl, tab, settingsPage);
     Compact_PaintToast(&s);
+    Compact_PaintDevFtp(&s, &tl);
     SS_MARK(SS_PHASE_TABBAR);
 #else
     if (tab != SS_TAB_SETTINGS) {
@@ -3282,6 +3322,9 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
         case SS_ACT_THEME:
             Compact_NextTheme();
             break;
+        case SS_ACT_TABS:
+            Compact_ToggleTabsBottom();
+            break;
 #if TMC3DS_DEBUG_TOOLS
         case SS_ACT_DEBUG:
             Compact_DebugCommand(hit.arg);
@@ -3290,13 +3333,19 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
         case SS_ACT_STATES:
             Compact_StatesCommand(hit.arg);
             break;
+        case SS_ACT_DEVFTP_CANCEL:
+            FtpServer_Cancel();
+            Compact_Toast("FTP STOPPED");
+            break;
 #endif
         case SS_ACT_TAB:
             UI_LOCK();
             /* Re-tapping the active panel tab returns to the map — the
              * reference's "toggle back" behavior. */
             sUi.tab = (sUi.tab == hit.arg && hit.arg != SS_TAB_MAP) ? SS_TAB_MAP : hit.arg;
+#ifndef TMC_3DS
             sUi.armedRing = 0;             /* changing tabs cancels a pending assignment */
+#endif
             sUi.questView = SS_QUEST_MAIN; /* ...and closes a list left open */
             sUi.settingsPage = SS_SETTINGS_ROOT;
             UI_UNLOCK();
@@ -3359,15 +3408,35 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             break;
         case SS_ACT_RING:
             UI_LOCK();
+#ifdef TMC_3DS
+            /* The button tapped stays selected: every item tapped from now on
+             * goes to it, until another button is picked. */
+            sUi.armedRing = hit.arg;
+#else
             sUi.armedRing = (sUi.armedRing == hit.arg) ? 0 : hit.arg;
+#endif
             UI_UNLOCK();
             break;
         case SS_ACT_ITEM: {
             uint8_t armed;
             UI_LOCK();
             armed = sUi.armedRing;
+#ifdef TMC_3DS
+            if (armed == 0) armed = 1; /* nothing picked yet: A */
+#else
             sUi.armedRing = 0;
+#endif
             UI_UNLOCK();
+#ifdef TMC_3DS
+            /* X and Y (armed 3 and 4) are the port's soft slots: kept outside
+             * the save, see port_softslots.h. A second tap on the item that
+             * is already there clears the button. */
+            if (armed >= 3) {
+                const int soft = armed - 3;
+                Port_SoftSlots_SetAssignment(soft, Port_SoftSlots_GetAssignment(soft) == hit.arg ? 0 : hit.arg);
+                break;
+            }
+#endif
             /* An armed ring picks the slot; otherwise tap = A, hold = B —
              * both through the engine-side RequestEquip flow. */
             uint8_t slot = armed ? (uint8_t)(armed - 1) : (uint8_t)(longPress ? 1 : 0);

@@ -159,6 +159,7 @@ static const u8 kQuestObjGfxGroups[] = { 91u, 86u, 23u, 16u };
  * DrawKeys in src/ui.c and gWalletSizes in src/itemUtils.c. The heart
  * series runs empty -> full: 0x11 empty, 0x12..0x14 quarter fills
  * ((health & 3) + 0x11), 0x15 full (gUnk_080C8F2C's DMA'd entries). */
+#define TILE_HEART_EDGE 0x10 /* before each row (DrawHearts' 0xf010) */
 #define TILE_HEART_EMPTY 0x11
 #define TILE_HEART_FULL 0x15
 #define TILE_KEY 0x1C       /* 2x2 */
@@ -1231,11 +1232,12 @@ static void BuildAll(const uint16_t* hudPal, u32 hudColors) {
     BuildChrome(hudPal, hudColors);
 
     /* Hearts: empty (0x11), quarter fills (0x12..0x14), full (0x15) —
-     * the series order DrawHearts' data uses. */
-    for (i = 0; i < 5; i++) {
-        static const int kIds[5] = { SST_HEART_EMPTY, SST_HEART_Q1, SST_HEART_Q2, SST_HEART_Q3, SST_HEART_FULL };
-        static const u32 kTiles[5] = { TILE_HEART_EMPTY, TILE_HEART_EMPTY + 1, TILE_HEART_EMPTY + 2,
-                                       TILE_HEART_EMPTY + 3, TILE_HEART_FULL };
+     * the series order DrawHearts' data uses — and the row's left edge (0x10). */
+    for (i = 0; i < 6; i++) {
+        static const int kIds[6] = { SST_HEART_EMPTY, SST_HEART_Q1,   SST_HEART_Q2,
+                                     SST_HEART_Q3,    SST_HEART_FULL, SST_HEART_EDGE };
+        static const u32 kTiles[6] = { TILE_HEART_EMPTY,     TILE_HEART_EMPTY + 1, TILE_HEART_EMPTY + 2,
+                                       TILE_HEART_EMPTY + 3, TILE_HEART_FULL,      TILE_HEART_EDGE };
         const u8* t = HudTileBytes(kTiles[i], 1);
         uint32_t* out = t ? ArenaAlloc(64) : NULL;
         if (out != NULL) {
@@ -1554,8 +1556,18 @@ int Port_SecondScreenTheme_BackdropIsDark(void) {
     return (299u * r + 587u * g + 114u * b) / 1000u < 128u;
 }
 
+static SecondScreenThemeBoxPainter sBoxPainter;
+
+void Port_SecondScreenTheme_SetBoxPainter(SecondScreenThemeBoxPainter painter) {
+    sBoxPainter = painter;
+}
+
 void Port_SecondScreenTheme_DrawBackdrop(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
                                          int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t scale) {
+    if (sBoxPainter) {
+        sBoxPainter(pixels, bufW, bufH, stride, x0, y0, x1 - x0, y1 - y0, SS_BOX_BACKDROP);
+        return;
+    }
     if (scale < 1) {
         scale = 1;
     }
@@ -1785,6 +1797,10 @@ static void DrawSliced(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t str
 
 void Port_SecondScreenTheme_DrawPlate(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
                                       int32_t x, int32_t y, int32_t w, int32_t h, int32_t scale) {
+    if (sBoxPainter) {
+        sBoxPainter(pixels, bufW, bufH, stride, x, y, w, h, SS_BOX_PLATE);
+        return;
+    }
     if (!sMenuOk || !sSlabOk) {
         /* Palette-toned stand-in: stone fill, ink outline. */
         uint32_t ink = sColors[SSC_MENU_INK];
@@ -1800,6 +1816,10 @@ void Port_SecondScreenTheme_DrawPlate(uint32_t* pixels, int32_t bufW, int32_t bu
 
 void Port_SecondScreenTheme_DrawWell(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
                                      int32_t x, int32_t y, int32_t w, int32_t h, int32_t scale) {
+    if (sBoxPainter) {
+        sBoxPainter(pixels, bufW, bufH, stride, x, y, w, h, SS_BOX_WELL);
+        return;
+    }
     if (!sMenuOk || !sTrayOk) {
         uint32_t rim = sColors[SSC_MENU_INK];
         int32_t t = scale > 0 ? scale : 1;
@@ -2335,6 +2355,25 @@ int Port_SecondScreenTheme_DrawRButton(uint32_t* pixels, int32_t bufW, int32_t b
     return 1;
 }
 
+/* The R button's OBJ box relative to its element position (the frame's
+ * piece offsets), as BuildSpriteComposite lays it out. */
+static int RButtonBoxOrigin(int32_t* ox, int32_t* oy) {
+    const u8* frameData = (const u8*)sub_080AD8F0(Port_RemapSpriteIndex(SPRITE_HUD_BUTTONS_RAW), BUTTON_R_FRAME);
+    int32_t minX = 0x7FFF, minY = 0x7FFF;
+    u32 count, i;
+    if (frameData == NULL || (count = frameData[0]) == 0 || count > 16) {
+        return 0;
+    }
+    for (i = 0; i < count; i++) {
+        const u8* p = frameData + 1 + i * 5;
+        if ((s8)p[0] < minX) minX = (s8)p[0];
+        if ((s8)p[1] < minY) minY = (s8)p[1];
+    }
+    *ox = minX;
+    *oy = minY;
+    return 1;
+}
+
 /* One decoded label, cropped to its ink: the sprite pieces are a fixed-size
  * box the words sit inside, so laying an R glyph and a label out side by
  * side wants the ink extent, not the box. */
@@ -2342,22 +2381,19 @@ int Port_SecondScreenTheme_DrawRButton(uint32_t* pixels, int32_t bufW, int32_t b
 #define ACTION_LABEL_MAX_H 48
 static uint32_t sActionScratch[ACTION_LABEL_MAX_W * ACTION_LABEL_MAX_H];
 
-int32_t Port_SecondScreenTheme_DrawActionLabel(uint32_t* pixels, int32_t bufW, int32_t bufH,
-                                               int32_t stride, int32_t x, int32_t y, int32_t scale2,
-                                               uint8_t frameId) {
+/* Decodes a label into sActionScratch, the command position at its centre
+ * (ACTION_LABEL_MAX_W / 2, ACTION_LABEL_MAX_H / 2); its ink box goes to *ink
+ * (minX, minY, maxX, maxY, inclusive). 0 when there is nothing to draw. */
+static int DecodeActionLabel(uint8_t frameId, int32_t ink[4]) {
     const SpritePtr* sprite;
     const SpriteFrame* frame;
     const u8* slotTiles;
     const u8* frameData;
     u32 count, i;
     int32_t minX = ACTION_LABEL_MAX_W, minY = ACTION_LABEL_MAX_H, maxX = -1, maxY = -1;
-    int32_t sx, sy;
 
-    if (frameId == 0 || pixels == NULL) {
+    if (frameId == 0) {
         return 0;
-    }
-    if (scale2 < 2) {
-        scale2 = 2;
     }
     sprite = Port_GetSpritePtr(Port_RemapSpriteIndex(SPRITE_UI_LABELS_RAW));
     if (sprite == NULL || sprite->frames == NULL || sprite->ptr == NULL) {
@@ -2430,7 +2466,25 @@ int32_t Port_SecondScreenTheme_DrawActionLabel(uint32_t* pixels, int32_t bufW, i
     if (maxX < minX || maxY < minY) {
         return 0;
     }
+    ink[0] = minX;
+    ink[1] = minY;
+    ink[2] = maxX;
+    ink[3] = maxY;
+    return 1;
+}
 
+int32_t Port_SecondScreenTheme_DrawActionLabel(uint32_t* pixels, int32_t bufW, int32_t bufH,
+                                               int32_t stride, int32_t x, int32_t y, int32_t scale2,
+                                               uint8_t frameId) {
+    int32_t ink[4];
+    int32_t sx, sy;
+    if (pixels == NULL || !DecodeActionLabel(frameId, ink)) {
+        return 0;
+    }
+    if (scale2 < 2) {
+        scale2 = 2;
+    }
+    const int32_t minX = ink[0], minY = ink[1], maxX = ink[2], maxY = ink[3];
     {
         int32_t sw = maxX - minX + 1;
         int32_t sh = maxY - minY + 1;
@@ -2454,4 +2508,50 @@ int32_t Port_SecondScreenTheme_DrawActionLabel(uint32_t* pixels, int32_t bufW, i
         }
         return dw;
     }
+}
+
+int Port_SecondScreenTheme_RButtonBounds(uint8_t frameId, int32_t box[4]) {
+    const SecondScreenThemeSprite* r = Port_SecondScreenTheme_Get(SST_BUTTON_R);
+    int32_t ox, oy, ink[4];
+    if (r == NULL || !RButtonBoxOrigin(&ox, &oy)) {
+        return 0;
+    }
+    box[0] = ox;
+    box[1] = oy;
+    box[2] = ox + r->w;
+    box[3] = oy + r->h;
+    if (DecodeActionLabel(frameId, ink)) {
+        const int32_t l = ink[0] - ACTION_LABEL_MAX_W / 2, t = ink[1] - ACTION_LABEL_MAX_H / 2;
+        const int32_t rr = ink[2] + 1 - ACTION_LABEL_MAX_W / 2, b = ink[3] + 1 - ACTION_LABEL_MAX_H / 2;
+        if (l < box[0]) box[0] = l;
+        if (t < box[1]) box[1] = t;
+        if (rr > box[2]) box[2] = rr;
+        if (b > box[3]) box[3] = b;
+    }
+    return 1;
+}
+
+int Port_SecondScreenTheme_DrawRButtonAt(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                         int32_t x, int32_t y, uint8_t frameId) {
+    int32_t ox, oy, ink[4], sx, sy;
+    if (pixels == NULL || !RButtonBoxOrigin(&ox, &oy) ||
+        !Port_SecondScreenTheme_DrawRButton(pixels, bufW, bufH, stride, x + ox, y + oy, 2)) {
+        return 0;
+    }
+    /* The label after the button, as TextUIElement follows ButtonUIElement in
+     * the HUD's element list: its outline overlaps the button's edge. */
+    if (DecodeActionLabel(frameId, ink)) {
+        for (sy = ink[1]; sy <= ink[3]; sy++) {
+            const int32_t py = y + sy - ACTION_LABEL_MAX_H / 2;
+            if (py < 0 || py >= bufH) continue;
+            for (sx = ink[0]; sx <= ink[2]; sx++) {
+                const int32_t px = x + sx - ACTION_LABEL_MAX_W / 2;
+                const uint32_t c = sActionScratch[(size_t)sy * ACTION_LABEL_MAX_W + sx];
+                if ((c >> 24) != 0 && px >= 0 && px < bufW) {
+                    pixels[(size_t)py * (size_t)stride + px] = c;
+                }
+            }
+        }
+    }
+    return 1;
 }

@@ -46,7 +46,10 @@ int virtuappu_mode1_ws_full_view = 0;
 bool virtuappu_mode1_bg3_hdma_native_bounds = false;
 int virtuappu_mode1_bg3_hofs_base = -1;
 bool virtuappu_mode1_bg3_repeat = false;
+uint8_t virtuappu_mode1_bg_repeat_mask = 0;
+const uint32_t* virtuappu_mode1_bg1_picture = NULL;
 int virtuappu_mode1_ws_hud_right_anchor = 0;
+const uint16_t* virtuappu_mode1_ws_win0_lines = NULL;
 /* Widescreen message-box centering (see mode1.h). All zero = inactive. */
 int virtuappu_mode1_ws_msg_shift = 0;
 int virtuappu_mode1_ws_msg_x0 = 0;
@@ -1013,8 +1016,9 @@ static void mode1_render_text_bg_compact_tokens(int bg_index, int line, uint16_t
     const bool shadow_active = map_width_tiles < 64 &&
                                virtuappu_mode1_ws_shadow[bg_index] != NULL &&
                                mode1_shadow_geometry_for_bg(bg_index, &shadow_cols, &shadow_stride);
-    const bool repeat_full_view_overlay = bg_index == 3 &&
-        (mode1_shadow_covers_full_view() || virtuappu_mode1_bg3_repeat);
+    const bool repeat_full_view_overlay = (bg_index == 3 &&
+        (mode1_shadow_covers_full_view() || virtuappu_mode1_bg3_repeat)) ||
+        ((virtuappu_mode1_bg_repeat_mask >> bg_index) & 1u) != 0u;
     const bool native_bounds = bg_index == 3 && mode1_bg3_native_bounds_active();
     const int native_left = frame_width > MODE1_GBA_BG_CLIP_X
                                 ? (frame_width - MODE1_GBA_BG_CLIP_X) / 2
@@ -1199,8 +1203,9 @@ void virtuappu_mode1_render_text_bg_line(int bg_index, int line, uint32_t* line_
                                   (virtuappu_mode1_ws_shadow[bg_index] != NULL) &&
                                   mode1_shadow_geometry_for_bg(bg_index, &ws_shadow_cols,
                                                               &ws_shadow_stride);
-    const bool repeat_full_view_overlay = bg_index == 3 &&
-        (mode1_shadow_covers_full_view() || virtuappu_mode1_bg3_repeat);
+    const bool repeat_full_view_overlay = (bg_index == 3 &&
+        (mode1_shadow_covers_full_view() || virtuappu_mode1_bg3_repeat)) ||
+        ((virtuappu_mode1_bg_repeat_mask >> bg_index) & 1u) != 0u;
     int render_max_x = (map_width_tiles >= 64 || repeat_full_view_overlay)
                            ? frame_width
                            : (ws_shadow_active ? frame_width : MODE1_GBA_BG_CLIP_X);
@@ -1752,6 +1757,13 @@ void virtuappu_mode1_composite_line(int line, uint32_t bg_layers[MODE1_GBA_BG_CO
     }
     if (win1_bottom > mode1_frame_height) {
         win1_bottom = mode1_frame_height;
+    }
+
+    if (virtuappu_mode1_ws_win0_lines != NULL) {
+        win0_left = virtuappu_mode1_ws_win0_lines[line * 2];
+        win0_right = virtuappu_mode1_ws_win0_lines[line * 2 + 1];
+        win0_top = 0;
+        win0_bottom = mode1_frame_height;
     }
 
     win0_h_wrap = win0_left > win0_right;
@@ -2353,6 +2365,15 @@ static bool mode1_render_old3ds_title_alpha_line(int line, uint16_t dispcnt, int
     memset(winning_bg_priority, 0xFF, (size_t)frame_width);
 
     virtuappu_mode1_render_text_bg_line(1, line, out_row, winning_bg_priority);
+    if (virtuappu_mode1_bg1_picture != NULL) {
+        /* The picture's pixels over BG1's own (priority 3 here): the title's forest extended. */
+        const uint32_t* picture = virtuappu_mode1_bg1_picture + (size_t)line * (size_t)frame_width;
+        for (int x = 0; x < frame_width; ++x) {
+            if (picture[x] == 0u) continue;
+            out_row[x] = picture[x];
+            winning_bg_priority[x] = 3u;
+        }
+    }
 
     uint16_t bg0_tokens[MODE1_GBA_WIDTH];
     memset(bg0_tokens, 0, (size_t)frame_width * sizeof(uint16_t));
@@ -2502,6 +2523,13 @@ static bool mode1_render_native_compact_line(int line, uint16_t dispcnt, int fra
         if (win0_bottom > mode1_frame_height) win0_bottom = mode1_frame_height;
         if (win1_right > frame_width) win1_right = frame_width;
         if (win1_bottom > mode1_frame_height) win1_bottom = mode1_frame_height;
+
+        if (virtuappu_mode1_ws_win0_lines != NULL) {
+            win0_left = virtuappu_mode1_ws_win0_lines[line * 2];
+            win0_right = virtuappu_mode1_ws_win0_lines[line * 2 + 1];
+            win0_top = 0;
+            win0_bottom = mode1_frame_height;
+        }
 
         win0_h_wrap = win0_left > win0_right;
         win1_h_wrap = win1_left > win1_right;
@@ -3070,6 +3098,12 @@ static void mode1_render_lines(const Mode1RenderLinesContext* context, int first
         if ((line_dispcnt & MODE1_DISP_BG1_ON) != 0u) {
             memset(bg_layers[1], 0, (size_t)context->frame_width * sizeof(uint32_t));
             virtuappu_mode1_render_text_bg_line(1, line, bg_layers[1], NULL);
+            if (virtuappu_mode1_bg1_picture != NULL) {
+                /* The picture's pixels over BG1's own (the title's forest extended around it). */
+                const uint32_t* picture = virtuappu_mode1_bg1_picture + (size_t)line * (size_t)context->frame_width;
+                for (int x = 0; x < context->frame_width; ++x)
+                    if (picture[x] != 0u) bg_layers[1][x] = picture[x];
+            }
         }
         if ((line_dispcnt & MODE1_DISP_BG2_ON) != 0u) {
             memset(bg_layers[2], 0, (size_t)context->frame_width * sizeof(uint32_t));

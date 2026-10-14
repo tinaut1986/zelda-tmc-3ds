@@ -145,9 +145,14 @@ add_executable(tmc-3ds
     source/speaker_eq_3ds.c
     source/port_second_screen_3ds.c
     source/ui_font_3ds.c
+    source/upstream_import_3ds.c
+    source/boot_text_3ds.c
     source/debug_files_3ds.c
     source/debug_log_3ds.c
     source/debug_perf_3ds.c
+    source/scene_rec_3ds.c
+    source/scene_pictures_3ds.c
+    source/title_rays_3ds.c
     source/net_3ds.c
     source/ftp_server_3ds.c
     source/debug_link_3ds.c
@@ -158,6 +163,7 @@ add_executable(tmc-3ds
     source/cia_install_3ds.c
     source/port_second_screen_sync_3ds.c
     source/port_ppu_3ds.c
+    source/hud_xy_3ds.c
     source/fade_gpu_3ds.c
     source/port_ppu_gpu_3ds_model.c
     source/port_ppu_gpu_3ds.c
@@ -256,6 +262,13 @@ configure_file(
     "${TMC_ROMFS}/splash.rgb565"
     COPYONLY
 )
+# Extensions of scenes the GBA drew at 240x160, for Full View (docs/wide-scene-extension.md):
+# made by tools/scene-extend/to_console.py from platform/3ds/assets/wide-scenes/.
+file(MAKE_DIRECTORY "${TMC_ROMFS}/wide-scenes")
+foreach(scene portal-cutscene-strips title-forest fileselect-cave)
+    configure_file("${CMAKE_CURRENT_LIST_DIR}/romfs/wide-scenes/${scene}.bin"
+                   "${TMC_ROMFS}/wide-scenes/${scene}.bin" COPYONLY)
+endforeach()
 
 set(TMC_SMDH "${CMAKE_CURRENT_BINARY_DIR}/tmc-3ds.smdh")
 ctr_generate_smdh(

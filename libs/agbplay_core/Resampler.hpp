@@ -120,6 +120,18 @@ public:
     void Reset() override;
 };
 
+/* Each output sample is the mean of the source over the span it covers: exact
+ * for the GBA's stepped CGB waveforms, a few adds per sample where BLEP/SINC
+ * take a 32-tap window, and far less aliasing than NEAREST. */
+class BoxResampler : public Resampler
+{
+public:
+    BoxResampler();
+    ~BoxResampler() override;
+    bool Process(std::span<float> buffer, float phaseInc, const FetchCallback &fetchCallback) override;
+    void Reset() override;
+};
+
 class LinearResampler : public Resampler
 {
 public:

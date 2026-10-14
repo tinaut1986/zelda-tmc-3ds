@@ -1262,7 +1262,8 @@ static bool build_wide_tile_geometry(const PpuGpu3DSFrameView* frame, PpuGpu3DSC
     const bool shadow = frame->wsShadowBaseTile[bg] >= 0;
     const bool fullView = frame->wsFullView && shadow;
     const unsigned renderWidth =
-            (shadow || (bg == 3u && frame->bg3Repeat)) ? frame->width : MODE1_GBA_BG_CLIP_X;
+            (shadow || (bg == 3u && frame->bg3Repeat) || ((frame->bgRepeatMask >> bg) & 1u)) ? frame->width
+                                                                                  : MODE1_GBA_BG_CLIP_X;
     const int fine = (int)(scrollX & 7u);
     const unsigned firstTileX = scrollX >> 3u;
     const unsigned bandBottom = band->firstLine + band->lineCount;
@@ -1364,7 +1365,7 @@ static bool build_widescreen_bg_geometry(
             mosaicEnabled ? ((mosaic >> 4u) & 0x0fu) + 1u : 1u;
     unsigned nativeRenderWidth =
             mapWidthTiles == 64u || frame->wsShadowBaseTile[bg] >= 0 ||
-            (bg == 3u && frame->bg3Repeat)
+            (bg == 3u && frame->bg3Repeat) || ((frame->bgRepeatMask >> bg) & 1u)
                     ? frame->width
                     : MODE1_GBA_BG_CLIP_X;
     if (nativeRenderWidth > frame->width) nativeRenderWidth = frame->width;
@@ -1571,6 +1572,254 @@ static bool affine_scroll_base(const PpuGpu3DSFrameView* frame, unsigned line,
     return true;
 }
 
+static bool ring_update(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, PpuGpu3DSRing* ring, unsigned bg,
+                        bool shadowSource, bool viewRelative, unsigned firstTileX, unsigned cLo, unsigned cHi,
+                        unsigned rowLo, unsigned rowHi, uint16_t bgcnt, unsigned affineTiles);
+static void ring_init_tables(void);
+
+/* A scaled affine BG2 (see below) whose map is at most 256x256 and does not wrap, drawn as one
+ * quad from BG2's native view ring, which a text BG2 would use and an affine one leaves free: the
+ * map is decoded into the ring as it changes (as the rings of text layers are), and the quad's UVs
+ * carry the scale, so the GPU maps each pixel to its texel instead of the CPU emitting a quad a
+ * tile every frame (the title's sword: 7 ms of a 17 ms build on the Old 3DS). Exact at whole
+ * scales, where each pixel samples its texel's centre; while the sword zooms in, a pixel whose
+ * source lies within half a pixel step of a texel's edge can take the next texel (UVs are packed
+ * to 1/16 texel), for the second the animation lasts. The texture is transposed like the text
+ * rings': u follows the map's rows, v its columns. */
+static bool affine_scaled_from_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
+                                    PpuGpu3DSCommandBuffer* cmd, uint16_t bgcnt, int32_t pa, int32_t pd,
+                                    int32_t refX, int32_t refY0, bool emit, size_t* vertexCursor,
+                                    size_t* indexCursor) {
+    const unsigned size = (bgcnt >> 14u) & 3u;
+    PpuGpu3DSRing* const ring = &cache->ring[PPU_GPU3DS_AFFINE_RING];
+    if (size > 1u || (bgcnt & (1u << 13u)) != 0 || !ring->pixels || (gPpuGpu3DSRingDisable & (1u << 2u)) != 0)
+        return false;
+    const int mapSize = 128 << size;
+    ring_init_tables();
+    if (!ring_update(frame, cache, ring, 2u, false, false, 0, 0, PPU_GPU3DS_RING_COLS - 1u, 0,
+                     PPU_GPU3DS_RING_ROWS - 1u, bgcnt, (unsigned)mapSize / 8u))
+        return false;
+    /* The screen rectangle whose pixels' sources fall inside the map: [first pixel reaching 0,
+     * first pixel reaching mapSize). */
+#define FIRST_REACHING(target, ref, step) \
+    ((int32_t)((((int64_t)(target) - (ref)) <= 0) \
+                   ? -((-((int64_t)(target) - (ref))) / (step)) \
+                   : ((((int64_t)(target) - (ref)) + (step) - 1) / (step))))
+    int32_t x0 = FIRST_REACHING(0, refX, pa), x1 = FIRST_REACHING((int64_t)mapSize * 256, refX, pa);
+    int32_t y0 = FIRST_REACHING(0, refY0, pd), y1 = FIRST_REACHING((int64_t)mapSize * 256, refY0, pd);
+#undef FIRST_REACHING
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > (int32_t)frame->width) x1 = (int32_t)frame->width;
+    if (y1 > (int32_t)frame->height) y1 = (int32_t)frame->height;
+    if (x1 <= x0 || y1 <= y0) return true; /* nothing of the map on screen: no quad */
+    if (quad_room(cmd, vertexCursor, indexCursor) && emit) {
+        /* Corners on pixel edges carry the source there, so the GPU samples pixel x at
+         * source(x) + PA/2: with PA = 0x100 (the title once the sword has landed) the centre of
+         * the very texel the GBA reads, half a texel from either edge. */
+        const float mx0 = ((float)refX + (float)pa * (float)x0) / 256.0f;
+        const float mx1 = ((float)refX + (float)pa * (float)x1) / 256.0f;
+        const float my0 = ((float)refY0 + (float)pd * (float)y0) / 256.0f;
+        const float my1 = ((float)refY0 + (float)pd * (float)y1) / 256.0f;
+        const int16_t u0 = PpuGpu3DS_PackUV(my0 / PPU_GPU3DS_RING_TEX_WIDTH);
+        const int16_t u1 = PpuGpu3DS_PackUV(my1 / PPU_GPU3DS_RING_TEX_WIDTH);
+        const int16_t v0 = PpuGpu3DS_PackUV(1.0f - mx0 / PPU_GPU3DS_RING_TEX_HEIGHT);
+        const int16_t v1 = PpuGpu3DS_PackUV(1.0f - mx1 / PPU_GPU3DS_RING_TEX_HEIGHT);
+        const float invWidth = 2.0f / (float)frame->width, invHeight = 2.0f / (float)frame->height;
+        const float sx0 = (float)x0 * invWidth - 1.0f, sx1 = (float)x1 * invWidth - 1.0f;
+        const float sy0 = 1.0f - (float)y0 * invHeight, sy1 = 1.0f - (float)y1 * invHeight;
+        PpuGpu3DSVertex* const vertices = cmd->vertices + *vertexCursor;
+        vertices[0] = (PpuGpu3DSVertex){ sx0, sy0, 0.0f, u0, v0 };
+        vertices[1] = (PpuGpu3DSVertex){ sx1, sy0, 0.0f, u0, v1 };
+        vertices[2] = (PpuGpu3DSVertex){ sx1, sy1, 0.0f, u1, v1 };
+        vertices[3] = (PpuGpu3DSVertex){ sx0, sy1, 0.0f, u1, v0 };
+    }
+    *vertexCursor += 4;
+    *indexCursor += 6;
+    return true;
+}
+
+/* An affine BG2 that is only scaled -- no rotation or shear (PB = PC = 0) and the
+ * reference advancing PD per line as the hardware does without HDMA -- maps every
+ * map tile to an axis-aligned screen rectangle. One quad a tile replaces the
+ * general path's per-pixel walk, which the title screen's zoom (PA = PD from
+ * 0x10 to 0x100) took to 30-57 ms a frame and the vertex budget on the Old 3DS.
+ * Pixel x of line y shows source ((refX + PA*x) / 256, (refY + PD*(y-first)) / 256);
+ * with pixel centres at x + 0.5 that is a linear map, so each quad's corners are
+ * put where the source crosses the tile's edges: their UVs are exactly the atlas
+ * slot's edges (no packing error, nothing read from the next slot) and the quad
+ * may run past the screen or the band, which the viewport and the batch's
+ * scissor cut. The GPU interpolates UVs to about 1/256 of a texel, so where a
+ * pixel's source lands exactly on a texel edge it can read the texel before; when
+ * the zoom shows few enough texels each is drawn as its own quad with a constant
+ * UV at its centre instead, which is exact. */
+static bool build_affine_scaled_bg(const PpuGpu3DSFrameView* frame,
+                                   PpuGpu3DSCache* cache, uint16_t* atlas,
+                                   PpuGpu3DSCommandBuffer* cmd,
+                                   const PpuGpu3DSBand* band, const uint8_t* io,
+                                   uint16_t bgcnt, bool emit,
+                                   size_t* vertexCursor, size_t* indexCursor,
+                                   bool* handled, uint32_t* firstIndexOut,
+                                   uint32_t* indexCountOut) {
+    *handled = false;
+    const int32_t pa = (int16_t)read16(io, 0x20);
+    const int32_t pb = (int16_t)read16(io, 0x22);
+    const int32_t pc = (int16_t)read16(io, 0x24);
+    const int32_t pd = (int16_t)read16(io, 0x26);
+    if (pb != 0 || pc != 0 || pa <= 0 || pd <= 0 || (bgcnt & (1u << 6u)) != 0)
+        return true;
+    const unsigned first = band->firstLine;
+    const unsigned end = first + band->lineCount;
+    const int32_t refX = frame->affineRefX[first];
+    const int32_t refY = frame->affineRefY[first];
+    for (unsigned line = first + 1u; line < end; ++line) {
+        if (frame->affineRefX[line] != refX ||
+            frame->affineRefY[line] != refY + pd * (int32_t)(line - first))
+            return true;
+    }
+
+    /* Bands split by other registers (the title splits per line) would each
+     * redraw the layer; the geometry is the same for all of them, so it is
+     * emitted once for the whole screen and the band's scissor keeps its lines. */
+    const int32_t refY0 = refY - pd * (int32_t)first;
+    if (cmd->affineShare.valid && cmd->affineShare.bgcnt == bgcnt &&
+        cmd->affineShare.pa == pa && cmd->affineShare.pd == pd &&
+        cmd->affineShare.refX == refX && cmd->affineShare.refY0 == refY0) {
+        *firstIndexOut = cmd->affineShare.firstIndex;
+        *indexCountOut = cmd->affineShare.indexCount;
+        *handled = true;
+        return true;
+    }
+    const size_t shareFirstIndex = *indexCursor;
+    if (affine_scaled_from_ring(frame, cache, cmd, bgcnt, pa, pd, refX, refY0, emit, vertexCursor, indexCursor)) {
+        *firstIndexOut = (uint32_t)shareFirstIndex;
+        *indexCountOut = (uint32_t)(*indexCursor - shareFirstIndex);
+        cmd->affineShare = (__typeof__(cmd->affineShare)){
+            .valid = true, .bgcnt = bgcnt, .pa = pa, .pd = pd, .refX = refX, .refY0 = refY0,
+            .firstIndex = *firstIndexOut, .indexCount = *indexCountOut,
+            .texture = (uint8_t)(1u + PPU_GPU3DS_AFFINE_RING),
+        };
+        *handled = true;
+        return true;
+    }
+
+    static const int mapSizes[4] = { 128, 256, 512, 1024 };
+    const int mapSize = mapSizes[(bgcnt >> 14u) & 3u];
+    const int mapTiles = mapSize / PPU_GPU3DS_TILE_SIDE;
+    const bool wrap = (bgcnt & (1u << 13u)) != 0;
+    const uint32_t screenBase = ((bgcnt >> 8u) & 0x1fu) * 0x800u;
+    const uint32_t charBase = ((bgcnt >> 2u) & 3u) * 0x4000u;
+
+    /* Tiles the band can show (floor division for negative references). */
+    const int32_t sx0 = PpuGpu3DS_AffineSample(refX, (int16_t)pa, 0);
+    const int32_t sx1 = PpuGpu3DS_AffineSample(refX, (int16_t)pa, (int)frame->width - 1);
+    const int32_t sy0 = PpuGpu3DS_AffineSample(refY0, (int16_t)pd, 0);
+    const int32_t sy1 = PpuGpu3DS_AffineSample(refY0, (int16_t)pd, (int)frame->height - 1);
+    int32_t tx0 = sx0 >> 3, tx1 = sx1 >> 3, ty0 = sy0 >> 3, ty1 = sy1 >> 3;
+    if (!wrap) {
+        if (tx0 < 0) tx0 = 0;
+        if (ty0 < 0) ty0 = 0;
+        if (tx1 >= mapTiles) tx1 = mapTiles - 1;
+        if (ty1 >= mapTiles) ty1 = mapTiles - 1;
+    }
+    if (tx1 < tx0 || ty1 < ty0) {
+        *firstIndexOut = (uint32_t)*indexCursor;
+        *indexCountOut = 0;
+        *handled = true;
+        return true;
+    }
+    if ((int64_t)(tx1 - tx0 + 1) * (ty1 - ty0 + 1) > 4096) return true;
+    const int64_t texels = (int64_t)(sx1 - sx0 + 1) * (sy1 - sy0 + 1);
+    const bool perTexel = texels <= 4096;
+
+    /* First screen coordinate whose source reaches `target` (8.8 fixed point). */
+#define FIRST_REACHING(target, ref, step) \
+    ((int32_t)((((int64_t)(target) - (ref)) <= 0) \
+                   ? -((-((int64_t)(target) - (ref))) / (step)) \
+                   : ((((int64_t)(target) - (ref)) + (step) - 1) / (step))))
+    const float invAtlas = 1.0f / PPU_GPU3DS_ATLAS_SIDE;
+    const unsigned tilesPerRow = PPU_GPU3DS_ATLAS_SIDE / PPU_GPU3DS_TILE_SIDE;
+    for (int32_t ty = ty0; ty <= ty1; ++ty) {
+        const int32_t mapY = wrap ? (ty & (mapTiles - 1)) : ty;
+        for (int32_t tx = tx0; tx <= tx1; ++tx) {
+            const int32_t mapX = wrap ? (tx & (mapTiles - 1)) : tx;
+            const uint32_t mapOffset = (uint32_t)mapY * (unsigned)mapTiles + (uint32_t)mapX;
+            uint8_t tile = 0;
+            if (screenBase < MODE1_VRAM_SIZE && mapOffset < MODE1_VRAM_SIZE - screenBase)
+                tile = frame->memory.vram[screenBase + mapOffset];
+            unsigned slotX = 0, slotY = 0;
+            if (emit) {
+                const PpuGpu3DSTileKey key = {
+                    .vramOffset = charBase + (uint32_t)tile * 64u,
+                    .paletteBank = 0,
+                    .bpp8 = true,
+                    .domain = PPU_GPU3DS_PALETTE_BG,
+                };
+                uint16_t slot;
+                if (!PpuGpu3DS_CacheTile(cache, frame->memory.vram, key, atlas, &slot))
+                    return false;
+                slotX = (slot % tilesPerRow) * PPU_GPU3DS_TILE_SIDE;
+                slotY = (slot / tilesPerRow) * PPU_GPU3DS_TILE_SIDE;
+            }
+            if (!perTexel) {
+                /* The quad's edges between pixels: at the first pixel whose source reaches
+                 * the tile, as the texel path below places them. Edges through pixel centres
+                 * (the GBA's +0.5) left the GPU rounding which tile a pixel on them took: it
+                 * sampled the next slot of the atlas (black dots and gaps along the title's
+                 * sword), and insetting the UVs moved texels instead. */
+                const float tileLeft = (float)FIRST_REACHING((int64_t)tx * 8 * 256, refX, pa);
+                const float tileRight = (float)FIRST_REACHING((int64_t)(tx * 8 + 8) * 256, refX, pa);
+                const float tileTop = (float)FIRST_REACHING((int64_t)ty * 8 * 256, refY0, pd);
+                const float tileBottom = (float)FIRST_REACHING((int64_t)(ty * 8 + 8) * 256, refY0, pd);
+                if (tileRight <= tileLeft || tileBottom <= tileTop) continue;
+                const float u0 = (float)slotX * invAtlas;
+                const float u1 = (float)(slotX + PPU_GPU3DS_TILE_SIDE) * invAtlas;
+                const float v0 = 1.0f - (float)slotY * invAtlas;
+                const float v1 = 1.0f - (float)(slotY + PPU_GPU3DS_TILE_SIDE) * invAtlas;
+                emit_uv_quad(frame, cmd, emit, tileLeft, tileTop, tileRight, tileBottom, 0.0f, u0, v0, u1,
+                             v1, false, vertexCursor, indexCursor);
+                continue;
+            }
+            /* The texels of this tile the band shows, each from the first pixel
+             * (line) whose source reaches it to the first that reaches the next. */
+            const int32_t px0 = sx0 > tx * 8 ? sx0 - tx * 8 : 0;
+            const int32_t px1 = sx1 < tx * 8 + 7 ? sx1 - tx * 8 : 7;
+            const int32_t py0 = sy0 > ty * 8 ? sy0 - ty * 8 : 0;
+            const int32_t py1 = sy1 < ty * 8 + 7 ? sy1 - ty * 8 : 7;
+            for (int32_t py = py0; py <= py1; ++py) {
+                const int64_t ry = (int64_t)(ty * 8 + py) * 256;
+                const float rowTop = (float)FIRST_REACHING(ry, refY0, pd);
+                const float rowBottom = (float)FIRST_REACHING(ry + 256, refY0, pd);
+                if (rowBottom <= rowTop) continue;
+                const float v = 1.0f - ((float)(slotY + (unsigned)py) + 0.5f) * invAtlas;
+                for (int32_t px = px0; px <= px1; ++px) {
+                    const int64_t rx = (int64_t)(tx * 8 + px) * 256;
+                    const float colLeft = (float)FIRST_REACHING(rx, refX, pa);
+                    const float colRight = (float)FIRST_REACHING(rx + 256, refX, pa);
+                    if (colRight <= colLeft) continue;
+                    const float u = ((float)(slotX + (unsigned)px) + 0.5f) * invAtlas;
+                    emit_uv_quad(frame, cmd, emit, colLeft, rowTop, colRight, rowBottom, 0.0f,
+                                 u, v, u, v, false, vertexCursor, indexCursor);
+                }
+            }
+        }
+    }
+#undef FIRST_REACHING
+    *firstIndexOut = (uint32_t)shareFirstIndex;
+    *indexCountOut = (uint32_t)(*indexCursor - shareFirstIndex);
+    cmd->affineShare.valid = true;
+    cmd->affineShare.bgcnt = bgcnt;
+    cmd->affineShare.pa = pa;
+    cmd->affineShare.pd = pd;
+    cmd->affineShare.refX = refX;
+    cmd->affineShare.refY0 = refY0;
+    cmd->affineShare.firstIndex = *firstIndexOut;
+    cmd->affineShare.indexCount = *indexCountOut;
+    cmd->affineShare.texture = 0;
+    *handled = true;
+    return true;
+}
+
 static bool build_affine_bg(const PpuGpu3DSFrameView* frame,
                             PpuGpu3DSCache* cache, uint16_t* atlas,
                             PpuGpu3DSCommandBuffer* cmd,
@@ -1609,7 +1858,22 @@ static bool build_affine_bg(const PpuGpu3DSFrameView* frame,
         }
         if (!fromMap) cmd->mapReject[PPU_GPU3DS_MAP_REJECT_COVERAGE] += 1u;
     }
-    if (!fromMap) {
+    bool scaled = false;
+    uint32_t scaledFirstIndex = 0, scaledIndexCount = 0;
+    if (!fromMap &&
+        !build_affine_scaled_bg(frame, cache, atlas, cmd, band, io, bgcnt, emit,
+                                vertexCursor, indexCursor, &scaled, &scaledFirstIndex,
+                                &scaledIndexCount))
+        return false;
+    uint8_t texture = 0;
+    if (scaled) {
+        /* Drawn from the shared whole-screen geometry, like a map slice. */
+        fromMap = true;
+        mapFirstIndex = scaledFirstIndex;
+        mapIndexCount = scaledIndexCount;
+        texture = cmd->affineShare.texture;
+    }
+    if (!fromMap && !scaled) {
     /* Each scanline has its own reference point. Where the reference holds
      * still across the band, one quad covers it exactly as before; where it
      * advances -- a band merged because the layer is really a scrolled one --
@@ -1701,6 +1965,7 @@ static bool build_affine_bg(const PpuGpu3DSFrameView* frame,
         .lineCount = band->lineCount,
         .scissorRight = (uint16_t)frame->width,
         .layer = PPU_GPU3DS_BG2,
+        .texture = texture,
         .offsetX = offsetX,
         .offsetY = offsetY,
         .priority = (uint8_t)(bgcnt & 3u),
@@ -1924,11 +2189,12 @@ static void ring_decode_cell(PpuGpu3DSCache* cache, PpuGpu3DSRing* ring, const u
  * left (Full View) rather than by absolute column. */
 static bool ring_update(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, PpuGpu3DSRing* ring, unsigned bg,
                         bool shadowSource, bool viewRelative, unsigned firstTileX, unsigned cLo, unsigned cHi,
-                        unsigned rowLo, unsigned rowHi, uint16_t bgcnt) {
+                        unsigned rowLo, unsigned rowHi, uint16_t bgcnt, unsigned affineTiles) {
     const bool bpp8 = ((bgcnt >> 7u) & 1u) != 0;
     const uint32_t charBase = ((bgcnt >> 2u) & 3u) * 0x4000u;
     const uint32_t screenBase = ((bgcnt >> 8u) & 0x1fu) * 0x800u;
-    if (screenBase > MODE1_VRAM_SIZE - 0x800u) return false;
+    const bool wideMap = ((bgcnt >> 14u) & 1u) != 0; /* 512x256: columns 32-63 in the next block */
+    if (screenBase > MODE1_VRAM_SIZE - (wideMap ? 0x1000u : 0x800u)) return false;
     const uint32_t tileBytes = bpp8 ? 64u : 32u;
     const unsigned chunkFirst = charBase / PPU_GPU3DS_RING_CHUNK;
 
@@ -1993,8 +2259,13 @@ static bool ring_update(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, 
                 } else if (!viewRelative) {
                     blank = true;
                 }
+            } else if (affineTiles != 0) {
+                /* An affine map: a byte a tile, affineTiles square; past it the ring stays empty. */
+                const uint32_t offset = screenBase + R * affineTiles + A;
+                if (A < affineTiles && R < affineTiles && offset < MODE1_VRAM_SIZE) entry = frame->memory.vram[offset];
+                else blank = true;
             } else {
-                entry = read16(vramRow, (A & 31u) * 2u);
+                entry = read16(vramRow + (wideMap ? ((A >> 5u) & 1u) * 0x800u : 0u), (A & 31u) * 2u);
             }
             const unsigned cell = (A & (PPU_GPU3DS_RING_COLS - 1u)) * PPU_GPU3DS_RING_ROWS + ringRow;
             const uint32_t generation =
@@ -2071,7 +2342,10 @@ static bool build_bg_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
                           const PpuGpu3DSBand* bands, size_t bandCount, PpuGpu3DSBgMap* map) {
     PpuGpu3DSRing* const native = &cache->ring[bg * 2u];
     PpuGpu3DSRing* const extension = &cache->ring[bg * 2u + 1u];
-    if (!native->pixels || !extension->pixels || (gPpuGpu3DSRingDisable & (1u << bg)) != 0 || frame->affine ||
+    /* frame->affine is GBA modes 1 and 2: only BG2 (and BG3 in mode 2) are affine there; BG0 and
+     * BG1 are text layers and take their rings as in mode 0 (the title, issue: 37 fps). */
+    if (!native->pixels || !extension->pixels || (gPpuGpu3DSRingDisable & (1u << bg)) != 0 ||
+        (frame->affine && bg >= 2u) ||
         frame->width <= MODE1_GBA_BG_CLIP_X || frame->width > (PPU_GPU3DS_RING_COLS - 1u) * 8u) {
         gPpuGpu3DSRingWhy[bg] = 1;
         return false;
@@ -2114,7 +2388,7 @@ static bool build_bg_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
         RING_PIECE(MODE1_GBA_BG_CLIP_X, width, 0, 1);
         nativeEnd = MODE1_GBA_BG_CLIP_X;
         extensionFrom = MODE1_GBA_BG_CLIP_X;
-    } else if (bg == 3u && frame->bg3Repeat) {
+    } else if ((bg == 3u && frame->bg3Repeat) || ((frame->bgRepeatMask >> bg) & 1u)) {
         RING_PIECE(0, width, 0, 0);
         nativeEnd = width;
     } else if (hudRight) {
@@ -2167,7 +2441,8 @@ static bool build_bg_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
         if ((frame->dispcntPerLine[band->firstLine] & (MODE1_DISP_BG0_ON << bg)) == 0) continue;
         const uint8_t* io = frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;
         const uint16_t bgcnt = read16(io, MODE1_IO_BG0CNT + bg * 2u);
-        if ((any && (bgcnt & ~3u) != (sharedBgcnt & ~3u)) || ((bgcnt >> 14u) & 3u) != 0 ||
+        /* 256x256 and 512x256 maps: the ring's 64 columns are a 512-wide map's. */
+        if ((any && (bgcnt & ~3u) != (sharedBgcnt & ~3u)) || ((bgcnt >> 14u) & 3u) > 1u ||
             ((bgcnt & (1u << 6u)) != 0 && (read16(io, MODE1_IO_MOSAIC) & 0xffu) != 0)) {
             gPpuGpu3DSRingWhy[bg] = 3;
             return false;
@@ -2194,13 +2469,13 @@ static bool build_bg_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
     }
     if (nativeEnd > 0 &&
         !ring_update(frame, cache, native, bg, false, false, firstTileX, 0, (fine + (unsigned)nativeEnd - 1u) >> 3u,
-                     rowLo, rowHi, sharedBgcnt)) {
+                     rowLo, rowHi, sharedBgcnt, 0)) {
         gPpuGpu3DSRingWhy[bg] = 6;
         return false;
     }
     if (extensionFrom < width &&
         !ring_update(frame, cache, extension, bg, true, fullView, firstTileX, (fine + (unsigned)extensionFrom) >> 3u,
-                     (fine + (unsigned)width - 1u) >> 3u, rowLo, rowHi, sharedBgcnt)) {
+                     (fine + (unsigned)width - 1u) >> 3u, rowLo, rowHi, sharedBgcnt, 0)) {
         gPpuGpu3DSRingWhy[bg] = 7;
         return false;
     }
@@ -2239,6 +2514,53 @@ static void emit_ring_quad(const PpuGpu3DSFrameView* frame, PpuGpu3DSCommandBuff
     }
     *vertexCursor += 4;
     *indexCursor += 6;
+}
+
+/* The picture texture as part of a BG (the title's forest as BG1, the file select's cave as BG3,
+ * extended around the game's): one quad over the band's lines, across the whole frame, after the
+ * BG's own batches, as that BG for priority, windows and blending; its transparent texels (alpha
+ * test) leave the BG's tiles. */
+static bool build_bg_picture(const PpuGpu3DSFrameView* frame, PpuGpu3DSCommandBuffer* cmd,
+                             const PpuGpu3DSBand* band, const uint8_t* io, unsigned bg, unsigned priority,
+                             const PpuGpu3DSRegion* regions, size_t regionCount, bool emit,
+                             size_t* vertexCursor, size_t* indexCursor, size_t* batchCursor) {
+    const unsigned layer = PPU_GPU3DS_BG0 + bg;
+    if (!layer_has_region(regions, regionCount, layer, 0, (uint16_t)frame->width)) return true;
+    const size_t first = *indexCursor;
+    if (quad_room(cmd, vertexCursor, indexCursor)) {
+        const float x0 = -1.0f, x1 = 1.0f;
+        const float y0 = 1.0f - (float)band->firstLine * 2.0f / (float)frame->height;
+        const float y1 = 1.0f - (float)(band->firstLine + band->lineCount) * 2.0f / (float)frame->height;
+        const int16_t u0 = PpuGpu3DS_PackUV(0.0f);
+        const int16_t u1 = PpuGpu3DS_PackUV((float)frame->width / PPU_GPU3DS_PICTURE_TEX_WIDTH);
+        const int16_t v0 = PpuGpu3DS_PackUV(1.0f - (float)band->firstLine / PPU_GPU3DS_PICTURE_TEX_HEIGHT);
+        const int16_t v1 =
+                PpuGpu3DS_PackUV(1.0f - (float)(band->firstLine + band->lineCount) / PPU_GPU3DS_PICTURE_TEX_HEIGHT);
+        PpuGpu3DSVertex* const vertices = cmd->vertices + *vertexCursor;
+        vertices[0] = (PpuGpu3DSVertex){ x0, y0, 0.0f, u0, v0 };
+        vertices[1] = (PpuGpu3DSVertex){ x1, y0, 0.0f, u1, v0 };
+        vertices[2] = (PpuGpu3DSVertex){ x1, y1, 0.0f, u1, v1 };
+        vertices[3] = (PpuGpu3DSVertex){ x0, y1, 0.0f, u0, v1 };
+    }
+    *vertexCursor += 4;
+    *indexCursor += 6;
+    const uint16_t bldcnt = read16(io, MODE1_IO_BLDCNT);
+    const PpuGpu3DSBatch base = {
+        .firstIndex = (uint32_t)first,
+        .indexCount = 6u,
+        .firstLine = band->firstLine,
+        .lineCount = band->lineCount,
+        .scissorRight = (uint16_t)frame->width,
+        .layer = (uint8_t)layer,
+        .priority = (uint8_t)priority,
+        .effect = PPU_GPU3DS_EFFECT_NONE,
+        .target2 = (uint8_t)((bldcnt >> (layer + 8u)) & 1u),
+        .objectIndex = UINT8_MAX,
+        .texture = PPU_GPU3DS_PICTURE_TEXTURE,
+    };
+    append_layer_batches(cmd, &base, regions, regionCount, bldcnt, read16(io, MODE1_IO_BLDALPHA),
+                         read16(io, MODE1_IO_BLDY), emit, batchCursor);
+    return true;
 }
 
 static bool build_text_bg(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
@@ -3670,10 +3992,27 @@ static bool bands_share_layer(const PpuGpu3DSFrameView* frame, unsigned layer,
                                                      &leftBase) &&
                                   affine_scroll_base(frame, right->firstLine,
                                                      &rightBase);
+            /* The same goes for a layer that is only scaled (the title screen's
+             * zoom): with PB = PC = 0, one PA/PD and one origin, the whole-screen
+             * geometry build_affine_scaled_bg emits serves every band, so the
+             * bands are drawn as one batch instead of once a line. */
+            const int32_t pdA = (int16_t)read16(a, 0x26);
+            const bool scaled =
+                    !scrolled && read16(a, 0x22) == 0 && read16(a, 0x24) == 0 &&
+                    read16(b, 0x22) == 0 && read16(b, 0x24) == 0 &&
+                    (int16_t)read16(a, 0x20) > 0 && pdA > 0 &&
+                    read16(a, 0x20) == read16(b, 0x20) &&
+                    read16(a, 0x26) == read16(b, 0x26);
             if (scrolled) {
                 if (leftBase != rightBase ||
                     frame->affineRefX[left->firstLine] !=
                             frame->affineRefX[right->firstLine])
+                    return false;
+            } else if (scaled) {
+                if (frame->affineRefX[left->firstLine] !=
+                            frame->affineRefX[right->firstLine] ||
+                    frame->affineRefY[left->firstLine] - pdA * (int32_t)left->firstLine !=
+                            frame->affineRefY[right->firstLine] - pdA * (int32_t)right->firstLine)
                     return false;
             } else if (frame->affineRefX[left->firstLine] !=
                                frame->affineRefX[right->firstLine] ||
@@ -3734,15 +4073,15 @@ static size_t merge_layer_bands(const PpuGpu3DSFrameView* frame, unsigned layer,
     return count;
 }
 
-/* BG3 in native bounds (PpuGpu3DSFrameView::bg3NativeBounds): the layer is a
- * 240x160 canvas centred in the view, its scanline registers those of source
- * line = line - top. It is built as a native-sized frame at the origin, then
- * its vertices and batches are moved to the canvas. */
-static bool build_bg3_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
-                                    uint16_t* atlas, PpuGpu3DSCommandBuffer* cmd,
-                                    const PpuGpu3DSOamSet* oam, const PpuGpu3DSBand* band,
-                                    PpuGpu3DSRegion* regions, bool emit, size_t* vertexCursor,
-                                    size_t* indexCursor, size_t* batchCursor) {
+/* A BG in native bounds (PpuGpu3DSFrameView::bgNativeMask, bg3NativeBounds): the
+ * layer is a 240x160 canvas centred in the view, its scanline registers those of
+ * source line = line - top. It is built as a native-sized frame at the origin,
+ * then its vertices and batches are moved to the canvas. */
+static bool build_bg_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
+                                   uint16_t* atlas, PpuGpu3DSCommandBuffer* cmd,
+                                   const PpuGpu3DSOamSet* oam, const PpuGpu3DSBand* band, unsigned bg,
+                                   PpuGpu3DSRegion* regions, bool emit, size_t* vertexCursor,
+                                   size_t* indexCursor, size_t* batchCursor) {
     const int nativeW = (int)frame->width < MODE1_GBA_BG_CLIP_X ? (int)frame->width : MODE1_GBA_BG_CLIP_X;
     const int nativeH = (int)frame->height < MODE1_GBA_NATIVE_HEIGHT ? (int)frame->height : MODE1_GBA_NATIVE_HEIGHT;
     const int left = (int)frame->width > MODE1_GBA_BG_CLIP_X ? ((int)frame->width - MODE1_GBA_BG_CLIP_X) / 2 : 0;
@@ -3768,6 +4107,9 @@ static bool build_bg3_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCa
     native.wsHudRightAnchor = 0;
     native.wsMsgShift = 0;
     native.bg3Repeat = false;
+    native.bgRepeatMask = 0;
+    native.pictureMask = 0;
+    native.bgNativeMask = 0;
     native.bg3NativeBounds = false;
     PpuGpu3DSBand part = *band;
     part.firstLine = (uint16_t)(lo - top);
@@ -3778,7 +4120,7 @@ static bool build_bg3_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCa
      * snapshot. */
     uint8_t io[MODE1_IO_MEM_SIZE];
     memcpy(io, frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE, sizeof(io));
-    {
+    if (bg == 3u && frame->bg3NativeBounds) {
         /* Same rule as mode1.c (mode1_render_text_bg_compact_tokens, native
          * bounds): with the base register off the 0 the effect is authored
          * around, what the game would have written natively is base + left; an
@@ -3797,7 +4139,7 @@ static bool build_bg3_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCa
         io[MODE1_IO_BG3HOFS] = (uint8_t)hofs;
         io[MODE1_IO_BG3HOFS + 1u] = (uint8_t)(hofs >> 8u);
     }
-    {
+    if (bg == 3u && frame->bg3NativeBounds) {
         /* Rows are sampled at the view's y, as mode1.c does (`line`, not
          * `line - native_top`): the effect's VOFS is relative to the view too. */
         const unsigned vofs = (read16(io, MODE1_IO_BG3VOFS) + (unsigned)top) & 0x1ffu;
@@ -3810,7 +4152,7 @@ static bool build_bg3_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCa
     const size_t regionCount = build_regions(&native, oam, &part, regions);
     const size_t firstVertex = *vertexCursor;
     const size_t firstBatch = *batchCursor;
-    if (!build_text_bg(&native, cache, atlas, cmd, &part, 3u, NULL, regions, regionCount, emit,
+    if (!build_text_bg(&native, cache, atlas, cmd, &part, bg, NULL, regions, regionCount, emit,
                        vertexCursor, indexCursor, batchCursor))
         return false;
 
@@ -3873,6 +4215,8 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     const PpuGpu3DSBand* objBands = layerBands[PPU_GPU3DS_LAYER_BAND_OBJ];
     const size_t objBandCount = layerBandCount[PPU_GPU3DS_LAYER_BAND_OBJ];
 
+    /* BGs drawn in the native canvas only, built per band from their tiles. */
+    const uint8_t nativeMask = (uint8_t)(frame->bgNativeMask | (frame->bg3NativeBounds ? 0x8u : 0u));
     PpuGpu3DSBgMap maps[MODE1_GBA_BG_COUNT] = { { 0 } };
     PROFILE_BEGIN(PPU_GPU3DS_PHASE_MAPS);
     if (mapSpaceFits) {
@@ -3881,7 +4225,7 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
         const size_t dynamicIndex =
                 (size_t)MODE1_GBA_BG_COUNT * PPU_GPU3DS_MAP_SLICE_INDICES;
         for (unsigned bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {
-            if (bg == 3u && frame->bg3NativeBounds) continue;
+            if ((nativeMask >> bg) & 1u) continue;
             const bool affineLayer = frame->affine && bg == 2u;
             if (affineLayer
                         ? !build_affine_map(frame, cache, atlas, cmd,
@@ -3902,7 +4246,7 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     ++cache->ringStamp;
     for (unsigned bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {
         gPpuGpu3DSRingWhy[bg] = 9;
-        maps[bg].ring = layerBandCount[bg] != 0 && !(bg == 3u && frame->bg3NativeBounds) &&
+        maps[bg].ring = layerBandCount[bg] != 0 && !((nativeMask >> bg) & 1u) &&
                         build_bg_ring(frame, cache, bg, layerBands[bg], layerBandCount[bg], &maps[bg]);
         if (maps[bg].ring) maps[bg].valid = false;
     }
@@ -3961,10 +4305,16 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                 if ((dispcnt & (MODE1_DISP_BG0_ON << bg)) == 0 ||
                     (bgcnt & 3u) != (unsigned)priority)
                     continue;
-                if (bg == 3 && frame->bg3NativeBounds) {
-                    if (!build_bg3_native_bounds(frame, cache, atlas, cmd, oam, band, regions, emit,
-                                                 vertexCursor, indexCursor, batchCursor))
+                if ((nativeMask >> bg) & 1u) {
+                    if (!build_bg_native_bounds(frame, cache, atlas, cmd, oam, band, (unsigned)bg, regions, emit,
+                                                vertexCursor, indexCursor, batchCursor))
                         return false;
+                    if ((frame->pictureMask >> bg) & 1u) {
+                        const size_t regionCount = build_regions(frame, oam, band, regions);
+                        if (!build_bg_picture(frame, cmd, band, io, (unsigned)bg, (unsigned)priority, regions,
+                                              regionCount, emit, vertexCursor, indexCursor, batchCursor))
+                            return false;
+                    }
                     continue;
                 }
                 PROFILE_BEGIN(PPU_GPU3DS_PHASE_REGIONS);
@@ -3986,6 +4336,11 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                                                 batchCursor);
                 PROFILE_END(PPU_GPU3DS_PHASE_BG);
                 if (!built) return false;
+                /* The picture over the BG's own tiles (its transparent texels let them show). */
+                if (((frame->pictureMask >> bg) & 1u) &&
+                    !build_bg_picture(frame, cmd, band, io, (unsigned)bg, (unsigned)priority, regions, regionCount,
+                                      emit, vertexCursor, indexCursor, batchCursor))
+                    return false;
             }
         }
         PROFILE_BEGIN(PPU_GPU3DS_PHASE_OBJ);
@@ -4068,6 +4423,7 @@ bool PpuGpu3DS_BuildCommands(const PpuGpu3DSFrameView* frame,
     memset(cmd->mapSliceVertices, 0, sizeof(cmd->mapSliceVertices));
     memset(cmd->mapReject, 0, sizeof(cmd->mapReject));
     memset(cmd->mapRebuild, 0, sizeof(cmd->mapRebuild));
+    cmd->affineShare.valid = false;
     cmd->mapRefresh = 0;
     if (startBatch >= cmd->batchCapacity || startVertex > (size_t)UINT16_MAX) {
         cmd->failReason = PPU_GPU3DS_BUILD_CAPACITY;

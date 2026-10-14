@@ -1,5 +1,6 @@
 #include "fade_gpu_3ds.h"
 #include "platform_3ds.h"
+#include "boot_text_3ds.h"
 #include <math.h>
 #include "updater.h"
 #include "old3ds_frame_pacer.h"
@@ -12,6 +13,7 @@
 #include "tmc3ds_build_config.h"
 #if TMC3DS_DEBUG_TOOLS
 #include "debug_link_3ds.h"
+#include "ftp_server_3ds.h"
 #endif
 
 #include <3ds.h>
@@ -584,9 +586,14 @@ static uint64_t sAptMaxTicks;
 static uint64_t sAudioPumpTicks;
 static uint64_t sAudioPumpMaxTicks;
 
-/* SITE INSTALL (ftp_server_3ds.c) installed a new build of this title: jump
- * into it from the main thread, then let the game close as on HOME -> close. */
+/* SITE INSTALL (ftp_server_3ds.c) installed a new build of this title: relaunch into it 10 s
+ * later, through libctru's chainloader, and let the game close as on HOME -> close. Jumping at
+ * once (APT_PrepareToDoApplicationJump + APT_DoApplicationJump) had the system load the title a
+ * second time while the new build already ran, and the loader faulted out of memory (Luma
+ * dumps 7 and 8, r0 = 0xD86007F3, issue #4); ../legend-of-doom-3ds measured the same: 3 installs
+ * in 4 jumping at once, none of 10 waiting 10 s. The notice stays on the bottom screen meanwhile. */
 static volatile bool sRelaunchRequested;
+static uint64_t sRelaunchAt; /* osGetTime() of the relaunch, 0 none: main thread only */
 
 static bool sRelaunching;
 
@@ -606,20 +613,22 @@ static void RelaunchSelf(void) {
     DebugLog_Printf("relaunching into the build just installed");
     DebugLog_Flush();
     sRelaunching = true;
-    /* The jump is requested with the GPU still ours, and the game then closes
-     * through main's normal exit path (the APT hook drains citro3d's queue,
-     * the teardown runs on a thread with a timeout), exactly as HOME -> close
-     * and as ../sm-3ds does after SITE INSTALL (its #20). Tearing citro3d down
-     * *before* the jump hung the console on one relaunch in two (issue #2). */
-    u8 param[0x300] = { 0 };
-    u8 hmac[0x20] = { 0 };
-    if (R_SUCCEEDED(APT_PrepareToDoApplicationJump(0, TMC3DS_TITLE_ID, MEDIATYPE_SD)))
-        APT_DoApplicationJump(param, sizeof(param), hmac);
+    /* aptExit() starts this title again once the process has exited, after main's normal exit
+     * path (the APT hook drains citro3d's queue, the teardown runs on a thread with a timeout),
+     * as HOME -> close and as ../sm-3ds does. Tearing citro3d down *before* a jump hung the
+     * console on one relaunch in two (issue #2). */
+    aptSetChainloaderToSelf();
 }
 
 static bool PumpLifecycleAndAudio(void) {
     if (sRelaunchRequested) {
+        extern void DebugLog_Printf(const char* fmt, ...);
         sRelaunchRequested = false;
+        sRelaunchAt = osGetTime() + 10000u;
+        DebugLog_Printf("new build installed: relaunching in 10 s");
+    }
+    if (sRelaunchAt != 0 && osGetTime() >= sRelaunchAt) {
+        sRelaunchAt = 0;
         RelaunchSelf();
         sRunning = false;
         return false;
@@ -763,10 +772,15 @@ static bool EnsureBottomWorker(void) {
      * and its 83 ms spikes coincide with the frames that miss VBlank. Core 1
      * carries audio and GSP but has idle time, and this thread is low priority
      * so it would only take what is going spare. Switchable rather than
-     * assumed: moving audio to core 0 was tried before and made things worse. */
+     * assumed: moving audio to core 0 was tried before and made things worse.
+     * AUTO is core 1 on the Old 3DS (2026-10-13, 2DS in Full View): on core 0 the
+     * main thread left it so little that a paint took 350-550 ms of wall time
+     * (the R label, hearts and taps lagged by up to a second); on core 1, 70 ms
+     * with the same frame rate. The New 3DS keeps core 0 (not measured). */
     extern int Port_Config_BottomCore(void);
     const int bottomOverride = Port_Config_BottomCore();
-    const int core = (bottomOverride == 0 || bottomOverride == 1) ? bottomOverride : 0;
+    const int core = (bottomOverride == 0 || bottomOverride == 1) ? bottomOverride
+                                                                  : (Platform3DS_IsNew3DS() ? 0 : 1);
     sBottomWorkerThread = threadCreate(BottomWorkerMain, NULL, 64u * 1024u, priority, core, false);
     if (!sBottomWorkerThread) {
         sBottomWorkerRunning = false;
@@ -841,6 +855,7 @@ static void PollInput(void) {
         memset(&sCStickPosition, 0, sizeof(sCStickPosition));
         sCStickHeld = false;
     }
+    Port_SecondScreen_3DS_ServicePendingTap(); /* a tap kept while its panel was repainted */
     if (sDown & KEY_TOUCH) {
         touchPosition touch;
         hidTouchRead(&touch);
@@ -859,6 +874,9 @@ void Platform3DS_SetStage(uint32_t stage) { sMainStage = stage; }
 void Platform3DS_Heartbeat(void) { ++sMainHeartbeat; }
 
 void Platform3DS_WatchdogPoll(void) {
+#if TMC3DS_DEBUG_TOOLS
+    FtpServer_WatchdogPoll();
+#endif
     static uint32_t lastHeartbeat;
     static unsigned stalledPolls;
     static bool reported;
@@ -874,10 +892,13 @@ void Platform3DS_WatchdogPoll(void) {
      * seconds of a genuinely stopped main thread rather than a slow frame. */
     if (++stalledPolls < 240u) return;
     reported = true;
-    char line[128];
+    char line[192], ftp[64] = "not built";
+#if TMC3DS_DEBUG_TOOLS
+    FtpServer_DescribeStage(ftp, sizeof(ftp));
+#endif
     snprintf(line, sizeof(line),
-             "[tmc3ds] WATCHDOG: main thread stopped at stage %lu, frame %lu\n",
-             (unsigned long)sMainStage, (unsigned long)beat);
+             "[tmc3ds] WATCHDOG: main thread stopped at stage %lu, frame %lu (ftp server: %s)\n",
+             (unsigned long)sMainStage, (unsigned long)beat, ftp);
     Platform3DS_Debug(line);
 }
 
@@ -1022,14 +1043,9 @@ void Platform3DS_WaitForVBlank(void) {
 }
 
 void Platform3DS_ShowFatal(const char* title, const char* message) {
-    /* consoleInit(NULL) reuses libctru's current console.  Gameplay replaces
-     * that current console with a framebuffer-less log sink, so explicitly
-     * select the real bottom console returned by consoleInit before printing. */
-    PrintConsole* fatalConsole = consoleInit(GFX_BOTTOM, NULL);
-    consoleSelect(fatalConsole);
-    consoleDebugInit(debugDevice_CONSOLE);
-    consoleClear();
-    printf("%s\n\n%s\n\nPress START to exit.\n", title ? title : "Error", message ? message : "");
+    /* Also from inside Port_LoadRom, while the boot animation still draws there. */
+    Platform3DS_BootAnimStop();
+    BootText_ShowMessage(BootText_Tr(title ? title : "ERROR"), BOOT_TEXT_BAD, message, BootText_Tr("PRESS START TO EXIT."));
     while (aptMainLoop()) {
         hidScanInput();
         if (hidKeysDown() & KEY_START) break;
@@ -1168,6 +1184,38 @@ bool Platform3DS_CaptureTopThumbnail(uint16_t* pixels, int width, int height) {
             g /= n;
             b /= n;
             pixels[y * width + x] = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+        }
+    }
+    return true;
+}
+
+/* The top screen as shown, full size for the scene recorder: 400 columns of 240 pixels in the
+ * framebuffer's own order (column-major, each column bottom to top), as RGB565. */
+bool Platform3DS_CaptureTopRgb565(uint16_t* pixels) {
+    GSPGPU_CaptureInfo capture;
+    memset(&capture, 0, sizeof(capture));
+    if (!pixels || R_FAILED(GSPGPU_ImportDisplayCaptureInfo(&capture))) return false;
+    const GSPGPU_CaptureInfoEntry* top = &capture.screencapture[GSP_SCREEN_TOP];
+    if (!top->framebuf0_vaddr || top->framebuf_widthbytesize == 0) return false;
+    const GSPGPU_FramebufferFormat format = (GSPGPU_FramebufferFormat)(top->format & 7u);
+    const unsigned bpp = gspGetBytesPerPixel(format);
+    if (bpp < 2 || bpp > 4 || top->framebuf_widthbytesize < 240u * bpp) return false;
+    const uint8_t* fb = (const uint8_t*)top->framebuf0_vaddr;
+    GSPGPU_InvalidateDataCache(fb, top->framebuf_widthbytesize * 400u);
+    for (unsigned col = 0; col < 400u; ++col) {
+        const uint8_t* src = fb + (size_t)col * top->framebuf_widthbytesize;
+        uint16_t* dst = pixels + (size_t)col * 240u;
+        if (format == GSP_RGB565_OES) {
+            memcpy(dst, src, 240u * 2u);
+        } else if (format == GSP_BGR8_OES) {
+            for (unsigned i = 0; i < 240u; ++i, src += 3)
+                dst[i] = (uint16_t)(((src[2] >> 3) << 11) | ((src[1] >> 2) << 5) | (src[0] >> 3));
+        } else {
+            for (unsigned i = 0; i < 240u; ++i, src += bpp) {
+                uint8_t r, g, b;
+                ReadFramebufferPixel(src, format, &r, &g, &b);
+                dst[i] = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+            }
         }
     }
     return true;

@@ -50,7 +50,8 @@ with the same layout fingerprint.
 ## What to keep in mind when changing the game's code
 
 **Adding, removing, renaming or resizing a global is safe** (renaming loses its value in old
-states).
+states). Except while issue #19 is open: a resize that moves the globals after it (the statics
+of `port/port_linked_stubs.c` sit among the game's) left a state of the Minish Woods drawing wrong tiles.
 
 **A new global that holds a pointer** needs to be covered, or a state keeps a stale address
 after a rebuild and the game crashes on load. `state_pointers_3ds.c` has the rules:
@@ -62,7 +63,11 @@ after a rebuild and the game crashes on load. `state_pointers_3ds.c` has the rul
    a table of pointers into the middle of constants (`gBgAnimations`), `kConstInner`.
 3. Globals bigger than 16 KB (tile maps, the emulated memories) are saved but never scanned,
    except the first word of `gMapBottom` / `gMapTop` (`kHeadOnly`: their BG settings pointer).
-   A word pointing into the middle of `gScreen` is a pointer in any holder (`kInnerTargets`).
+   A word pointing into the middle of `gScreen` or `gScriptExecutionContextArray` is a pointer in
+   any holder (`kInnerTargets`). Each entity's `scriptContext` field (+0x84) points into the
+   latter; states written before 2026-10-13 hold it unrelocated, so on load it is put back from
+   `gEntityScriptCtxTable` (`RepairEntityScriptContexts`), which `Port_SetEntityScriptCtx` keeps
+   equal to it.
 4. `kNotSaved`: runtime objects and audio bookkeeping.
 
 A pointer to something that is not the game's code, constants or globals (a heap object, a
