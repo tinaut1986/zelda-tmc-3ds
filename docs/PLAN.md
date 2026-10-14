@@ -76,22 +76,23 @@ Link's house and the Minish Woods are untested in builds other than their writer
 build, as the house door did: issue #14). A state saved inside the pause menu breaks on closing
 it (issue #13).
 
-**Start here (2026-10-13, end of the day):** everything is merged into `release/v0.1.3` and pushed
-except `feat/title-wide` (pushed, waits for the owner). Next, in this order:
-1. The title's light rays (P4.4, `feat/title-wide`): their 256-wide layer does not tile, so the
-   repeat leaves seams. Options put to the owner: (a) extend the rays with the generative AI as
-   well and draw them as palette indices (so the game's shimmer, alpha and fades still apply),
-   (b) rays only in the middle 256 columns, (c) leave the seams. Then the owner checks the title
-   (soft reset) and the branch is merged.
-2. The README's before/after GIF of the portal shrink (owner's request): record it with the scene
+**Start here (2026-10-14):** everything is merged into `release/v0.1.3` (`feat/title-wide`
+included: the title, logos and transitions in Full View, the file select's cave). Next, in this order:
+1. P4.5, `feat/fileselect-wide`: the file select drawn at 400x240 so its sliding sprites (file rows,
+   header, the R "options" button) go to the screen's edge instead of being cut at the GBA
+   screen's; GPU renderer only (owner, 2026-10-14: everything through the GPU).
+2. The title's sword intro runs at 35-45 fps (owner, 2026-10-14, hidden by the frame skip): check
+   that it is all on the GPU (no CPU fallback) and why it is slow.
+3. The README's before/after GIF of the portal shrink (owner's request): record it with the scene
    recorder (`tmc-link.py scenerec`, P1.6) on the New 3DS, which holds more frames, once VISTA =
    ORIGINAL and once Full View; then rewrite the README (performance, Full View, bottom screen,
    states, updater) with the GIFs (owner's request, 2026-10-13).
-3. Issue #4: the relaunch fix is merged; a few more installs without a loader dump, then close.
+4. Issue #4: the relaunch fix is merged; a few more installs without a loader dump, then close.
    Issue #23 waits for the owner's soft reset check.
-4. Issue #19 (states break when the port's statics grow), #13, #11 as before.
-Scene pictures (portal, title): procedure in `docs/wide-scene-extension.md`; the owner's material
-in `~/Imágenes/minish-portal-cutscene/` and `~/Imágenes/intro-titulo/` (never in the repository).
+5. Issue #19 (states break when the port's statics grow), #13, #11 as before.
+Scene pictures (portal, title, file select): procedure in `docs/wide-scene-extension.md`; the owner's material
+in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/intro-titulo/` and `~/Imágenes/elige-archivo/`
+(never in the repository).
 To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
 **On the owner's consoles now (2026-10-13):**
