@@ -161,6 +161,7 @@ tools/tmc-link/tmc-link.py peek gRoomControls 16    # symbols from build-3ds/gam
 tools/tmc-link/tmc-link.py --elf ../wt/build-3ds/game/tmc-3ds.elf peek gHUD 8   # a build made elsewhere
 tools/tmc-link/tmc-link.py switch "FRAME SYNC"
 tools/tmc-link/tmc-link.py gpucheck             # next frame by both renderers: differing=N structural=N
+tools/tmc-link/tmc-link.py perf start / perf stop [DIR]   # the perf recorder; stop fetches the CSV
 tools/tmc-link/tmc-link.py poke gPpuGpu3DSRingDisable 0f   # bit per BG: draw it from quads again (00 = rings on)
 tools/tmc-link/tmc-link.py log                  # flush (MARK) and fetch the newest SD log
 tools/tmc-link/tmc-link.py run tools/tmc-link/examples/walk-left.txt

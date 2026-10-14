@@ -1,4 +1,5 @@
 #include "debug_link_3ds.h"
+#include "debug_perf_3ds.h"
 
 #include "debug_files_3ds.h"
 #include "debug_log_3ds.h"
@@ -38,6 +39,7 @@ typedef enum LinkOp {
     LINK_OP_POKE,
     LINK_OP_REC,
     LINK_OP_SCENEREC,
+    LINK_OP_PERF,
 } LinkOp;
 
 /* One request at a time: the FTP server serves one client and one command. */
@@ -272,6 +274,19 @@ bool DebugLink_Command(const char* verb, const char* args, char* reply, unsigned
         RunOnMainThread(LINK_OP_SCENEREC, reply, cap);
         return true;
     }
+    if (!strcmp(verb, "PERF")) {
+        /* PERF START: the perf recorder (docs/debug-tools.md); PERF STOP: its CSV, debug/tmc-perf-NNNN.csv. */
+        if (args && (args[0] == 's' || args[0] == 'S') && (args[2] == 'a' || args[2] == 'A')) {
+            sArgA = 1;
+        } else if (args && (args[0] == 's' || args[0] == 'S') && (args[2] == 'o' || args[2] == 'O')) {
+            sArgA = 0;
+        } else {
+            snprintf(reply, cap, "501 PERF START | STOP");
+            return true;
+        }
+        RunOnMainThread(LINK_OP_PERF, reply, cap);
+        return true;
+    }
     if (!strcmp(verb, "SAVESTATE") || !strcmp(verb, "LOADSTATE") || !strcmp(verb, "DELSTATE") ||
         !strcmp(verb, "STATES")) {
         StateCommand(verb, args, reply, cap);
@@ -390,6 +405,20 @@ static void RunRequest(LinkOp op) {
         case LINK_OP_SCENEREC:
             if (sArgA > 0) SceneRec_Start(sArgA, sResult, sizeof(sResult));
             else SceneRec_Stop(sResult, sizeof(sResult));
+            break;
+        case LINK_OP_PERF:
+            if (sArgA) {
+                if (DebugPerf_Running()) snprintf(sResult, sizeof(sResult), "200 Already recording.");
+                else if (DebugPerf_Start()) snprintf(sResult, sizeof(sResult), "200 Recording.");
+                else snprintf(sResult, sizeof(sResult), "451 No memory for the recorder.");
+            } else if (!DebugPerf_Running()) {
+                snprintf(sResult, sizeof(sResult), "451 Not recording.");
+            } else {
+                const unsigned rows = DebugPerf_Rows();
+                const int n = DebugPerf_Stop();
+                if (n > 0) snprintf(sResult, sizeof(sResult), "200 tmc-perf-%04d.csv %u rows", n, rows);
+                else snprintf(sResult, sizeof(sResult), "451 Cannot write the CSV.");
+            }
             break;
         case LINK_OP_DUMP: {
             /* Written at the next frame boundary; debug/tmc-dump-last.txt then
