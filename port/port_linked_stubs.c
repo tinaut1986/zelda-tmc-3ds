@@ -1451,6 +1451,50 @@ static int Port_WidescreenRead3DSView(u32* roomKey, Port3DSFullViewMode* mode) {
  * Published under its own key, so no static is added here: these sit among the
  * game's globals, and growing them breaks states saved by other builds (#19). */
 #define WS_CUTSCENE_VIEW_KEY 0xC0715CE5u
+#define WS_TITLE_VIEW_KEY 0x717E5CE5u
+
+/* The title screen in Full View (Western layout: the forest on BG1): drawn at 400x240 with the
+ * GBA's screen centred (src/title.c moves the light rays, sword and sprites), the forest from the
+ * extended picture (platform/3ds/source/scene_pictures_3ds.c) as BG1, the light rays repeated
+ * across the view and from its top. Only with a picture to draw the forest from. */
+int Port_Widescreen_TitleWide(void) {
+#ifdef TMC_3DS
+    extern bool ScenePictures_TitleAvailable(void);
+    /* TitleTask (src/title.c) runs gUI.lastState's handler in state 1: 1 the title, 2 its exit
+     * after START. In state 2 the screen the game left fades out while lastState already names the
+     * next one: the title fading out stays wide (to white after START, or back to the logos when
+     * its timer runs out), the logos fading into the title do not. Told apart by the layers on. */
+    if (!Port_Config_3DSFullViewComboEnabled() || gMain.task != TASK_TITLE || gSaveHeader->language == 0 ||
+        !ScenePictures_TitleAvailable())
+        return 0;
+    if (gMain.state == GAMETASK_MAIN) {
+        /* The screen fading out still has its layers (DispReset comes after the fade): the title's
+         * are mode 1 with the forest on BG1 at screen base 30 (src/title.c); the logos' are not. */
+        const unsigned dispcnt = gScreen.lcd.displayControl;
+        return (dispcnt & 7) == 1 && (dispcnt & DISPCNT_BG1_ON) &&
+               gScreen.bg1.control == (BGCNT_SCREENBASE(30) | BGCNT_PRIORITY(3));
+    }
+    return gMain.state == GAMETASK_INIT && (gUI.lastState == 1 || gUI.lastState == 2);
+#else
+    return 0;
+#endif
+}
+
+int Port_Widescreen_TitleViewLive(void) {
+    u32 key;
+    Port3DSFullViewMode mode;
+    return Port_WidescreenRead3DSView(&key, &mode) && key == WS_TITLE_VIEW_KEY &&
+           mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
+}
+
+int Port_Widescreen_TitleRays(void) {
+#ifdef TMC_3DS
+    extern int TitleRays3DS_Update(uint8_t* vram);
+    return TitleRays3DS_Update(gVram);
+#else
+    return 0;
+#endif
+}
 
 int Port_Widescreen_PortalCutsceneWide(void) {
 #ifdef TMC_3DS
@@ -1467,6 +1511,62 @@ int Port_Widescreen_CutsceneViewLive(void) {
     Port3DSFullViewMode mode;
     return Port_WidescreenRead3DSView(&key, &mode) && key == WS_CUTSCENE_VIEW_KEY &&
            mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
+}
+
+/* Screens of one plain colour around the middle, drawn 240x160 in Full View: the presenter
+ * stretches the frame's edges over the rest of the 400x240 screen (platform_gpu_3ds.c,
+ * DrawFrameEdges) instead of black bars around them. The Nintendo/Capcom logos (title task,
+ * lastState 0, its handler running in state 1) and the blank frames of the title and file select
+ * (no layer on: one colour), and what the title task fades out at 240x160 (state 2). -1 there
+ * when the title itself may be 240x160 (Japanese layout, no forest picture): the presenter keeps
+ * its last answer, as that screen is still the one shown. */
+int Port_Widescreen_StretchEdges(void) {
+#ifdef TMC_3DS
+    if (!Port_Config_3DSFullViewComboEnabled()) return 0;
+    if (gMain.task != TASK_TITLE && gMain.task != TASK_FILE_SELECT) return 0;
+    const unsigned dispcnt = gIoMem[REG_OFFSET_DISPCNT] | (gIoMem[REG_OFFSET_DISPCNT + 1] << 8);
+    if ((dispcnt & DISPCNT_FORCED_BLANK) || !(dispcnt & 0x1F00)) return 1; /* first: a reset fades a blank one */
+    if (gMain.task == TASK_TITLE && gMain.state == GAMETASK_MAIN) {
+        /* With the Western title's picture the title is never drawn 240x160, so what fades here at
+         * 240x160 is plain: the logos, or whatever a reset or the boot left, faded to white. */
+        extern bool ScenePictures_TitleAvailable(void);
+        return gSaveHeader->language != 0 && ScenePictures_TitleAvailable() ? 1 : -1;
+    }
+    return gMain.task == TASK_TITLE && gMain.state == GAMETASK_INIT && gUI.lastState == 0;
+#else
+    return 0;
+#endif
+}
+
+/* The file select screen (src/fileselect.c, HandleFileScreenEnter): its cave is BG3 at screen
+ * base 30, character base 2, priority 3, never scrolled; read from the registers the shown frame
+ * was drawn from. */
+int Port_Widescreen_FileSelectCaveShown(void) {
+#ifdef TMC_3DS
+    if (!Port_Config_3DSFullViewComboEnabled() || gMain.task != TASK_FILE_SELECT) return 0;
+    const unsigned dispcnt = gIoMem[REG_OFFSET_DISPCNT] | (gIoMem[REG_OFFSET_DISPCNT + 1] << 8);
+    const unsigned bg3cnt = gIoMem[REG_OFFSET_BG3CNT] | (gIoMem[REG_OFFSET_BG3CNT + 1] << 8);
+    return !(dispcnt & DISPCNT_FORCED_BLANK) && (dispcnt & DISPCNT_BG3_ON) &&
+           bg3cnt == (BGCNT_SCREENBASE(30) | BGCNT_CHARBASE(2) | BGCNT_PRIORITY(3));
+#else
+    return 0;
+#endif
+}
+
+/* The title screen's forest is on screen (src/title.c: BG1, or BG3 in the Japanese layout, at
+ * screen base 30, priority 3), read from the registers the shown frame was drawn from: the
+ * presenter then extends it around the 240x160 screen (docs/wide-scene-extension.md). */
+int Port_Widescreen_TitleForestShown(void) {
+#ifdef TMC_3DS
+    if (!Port_Config_3DSFullViewComboEnabled() || gMain.task != TASK_TITLE) return 0;
+    const unsigned dispcnt = gIoMem[REG_OFFSET_DISPCNT] | (gIoMem[REG_OFFSET_DISPCNT + 1] << 8);
+    const unsigned bg1 = gIoMem[REG_OFFSET_BG1CNT] | (gIoMem[REG_OFFSET_BG1CNT + 1] << 8);
+    const unsigned bg3 = gIoMem[REG_OFFSET_BG3CNT] | (gIoMem[REG_OFFSET_BG3CNT + 1] << 8);
+    const unsigned forest = BGCNT_SCREENBASE(30) | BGCNT_PRIORITY(3);
+    return ((dispcnt & DISPCNT_BG1_ON) && bg1 == forest) || ((dispcnt & DISPCNT_BG3_ON) && bg3 == forest);
+#else
+    return 0;
+#endif
 }
 
 int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {
@@ -1768,7 +1868,8 @@ Port3DSFullViewMode Port_Widescreen_3DSViewMode(void) {
      * previous generation's already-produced frame. */
     u32 publishedKey;
     if (!Port_WidescreenRead3DSView(&publishedKey, &publishedMode)) return PORT_3DS_FULL_VIEW_FALLBACK;
-    if (publishedKey == WS_CUTSCENE_VIEW_KEY) return publishedMode; /* no map shadows there */
+    if (publishedKey == WS_CUTSCENE_VIEW_KEY || publishedKey == WS_TITLE_VIEW_KEY)
+        return publishedMode; /* no map shadows there */
     if (!Port_Widescreen_ShadowsLive()) return PORT_3DS_FULL_VIEW_FALLBACK;
     return publishedMode;
 }
@@ -1903,7 +2004,7 @@ static Port3DSFullViewMode Port_WidescreenGameplayMode(void) {
 }
 
 int Port_Widescreen_GameplayViewWidth(void) {
-    if (Port_Widescreen_PortalCutsceneWide()) return 400;
+    if (Port_Widescreen_PortalCutsceneWide() || Port_Widescreen_TitleWide()) return 400;
     switch (Port_WidescreenGameplayMode()) {
         case PORT_3DS_FULL_VIEW_OUTDOOR_1X:
             return 400;
@@ -1915,7 +2016,7 @@ int Port_Widescreen_GameplayViewWidth(void) {
 }
 
 int Port_Widescreen_GameplayViewHeight(void) {
-    if (Port_Widescreen_PortalCutsceneWide()) return 240;
+    if (Port_Widescreen_PortalCutsceneWide() || Port_Widescreen_TitleWide()) return 240;
     switch (Port_WidescreenGameplayMode()) {
         case PORT_3DS_FULL_VIEW_OUTDOOR_1X:
             return 240;
@@ -2078,7 +2179,7 @@ int Port_Widescreen_HudRightAnchor(void) {
 }
 
 int Port_Widescreen_ProducerViewWidth(void) {
-    if (Port_Widescreen_PortalCutsceneWide()) return 400;
+    if (Port_Widescreen_PortalCutsceneWide() || Port_Widescreen_TitleWide()) return 400;
     /* Producer geometry is the camera/gameplay mode already prepared for
      * this tick. Live policy may change after that preparation; UpdateShadows
      * intentionally commits the completed producer generation once before
@@ -2094,7 +2195,7 @@ int Port_Widescreen_ProducerViewWidth(void) {
 }
 
 int Port_Widescreen_ProducerViewHeight(void) {
-    if (Port_Widescreen_PortalCutsceneWide()) return 240;
+    if (Port_Widescreen_PortalCutsceneWide() || Port_Widescreen_TitleWide()) return 240;
     switch (Port_WidescreenGameplayMode()) {
         case PORT_3DS_FULL_VIEW_OUTDOOR_1X:
             return 240;
@@ -2389,6 +2490,11 @@ void Port_Widescreen_UpdateShadows(void) {
         Port_WidescreenPublish3DSView(WS_CUTSCENE_VIEW_KEY, PORT_3DS_FULL_VIEW_OUTDOOR_1X);
         return;
     }
+    if (Port_Widescreen_TitleWide()) {
+        virtuappu_mode1_ws_full_view = 1;
+        Port_WidescreenPublish3DSView(WS_TITLE_VIEW_KEY, PORT_3DS_FULL_VIEW_OUTDOOR_1X);
+        return;
+    }
 #endif
 
     /* Refresh painted bounds before choosing geometry. Both dimensions are
@@ -2589,6 +2695,21 @@ int Port_Widescreen_PortalCutsceneWide(void) {
     return 0;
 }
 int Port_Widescreen_CutsceneViewLive(void) {
+    return 0;
+}
+int Port_Widescreen_TitleForestShown(void) {
+    return 0;
+}
+int Port_Widescreen_StretchEdges(void) {
+    return 0;
+}
+int Port_Widescreen_FileSelectCaveShown(void) {
+    return 0;
+}
+int Port_Widescreen_TitleWide(void) {
+    return 0;
+}
+int Port_Widescreen_TitleViewLive(void) {
     return 0;
 }
 int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {

@@ -6,9 +6,11 @@ and right of the original picture do not exist in the game's data. The owner fil
 generative AI (Antigravity) from a screen dump; the game reads the result from the SD card.
 Done for the Minish portal cutscene (PLAN P4.3); planned for the title screen (P4.4).
 
-**Legal:** the dump, the template and the AI's picture are derived from the game's art. They stay
-on the owner's PC (`~/Imágenes/<scene>/`) and the SD card, never in the repository, a release or
-the CIA. The game works without them (black sides).
+**What ships:** only the generated parts (the original area left transparent), in
+`platform/3ds/assets/wide-scenes/` and, converted, in the romfs (`platform/3ds/romfs/wide-scenes/`,
+owner's decision, 2026-10-13, so players have them). The dump, the template and the whole
+picture (with the game's art in it) stay on the owner's PC (`~/Imágenes/<scene>/`). A file of the
+same name in the data folder replaces the shipped one, for trying a new picture.
 
 ## 1. Dump the scene and extract its picture
 
@@ -69,15 +71,76 @@ tools/scene-extend/check_extension.py ~/Imágenes/<scene>/extended.png ~/Imágen
 The original area must be unchanged (0 pixels; else paste the original back over it) and the new
 parts should use only the original's colours (0 off-palette; else map them to the nearest).
 
-## 4. Put it on the console
+## 4. Put it on the console, and in the game
 
-Each scene has its own file in the data folder and its own converter; the presenter draws only
-the new columns, scrolled with the picture, through the game's colour conversion and fades.
+```sh
+tools/scene-extend/to_console.py SCENE extended.png --ip IP     # try it: into the data folder
+```
 
-| Scene | File on the SD card | Converter | Code |
+To ship it: keep the generated parts (the original area transparent) in
+`platform/3ds/assets/wide-scenes/` and convert that into the romfs:
+`tools/scene-extend/to_console.py SCENE platform/3ds/assets/wide-scenes/NAME.png
+platform/3ds/romfs/wide-scenes/FILE.bin`. The presenter draws only the parts outside the game's
+own picture, scrolled with it, through the game's colour conversion and fades.
+
+| Scene | File (romfs `wide-scenes/`, or the data folder) | `to_console.py` scene; pictures | Code |
 |---|---|---|---|
-| Minish portal cutscene (P4.3) | `portal-cutscene-strips.bin` (80 + 64 columns x 320, RGB565) | `tools/portal-strips/make_strips.py extended.png --ip IP` | `Port_Widescreen_CutsceneStrips`, `DrawCutsceneStrips` (`platform_gpu_3ds.c`) |
-| Title screen (P4.4) | not made yet: the forest (BG1, 240x160, 22 colours) needs all four sides, 80 left and right and 40 above and below (`extract_bg.py DUMP 1 --top 40 --bottom 40`); the light rays (BG0, blended over it) and the logo and sword stay the game's | | |
+| Minish portal cutscene (P4.3) | `portal-cutscene-strips.bin` (80 + 64 columns x 320) | `portal`; shipped: `portal-cutscene-1.png` (the owner's pick; `-2` the plainer variant) | `Port_Widescreen_CutsceneStrips`, `DrawScenePictures` (`platform_gpu_3ds.c`) |
+| Title screen (P4.4) | `title-forest.bin` (400x240) | `title`; shipped: `title-forest-a.png` (`-b` the framed variant). The forest (BG1, 240x160, 22 colours) needs all four sides (`extract_bg.py DUMP 1 --top 40 --bottom 40`). The title is drawn at 400x240 (`Port_Widescreen_TitleWide`, `src/title.c`): the picture *is* BG1 in both renderers (`virtuappu_mode1_bg1_picture`, the GPU's picture texture), so the light rays blend over it and the sword and sprites go over it; the rays are continued by the game itself (below) | `scene_pictures_3ds.c`, `PortPpuGpu3DS_SetBg1Picture` |
+| File select (P4.5) | `fileselect-cave.bin` (400x240 palette indices) | `fileselect --palettes DUMP-palettes.bin`; shipped: `fileselect-cave-1.png` (the owner's pick, "monumental"; `-2`, `-3` the other variants). The cave (BG3, 240x160, 35 colours, BG palettes 11-14) needs all four sides (`extract_bg.py DUMP 3 --width 240 --height 160 --top 40 --bottom 40`); the screen stays 240x160 in the middle and the presenter draws the rest. Its shimmer is the game cycling palettes 11-14, so the file holds indices, not colours (below) | `CaveReady`, `DrawScenePictures` (`platform_gpu_3ds.c`), `Port_Widescreen_FileSelectCaveShown` |
+
+Screens whose background is one plain colour need no picture: the Nintendo/Capcom logos at the
+start, and the blank frames between the title and file select, are drawn at 240x160 and the
+presenter stretches the frame's edge columns and rows to the screen's edges (`DrawFrameEdges` in
+`platform_gpu_3ds.c`, `Port_Widescreen_StretchEdges`), so the background and the game's fades fill
+the 400x240 screen. A screen keeps its view while the game fades it out (the title task's state 2,
+when `gUI.lastState` already names the next screen).
 
 A new scene needs its view at 400x240 first (the scene's own layout: how the picture and the
 sprites are centred, which BG repeats), then a strips file and its converter as for the portal.
+
+## Layers animated by palette: continue them, do not paint them
+
+A layer the game animates through its palette or its blend (the title's light rays, BG0: the
+palette rotates every 8 frames, `UpdateLightRays`, and the blend changes every 32) cannot be a
+painted picture: it has to stay palette indices in the game's own BG, so the animation goes on.
+When the layer is made of straight parallel strokes, as the rays are, it is continued by copying
+it, without an AI and without shipping anything:
+
+```sh
+tools/scene-extend/extend_rays.py ~/Imágenes/<scene>/tmc-dump-0026 --forest \
+    platform/3ds/assets/wide-scenes/title-forest-a.png ~/Imágenes/<scene>/bg1-picture.png --forest-at 80,40
+```
+
+reads BG0 from the dump as indices, finds each ray (8-connected), checks that every one repeats one
+row down and one column left (45 degrees; it stops and names any that does not), and continues each
+diagonal the picture cuts (top row, last column) to the view's edge by repeating a stretch of the
+ray's upper half on that diagonal; the original's pixels are not touched. `rays-preview.png` and
+`rays-on-forest.png` (blended 9/9 over the forest) show the result. Gaps the GBA's screen never
+showed get copies of whole rays: `--suggest` lists places where a copy keeps 8 pixels from every
+ray and stays off the original's area; `--add RAY:DX,DY` draws one (rays are numbered as the script
+prints them).
+
+The game does the same itself (`platform/3ds/source/title_rays_3ds.c`, the placements in
+`kNewRays`): on the title in Full View it computes the extension from the BG0 it loaded and writes
+it into VRAM as new tiles (at the top of character block 0, past every tile BG0 and BG1 use) and a
+512x256 map in screen blocks 26-27 (unused by the title), with the original's map entries at
++80,+40; `src/title.c` points BG0 at that map. Both renderers then draw it as the game's BG0. It is
+rebuilt when the source changes and rewritten when something overwrites it. The added pixels are the
+ROM's own art, so they are never in the repository or the romfs. Check a change with
+`platform/3ds/tests/title_rays_3ds_test.c` (against a dump's `-vram.bin`; it writes the extended
+layer as indices, to compare with the script's `rays-indices.png`).
+
+### A generated picture over a palette-cycled background
+
+The file select's cave shimmers because the game cycles its four palettes (11-14, every 16
+frames), not because its pixels change. A generated extension painted in colours would stay still
+beside it, so `to_console.py fileselect` turns the picture back into palette indices with the
+palettes of a dump of that screen (`--palettes`): every pixel takes a palette that holds its exact
+colour, the one most of its 8x8 block uses when it can, so a block shimmers as one (the generated
+picture may only use the original's colours: `check_extension.py` says so). The presenter keeps
+the indices and rebuilds its texture from the palettes the shown frame was drawn from
+(`FadeGpu3DS_ShownPalettes`) whenever they change, so the extension shimmers on the same frames
+as the original; the game's fades veil it as they do the title's forest. The indices are
+generated art only, so they ship like the other extensions.
+

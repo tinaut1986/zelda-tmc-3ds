@@ -109,6 +109,23 @@ void FadeGpu3DS_OnFrameBoundary(void) {
     snapshot->color = gUnk_020354C0[0].unk1;
 }
 
+bool FadeGpu3DS_FadeShown(const uint16_t* src, uint16_t* dst, size_t count) {
+    const FadeSnapshot* snapshot = &sSnapshot[sCurrent ^ 1u];
+    if (snapshot->intensity == 0 || snapshot->intensity > 256 || gRomData == NULL) return false;
+    uint16_t in[16], out[16];
+    for (size_t i = 0; i < count; i += 16) {
+        const size_t n = count - i < 16 ? count - i : 16;
+        memcpy(in, src + i, n * sizeof(uint16_t));
+        FadePalette(in, out, snapshot->intensity, snapshot->color);
+        for (size_t k = 0; k < n; ++k) dst[i + k] = src[i + k] != 0 ? out[k] : 0; /* 0 stays "none" */
+    }
+    return true;
+}
+
+const uint16_t* FadeGpu3DS_ShownPalettes(void) {
+    return sSnapshot[sCurrent ^ 1u].buffer;
+}
+
 bool FadeGpu3DS_Shown(uint8_t* weight, uint8_t* level) {
     const FadeSnapshot* snapshot = &sSnapshot[sCurrent ^ 1u];
     if (snapshot->intensity == 0 || snapshot->intensity > 256) return false;

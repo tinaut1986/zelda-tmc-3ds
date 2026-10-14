@@ -32,6 +32,7 @@
 #include "ndsp_psg_offload.h"
 
 #include "virtuappu.h"
+#include "scene_pictures_3ds.h"
 #include "scene_rec_3ds.h"
 #include "cpu/mode1.h"
 #include "main.h"
@@ -207,7 +208,7 @@ static TopFrameState SelectTopFrame(void) {
     const Port3DSFullViewMode requested = Port_Widescreen_3DSViewMode();
     if (requested == PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
         MODE1_GBA_WIDTH >= 400 && MODE1_GBA_HEIGHT >= 240 &&
-        (Port_Widescreen_ShadowsLive() || Port_Widescreen_CutsceneViewLive())) {
+        (Port_Widescreen_ShadowsLive() || Port_Widescreen_CutsceneViewLive() || Port_Widescreen_TitleViewLive())) {
         state.width = 400;
         state.height = 240;
         state.validSourceWidth = 400;
@@ -282,7 +283,8 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     /* As mode1.c's repeat_full_view_overlay: in Full View BG3 (light rays, steam,
      * clouds) covers the whole view, not just the native 240 columns. */
     view->bg3Repeat = virtuappu_mode1_bg3_repeat || virtuappu_mode1_ws_full_view != 0;
-    view->bg1Repeat = virtuappu_mode1_bg1_repeat;
+    view->bgRepeatMask = virtuappu_mode1_bg_repeat_mask;
+    view->bg1Picture = virtuappu_mode1_bg1_picture != NULL;
     view->wsFullView = virtuappu_mode1_ws_full_view != 0;
     /* The software PPU's rule (mode1_bg3_native_bounds_active). */
     view->bg3HofsBase = virtuappu_mode1_bg3_hofs_base;
@@ -1253,8 +1255,17 @@ static void PresentFrame(void) {
      * Wide mode must extend them past x=240 just as Full View already does. */
     virtuappu_mode1_bg3_repeat = gMain.task == TASK_GAME &&
         gRoomControls.area == AREA_HYRULE_FIELD && gScreen.bg3.control == 0x1e05;
-    /* The portal cutscene's picture across the 400 view; the presenter covers what wraps. */
-    virtuappu_mode1_bg1_repeat = sTopPresentMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X && Port_Widescreen_CutsceneViewLive();
+    /* Scenes drawn wider than the GBA's screen: the portal cutscene's picture across the 400 view
+     * (the presenter covers what wraps), the title's light rays, and its forest from the extended
+     * picture (scene_pictures_3ds.c) as BG1. */
+    {
+        const bool wideFrame = sTopPresentMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
+        const bool title = wideFrame && Port_Widescreen_TitleViewLive();
+        virtuappu_mode1_bg_repeat_mask = wideFrame && Port_Widescreen_CutsceneViewLive() ? 0x2u : title ? 0x3u : 0u;
+        virtuappu_mode1_bg1_picture = title ? ScenePictures_TitleAbgr() : NULL; /* faded below if the CPU draws */
+        PortPpuGpu3DS_SetBg1Picture(title ? ScenePictures_Title555() : NULL, SCENE_TITLE_W, SCENE_TITLE_H);
+        if (!title && !Port_Widescreen_TitleWide()) ScenePictures_Release();
+    }
     /* Only Vaati's appearing effect is placed on the native screen (BG3 drawn at an
      * entity's screen position); the other BG3 HBlank effects (Minish Woods light
      * rays, steam) are overlays that must cover the whole view. */
@@ -1280,6 +1291,7 @@ static void PresentFrame(void) {
         if (parityFrame) {
             Platform3DS_MarkFrameDiscontinuity(
                 OLD3DS_FRAME_PACER_DISCONTINUITY_DUMP);
+            if (virtuappu_mode1_bg1_picture) virtuappu_mode1_bg1_picture = ScenePictures_TitleAbgrFaded();
             virtuappu_render_frame();
             PortPpuGpu3DS_CaptureParityReference(
                 sTopUpload, sTopUploadPitch, sTopPresentWidth, sTopPresentHeight);
@@ -1354,7 +1366,12 @@ static void PresentFrame(void) {
     Platform3DS_SetStage(4);
     const uint64_t softwareStartTick = Platform3DS_SystemTick();
     if (holdTop) port_hdma_vblank_reset();
-    else if (!gpuReady) virtuappu_render_frame();
+    else if (!gpuReady) {
+        /* The CPU draws from PAL_RAM, faded by the game: so must the scene picture be (the GPU
+         * renderer fades its whole frame instead). Only when it draws: it costs a few ms. */
+        if (virtuappu_mode1_bg1_picture) virtuappu_mode1_bg1_picture = ScenePictures_TitleAbgrFaded();
+        virtuappu_render_frame();
+    }
     Platform3DS_SetStage(5);
     const uint64_t renderEndTick = Platform3DS_SystemTick();
 
