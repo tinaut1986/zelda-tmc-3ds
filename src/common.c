@@ -462,6 +462,31 @@ void LoadPaletteGroup(u32 group) {
  * to this translation unit. Only resolves the first chained entry; that's
  * sufficient for a single 16-color icon palette (icon graphics don't use
  * multi-group chaining). */
+/* port/port_zone_tiles.c: the BG palettes a palette group would load (ROM-backed, as the 3DS has
+ * no asset tree), into out[256] (BG palettes 0-15, others untouched); returns the mask of the BG
+ * palettes it sets. Nothing is written to gPaletteBuffer. */
+u32 Port_ResolveBgPaletteGroup(u32 group, u16* out) {
+    const PaletteGroup* paletteGroup = gPaletteGroups[group];
+    u32 mask = 0;
+    if (paletteGroup == NULL) return 0;
+    while (1) {
+        u32 pg = ROM_U32(*(const u32*)paletteGroup);
+        u32 dest = (pg >> 16) & 0xFF;
+        u32 count = (pg >> 24) & 0xF;
+        if (count == 0) count = 16;
+        const u8* src = &gGlobalGfxAndPalettes[(pg & 0xFFFF) * 32];
+        for (u32 i = 0; i < count; i++) {
+            if (dest + i < 16) {
+                memcpy(&out[(dest + i) * 16], src + i * 32, 32);
+                mask |= 1u << (dest + i);
+            }
+        }
+        if (((pg >> 24) & 0x80) == 0) break;
+        paletteGroup++;
+    }
+    return mask;
+}
+
 const u8* Port_GetRawPaletteGroupData(u32 group, u32* outNumColors) {
     const PaletteGroup* paletteGroup = gPaletteGroups[group];
     if (paletteGroup == NULL) {

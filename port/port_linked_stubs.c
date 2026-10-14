@@ -39,6 +39,9 @@
 #include "port_config.h"
 #include "port_rom.h"
 #include "port_runtime_config.h"
+#ifdef TMC_3DS
+#include "port_zone_tiles.h"
+#endif
 #include "port_widescreen.h"
 #include "port_hdma.h"
 #include "port_widescreen_banner_state.h"
@@ -2304,6 +2307,11 @@ static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* s
     if (room_tiles_h > kMapRows)
         room_tiles_h = kMapRows;
     const int scrolling = Port_WidescreenScrollActive();
+#ifdef TMC_3DS
+    /* Rooms that swap building graphics by zone (port/port_zone_tiles.h, issue #26): each entry's
+     * zone, so the renderer draws it from that zone's set. */
+    uint8_t* const zoneRows = !scrolling && Port_ZoneTiles_Active() ? Port_ZoneTiles_ShadowVariants(bg_index) : NULL;
+#endif
     for (int sr = 0; sr < MODE1_WS_SHADOW_ROWS; sr++) {
         int shadow_row = sr;
         s32 world_row = 2 * (ydiff >> 4) - 1 + sr;
@@ -2319,6 +2327,10 @@ static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* s
             world_row = ((ydiff + shake_y) >> 3) + sr;
         }
         u16* row_dst = shadow + (size_t)shadow_row * (size_t)shadow_cols;
+#ifdef TMC_3DS
+        uint8_t* const zone_dst = zoneRows ? zoneRows + (size_t)shadow_row * (size_t)shadow_cols : NULL;
+        if (zone_dst) memset(zone_dst, 0, (size_t)shadow_cols);
+#endif
         if (!scrolling && (world_row < 0 || world_row >= room_tiles_h)) {
             for (int C = 0; C < shadow_cols; C++)
                 row_dst[C] = 0;
@@ -2331,8 +2343,14 @@ static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* s
                                          ? mapSpecial[world_row * kMapStride + world_col]
                                          : (u16)0);
             row_dst[C] = entry;
+#ifdef TMC_3DS
+            if (zone_dst && entry != 0) zone_dst[C] = Port_ZoneTiles_Variant(world_col, world_row);
+#endif
         }
     }
+#ifdef TMC_3DS
+    Port_ZoneTiles_SetShadowLive(bg_index, zoneRows != NULL);
+#endif
     virtuappu_mode1_ws_shadow_cols[bg_index] = (uint8_t)shadow_cols;
     virtuappu_mode1_ws_shadow_stride[bg_index] = (uint8_t)shadow_cols;
     virtuappu_mode1_ws_shadow[bg_index] = shadow;
@@ -2506,7 +2524,13 @@ void Port_Widescreen_UpdateShadows(void) {
         virtuappu_mode1_ws_shadow[i] = NULL;
         virtuappu_mode1_ws_shadow_cols[i] = MODE1_WS_SHADOW_WIDE_COLS;
         virtuappu_mode1_ws_shadow_stride[i] = MODE1_WS_SHADOW_WIDE_COLS;
+#ifdef TMC_3DS
+        Port_ZoneTiles_SetShadowLive(i, false);
+#endif
     }
+#ifdef TMC_3DS
+    if (Port_Config_3DSFullViewComboEnabled()) Port_ZoneTiles_Update();
+#endif
     virtuappu_mode1_ws_hud_right_anchor = 0;
     virtuappu_mode1_ws_msg_shift = 0;
     virtuappu_mode1_ws_full_view = 0;
