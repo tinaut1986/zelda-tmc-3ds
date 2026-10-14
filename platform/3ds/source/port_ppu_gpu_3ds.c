@@ -1,5 +1,6 @@
 #include "platform_3ds.h"
 #include "port_ppu_gpu_3ds.h"
+#include "stereo_3ds.h"
 
 #include "platform_gpu_3ds.h"
 #include "ppu_gpu_3ds_budget.h"
@@ -75,6 +76,15 @@ static bool sPicturePalettesValid;
 static unsigned sBoundTexture;
 static C3D_Tex sOutputTexture;
 static C3D_RenderTarget* sOutputTarget;
+/* The right eye's picture when layers have a depth (stereo_3ds.h): made on first use. */
+static C3D_Tex sOutputRightTexture;
+static C3D_RenderTarget* sOutputRightTarget;
+static bool sRightReady;
+static bool sEyeShifting;
+static float sEyeShiftNdc[PPU_GPU3DS_OBJ + 1][4];
+/* The same in whole pixels, for the batch's scissor: a layer's regions move with it, or their
+ * edges cut what moved (the R button split in two, a heart cut by the next). */
+static int sEyeShiftPx[PPU_GPU3DS_OBJ + 1][4];
 static DVLB_s* sShader;
 static shaderProgram_s sProgram;
 static int sOffsetUniform = -1;
@@ -150,6 +160,11 @@ void PortPpuGpu3DS_Shutdown(void) {
 
     if (sOutputTarget) C3D_RenderTargetDelete(sOutputTarget);
     if (sOutputTexture.data) C3D_TexDelete(&sOutputTexture);
+    if (sOutputRightTarget) C3D_RenderTargetDelete(sOutputRightTarget);
+    if (sOutputRightTexture.data) C3D_TexDelete(&sOutputRightTexture);
+    sOutputRightTarget = NULL;
+    sOutputRightTexture = (C3D_Tex){ 0 };
+    sRightReady = false;
     if (sPictureTex.data) C3D_TexDelete(&sPictureTex);
     memset(&sPictureTex, 0, sizeof(sPictureTex));
     sPicturePixels = NULL;
@@ -820,7 +835,10 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
                        : batch->texture == PPU_GPU3DS_PICTURE_TEXTURE ? &sPictureTex
                                                                       : &sRingTex[batch->texture - 1u]);
     }
-    SetBatchOffset(batch->offsetX, batch->offsetY);
+    SetBatchOffset(batch->offsetX + (sEyeShifting && batch->layer <= PPU_GPU3DS_OBJ
+                                             ? sEyeShiftNdc[batch->layer][batch->priority & 3u]
+                                             : 0.0f),
+                   batch->offsetY);
     const u32 yOffset = sViewportOffset;
     u32 top, bottom;
     switch (Port_Config_GpuScissorMode()) {
@@ -846,7 +864,14 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
             break;
         }
     }
-    SetScissorCached(batch->scissorLeft, top, batch->scissorRight, bottom);
+    u32 left = batch->scissorLeft, right = batch->scissorRight;
+    if (sEyeShifting && batch->layer <= PPU_GPU3DS_OBJ) {
+        const int shift = sEyeShiftPx[batch->layer][batch->priority & 3u];
+        const int movedLeft = (int)left + shift, movedRight = (int)right + shift;
+        left = movedLeft < 0 ? 0u : (u32)movedLeft;
+        right = movedRight > (int)sPreparedWidth ? sPreparedWidth : (movedRight < 0 ? 0u : (u32)movedRight);
+    }
+    SetScissorCached(left, top, right, bottom);
     C3D_DrawElements(GPU_TRIANGLES, (int)batch->indexCount,
                      C3D_UNSIGNED_SHORT, sIndices + batch->firstIndex);
 }
@@ -893,36 +918,27 @@ static void ClearStencilPlane(void) {
     const u32 yOffset = sViewportOffset;
     SetScissorCached(0, yOffset, sPreparedWidth, yOffset + sPreparedHeight);
     C3D_AlphaTest(false, GPU_ALWAYS, 0);
-    /* Writemask 0 keeps this to the stencil: no colour, no depth. */
-    C3D_DepthTest(true, GPU_ALWAYS, (GPU_WRITEMASK)0);
+    /* Stencil and depth, no colour: the quad is at z = 0, the depth the target clear writes. The
+     * right eye shares the left's depth-stencil (EnsureRightOutput), and both target clears are
+     * queued before either eye's commands run, so the second eye would start from the first
+     * eye's depth: sprites cut where the other eye's were. */
+    C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_DEPTH);
     C3D_StencilTest(true, GPU_ALWAYS, 0, 0xff, 0xff);
     C3D_StencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_REPLACE);
     C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT,
                      sIndices + PPU_GPU3DS_CLEAR_FIRST_INDEX);
 }
 
-bool PortPpuGpu3DS_DrawPrepared(void) {
-    const uint64_t startTick = svcGetSystemTick();
+/* The prepared frame drawn on one output target, each layer moved by its eye's shift
+ * (sEyeShiftNdc, none for a single picture). */
+static bool DrawOutput(C3D_RenderTarget* target) {
     /* citro2d programs the scissor for its own draws between our frames, so
      * the cache cannot survive across a frame boundary. */
     sScissorKeyLow = 0xffffffffu;
     sScissorKeyHigh = 0xffffffffu;
-    if (!sReady || sDisabled || !sPrepared || sCommands.batchCount == 0)
-        return FinishDraw(false, startTick);
-    sViewportOffset = Port_Config_GpuViewportOffset()
-                              ? PPU_GPU3DS_OUTPUT_HEIGHT - sPreparedHeight
-                              : 0u;
-    sHasObjWindow = false;
-    for (size_t i = 1; i < sCommands.batchCount; ++i) {
-        if (sCommands.batches[i].objWindow) { sHasObjWindow = true; break; }
-    }
-    C3D_RenderTargetClear(sOutputTarget, C3D_CLEAR_ALL,
+    C3D_RenderTargetClear(target, C3D_CLEAR_ALL,
                           ClearColor(sCommands.batches[0].color), 0);
-    if (!C3D_FrameDrawOn(sOutputTarget)) {
-        sPrepared = false;
-        return FinishDraw(false, startTick);
-    }
-    sPrepared = false;
+    if (!C3D_FrameDrawOn(target)) return false;
     /* Scanline 0 has to land in target row 0, where the presenter samples it,
      * so the viewport sits at the top of the 512x256 surface; the scissor is
      * in the same space and must be rebased with it. */
@@ -1071,7 +1087,84 @@ bool PortPpuGpu3DS_DrawPrepared(void) {
     C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
     sScissorKeyLow = 0xffffffffu;
     sScissorKeyHigh = 0xffffffffu;
-    return FinishDraw(true, startTick);
+    return true;
+}
+
+/* The right eye's output (docs/stereo-3d.md), made the first time a frame needs it. */
+static void NoteRightOutputFailed(void) {
+    static bool noted;
+    if (noted) return;
+    noted = true;
+    char line[96];
+    snprintf(line, sizeof(line), "[tmc3ds] stereo: no right-eye output, vram free %zu\n", (size_t)vramSpaceFree());
+    Platform3DS_Debug(line);
+}
+
+static bool EnsureRightOutput(void) {
+    if (sOutputRightTarget) return true;
+    if (!C3D_TexInitVRAM(&sOutputRightTexture, PPU_GPU3DS_OUTPUT_WIDTH, PPU_GPU3DS_OUTPUT_HEIGHT, GPU_RGBA5551)) {
+        sOutputRightTexture = (C3D_Tex){ 0 };
+        NoteRightOutputFailed();
+        return false;
+    }
+    C3D_TexSetFilter(&sOutputRightTexture, GPU_NEAREST, GPU_NEAREST);
+    C3D_TexSetWrap(&sOutputRightTexture, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+    /* The left eye's depth and stencil are shared: the eyes are drawn one after the other and each
+     * draw clears them first. A buffer of its own (512 KiB) did not fit in the New 3DS's VRAM beside
+     * the presenter's right-eye target, and both eyes got the left picture. */
+    sOutputRightTarget = C3D_RenderTargetCreateFromTex(&sOutputRightTexture, GPU_TEXFACE_2D, 0, -1);
+    if (sOutputRightTarget)
+        C3D_FrameBufDepth(&sOutputRightTarget->frameBuf, sOutputTarget->frameBuf.depthBuf, GPU_RB_DEPTH24_STENCIL8);
+    if (!sOutputRightTarget || !sOutputRightTarget->frameBuf.depthBuf) {
+        /* No VRAM left for it: both eyes keep the left picture. */
+        if (sOutputRightTarget) C3D_RenderTargetDelete(sOutputRightTarget);
+        sOutputRightTarget = NULL;
+        C3D_TexDelete(&sOutputRightTexture);
+        sOutputRightTexture = (C3D_Tex){ 0 };
+        NoteRightOutputFailed();
+        return false;
+    }
+    return true;
+}
+
+static void SetEyeShifts(bool shifted, Stereo3DSEye eye) {
+    sEyeShifting = shifted;
+    if (!shifted) return;
+    const float toNdc = 2.0f / (float)sPreparedWidth;
+    for (unsigned layer = 0; layer <= PPU_GPU3DS_OBJ; ++layer)
+        for (unsigned priority = 0; priority < 4; ++priority) {
+            /* Whole pixels: the art and its scissor move together, with no pixel doubled. */
+            const float shift = Stereo3DS_LayerShift(layer, priority, eye);
+            const int pixels = (int)(shift < 0.0f ? shift - 0.5f : shift + 0.5f);
+            sEyeShiftPx[layer][priority] = pixels;
+            sEyeShiftNdc[layer][priority] = (float)pixels * toNdc;
+        }
+}
+
+bool PortPpuGpu3DS_DrawPrepared(void) {
+    const uint64_t startTick = svcGetSystemTick();
+    sRightReady = false;
+    if (!sReady || sDisabled || !sPrepared || sCommands.batchCount == 0)
+        return FinishDraw(false, startTick);
+    sPrepared = false;
+    sViewportOffset = Port_Config_GpuViewportOffset()
+                              ? PPU_GPU3DS_OUTPUT_HEIGHT - sPreparedHeight
+                              : 0u;
+    sHasObjWindow = false;
+    for (size_t i = 1; i < sCommands.batchCount; ++i) {
+        if (sCommands.batches[i].objWindow) { sHasObjWindow = true; break; }
+    }
+    /* With a layer off the screen plane each eye gets its own picture; otherwise the presenter
+     * shows this one to both. */
+    const bool stereo = Stereo3DS_HasDepth();
+    SetEyeShifts(stereo, STEREO3DS_LEFT);
+    bool drawn = DrawOutput(sOutputTarget);
+    if (drawn && stereo && EnsureRightOutput()) {
+        SetEyeShifts(true, STEREO3DS_RIGHT);
+        sRightReady = DrawOutput(sOutputRightTarget);
+    }
+    SetEyeShifts(false, STEREO3DS_LEFT);
+    return FinishDraw(drawn, startTick);
 }
 
 /* The presenter reuses this shader for its static quad, so its vertices must be
@@ -1088,6 +1181,10 @@ bool PortPpuGpu3DS_BindPresentShader(void) {
 
 void* PortPpuGpu3DS_OutputTexture(void) {
     return sReady && !sDisabled ? &sOutputTexture : NULL;
+}
+
+void* PortPpuGpu3DS_OutputTextureRight(void) {
+    return sReady && !sDisabled && sRightReady ? &sOutputRightTexture : NULL;
 }
 
 void PortPpuGpu3DS_Disable(void) {

@@ -152,6 +152,7 @@ add_executable(tmc-3ds
     source/debug_perf_3ds.c
     source/scene_rec_3ds.c
     source/scene_pictures_3ds.c
+    source/stereo_3ds.c
     source/title_rays_3ds.c
     source/net_3ds.c
     source/ftp_server_3ds.c

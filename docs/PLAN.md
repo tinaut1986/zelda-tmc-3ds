@@ -4,7 +4,7 @@ Living document. Read it at the start of every session; keep it current as thing
 change (what goes where: the table in `CLAUDE.md`).
 
 - **Goal:** The Minish Cap on 3DS running **smoothly at 60 fps on both New 3DS and
-  Old 3DS/2DS** (no stereo 3D on either), with a **wide mode that fills the 400x240
+  Old 3DS/2DS** (stereo 3D only on the layers the owner chooses, off by default), with a **wide mode that fills the 400x240
   top screen** both pixel perfect and scaled, by showing more of the world than the
   GBA did; debug tools and a bottom-screen UI on par with `../mzm` and `../sm-3ds`.
 - **Starting point:** EstebanPdN's `zelda-tmc-3ds` v2.2-E1 (forked 2026-10-11). On
@@ -19,8 +19,9 @@ change (what goes where: the table in `CLAUDE.md`).
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.1.3` (on origin). Published: **`v0.1.2`** (2026-10-13, beta),
-`v0.1.1` (2026-10-12, **stable**, merged into `main`) and `v0.1.0` (2026-10-11, beta).
+**Release line:** `release/v0.2.1` (on origin). Published: **`v0.2.0`** (2026-10-14, **stable**,
+merged into `main`), `v0.1.2` (2026-10-13, beta), `v0.1.1` (2026-10-12, stable) and `v0.1.0`
+(2026-10-11, beta).
 
 **Branches:**
 
@@ -72,6 +73,7 @@ boxes below. History: `git log` and the decisions log.
 | `feat/link-perf` (cut from `release/v0.1.3`) | `tmc-link.py perf start` / `perf stop [DIR]`: the DEBUG tab's perf recorder over the link (`SITE PERF`), the CSV fetched | used on the .141 by Claude (perf 0035-0039) | _(merged into `release/v0.1.3` 2026-10-14)_ |
 | `perf/title-rings` (cut from `release/v0.1.3`) | the title at 400x240 ran at 37-41 fps on the Old 3DS, all on the GPU (no software frame): BG0/BG1 take their view rings in mode-1 frames too (only BG2/BG3 are affine there), rings read 512x256 maps, and a scaled affine BG2 of at most 256x256 that does not wrap is decoded into BG2's free ring and drawn as one quad (the sword was 7 ms of a 17 ms build) | on the .141 (Old 3DS) by Claude: the whole intro 59.7-60 fps, build 17 -> 5.5 ms; GPU CHECK 0 structural on the settled title (the one-step pixels are the rays' blend, by phase); the sword's zoom recorded clean. Host model test passes (its `test_affine_obj_texel_boundaries` failed before this branch too) checked by the owner on the console (2026-10-14) | _(merged into `release/v0.1.3` 2026-10-14)_ |
 | `feat/fileselect-wide` (cut from `release/v0.1.3`) | P4.5: the file select at 400x240 with the GPU renderer: BG0-BG3 in the centred 240x160, the cave as BG3's picture, sprites moved by `port_draw.c` and carried out by the wide screen's edge | on the .141 by Claude (language menu, R options, scene recordings) and the owner (name entry, copy, erase; 2026-10-14) | _(merged into `release/v0.1.3` 2026-10-14)_ |
+| `feat/stereo-3d` (cut from `release/v0.2.1`) | P5.1: stereoscopic 3D (`docs/stereo-3d.md`): `stereo_3d` OFF / ON / TEST, a picture per eye from the GPU renderer, the right eye's targets; ON puts the HUD and text boxes in front | checked by the owner on the New 3DS (.142) with the slider up, ON and TEST (2026-10-14) | _(merged into `release/v0.2.1` 2026-10-14)_ |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
@@ -82,14 +84,17 @@ it (issue #13).
 **Start here (2026-10-14, end of the day):** everything is merged into `release/v0.1.3` and pushed
 (`feat/title-wide`, `feat/link-perf`, `perf/title-rings`); no worktree, nothing uncommitted. Next, in
 this order:
-1. The README's before/after GIF of the portal shrink (owner's request): record it with the scene
+1. **P5.1, stereoscopic 3D**: the structure is on `feat/stereo-3d`; the owner looks at TEST on
+   their New 3DS, then says which layers get a depth and where (2026-10-14). The owner also goes
+   through the game for screens still drawn at 240x160 and reports them.
+2. The README's before/after GIF of the portal shrink (owner's request): record it with the scene
    recorder (`tmc-link.py scenerec`, P1.6) once VISTA = ORIGINAL and once Full View; then rewrite
    the README (performance, Full View, bottom screen, states, updater) with the GIFs (2026-10-13).
-2. Issue #25 (GPU fade: one-step flicker of the near-white during the logos' fade), when it suits.
-3. Issue #4: the relaunch fix is merged; a few more installs without a loader dump, then close
+3. Issue #25 (GPU fade: one-step flicker of the near-white during the logos' fade), when it suits.
+4. Issue #4: the relaunch fix is merged; a few more installs without a loader dump, then close
    (this session installed some 20 builds on the .141 without one). Issue #23: resets from the
    title look right in recordings; a reset from inside a game is still to see.
-4. Issue #19 (states break when the port's statics grow), #13, #11 as before.
+5. Issue #19 (states break when the port's statics grow), #13, #11 as before.
 Scene pictures (portal, title, file select): procedure in `docs/wide-scene-extension.md`; the owner's material
 in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/intro-titulo/` and `~/Imágenes/elige-archivo/`
 (never in the repository).
@@ -108,10 +113,11 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
   **1 is Claude's**, the owner's place before the evening installs (00/00, to load and delete);
   3 = 00/00 on the Minish Woods stump (#21, P4.3); 5 = 03/04 below the scroll up (#11).
   Loading a state switches the bottom screen to MAP: tap another tab after it, not before.
-- **`192.168.1.141`** (pass `--ip`): **an Old 3DS** by its own log and perf headers (it was noted as the
-  New 3DS before). The owner's console for the title and file select work: a debug build of
-  `perf/title-rings` (the code of `release/v0.1.3` at 8972f9c), Full View, SHOW FPS on, theme
-  default. Its state 1 is Claude's, the owner's place (area 0x15) before the 2026-10-13 install.
+- **`192.168.1.141`** (pass `--ip`): **the 2DS** (owner, 2026-10-14; its log says Old 3DS, which a 2DS
+  is to the system: no 3D slider). The owner's console for the title and file select work: a debug
+  build of `feat/stereo-3d` (`0.2.1-dev.0`, uncommitted) with **STEREO 3D = TEST**, Full View, SHOW
+  FPS on, theme default. Its states 1 and 2 are Claude's, the owner's places before installs (1:
+  area 01, 2026-10-14; 2: area 0x15, 2026-10-13).
   `debug/` holds checks up to `tmc-check-0198` and perf CSVs up to `tmc-perf-0039`.
 - The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP); 8 is
   the newest on the 2DS (#4, before the relaunch fix).
@@ -451,6 +457,17 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   untouched). The software renderer does not have to follow (owner: everything through the GPU).
   *Done when:* the owner sees the menus slide out by the wide screen's edge on the console.
 
+## Phase 5: stereoscopic 3D
+
+- [ ] **P5.1** Stereoscopic 3D on chosen layers (owner's request, 2026-10-14).
+  *Spec:* the game stays 2D; layers over the playfield (fog, the leaves over the Minish village)
+  can be given a depth so they sit in front of the screen in 3D. Off by default; what gets a
+  depth, and when, is the owner's call. First the structure (`docs/stereo-3d.md`): the setting
+  `stereo_3d` (OFF / ON / TEST), a picture per eye from the GPU renderer, the presenter drawing
+  each eye; then depths scene by scene as the owner asks, the edges a moved layer uncovers, and an
+  OPTIONS cell. *Done when:* the owner sees the layers they chose in front of the screen on their
+  New 3DS, at 60 fps on both models with the slider up.
+
 ## Baseline measurements (P0.2)
 
 Owner's report on upstream v2.2-E1 (2026-10-11, by eye, before the P1 tools):
@@ -773,4 +790,9 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   built for the GPU only. The title's slowness was the GPU path itself, not a fallback: mode-1
   frames kept every layer off the view rings, and the scaled sword was a quad a tile rebuilt each
   frame. The `192.168.1.141` console reports itself as an Old 3DS.
-
+- **2026-10-14** `v0.2.0` is the stable release after `v0.1.2` (the owner named the number: a minor
+  bump for the 400x240 title, file select and portal cutscene). Tagged on `main`; the release line
+  is now `release/v0.2.1`.
+- **2026-10-14** Stereo 3D is back in scope (owner): the game stays 2D, chosen layers in front of
+  the screen. Off unless the owner asks; the structure first, depths later, scene by scene (P5.1).
+  The goal line changed from "no stereo 3D" to that.
