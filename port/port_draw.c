@@ -38,6 +38,14 @@ static void RenderSpritePieces(const u8* data, s16 baseX, s16 baseY, u32 flags, 
 
 /* Set true only while rendering the player; drives the swamp-sink body clip. */
 static int sRenderingPlayer = 0;
+
+/* The file select drawn at 400x240 (Port_Widescreen_FileSelectWide): the game keeps placing its
+ * sprites on the GBA's 240x160 screen; each drawn thing (an entity, a DrawDirect) is moved into
+ * the middle of the view as one, after its pieces are written (WideSpritesEnd). Its pieces are
+ * kept unclipped meanwhile, with their positions here. */
+static int sWideCollect;
+static s16 sWidePieceX[0x80], sWidePieceY[0x80];
+static u8 sWidePieceW[0x80], sWidePieceH[0x80];
 extern PlayerState gPlayerState;
 /* Region-select a ROM offset by the loaded ROM's game code (defined below). */
 static u32 RegionRomOffset(u32 usa, u32 eu, u32 jp);
@@ -472,19 +480,25 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
 
         /* Clipping */
         y -= (s32)se[1]; /* subtract y anchor */
-        if (y >= Port_Widescreen_ProducerViewHeight()) {
+        if (sWideCollect) {
+            /* Placed and clipped by WideSpritesEnd. */
+            x -= (s32)se[0];
+            sWidePieceX[updated] = (s16)x;
+            sWidePieceY[updated] = (s16)y;
+            sWidePieceW[updated] = se[2];
+            sWidePieceH[updated] = se[3];
+        } else if (y >= Port_Widescreen_ProducerViewHeight()) {
             continue;
-        }
-        if (y + (s32)se[3] <= 0) {
+        } else if (y + (s32)se[3] <= 0) {
             continue;
-        }
-
-        x -= (s32)se[0]; /* subtract x anchor */
-        if (x >= Port_Widescreen_ProducerViewWidth()) {
-            continue;
-        }
-        if (x + (s32)se[2] <= 0) {
-            continue;
+        } else {
+            x -= (s32)se[0]; /* subtract x anchor */
+            if (x >= Port_Widescreen_ProducerViewWidth()) {
+                continue;
+            }
+            if (x + (s32)se[2] <= 0) {
+                continue;
+            }
         }
 
         /* Build combined attr0|attr1 as 32-bit word (little-endian):
@@ -526,6 +540,66 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
     gOAMControls.updated = updated;
 }
 
+/* How far a thing spanning [lo, hi) on one axis of the GBA's screen (size `native`) is moved in a
+ * view `margin` larger on each side: by `margin` while it is all on the GBA's screen, and across
+ * the edge it is crossing faster, so that it leaves the view as it leaves the GBA's screen (the
+ * file rows the game parks at x = -72 leave by the 400x240 view's edge, not in its middle). The
+ * one-pixel sliver some leave on the GBA's edge (those rows' outline) is not carried over. */
+static s32 WideCarry(s32 lo, s32 hi, s32 native, s32 margin) {
+    const s32 size = hi - lo;
+    if (size <= 1 || (lo < 0 && hi > native)) return margin;
+    if (lo < 0) return hi <= 1 ? -hi : margin * (hi - 1) / (size - 1);
+    if (hi > native) return lo >= native - 1 ? native + 2 * margin - lo : margin + margin * (hi - native) / (size - 1);
+    return margin;
+}
+
+static int WideSpritesBegin(void) {
+    if (sWideCollect || !Port_Widescreen_FileSelectWide()) return -1;
+    sWideCollect = 1;
+    return gOAMControls.updated;
+}
+
+int Port_Draw_WideGroupBegin(void) {
+    return WideSpritesBegin();
+}
+
+/* The pieces written since WideSpritesBegin, moved into the 400x240 view as one and clipped to it. */
+static void WideSpritesEnd(int first) {
+    if (first < 0) return;
+    sWideCollect = 0;
+    const int end = gOAMControls.updated < 0x80 ? gOAMControls.updated : 0x80;
+    if (first >= end) return;
+    s32 left = 0x7fff, right = -0x8000, top = 0x7fff, bottom = -0x8000;
+    for (int i = first; i < end; i++) {
+        if (sWidePieceX[i] < left) left = sWidePieceX[i];
+        if (sWidePieceX[i] + sWidePieceW[i] > right) right = sWidePieceX[i] + sWidePieceW[i];
+        if (sWidePieceY[i] < top) top = sWidePieceY[i];
+        if (sWidePieceY[i] + sWidePieceH[i] > bottom) bottom = sWidePieceY[i] + sWidePieceH[i];
+    }
+    const s32 dx = WideCarry(left, right, 240, 80);
+    const s32 dy = WideCarry(top, bottom, 160, 40);
+    u8* oam = (u8*)&gOAMControls.oam[0];
+    int out = first;
+    for (int i = first; i < end; i++) {
+        const s32 x = sWidePieceX[i] + dx, y = sWidePieceY[i] + dy;
+        if (x >= 400 || x + sWidePieceW[i] <= 0 || y >= 240 || y + sWidePieceH[i] <= 0) continue;
+        /* attr0-attr2 only: the fourth halfword of each entry is an affine parameter. */
+        u16 attr[3];
+        memcpy(attr, oam + i * 8, sizeof(attr));
+        attr[0] = (u16)((attr[0] & ~0xFFu) | ((u32)y & 0xFFu));
+        attr[1] = (u16)((attr[1] & ~0x1FFu) | ((u32)x & 0x1FFu));
+        memcpy(oam + out * 8, attr, sizeof(attr));
+        virtuappu_mode1_obj_y_negative_staged[out] = y < 0;
+        virtuappu_mode1_obj_clip_mark_staged[out] = virtuappu_mode1_obj_clip_mark_staged[i];
+        out++;
+    }
+    gOAMControls.updated = (u8)out;
+}
+
+void Port_Draw_WideGroupEnd(int first) {
+    WideSpritesEnd(first);
+}
+
 /* ---- ram_DrawDirect (port of arm_DrawDirect @ 0x080B280C) ----
  *
  * Signature: void ram_DrawDirect(OAMCommand* cmd, u32 spriteIndex, u32 frameIndex)
@@ -560,7 +634,9 @@ void ram_DrawDirect(OAMCommand* cmd, u32 spriteIndex, u32 frameIndex) {
     memcpy(&cmdFlags, &cmd->_4, sizeof(cmdFlags)); /* _4 | (_6 << 16) */
     u16 cmdExtra = cmd->_8;
 
+    const int wide = WideSpritesBegin();
     RenderSpritePieces(frameData, baseX, baseY, cmdFlags, cmdExtra);
+    WideSpritesEnd(wide);
 }
 
 /* ---- ram_sub_080ADA04 (port of arm_sub_080ADA04) ----
@@ -586,7 +662,9 @@ void ram_sub_080ADA04(OAMCommand* cmd, void* frameDataPtr) {
     memcpy(&cmdFlags, &cmd->_4, sizeof(cmdFlags));
     u16 cmdExtra = cmd->_8;
 
+    const int wide = WideSpritesBegin();
     RenderSpritePieces(frameData, baseX, baseY, cmdFlags, cmdExtra);
+    WideSpritesEnd(wide);
 }
 
 /* ====================================================================
@@ -910,7 +988,15 @@ static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra
  *
  * Handles one entity: resolves params, checks shadow flags, renders.
  */
+static void ProcessEntityForDrawNative(Entity* entity);
+
 static void ProcessEntityForDraw(Entity* entity) {
+    const int wide = WideSpritesBegin();
+    ProcessEntityForDrawNative(entity);
+    WideSpritesEnd(wide);
+}
+
+static void ProcessEntityForDrawNative(Entity* entity) {
     s32 x, y;
     u32 flags;
     u16 extra;
@@ -1146,7 +1232,9 @@ static void ProcessDeferredList(void) {
         const u8* frameData = sShadowFramePtrs[listType];
         if (frameData == NULL)
             continue;
+        const int wide = WideSpritesBegin();
         RenderSpritePieces(frameData, (s16)screenX, (s16)screenY, 0, extra);
+        WideSpritesEnd(wide);
     }
 }
 

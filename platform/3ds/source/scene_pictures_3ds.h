@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-enum { SCENE_TITLE_W = 400, SCENE_TITLE_H = 240 };
+enum { SCENE_TITLE_W = 400, SCENE_TITLE_H = 240, SCENE_CAVE_W = 400, SCENE_CAVE_H = 240, SCENE_CAVE_FIRST_PALETTE = 11 };
 
 bool ScenePictures_TitleAvailable(void);
 /* GBA 15-bit colours, row-major, 0 where the game's own picture shows (the shipped files keep
@@ -17,3 +17,11 @@ const uint32_t* ScenePictures_TitleAbgr(void);
  * the whole frame itself), else ScenePictures_TitleAbgr. */
 const uint32_t* ScenePictures_TitleAbgrFaded(void);
 void ScenePictures_Release(void);
+
+/* The file select's cave, 400x240 (fileselect-cave.bin, tools/scene-extend/to_console.py fileselect):
+ * one byte a pixel, (palette - SCENE_CAVE_FIRST_PALETTE) * 16 + index into BG palettes 11-14, which
+ * the game cycles; 0 where the game's own picture is. NULL when there is none. Freed by
+ * ScenePictures_ReleaseCave. */
+bool ScenePictures_CaveAvailable(void);
+const uint8_t* ScenePictures_CaveIndices(void);
+void ScenePictures_ReleaseCave(void);
