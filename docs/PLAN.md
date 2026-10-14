@@ -74,6 +74,8 @@ merged into `main`), `v0.1.2` (2026-10-13, beta), `v0.1.1` (2026-10-12, stable) 
 | `perf/title-rings` (cut from `release/v0.1.3`) | the title at 400x240 ran at 37-41 fps on the Old 3DS, all on the GPU (no software frame): BG0/BG1 take their view rings in mode-1 frames too (only BG2/BG3 are affine there), rings read 512x256 maps, and a scaled affine BG2 of at most 256x256 that does not wrap is decoded into BG2's free ring and drawn as one quad (the sword was 7 ms of a 17 ms build) | on the .141 (Old 3DS) by Claude: the whole intro 59.7-60 fps, build 17 -> 5.5 ms; GPU CHECK 0 structural on the settled title (the one-step pixels are the rays' blend, by phase); the sword's zoom recorded clean. Host model test passes (its `test_affine_obj_texel_boundaries` failed before this branch too) checked by the owner on the console (2026-10-14) | _(merged into `release/v0.1.3` 2026-10-14)_ |
 | `feat/fileselect-wide` (cut from `release/v0.1.3`) | P4.5: the file select at 400x240 with the GPU renderer: BG0-BG3 in the centred 240x160, the cave as BG3's picture, sprites moved by `port_draw.c` and carried out by the wide screen's edge | on the .141 by Claude (language menu, R options, scene recordings) and the owner (name entry, copy, erase; 2026-10-14) | _(merged into `release/v0.1.3` 2026-10-14)_ |
 | `feat/stereo-3d` (cut from `release/v0.2.1`) | P5.1: stereoscopic 3D (`docs/stereo-3d.md`): `stereo_3d` OFF / ON / TEST, a picture per eye from the GPU renderer, the right eye's targets; ON puts the HUD and text boxes in front | checked by the owner on the New 3DS (.142) with the slider up, ON and TEST (2026-10-14) | _(merged into `release/v0.2.1` 2026-10-14)_ |
+| `fix/zone-tilesets` (cut from `release/v0.2.1`) | issue #26: Full View draws each zone's buildings in the Minish village and Hyrule Town from its own graphics set (`port/port_zone_tiles.c`) | checked by Claude and the owner on the 2DS in the village (the shoe house walking up, 59.8 fps); Hyrule Town not seen yet | _(merged into `release/v0.2.1` 2026-10-14)_ |
+| `fix/worldmap-marker` (cut from `release/v0.2.1`) | the bottom screen's map marks Link off the overworld (castle, Minish village) from the game's own `overworld_map_x/y`, also after a loaded state | checked by the owner on the New 3DS in the castle (2026-10-14) | _(merged into `release/v0.2.1` 2026-10-14)_ |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
@@ -84,9 +86,9 @@ it (issue #13).
 **Start here (2026-10-14, end of the day):** everything is merged into `release/v0.1.3` and pushed
 (`feat/title-wide`, `feat/link-perf`, `perf/title-rings`); no worktree, nothing uncommitted. Next, in
 this order:
-1. **P5.1, stereoscopic 3D**: the structure is on `feat/stereo-3d`; the owner looks at TEST on
-   their New 3DS, then says which layers get a depth and where (2026-10-14). The owner also goes
-   through the game for screens still drawn at 240x160 and reports them.
+1. **P5.1, stereoscopic 3D**: merged; ON puts the HUD and text boxes in front. Next depths only
+   when the owner asks (fog, the Minish village's leaves). The owner goes through the game for
+   screens still drawn at 240x160 and reports them. Issue #26: look at Hyrule Town in Full View.
 2. The README's before/after GIF of the portal shrink (owner's request): record it with the scene
    recorder (`tmc-link.py scenerec`, P1.6) once VISTA = ORIGINAL and once Full View; then rewrite
    the README (performance, Full View, bottom screen, states, updater) with the GIFs (2026-10-13).
@@ -115,9 +117,13 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
   Loading a state switches the bottom screen to MAP: tap another tab after it, not before.
 - **`192.168.1.141`** (pass `--ip`): **the 2DS** (owner, 2026-10-14; its log says Old 3DS, which a 2DS
   is to the system: no 3D slider). The owner's console for the title and file select work: a debug
-  build of `feat/stereo-3d` (`0.2.1-dev.0`, uncommitted) with **STEREO 3D = TEST**, Full View, SHOW
-  FPS on, theme default. Its states 1 and 2 are Claude's, the owner's places before installs (1:
-  area 01, 2026-10-14; 2: area 0x15, 2026-10-13).
+  build of `fix/zone-tilesets` (`0.2.1-dev.0+42f5761`, the village fix only) with **STEREO 3D =
+  TEST**, Full View, SHOW FPS on, theme default. Its newest states are Claude's, the owner's places
+  in the Minish village before installs (2026-10-14).
+- **`192.168.1.142`** (pass `--ip`): **the New 3DS** (owner, 2026-10-14), a debug build of
+  `tmp/combo` = `release/v0.2.1` as merged (`0.2.1-dev.0.10+a0bc40c`), STEREO 3D used in ON and TEST.
+  The owner's game is in Hyrule Castle (area 0x80); its state 1 is Claude's, the owner's place before
+  the last install.
   `debug/` holds checks up to `tmc-check-0198` and perf CSVs up to `tmc-perf-0039`.
 - The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP); 8 is
   the newest on the 2DS (#4, before the relaunch fix).
@@ -796,3 +802,7 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
 - **2026-10-14** Stereo 3D is back in scope (owner): the game stays 2D, chosen layers in front of
   the screen. Off unless the owner asks; the structure first, depths later, scene by scene (P5.1).
   The goal line changed from "no stereo 3D" to that.
+- **2026-10-14** Rooms that swap building graphics by zone (Minish village, Hyrule Town) keep every
+  set on the port side for Full View (#26), rather than shrinking the view there: the zones were
+  sized for a 240x160 screen, and bigger zones would not help since every set uses the same tile
+  numbers (the owner asked). 60 fps kept: zone cells are decoded once into the view rings.
