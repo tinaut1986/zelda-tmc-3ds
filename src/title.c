@@ -203,9 +203,10 @@ static void HandleNintendoCapcomLogos(void) {
 #ifdef PC_PORT
 /* Full View draws the title at 400x240 (Port_Widescreen_TitleWide): the GBA's screen goes in the
  * middle (+80, +40): the logo's entities through the camera, the PRESS START sprites by hand; the
- * light rays repeat across the view from its top; the forest is drawn from the extended picture by
- * the renderers. The sword (affine BG2) is centred through its affine origin; its map must not wrap,
- * or it repeats beside itself past 256 pixels. */
+ * light rays continued to the view's edges (Port_Widescreen_TitleRays; else they repeat across
+ * the view from its top); the forest is drawn from the extended picture by the renderers. The
+ * sword (affine BG2) is centred through its affine origin; its map must not wrap, or it repeats
+ * beside itself past 256 pixels. It fades out after START (ExitTitlescreen) still drawn so. */
 static int TitleViewX(void) {
     return Port_Widescreen_TitleWide() ? 80 : 0;
 }
@@ -219,7 +220,14 @@ static void UpdateTitleView(void) {
     const int wide = Port_Widescreen_TitleWide();
     gRoomControls.scroll_x = (s16)-TitleViewX(); /* the title's entities (logo pieces) */
     gRoomControls.scroll_y = (s16)-TitleViewY();
-    gScreen.bg0.xOffset = (u16)-TitleViewX();
+    const int rays = wide ? Port_Widescreen_TitleRays() : 0;
+    if (rays) { /* the rays extended over the view: BG0 is 512x256, the original at +80,+40 */
+        gScreen.bg0.control = BGCNT_SCREENBASE(rays) | BGCNT_PRIORITY(2) | BGCNT_TXT512x256;
+        gScreen.bg0.xOffset = 0;
+    } else {
+        if (gScreen.bg0.control & BGCNT_TXT512x256) gScreen.bg0.control = BGCNT_SCREENBASE(29) | BGCNT_PRIORITY(2);
+        gScreen.bg0.xOffset = (u16)-TitleViewX();
+    }
     gScreen.bg1.xOffset = (u16)-TitleViewX(); /* the forest's own tiles in the middle */
     gScreen.bg1.yOffset = (u16)-TitleViewY();
     if (wide) gScreen.bg2.control &= ~BGCNT_WRAP;
@@ -454,12 +462,14 @@ static void HandleTitlescreenAnimationIntro(void) {
     }
 }
 static void ExitTitlescreen(void) {
-#ifdef PC_PORT
-    gRoomControls.scroll_x = gRoomControls.scroll_y = 0; /* UpdateTitleView's offsets stay behind */
-    gScreen.bg0.xOffset = 0;
-    gScreen.bg1.xOffset = gScreen.bg1.yOffset = 0;
-#endif
     if (!gFadeControl.active) {
+#ifdef PC_PORT
+        /* The title fades out still drawn at 400x240 (Port_Widescreen_TitleWide); UpdateTitleView's
+         * offsets go only when it is gone. */
+        gRoomControls.scroll_x = gRoomControls.scroll_y = 0;
+        gScreen.bg0.xOffset = 0;
+        gScreen.bg1.xOffset = gScreen.bg1.yOffset = 0;
+#endif
         SetTask(TASK_FILE_SELECT);
     }
 }

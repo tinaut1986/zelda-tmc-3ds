@@ -15,6 +15,10 @@ bool FadeGpu3DS_Shown(uint8_t* weight, uint8_t* level);
  * pictures the renderers draw beside the game's tiles; 0 stays 0. False: no fade, dst untouched. */
 bool FadeGpu3DS_FadeShown(const uint16_t* src, uint16_t* dst, size_t count);
 
+/* The game's unfaded palettes (gPaletteBuffer: 256 BG, then 256 OBJ) the shown frame was drawn
+ * from: the snapshot of the last frame boundary. */
+const uint16_t* FadeGpu3DS_ShownPalettes(void);
+
 bool FadeGpu3DS_State(const uint16_t* palRamBg, const uint16_t* palRamObj, const uint16_t** bgPalette,
                       const uint16_t** objPalette, uint8_t* weight, uint8_t* level);
 

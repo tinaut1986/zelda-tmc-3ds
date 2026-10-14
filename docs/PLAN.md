@@ -68,6 +68,7 @@ boxes below. History: `git log` and the decisions log.
 | `fix/fullview-after-soft-reset` (cut from `release/v0.1.3`) | issue #23: Full View off after a soft reset (the intro was drawn at 400x240 over the last room) | on the 2DS by Claude (soft reset from the Minish Woods: intro and title at 240x160) | _(merged into `release/v0.1.3` 2026-10-13)_ |
 | `feat/scene-recorder` (cut from `release/v0.1.3`) | P1.6: `tmc-link.py scenerec`, `tools/scene-rec/decode.py` | on the 2DS by Claude (89 frames decoded to PNG and GIF) | _(merged into `release/v0.1.3` 2026-10-13)_ |
 | `fix/install-relaunch` (cut from `release/v0.1.3`) | issue #4: relaunch 10 s after `SITE INSTALL` through libctru's chainloader (Luma dumps 7 and 8, `0xD86007F3`), as `../legend-of-doom-3ds` fixed it | builds; to try with several installs in a row; the same fix went to `../mzm` | _(merged into `release/v0.1.3` 2026-10-13 on the owner's word, before the install test)_ |
+| `feat/title-wide` (cut from `release/v0.1.3`) | P4.4 and P4.5 (the file select's cave around its 240x160 screen, shimmering with the palettes: on the console .141 by Claude, `0.1.3-dev.96.20+cave`, edges and centre change on the same frames, no seam): the title at 400x240 in Full View (forest picture as BG1, sword and logo centred); the light rays continued to the edges and four new rays in the gaps, computed in VRAM (`title_rays_3ds.c`); the title fades out after START still at 400x240 (it dropped to 240x160 with everything moved); the Nintendo/Capcom logos' edges stretched to the screen's | on the console at 192.168.1.141 by Claude (`0.1.3-dev.96.8+rays`, scene recordings, 2026-10-14): the rays with four new ones (left: a wide one, a thin one, a wide one in the corner, uneven gaps; lower right: a wide one), no seam, shimmer with the originals, 59.7 fps (GPU CHECK 0 structural on the 2DS .139 with two of them); START fades the title to white at 400x240, centred (the fade-out is told by the title's layers, which stay until DispReset), and the blank frame before file select is white across the screen; a reset (and the boot) is white across the screen from its first frame (`0.1.3-dev.96.19+rays`, every frame recorded); the logos fill the 400x240 screen with no step at the frame's edges through their fades, and they fade out at 240x160 centred (they were drawn wide in the corner, with a black-barred frame, once lastState named the title). Left: a one-step flicker (246/255) of the near-white while the logos fade to white, from the GPU fade quad, there before. Not yet seen by the owner; **uncommitted** |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
@@ -105,6 +106,11 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
   after the install). Of the 13 (2026-10-13): 2 = 00/00 on the Minish Woods stump (#21, P4.3),
   4 = 03/04 below the scroll up (#11).
   Loading a state switches the bottom screen to MAP: tap another tab after it, not before.
+- 2DS `192.168.1.139` (pass `--ip`): a debug build of `feat/title-wide` with the extended title rays
+  (`0.1.3-dev.96.5+rays`, built with `TMC3DS_VERSION`: the branch predates the release's last docs
+  merges, so `version.sh` says 0.0.0), Full View on (2026-10-14).
+- `192.168.1.141` (pass `--ip`): the owner's choice for the title work (2026-10-14), a debug build of
+  `feat/title-wide` (`0.1.3-dev.96.20+cave`); file select dump 0028 in `~/Imágenes/elige-archivo/`; which console it is was not said.
 - New 3DS, `192.168.1.133` (not in `.3ds_ftp_ip`: pass `--ip`): not touched since 2026-10-12.
 - The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP); 7 is
   the newest (#4).
@@ -428,6 +434,13 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   *Done when:* the owner sees the title at 400x240 on the console.
 ---
 
+- [ ] **P4.5** The file select screen in Full View (owner's request, 2026-10-14).
+  *Spec:* the screen stays 240x160 in the middle; the cave around it from a generated extension
+  (the owner's, Antigravity; material in `~/Imágenes/elige-archivo/`), shimmering with the
+  original's palette cycling (`docs/wide-scene-extension.md`, "A generated picture over a
+  palette-cycled background"); shipped in the romfs like the other extensions.
+  *Done when:* the owner sees it on the console.
+
 ## Baseline measurements (P0.2)
 
 Owner's report on upstream v2.2-E1 (2026-10-11, by eye, before the P1 tools):
@@ -735,3 +748,14 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   converted into the romfs; a file of the same name in the data folder replaces them. This
   replaces the entry above that kept them on the SD card only. Dumps, templates and whole
   pictures (with the game's art) stay off the repository.
+- **2026-10-14** The title's light rays are extended by copying the rays themselves, not by a
+  generative AI (owner): every ray is at 45 degrees, its upper half repeats along its diagonal, so
+  each cut diagonal is continued to the view's edge with a stretch of it; the gaps the GBA's screen
+  never showed (left, lower right) get copies of whole rays (owner, same day). Unlike the forest,
+  the added pixels are the ROM's own art, so nothing ships: the game computes the extension at the
+  title from the BG0 it loaded and writes it into VRAM as tiles and a 512x256 map
+  (`title_rays_3ds.c`), which both renderers draw as BG0 with the palette rotation, blend and fades.
+  `tools/scene-extend/extend_rays.py` makes the same picture on the PC (preview, placements).
+  GPU CHECK on the title: 0 structural; the one-step blend differences (7000-14000 pixels, by
+  phase of the rays' blend) were there before the change.
+

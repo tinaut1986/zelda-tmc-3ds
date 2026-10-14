@@ -390,6 +390,48 @@ uint32_t* PlatformGpu3DS_BottomBuffer(unsigned index) {
     return index < 2 ? sBottomUploads[index] : NULL;
 }
 
+/* Plain screens at 1x in Full View (Port_Widescreen_StretchEdges: the Nintendo/Capcom logos, the
+ * blank frames between the title and file select): the GBA's 240x160 screen sits in the middle of
+ * the 400x240 one; its edge columns and rows are stretched to the screen's edges, so its plain
+ * background (and the game's fades, which are in the frame) fills the whole screen as one picture.
+ * Drawn with the frame's own texture and texture env, right after it, opaque. */
+static void DrawFrameEdges(const C2D_Image* frame, const C2D_DrawParams* at) {
+    static int stretch; /* the answer for the frame before, for Port_Widescreen_StretchEdges' -1 */
+    const int now = Port_Widescreen_StretchEdges();
+    if (now >= 0) stretch = now;
+    if (at->pos.w != 240.0f || at->pos.h != 160.0f || !stretch) return;
+    const Tex3DS_SubTexture* sub = frame->subtex;
+    const float texelW = 1.0f / frame->tex->width, texelH = 1.0f / frame->tex->height;
+    const float x0 = at->pos.x, y0 = at->pos.y, x1 = x0 + at->pos.w, y1 = y0 + at->pos.h;
+    /* columns: left edge, the frame, right edge; rows: top edge, the frame, bottom edge */
+    const float cols[3][2] = { { sub->left, sub->left + texelW }, { sub->left, sub->right },
+                               { sub->right - texelW, sub->right } };
+    const float rows[3][2] = { { sub->top, sub->top - texelH }, { sub->top, sub->bottom },
+                               { sub->bottom + texelH, sub->bottom } };
+    const float xs[4] = { 0.0f, x0, x1, 400.0f }, ys[4] = { 0.0f, y0, y1, 240.0f };
+    /* Opaque: a blank frame (no layer on) leaves its texels' alpha at 0, and the backdrop it shows
+     * has to cover the bars all the same. */
+    C2D_Flush();
+    ConfigureOpaqueOverwriteBlend();
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 3; ++c) {
+            if ((r == 1 && c == 1) || xs[c + 1] <= xs[c] || ys[r + 1] <= ys[r]) continue;
+            const Tex3DS_SubTexture strip = {
+                .width = 1, .height = 1,
+                .left = cols[c][0], .right = cols[c][1], .top = rows[r][0], .bottom = rows[r][1],
+            };
+            const C2D_Image image = { .tex = frame->tex, .subtex = &strip };
+            const C2D_DrawParams params = {
+                .pos = { .x = xs[c], .y = ys[r], .w = xs[c + 1] - xs[c], .h = ys[r + 1] - ys[r] },
+                .center = { 0.0f, 0.0f }, .depth = 0.0f, .angle = 0.0f,
+            };
+            C2D_DrawImage(image, &params, NULL);
+        }
+    }
+    C2D_Flush();
+    ConfigureStandardAlphaBlend();
+}
+
 static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height,
                          unsigned validSourceWidth, unsigned validSourceHeight,
                          Port3DSFullViewMode requestedMode, int cropX, int cropY) {
@@ -540,6 +582,7 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
         ConfigureStandardAlphaBlend();
         C3D_TexSetFilter(&sSharpBilinearTexture, GPU_LINEAR, GPU_LINEAR);
         C2D_DrawImage(intermediateImage, &params, NULL);
+        DrawFrameEdges(&intermediateImage, &params);
         ConfigureAbgrTextureEnv();
         ++sStats.sharpBilinearFrames;
     } else {
@@ -549,6 +592,7 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
         C2D_SceneBegin(sTopTarget);
         ConfigureStandardAlphaBlend();
         C2D_DrawImage(image, &params, NULL);
+        DrawFrameEdges(&image, &params);
         ConfigureAbgrTextureEnv();
         if (plan.useSharpBilinear) ++sStats.sharpBilinearFallbacks;
     }
@@ -671,19 +715,91 @@ static ScenePicture sTitleForest = { .path = TMC3DS_APP_DIR "/title-forest.bin",
                                      .romfsPath = "romfs:/wide-scenes/title-forest.bin", .width = 400, .height = 240,
                                      .texWidth = 512, .texHeight = 256 };
 
+/* The file select screen at 1x in Full View (Port_Widescreen_FileSelectCaveShown): its cave goes on
+ * around the 240x160 screen from fileselect-cave.bin (tools/scene-extend/to_console.py fileselect):
+ * palette indices of BG palettes 11-14, which the game cycles (src/fileselect.c, sub_0805066C), so
+ * the texture is rebuilt from the palettes the shown frame used whenever they change and the
+ * extension shimmers with the original. */
+enum { CAVE_W = 400, CAVE_H = 240, CAVE_TEX_W = 512, CAVE_TEX_H = 256, CAVE_FIRST_PALETTE = 11 };
+static struct {
+    uint8_t* indices; /* (palette - 11) * 16 + index; 0 nothing */
+    uint32_t* linear; /* the texture's picture before the display transfer tiles it */
+    ScenePicture picture;
+    uint16_t palettes[64]; /* BG palettes 11-14 the texture was made with */
+} sCave = { .picture = { .path = TMC3DS_APP_DIR "/fileselect-cave.bin",
+                         .romfsPath = "romfs:/wide-scenes/fileselect-cave.bin", .width = CAVE_W,
+                         .height = CAVE_H, .texWidth = CAVE_TEX_W, .texHeight = CAVE_TEX_H } };
+
+static void ReleaseCave(void) {
+    if (sCave.picture.state == 1) C3D_TexDelete(&sCave.picture.texture);
+    free(sCave.indices);
+    if (sCave.linear) linearFree(sCave.linear);
+    sCave.indices = NULL;
+    sCave.linear = NULL;
+}
+
+static bool CaveReady(bool shown) {
+    ScenePicture* picture = &sCave.picture;
+    if (!shown) {
+        ReleaseCave();
+        picture->state = 0;
+        return false;
+    }
+    if (picture->state == 0) {
+        picture->state = -1;
+        FILE* f = fopen(picture->path, "rb");
+        if (f == NULL) f = fopen(picture->romfsPath, "rb");
+        if (f == NULL) return false;
+        sCave.indices = malloc(CAVE_W * CAVE_H);
+        const bool read = sCave.indices && fread(sCave.indices, 1, CAVE_W * CAVE_H, f) == CAVE_W * CAVE_H;
+        fclose(f);
+        sCave.linear = read ? linearAlloc(CAVE_TEX_W * CAVE_TEX_H * sizeof(uint32_t)) : NULL;
+        if (!sCave.linear || !C3D_TexInit(&picture->texture, CAVE_TEX_W, CAVE_TEX_H, GPU_RGBA8)) {
+            ReleaseCave();
+            return false;
+        }
+        memset(sCave.linear, 0, CAVE_TEX_W * CAVE_TEX_H * sizeof(uint32_t));
+        C3D_TexSetFilter(&picture->texture, GPU_NEAREST, GPU_NEAREST);
+        picture->state = 1;
+        picture->corrected = !Port_Config_GetColorCorrection(); /* made below */
+    }
+    if (picture->state != 1) return false;
+    const uint16_t* palettes = FadeGpu3DS_ShownPalettes() + CAVE_FIRST_PALETTE * 16;
+    if (picture->corrected == Port_Config_GetColorCorrection() &&
+        memcmp(palettes, sCave.palettes, sizeof(sCave.palettes)) == 0)
+        return true;
+    memcpy(sCave.palettes, palettes, sizeof(sCave.palettes));
+    picture->corrected = Port_Config_GetColorCorrection();
+    uint32_t colours[64];
+    for (unsigned i = 0; i < 64; ++i) colours[i] = virtuappu_mode1_rgb555_to_abgr8888(sCave.palettes[i]);
+    for (unsigned y = 0; y < CAVE_H; ++y) {
+        const uint8_t* row = sCave.indices + y * CAVE_W;
+        uint32_t* out = sCave.linear + y * CAVE_TEX_W;
+        for (unsigned x = 0; x < CAVE_W; ++x)
+            if (row[x]) out[x] = colours[row[x] & 63u];
+    }
+    const size_t bytes = CAVE_TEX_W * CAVE_TEX_H * sizeof(uint32_t);
+    Platform3DS_CleanDataCache(sCave.linear, bytes);
+    C3D_SyncDisplayTransfer((u32*)sCave.linear, GX_BUFFER_DIM(CAVE_TEX_W, CAVE_TEX_H), (u32*)picture->texture.data,
+                            GX_BUFFER_DIM(CAVE_TEX_W, CAVE_TEX_H), TextureTransfer());
+    return true;
+}
+
 /* After the game's frame. frameX, frameY, frameW, frameH: where it was drawn on the top screen.
  * abgrAfter: the texture env the caller leaves set (ABGR or identity) is put back. */
 static void DrawScenePictures(int frameX, int frameY, int frameW, int frameH, bool abgrAfter) {
     int pictureX, pictureY;
     const bool portal = Port_Widescreen_CutsceneStrips(&pictureX, &pictureY);
     const bool title = frameW == 240 && frameH == 160 && Port_Widescreen_TitleForestShown();
+    const bool cave = frameW == 240 && frameH == 160 && Port_Widescreen_FileSelectCaveShown();
     const bool portalReady = ScenePictureReady(&sPortalStrips, portal);
     const bool titleReady = ScenePictureReady(&sTitleForest, title);
-    if (!portal && !title) return;
+    const bool caveReady = CaveReady(cave);
+    if (!portal && !title && !caveReady) return;
     /* Citro2D sends a batch when the texture changes, with the env set then: send the frame's
      * quad under its own env before the pictures change it. */
     C2D_Flush();
-    if (portalReady || titleReady) ConfigureAbgrTextureEnv(); /* the pictures are in the frame's pixel order */
+    if (portalReady || titleReady || caveReady) ConfigureAbgrTextureEnv(); /* the pictures are in the frame's pixel order */
     if (portal) {
         /* Left of the picture, then right of it; each strip is drawn from its own columns. */
         DrawCutsceneStrip(pictureX - STRIPS_LEFT_W, STRIPS_LEFT_W, 0, pictureY);
@@ -696,13 +812,19 @@ static void DrawScenePictures(int frameX, int frameY, int frameW, int frameH, bo
         DrawScenePicturePart(&sTitleForest, 0, 40, 80, 160, left, frameY);
         DrawScenePicturePart(&sTitleForest, 320, 40, 80, 160, frameX + 240, frameY);
     }
+    if (caveReady) {
+        DrawScenePicturePart(&sCave.picture, 0, 0, 400, 40, left, top);
+        DrawScenePicturePart(&sCave.picture, 0, 200, 400, 40, left, frameY + 160);
+        DrawScenePicturePart(&sCave.picture, 0, 40, 80, 160, left, frameY);
+        DrawScenePicturePart(&sCave.picture, 320, 40, 80, 160, frameX + 240, frameY);
+    }
     C2D_Flush();
-    if ((portalReady || titleReady) && !abgrAfter) ConfigureIdentityTextureEnv();
+    if ((portalReady || titleReady || caveReady) && !abgrAfter) ConfigureIdentityTextureEnv();
     if (portal) {
         VeilScenePicture(0, 0, pictureX, 240);
         VeilScenePicture(pictureX + PICTURE_W, 0, 400 - pictureX - PICTURE_W, 240);
     }
-    if (titleReady) {
+    if (titleReady || caveReady) {
         VeilScenePicture(left, top, 400, 40);
         VeilScenePicture(left, frameY + 160, 400, 40);
         VeilScenePicture(left, frameY, 80, 160);
@@ -1004,6 +1126,7 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
         ConfigureIdentityTextureEnv();
         C3D_TexSetFilter(&sSharpBilinearTexture, GPU_LINEAR, GPU_LINEAR);
         C2D_DrawImage(intermediateImage, &params, NULL);
+        DrawFrameEdges(&intermediateImage, &params);
         ++sStats.sharpBilinearFrames;
     } else {
         /* If the intermediate target is unavailable, Bilinear must remain a
@@ -1037,9 +1160,12 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
             C3D_DrawArrays(GPU_TRIANGLE_STRIP, 0, 4);
             C2D_Prepare();
             C2D_SceneBegin(sTopTarget);
+            ConfigureIdentityTextureEnv();
+            DrawFrameEdges(&image, &params);
         } else {
             ConfigureIdentityTextureEnv();
             C2D_DrawImage(image, &params, NULL);
+            DrawFrameEdges(&image, &params);
         }
         if (plan.useSharpBilinear) ++sStats.sharpBilinearFallbacks;
     }

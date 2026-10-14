@@ -122,6 +122,10 @@ bool FadeGpu3DS_FadeShown(const uint16_t* src, uint16_t* dst, size_t count) {
     return true;
 }
 
+const uint16_t* FadeGpu3DS_ShownPalettes(void) {
+    return sSnapshot[sCurrent ^ 1u].buffer;
+}
+
 bool FadeGpu3DS_Shown(uint8_t* weight, uint8_t* level) {
     const FadeSnapshot* snapshot = &sSnapshot[sCurrent ^ 1u];
     if (snapshot->intensity == 0 || snapshot->intensity > 256) return false;

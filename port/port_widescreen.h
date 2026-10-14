@@ -110,10 +110,20 @@ int Port_Widescreen_CutsceneViewLive(void);
 int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY);
 /* The title screen's forest is on the shown frame (the presenter extends it). */
 int Port_Widescreen_TitleForestShown(void);
+/* The shown frame is a plain screen around its middle (the Nintendo/Capcom logos, a blank frame of
+ * the title or file select): 1 the presenter stretches its edges over the 400x240 screen in Full
+ * View, 0 not, -1 as on the frame before (port_linked_stubs.c). */
+int Port_Widescreen_StretchEdges(void);
+/* The file select screen's cave (BG3) is on the shown frame, 240x160 in Full View: the presenter
+ * draws the extension around it from fileselect-cave.bin (port_linked_stubs.c). */
+int Port_Widescreen_FileSelectCaveShown(void);
 /* The title drawn at 400x240 (port_linked_stubs.c): Wide, the game produces it this tick;
  * ViewLive, the published frame is it. */
 int Port_Widescreen_TitleWide(void);
 int Port_Widescreen_TitleViewLive(void);
+/* The title's light rays extended over the 400x240 view in VRAM (platform/3ds/source/
+ * title_rays_3ds.c): the screen block of BG0's 512x256 map, or 0 (BG0 as the game has it). */
+int Port_Widescreen_TitleRays(void);
 int Port_Widescreen_Win0Lines(int width, int height, unsigned short* out);
 
 /* EnterRoomTextboxManager writes its location banner directly to BG0 rather
