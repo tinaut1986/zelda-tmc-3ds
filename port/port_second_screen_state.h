@@ -71,6 +71,11 @@ typedef struct {
     uint16_t rupees;
     int32_t playerX; /* area-space pixels */
     int32_t playerY;
+    /* Where the game's own pause map puts Link (gRoomTransition.player_status.overworld_map_x/y):
+     * kept by the game outside the overworld too (the last outdoor spot, or one set on entering
+     * a place like the Minish village), and saved with the game. */
+    int32_t overworldMapX;
+    int32_t overworldMapY;
     /* Area identity: SECOND_SCREEN_AR_* bits plus the dungeon slot the
      * engine's own key/compass logic indexes with. */
     uint8_t areaFlags;  /* gArea.areaMetadata */

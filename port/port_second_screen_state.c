@@ -81,6 +81,7 @@ void Port_SecondScreenState_Publish(void) {
     if (keepMapContext) {
         next.area = sSnapshot.area; next.room = sSnapshot.room;
         next.playerX = sSnapshot.playerX; next.playerY = sSnapshot.playerY;
+        next.overworldMapX = sSnapshot.overworldMapX; next.overworldMapY = sSnapshot.overworldMapY;
         next.areaFlags = sSnapshot.areaFlags; next.dungeonIdx = sSnapshot.dungeonIdx;
         next.visitedMask = sSnapshot.visitedMask;
         memcpy(next.rooms, sSnapshot.rooms, sizeof(next.rooms));
@@ -110,6 +111,8 @@ void Port_SecondScreenState_Publish(void) {
             next.room = gRoomControls.room;
             next.playerX = gPlayerEntity.base.x.HALF.HI;
             next.playerY = gPlayerEntity.base.y.HALF.HI;
+            next.overworldMapX = gRoomTransition.player_status.overworld_map_x;
+            next.overworldMapY = gRoomTransition.player_status.overworld_map_y;
         }
         next.equippedA = gSave.stats.equipped[SLOT_A];
         next.equippedB = gSave.stats.equipped[SLOT_B];

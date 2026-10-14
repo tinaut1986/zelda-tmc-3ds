@@ -493,6 +493,12 @@ int Port_SecondScreenWorldMap_LocatePlayer(uint8_t area, int32_t areaX, int32_t 
     return 1;
 }
 
+int Port_SecondScreenWorldMap_MapPoint(int32_t worldX, int32_t worldY, int32_t* outMapX, int32_t* outMapY) {
+    if (outMapX) *outMapX = ClampMapX(WorldToMapX(worldX));
+    if (outMapY) *outMapY = ClampMapY(WorldToMapY(worldY));
+    return 1;
+}
+
 /* Windcrest pin positions are ROM constants: gUnk_08128024[bit] gives the
  * warp's area/room/room-local landing point, the area's RoomHeader adds the
  * room's world origin (sub_080A6EE0's exact recipe). Computed once, lazily,
