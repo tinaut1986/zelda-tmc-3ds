@@ -2072,6 +2072,10 @@ static int Port_WidescreenCameraRestXForMode(int target_x, Port3DSFullViewMode m
     }
     int hi = lo + boundsW - viewW;
     int want = target_x - viewW / 2;
+    /* Room (or its painted part) narrower than a Full View: centre it, the rest is black. */
+    if (mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X && boundsW < viewW) {
+        return lo - (viewW - boundsW) / 2;
+    }
     if (want > hi) {
         want = hi;
     }
@@ -2094,6 +2098,9 @@ static int Port_WidescreenCameraRestYForMode(int target_y, Port3DSFullViewMode m
     }
     int hi = lo + boundsH - viewH;
     int want = target_y - viewH / 2;
+    if (mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X && boundsH < viewH) {
+        return lo - (viewH - boundsH) / 2;
+    }
     if (want > hi) {
         want = hi;
     }

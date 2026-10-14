@@ -418,6 +418,17 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   untouched). The software renderer does not have to follow (owner: everything through the GPU).
   *Done when:* the owner sees the menus slide out by the wide screen's edge on the console.
 
+- [ ] **P4.6** Full View in every room, interiors and small rooms included (owner's request, 2026-10-14).
+  *Spec:* with Full View the top screen is always 400x240. A room larger than the view scrolls; one
+  smaller in either axis is centred in it with the rest black (the camera rests outside the room:
+  `Port_WidescreenCameraRestXForMode`, `Scroll1`), and the HUD stays at the screen's corners. The
+  policy only waits for the painted-content scan. **Done in code (needs the owner's check):** castle,
+  houses. **Still to do:** the corridor before the Minish village (Minish Paths parallax BGs only
+  have shadows in the 240/266 path, `Port_WidescreenParallaxShadows`), dungeons with BG3 parallax
+  or windows, cutscenes that move the camera by hand.
+  *Done when:* the owner sees small and large interiors, the corridor and a dungeon at 400x240 on
+  the console.
+
 ## Phase 5: stereoscopic 3D
 
 - [ ] **P5.1** Stereoscopic 3D on chosen layers (owner's request, 2026-10-14).
@@ -746,6 +757,9 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   `tools/scene-extend/extend_rays.py` makes the same picture on the PC (preview, placements).
   GPU CHECK on the title: 0 structural; the one-step blend differences (7000-14000 pixels, by
   phase of the rays' blend) were there before the change.
+- **2026-10-14** Full View in every room (owner, P4.6): the policy no longer asks for a 400x240 room;
+  the camera of a smaller room rests outside it, centred, and the map shadows already give black
+  outside the room. Interiors stay at 1x. The Minish Paths corridor is still to check.
 - **2026-10-14** Everything through the GPU renderer (owner): the software renderer is kept as the
   reference for GPU CHECK and as the fallback, but new screens (the file select at 400x240) are
   built for the GPU only. The title's slowness was the GPU path itself, not a fallback: mode-1
