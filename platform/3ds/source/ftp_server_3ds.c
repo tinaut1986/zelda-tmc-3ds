@@ -72,6 +72,13 @@ static volatile bool sConnected;
 static char sStatus[48] = "STOPPED";
 /* FtpServer_Notice: what the player is told while a new build comes in. */
 static const char* volatile sNotice;
+/* FtpServer_Progress: 1 while a .cia arrives (sRecvDone of sRecvTotal bytes, the size the client
+ * announced with ALLO, 0 when it did not), 2 while it installs, 3 during the restart countdown. */
+static volatile int sPhase;
+static volatile unsigned long long sAllo, sRecvDone, sRecvTotal;
+static volatile unsigned long long sRelaunchAt; /* osGetTime() the countdown ends at */
+/* The wait Platform3DS_RequestRelaunch's main-thread timer applies (platform_3ds.c). */
+enum { FTP_RELAUNCH_DELAY_MS = 10000 };
 /* Install-only mode (production builds, started by dev-ftp.txt): only the update folder is
  * reachable and none of the remote control. */
 static bool sRestricted;
@@ -361,12 +368,17 @@ static void CmdStor(Session* s, const char* arg, bool append) {
     }
     const size_t len = strlen(vpath);
     const bool cia = len > 4 && strcasecmp(vpath + len - 4, ".cia") == 0;
-    if (cia) sNotice = "RECEIVING NEW BUILD...";
+    if (cia) {
+        sNotice = "RECEIVING NEW BUILD";
+        sRecvDone = 0, sRecvTotal = sAllo;
+        sPhase = 1;
+    }
+    sAllo = 0;
     Reply(s, "150 Receiving.");
     int data = AcceptData(s);
     if (data < 0) {
         fclose(f);
-        sNotice = NULL;
+        if (cia) sNotice = NULL, sPhase = 0;
         Reply(s, "425 No data connection.");
         return;
     }
@@ -382,11 +394,12 @@ static void CmdStor(Session* s, const char* arg, bool append) {
             ok = false;
             break;
         }
+        sRecvDone += (unsigned long long)r;
     }
     if (fclose(f) != 0) ok = false;
     CloseData(&data);
     if (ok) sReceived++;
-    if (cia) sNotice = NULL;
+    if (cia) sNotice = NULL, sPhase = 0;
     DebugLog_Printf("ftp: received %s%s", vpath, ok ? "" : " (failed)");
     Reply(s, ok ? "226 Done." : "451 Transfer failed.");
 }
@@ -422,8 +435,13 @@ static void HandleSession(int ctrl) {
         else if (!strcmp(line, "SYST")) Reply(s, "215 UNIX Type: L8");
         else if (!strcmp(line, "FEAT")) Reply(s, "211-Features:\r\n SIZE\r\n MDTM\r\n MLSD\r\n EPSV\r\n PASV\r\n UTF8\r\n211 End");
         else if (!strcmp(line, "OPTS") || !strcmp(line, "TYPE") || !strcmp(line, "MODE") || !strcmp(line, "STRU") ||
-                 !strcmp(line, "NOOP") || !strcmp(line, "ALLO"))
+                 !strcmp(line, "NOOP"))
             Reply(s, "200 OK.");
+        else if (!strcmp(line, "ALLO")) {
+            /* The size of the next STOR (tools/build_3ds.py --install sends it): the progress bar's total. */
+            sAllo = strtoull(arg, NULL, 10);
+            Reply(s, "200 OK.");
+        }
         else if (!strcmp(line, "PWD") || !strcmp(line, "XPWD")) Reply(s, "257 \"%s\"", s->cwd);
         else if (!strcmp(line, "CWD") || !strcmp(line, "CDUP")) {
             ResolvePath(s, !strcmp(line, "CDUP") ? ".." : arg, vpath, sizeof(vpath));
@@ -506,11 +524,16 @@ static void HandleSession(int ctrl) {
                     continue;
                 }
                 char error[96];
-                sNotice = "INSTALLING NEW BUILD - GAME WILL RESTART";
+                sNotice = "INSTALLING NEW BUILD";
+                sPhase = 2;
                 if (CiaInstall_File(vpath, error, sizeof(error))) {
                     Reply(s, "200 Installed %s; relaunching the game.", vpath);
+                    sNotice = "RESTARTING IN";
+                    sRelaunchAt = osGetTime() + FTP_RELAUNCH_DELAY_MS;
+                    sPhase = 3;
                     Platform3DS_RequestRelaunch();
                 } else {
+                    sPhase = 0;
                     sNotice = NULL;
                     Reply(s, "550 Install failed: %s", error);
                 }
@@ -615,6 +638,21 @@ static bool StartServer(bool restricted) {
 
 const char* FtpServer_Notice(void) {
     return sNotice;
+}
+
+int FtpServer_Progress(unsigned long long* done, unsigned long long* total) {
+    const int phase = sPhase;
+    *done = *total = 0;
+    if (phase == 1) {
+        *done = sRecvDone, *total = sRecvTotal;
+    } else if (phase == 2) {
+        CiaInstall_Progress(done, total);
+    } else if (phase == 3) {
+        const unsigned long long now = osGetTime(), at = sRelaunchAt;
+        *done = now >= at ? FTP_RELAUNCH_DELAY_MS : FTP_RELAUNCH_DELAY_MS - (at - now);
+        *total = FTP_RELAUNCH_DELAY_MS;
+    }
+    return phase;
 }
 
 bool FtpServer_Start(void) { return StartServer(false); }

@@ -569,20 +569,54 @@ static int Compact_ToastVisible(void) {
 }
 
 /* Paint while it shows, and once more to take it away. */
+/* The notice's line with how far it is: "RECEIVING NEW BUILD 42%", "INSTALLING NEW BUILD 80%",
+ * "RESTARTING IN 7 S". `permille` is -1 when the total is not known (the client sent no ALLO):
+ * no bar, no percentage. Painting runs every tick while the notice stands, so the changing
+ * percent or second is redrawn without any extra trigger. */
+static const char* Compact_NoticeLine(char* out, size_t cap, int* permille) {
+    const char* notice = Compact_StandingNotice();
+    *permille = -1;
+    if (!notice) return NULL;
+    unsigned long long done = 0, total = 0;
+    const int phase = FtpServer_Progress(&done, &total);
+    if (phase == 3 && total) {
+        *permille = (int)(done * 1000 / total);
+        snprintf(out, cap, "%s %u S", notice, (unsigned)((total - done + 999) / 1000));
+    } else if (total) {
+        *permille = (int)(done >= total ? 1000 : done * 1000 / total);
+        snprintf(out, cap, "%s %d%%", notice, *permille / 10);
+    } else {
+        snprintf(out, cap, "%s...", notice);
+    }
+    return out;
+}
+
 static int Compact_ToastNeedsPaint(void) {
     return Compact_StandingNotice() || Compact_ToastVisible() || sToastOnScreen;
 }
 
 static void Compact_PaintToast(const SSurf* s) {
-    const char* notice = Compact_StandingNotice();
+    char line[64];
+    int permille;
+    const char* notice = Compact_NoticeLine(line, sizeof(line), &permille);
     if (notice) Compact_Toast("%s", notice);
     sToastOnScreen = (uint8_t)Compact_ToastVisible();
     if (!sToastOnScreen) return;
-    /* The window's band is five pixels: three more around the text. */
-    int32_t w = CTextWidth(sToast) + 2 * 8, h = kUiGlyphH + 2 * 8;
+    /* The window's band is five pixels: three more around the text. A progress bar adds a row. */
+    const int32_t barH = permille >= 0 ? 6 : 0, barGap = barH ? 4 : 0;
+    /* Wide enough for the longest line, so the box does not change size as it counts. */
+    int32_t w = CTextWidth(notice ? "RECEIVING NEW BUILD 100%" : sToast), tw = CTextWidth(sToast);
+    if (!notice || tw > w) w = tw;
+    w += 2 * 8;
+    int32_t h = kUiGlyphH + 2 * 8 + barGap + barH;
     int32_t x = (s->w - w) / 2, y = CcContentBottom(s->h) - h - 4;
     CWindow(s, x, y, w, h, CC_BAR, CC_BAR_DIM);
     CTextCentered(s, s->w / 2, y + 8, CC_BAR_TEXT, sToast);
+    if (barH) {
+        const int32_t bx = x + 8, by = y + 8 + kUiGlyphH + barGap, bw = w - 2 * 8;
+        FillRect(s, bx, by, bx + bw, by + barH, CC_BAR_FAINT);
+        FillRect(s, bx, by, bx + (int32_t)((int64_t)bw * permille / 1000), by + barH, CC_ACCENT);
+    }
 }
 
 /* ---- STATES: save states (save_state_3ds.h), as in ../mzm and ../sm-3ds ----

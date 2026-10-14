@@ -191,6 +191,7 @@ bool SaveState_InfoAt(int i, SaveStateInfo* out) { if (i < 0 || i >= 3) return f
 bool SaveState_ReadThumb(uint32_t id, uint16_t* px) { (void)id; (void)px; return false; }
 const char* SaveState_AreaName(unsigned a) { return a == 3 ? "HYRULE FIELD" : a == 0x22 ? "LINKS HOUSE" : NULL; }
 const char* FtpServer_Notice(void) { return NULL; }
+int FtpServer_Progress(unsigned long long* done, unsigned long long* total) { *done = *total = 0; return 0; }
 static bool sDbgLog, sDbgDirect, sDbgFtp;
 bool Port_Config_DebugLogOn(void) { return sDbgLog; }
 void Port_Config_SetDebugLogOn(bool on) { sDbgLog = on; }

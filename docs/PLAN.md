@@ -29,6 +29,7 @@ their history is in `git log` and the decisions log. Open:
 | Branch | What | State |
 |---|---|---|
 | `feat/retroachievements` (origin only, cut from `release/v0.1.3`) | a RetroAchievements tab, "P2.8" in its commit (2026-10-13); no spec in this PLAN | not merged; not checked |
+| `feat/ftp-install-progress` | FTP install notice with percent + bar (upload via `ALLO`, install) and a 10 s restart countdown; `build_3ds.py --install` sends `ALLO` | built, not checked on the console |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
