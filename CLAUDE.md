@@ -259,10 +259,10 @@ tools/tmc-link/tmc-link.py wait && tools/tmc-link/tmc-link.py run SCRIPT   # dri
   remote control, a CANCEL bar on the bottom screen): `--install` works on it with either build
   mode, `tmc-link.py` and fetching `debug/` do not (docs/debug-tools.md, "FTP server").
 - Any unsaved progress is lost on relaunch: say so before installing while the owner plays.
-- With two consoles on the network (owner's New 3DS and 2DS) `.3ds_ftp_ip` holds only the last
-  one the build assistant used. Pass the address explicitly (`tmc-link.py --ip IP ...`, `curl
-  ftp://IP:5000/...`) for the other one, and do not overwrite the file by sending a CIA to
-  it with `curl`. Which one is which is in PLAN's Status.
+- With two consoles on the network (the game's SD log header says Old or New 3DS) `.3ds_ftp_ip`
+  holds only the last one the build assistant used. Pass the address explicitly (`tmc-link.py
+  --ip IP ...`, `curl ftp://IP:5000/...`) for the other one, and do not overwrite the file by
+  sending a CIA to it with `curl`. Which one is which is in PLAN's Status.
 - If the IP is unknown or the connection is refused, ask the owner for the address the
   FTP SERVER cell shows; do not scan the network without need.
 - The protocol and the server are documented in `docs/debug-tools.md` ("FTP server") and

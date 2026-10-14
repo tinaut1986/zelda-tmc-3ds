@@ -14,7 +14,7 @@ change (what goes where: the table in `CLAUDE.md`).
   audio offload, an updater, a quick memory dump (L+R+A) and an experimental New 3DS
   "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors; the 2x indoor zoom is gone, see the decisions log).
 
-## Status (2026-10-13)
+## Status (2026-10-14)
 
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
@@ -69,6 +69,7 @@ boxes below. History: `git log` and the decisions log.
 | `feat/scene-recorder` (cut from `release/v0.1.3`) | P1.6: `tmc-link.py scenerec`, `tools/scene-rec/decode.py` | on the 2DS by Claude (89 frames decoded to PNG and GIF) | _(merged into `release/v0.1.3` 2026-10-13)_ |
 | `fix/install-relaunch` (cut from `release/v0.1.3`) | issue #4: relaunch 10 s after `SITE INSTALL` through libctru's chainloader (Luma dumps 7 and 8, `0xD86007F3`), as `../legend-of-doom-3ds` fixed it | builds; to try with several installs in a row; the same fix went to `../mzm` | _(merged into `release/v0.1.3` 2026-10-13 on the owner's word, before the install test)_ |
 | `feat/title-wide` (cut from `release/v0.1.3`) | P4.4 and P4.5 (the file select's cave around its 240x160 screen, shimmering with the palettes: on the console .141 by Claude, `0.1.3-dev.96.20+cave`, edges and centre change on the same frames, no seam): the title at 400x240 in Full View (forest picture as BG1, sword and logo centred; issue #24, GPU dots on the scaled sword); the light rays continued to the edges and four new rays in the gaps, computed in VRAM (`title_rays_3ds.c`); the title fades out after START still at 400x240 (it dropped to 240x160 with everything moved); the Nintendo/Capcom logos' edges stretched to the screen's | on the console at 192.168.1.141 by Claude (`0.1.3-dev.96.8+rays`, scene recordings, 2026-10-14): the rays with four new ones (left: a wide one, a thin one, a wide one in the corner, uneven gaps; lower right: a wide one), no seam, shimmer with the originals, 59.7 fps (GPU CHECK 0 structural on the 2DS .139 with two of them); START fades the title to white at 400x240, centred (the fade-out is told by the title's layers, which stay until DispReset), and the blank frame before file select is white across the screen; a reset (and the boot) is white across the screen from its first frame (`0.1.3-dev.96.19+rays`, every frame recorded); the logos fill the 400x240 screen with no step at the frame's edges through their fades, and they fade out at 240x160 centred (they were drawn wide in the corner, with a black-barred frame, once lastState named the title). Left: a one-step flicker (246/255) of the near-white while the logos fade to white, from the GPU fade quad, there before. Checked by the owner on the console (2026-10-14) | _(merged into `release/v0.1.3` 2026-10-14)_ |
+| `feat/link-perf` (cut from `release/v0.1.3`) | `tmc-link.py perf start` / `perf stop [DIR]`: the DEBUG tab's perf recorder over the link (`SITE PERF`), the CSV fetched | used on the .141 by Claude (perf 0035-0039) | _(merged into `release/v0.1.3` 2026-10-14)_ |
 | `perf/title-rings` (cut from `release/v0.1.3`) | the title at 400x240 ran at 37-41 fps on the Old 3DS, all on the GPU (no software frame): BG0/BG1 take their view rings in mode-1 frames too (only BG2/BG3 are affine there), rings read 512x256 maps, and a scaled affine BG2 of at most 256x256 that does not wrap is decoded into BG2's free ring and drawn as one quad (the sword was 7 ms of a 17 ms build) | on the .141 (Old 3DS) by Claude: the whole intro 59.7-60 fps, build 17 -> 5.5 ms; GPU CHECK 0 structural on the settled title (the one-step pixels are the rays' blend, by phase); the sword's zoom recorded clean. Host model test passes (its `test_affine_obj_texel_boundaries` failed before this branch too) checked by the owner on the console (2026-10-14) | _(merged into `release/v0.1.3` 2026-10-14)_ |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
@@ -77,25 +78,28 @@ Link's house and the Minish Woods are untested in builds other than their writer
 build, as the house door did: issue #14). A state saved inside the pause menu breaks on closing
 it (issue #13).
 
-**Start here (2026-10-14):** everything is merged into `release/v0.1.3` (`feat/title-wide`
-included: the title, logos and transitions in Full View, the file select's cave). Next, in this order:
-1. P4.5, `feat/fileselect-wide`: the file select drawn at 400x240 so its sliding sprites (file rows,
-   header, the R "options" button) go to the screen's edge instead of being cut at the GBA
-   screen's; GPU renderer only (owner, 2026-10-14: everything through the GPU).
-2. (done: `perf/title-rings`, the title at 60 fps on the Old 3DS, merged.)
-3. The README's before/after GIF of the portal shrink (owner's request): record it with the scene
-   recorder (`tmc-link.py scenerec`, P1.6) on the New 3DS, which holds more frames, once VISTA =
-   ORIGINAL and once Full View; then rewrite the README (performance, Full View, bottom screen,
-   states, updater) with the GIFs (owner's request, 2026-10-13).
-4. Issue #4: the relaunch fix is merged; a few more installs without a loader dump, then close.
-   Issue #23 waits for the owner's soft reset check.
+**Start here (2026-10-14, end of the day):** everything is merged into `release/v0.1.3` and pushed
+(`feat/title-wide`, `feat/link-perf`, `perf/title-rings`); no worktree, nothing uncommitted. Next, in
+this order:
+1. **P4.5, the file select at 400x240** (spec below; owner, 2026-10-14): a new branch
+   `feat/fileselect-wide` from `release/v0.1.3`. The cave around the screen already ships (the
+   presenter draws it, `CaveReady`); what is missing is the sliding sprites leaving by the wide
+   screen's edge. GPU renderer only. The screen already runs at 60 fps; build it properly anyway.
+   Material: `~/Imágenes/elige-archivo/` (dump 0028, the owner's pictures).
+2. The README's before/after GIF of the portal shrink (owner's request): record it with the scene
+   recorder (`tmc-link.py scenerec`, P1.6) once VISTA = ORIGINAL and once Full View; then rewrite
+   the README (performance, Full View, bottom screen, states, updater) with the GIFs (2026-10-13).
+3. Issue #25 (GPU fade: one-step flicker of the near-white during the logos' fade), when it suits.
+4. Issue #4: the relaunch fix is merged; a few more installs without a loader dump, then close
+   (this session installed some 20 builds on the .141 without one). Issue #23: resets from the
+   title look right in recordings; a reset from inside a game is still to see.
 5. Issue #19 (states break when the port's statics grow), #13, #11 as before.
 Scene pictures (portal, title, file select): procedure in `docs/wide-scene-extension.md`; the owner's material
 in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/intro-titulo/` and `~/Imágenes/elige-archivo/`
 (never in the repository).
 To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
-**On the owner's consoles now (2026-10-13):**
+**On the owner's consoles now (2026-10-14):**
 - Old 3DS/2DS, **`192.168.1.139`** (its address changed; `.3ds_ftp_ip` holds it): a debug build of
   `feat/title-wide` with the first extended rays, `0.1.3-dev.96.5+rays` (2026-10-14), BOTTOM CORE = AUTO, UPDATES channel + BETAS, Full View
   (`widescreen=1`, `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT, FRAMES = AUTO.
@@ -108,10 +112,11 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
   **1 is Claude's**, the owner's place before the evening installs (00/00, to load and delete);
   3 = 00/00 on the Minish Woods stump (#21, P4.3); 5 = 03/04 below the scroll up (#11).
   Loading a state switches the bottom screen to MAP: tap another tab after it, not before.
-- New 3DS, **`192.168.1.141`** (pass `--ip`): a debug build of `feat/title-wide`, `0.1.3-dev.96.20+cave`
-  (2026-10-14; the title, logos, transitions and file select cave as merged). Its state 1 is
-  Claude's, the owner's place (area 0x15) before the 2026-10-13 install. File select dump 0028 in
-  `~/Imágenes/elige-archivo/`.
+- **`192.168.1.141`** (pass `--ip`): **an Old 3DS** by its own log and perf headers (it was noted as the
+  New 3DS before). The owner's console for the title and file select work: a debug build of
+  `perf/title-rings` (the code of `release/v0.1.3` at 8972f9c), Full View, SHOW FPS on, theme
+  default. Its state 1 is Claude's, the owner's place (area 0x15) before the 2026-10-13 install.
+  `debug/` holds checks up to `tmc-check-0198` and perf CSVs up to `tmc-perf-0039`.
 - The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP); 8 is
   the newest on the 2DS (#4, before the relaunch fix).
 
@@ -433,11 +438,22 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
 ---
 
 - [ ] **P4.5** The file select screen in Full View (owner's request, 2026-10-14).
-  *Spec:* the screen stays 240x160 in the middle; the cave around it from a generated extension
-  (the owner's, Antigravity; material in `~/Imágenes/elige-archivo/`), shimmering with the
+  *Spec:* the cave around the screen from the owner's generated extension, shimmering with the
   original's palette cycling (`docs/wide-scene-extension.md`, "A generated picture over a
-  palette-cycled background"); shipped in the romfs like the other extensions.
-  *Done when:* the owner sees it on the console.
+  palette-cycled background"), shipped in the romfs: **done** (the presenter draws it around the
+  240x160 frame, `CaveReady` in `platform_gpu_3ds.c`). **Still to do:** what slides must leave by
+  the 400x240 screen's edge, not vanish at the GBA screen's: the file rows and the language row
+  (sprites to x = -72 when another is chosen), the header (type 18, to x = -96), the R "options"
+  button and its label (`HideButtonR`, x = 0x140; slides 4 px a frame). All are sprites (OBJ):
+  `src/object/fileScreenObjects.c` (`sub_0808EF6C` moves them, `gUnk_08121D54` starts them),
+  `src/fileselect.c` (`HideButtonR` / `ShowButtonR`), `src/ui.c` (`ButtonUIElement_Action1`).
+  Agreed design (2026-10-14), GPU renderer only: the frame at 400x240 like the title; BG0-BG2 (the
+  windows and text, 256-wide maps that would repeat) drawn only in the centred 240x160; the cave
+  as BG3 under the sprites (the picture as palette indices, from the BG palettes the frame uses,
+  replacing the presenter's); sprites placed +80, +40, and past the GBA screen's edge carried on
+  faster so a sprite the game parks at x = -72 really leaves the 400 view (the game's logic
+  untouched). The software renderer does not have to follow (owner: everything through the GPU).
+  *Done when:* the owner sees the menus slide out by the wide screen's edge on the console.
 
 ## Baseline measurements (P0.2)
 
