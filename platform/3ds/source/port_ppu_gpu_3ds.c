@@ -918,8 +918,11 @@ static void ClearStencilPlane(void) {
     const u32 yOffset = sViewportOffset;
     SetScissorCached(0, yOffset, sPreparedWidth, yOffset + sPreparedHeight);
     C3D_AlphaTest(false, GPU_ALWAYS, 0);
-    /* Writemask 0 keeps this to the stencil: no colour, no depth. */
-    C3D_DepthTest(true, GPU_ALWAYS, (GPU_WRITEMASK)0);
+    /* Stencil and depth, no colour: the quad is at z = 0, the depth the target clear writes. The
+     * right eye shares the left's depth-stencil (EnsureRightOutput), and both target clears are
+     * queued before either eye's commands run, so the second eye would start from the first
+     * eye's depth: sprites cut where the other eye's were. */
+    C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_DEPTH);
     C3D_StencilTest(true, GPU_ALWAYS, 0, 0xff, 0xff);
     C3D_StencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_REPLACE);
     C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT,
