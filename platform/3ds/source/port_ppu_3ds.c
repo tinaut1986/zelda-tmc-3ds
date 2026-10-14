@@ -33,6 +33,7 @@
 
 #include "virtuappu.h"
 #include "scene_pictures_3ds.h"
+#include "stereo_3ds.h"
 #include "scene_rec_3ds.h"
 #include "cpu/mode1.h"
 #include "main.h"
@@ -1202,6 +1203,7 @@ static void PresentFrame(void) {
     const uint16_t dispcnt = (uint16_t)(gIoMem[0] | (gIoMem[1] << 8));
     const uint8_t mode = (uint8_t)(dispcnt & 7);
     TopFrameState topFrame = SelectTopFrame();
+    Stereo3DS_BeginFrame(); /* the 3D setting and slider for this frame's build and draw */
     /* Right after a door the field loads at 240/266 for a few frames before it
      * is Full View; the screen is still fading in, so keep showing the last
      * frame (the one the fade-out ended on) instead of two geometry steps. */
@@ -1420,7 +1422,8 @@ static void PresentFrame(void) {
         const uint64_t drawEndTick = Platform3DS_SystemTick();
         sTopDrawTicks += drawEndTick - renderEndTick;
         Platform3DS_SetStage(8);
-        PlatformGpu3DS_DrawTopTexture(PortPpuGpu3DS_OutputTexture(), (unsigned)sTopPresentWidth,
+        PlatformGpu3DS_DrawTopTexture(PortPpuGpu3DS_OutputTexture(), PortPpuGpu3DS_OutputTextureRight(),
+                                      (unsigned)sTopPresentWidth,
                                       (unsigned)sTopPresentHeight, sTopPresentMode, sTopCropX, sTopCropY);
         Platform3DS_SetStage(9);
         sTopBlitTicks += Platform3DS_SystemTick() - drawEndTick;

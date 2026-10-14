@@ -150,9 +150,9 @@ int DebugPerf_Stop(void) { sPerf = false; return 3; }
 bool DebugPerf_Running(void) { return sPerf; }
 unsigned DebugPerf_Rows(void) { return sPerf ? 1834 : 0; }
 unsigned DebugPerf_Capacity(void) { return 36000; }
-static int sSw[9] = { 1, 0, 0, 0, 1, -1, -1, 0, 0 };
-static const char* const kSwNames[9] = { "RENDERER", "FRAME SYNC", "VBLANK LOCK", "STATIC QUAD", "MAP SKIP",
-                                         "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT" };
+static int sSw[10] = { 1, 0, 0, 0, 1, -1, -1, 0, 0, 0 };
+static const char* const kSwNames[10] = { "RENDERER", "FRAME SYNC", "VBLANK LOCK", "STATIC QUAD", "MAP SKIP",
+                                          "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT", "STEREO 3D" };
 const char* DebugSwitch_Name(int id) { return kSwNames[id]; }
 void DebugSwitch_Value(int id, char* out, unsigned cap) {
     if (id == 0) snprintf(out, cap, "%s", sSw[0] ? "GPU" : "CPU (TEST)");
@@ -161,7 +161,7 @@ void DebugSwitch_Value(int id, char* out, unsigned cap) {
     else snprintf(out, cap, "%s", sSw[id] ? "ON" : "OFF");
 }
 void DebugSwitch_Cycle(int id) { sSw[id] = sSw[id] == 1 ? (id == 5 || id == 6 ? -1 : 0) : 1; }
-bool DebugSwitch_IsDefault(int id) { static const int d[10] = { 1, 0, 0, 0, 1, 0, -1, -1, 0, 0 }; return sSw[id] == d[id]; }
+bool DebugSwitch_IsDefault(int id) { static const int d[10] = { 1, 0, 0, 0, 1, -1, -1, 0, 0, 0 }; return sSw[id] == d[id]; }
 void PortPpuGpu3DS_GetStats(PortPpuGpu3DSStats* st) { memset(st, 0, sizeof(*st)); st->initialized = true; st->parityChecks = 2; }
 void PortPpuGpu3DS_RequestParityCheck(void) {}
 bool FtpServer_Running(void) { return true; }

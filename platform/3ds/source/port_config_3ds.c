@@ -123,6 +123,8 @@ static int sAppCpuLimit = 0;
 /* Report and research items that measurement says are neutral or harmful by
  * default. Present, switchable, and off unless asked for. */
 static bool sGpuStaticQuad = false;
+/* Stereoscopic 3D (stereo_3ds.h): STEREO3DS_OFF / ON / TEST. Off: the player's or the owner's call. */
+static int sStereo3D = 0;
 static bool sBottomRgb565 = false;
 static bool sGpuShortVertices = false;
 /* Stored research choices. E10 disables both routes on every console because
@@ -199,6 +201,7 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("compact_upload=%u\n", sCompactUpload ? 1u : 0u);
     APPEND("app_cpu_limit=%d\n", sAppCpuLimit);
     APPEND("gpu_static_quad=%u\n", sGpuStaticQuad ? 1u : 0u);
+    APPEND("stereo_3d=%d\n", sStereo3D);
     APPEND("bottom_rgb565=%u\n", sBottomRgb565 ? 1u : 0u);
     APPEND("gpu_short_vertices=%u\n", sGpuShortVertices ? 1u : 0u);
     APPEND("audio_dsp=%u\n", sAudioDsp ? 1u : 0u);
@@ -369,6 +372,10 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "compact_upload") == 0) sCompactUpload = ParseBool(value);
             else if (strcmp(key, "app_cpu_limit") == 0) sAppCpuLimit = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "gpu_static_quad") == 0) sGpuStaticQuad = ParseBool(value);
+            else if (strcmp(key, "stereo_3d") == 0) {
+                const int v = atoi(value);
+                sStereo3D = v >= 0 && v <= 2 ? v : 0;
+            }
             else if (strcmp(key, "bottom_rgb565") == 0) sBottomRgb565 = ParseBool(value);
             else if (strcmp(key, "gpu_short_vertices") == 0) sGpuShortVertices = ParseBool(value);
             else if (strcmp(key, "audio_dsp") == 0) sAudioDsp = ParseBool(value);
@@ -440,6 +447,7 @@ float Port_Config_SpeakerEqHz(void) { return sSpeakerEqHz; }
 bool Port_Config_CompactUpload(void) { return sCompactUpload; }
 int Port_Config_AppCpuLimit(void) { return sAppCpuLimit; }
 bool Port_Config_GpuStaticQuad(void) { return sGpuStaticQuad; }
+int Port_Config_Stereo3D(void) { return sStereo3D; }
 bool Port_Config_BottomRgb565(void) { return sBottomRgb565; }
 bool Port_Config_GpuShortVertices(void) { return sGpuShortVertices; }
 bool Port_Config_AudioDsp(void) {
@@ -491,6 +499,7 @@ static int SwitchValue(int id) {
         case DEBUG_SW_AUDIO_CORE: return sAudioCore;
         case DEBUG_SW_COMPACT_UPLOAD: return sCompactUpload;
         case DEBUG_SW_CPU_LIMIT: return sAppCpuLimit;
+        case DEBUG_SW_STEREO_3D: return sStereo3D;
         default: return 0;
     }
 }
@@ -498,13 +507,13 @@ static int SwitchValue(int id) {
 const char* DebugSwitch_Name(int id) {
     static const char* const kNames[DEBUG_SW_COUNT] = {
         "RENDERER", "FRAME SYNC", "VBLANK LOCK", "STATIC QUAD", "MAP SKIP",
-        "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT",
+        "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT", "STEREO 3D",
     };
     return id >= 0 && id < DEBUG_SW_COUNT ? kNames[id] : "?";
 }
 
 bool DebugSwitch_IsDefault(int id) {
-    static const int kDefaults[DEBUG_SW_COUNT] = { 1, 0, 0, 0, 1, -1, -1, 0, 0 };
+    static const int kDefaults[DEBUG_SW_COUNT] = { 1, 0, 0, 0, 1, -1, -1, 0, 0, 0 };
     return id >= 0 && id < DEBUG_SW_COUNT && SwitchValue(id) == kDefaults[id];
 }
 
@@ -527,6 +536,9 @@ void DebugSwitch_Value(int id, char* out, unsigned cap) {
             if (v <= 0) snprintf(out, cap, "AUTO %u%%", Platform3DS_Core1TimeLimit());
             else snprintf(out, cap, "%d%% (%u%%)", v, Platform3DS_Core1TimeLimit());
             return;
+        case DEBUG_SW_STEREO_3D:
+            snprintf(out, cap, "%s", v == 2 ? "TEST" : (v ? "ON" : "OFF"));
+            return;
         default:
             snprintf(out, cap, "%s", v ? "ON" : "OFF");
             return;
@@ -539,6 +551,7 @@ void DebugSwitch_Cycle(int id) {
         case DEBUG_SW_FRAME_SYNC: sGpuFrameSync = !sGpuFrameSync; break;
         case DEBUG_SW_VBLANK_LOCK: sVblankPhaseLock = !sVblankPhaseLock; break;
         case DEBUG_SW_STATIC_QUAD: sGpuStaticQuad = !sGpuStaticQuad; break;
+        case DEBUG_SW_STEREO_3D: sStereo3D = (sStereo3D + 1) % 3; break;
         case DEBUG_SW_MAP_SKIP: sBottomMapSkip = !sBottomMapSkip; break;
         case DEBUG_SW_BOTTOM_CORE:
             sBottomCore = sBottomCore < 0 ? 0 : (sBottomCore == 0 ? 1 : -1);
