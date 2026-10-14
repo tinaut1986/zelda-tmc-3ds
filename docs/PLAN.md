@@ -36,12 +36,13 @@ Link's house and the Minish Woods are untested in builds other than their writer
 build, as the house door did: issue #14). A state saved inside the pause menu breaks on closing
 it (issue #13).
 
-**Start here (2026-10-14, end of the day):** everything is merged into `release/v0.1.3` and pushed
-(`feat/title-wide`, `feat/link-perf`, `perf/title-rings`); no worktree, nothing uncommitted. Next, in
-this order:
-1. **P5.1, stereoscopic 3D**: merged; ON puts the HUD and text boxes in front. Next depths only
-   when the owner asks (fog, the Minish village's leaves). The owner goes through the game for
-   screens still drawn at 240x160 and reports them. Issue #26: look at Hyrule Town in Full View.
+**Start here (2026-10-14, evening):** `v0.2.0` is out (stable). Everything of this session is merged
+into `release/v0.2.1` and pushed: P4.5 (file select at 400x240), issue #26 (zone tilesets), #27 (map
+marker), P5.1's first part (stereo 3D, ON = HUD and text boxes in front, checked by the owner on the
+New 3DS). Every merged branch was deleted; no worktree, nothing uncommitted. Next, in this order:
+1. Whatever the owner reports: they go through the game for screens still drawn at 240x160, and
+   say which more layers get a depth in 3D (fog, the Minish village's leaves; P5.1). Issue #26:
+   Hyrule Town in Full View not seen yet (same fix).
 2. The README's before/after GIF of the portal shrink (owner's request): record it with the scene
    recorder (`tmc-link.py scenerec`, P1.6) once VISTA = ORIGINAL and once Full View; then rewrite
    the README (performance, Full View, bottom screen, states, updater) with the GIFs (2026-10-13).
@@ -73,8 +74,9 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
   build of `fix/zone-tilesets` (`0.2.1-dev.0+42f5761`, the village fix only) with **STEREO 3D =
   TEST**, Full View, SHOW FPS on, theme default. Its newest states are Claude's, the owner's places
   in the Minish village before installs (2026-10-14).
-- **`192.168.1.142`** (pass `--ip`): **the New 3DS** (owner, 2026-10-14), a debug build of
-  `tmp/combo` = `release/v0.2.1` as merged (`0.2.1-dev.0.10+a0bc40c`), STEREO 3D used in ON and TEST.
+- **`192.168.1.142`** (pass `--ip`): **the New 3DS** (owner, 2026-10-14), a debug build of the code
+  `release/v0.2.1` has since 7a65202 (`0.2.1-dev.0.10+a0bc40c`, from a local test branch since
+  deleted), STEREO 3D used in ON and TEST, FTP server on.
   The owner's game is in Hyrule Castle (area 0x80); its state 1 is Claude's, the owner's place before
   the last install.
   `debug/` holds checks up to `tmc-check-0198` and perf CSVs up to `tmc-perf-0039`.
