@@ -11,9 +11,12 @@
 
 extern int Port_Config_Stereo3D(void);
 
-/* Pixels at the full slider, by layer (BG0..BG3, OBJ) and priority. All on the screen plane until
- * a scene is given a depth (docs/stereo-3d.md). */
-static const signed char kDepth[5][4] = { { 0 } };
+/* Pixels at the full slider, by layer (BG0..BG3, OBJ) and priority (docs/stereo-3d.md). In front of
+ * the screen: BG0 at priority 0, the HUD and the text boxes, and the sprites at priority 0, the HUD's
+ * buttons (the game draws Link and the world's sprites at 1-3). The rest on the screen plane. */
+static const signed char kDepth[5][4] = {
+    { 6, 0, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, { 6, 0, 0, 0 },
+};
 /* STEREO3DS_TEST: what lies in front of the playfield pops out, to see that both eyes work. */
 static const signed char kTestDepth[5][4] = {
     { 6, 0, 0, 0 }, { 6, 0, 0, 0 }, { 6, 0, 0, 0 }, { 6, 0, 0, 0 }, { 4, 2, 2, 0 },

@@ -1078,22 +1078,37 @@ static bool DrawOutput(C3D_RenderTarget* target) {
 }
 
 /* The right eye's output (docs/stereo-3d.md), made the first time a frame needs it. */
+static void NoteRightOutputFailed(void) {
+    static bool noted;
+    if (noted) return;
+    noted = true;
+    char line[96];
+    snprintf(line, sizeof(line), "[tmc3ds] stereo: no right-eye output, vram free %zu\n", (size_t)vramSpaceFree());
+    Platform3DS_Debug(line);
+}
+
 static bool EnsureRightOutput(void) {
     if (sOutputRightTarget) return true;
     if (!C3D_TexInitVRAM(&sOutputRightTexture, PPU_GPU3DS_OUTPUT_WIDTH, PPU_GPU3DS_OUTPUT_HEIGHT, GPU_RGBA5551)) {
         sOutputRightTexture = (C3D_Tex){ 0 };
+        NoteRightOutputFailed();
         return false;
     }
     C3D_TexSetFilter(&sOutputRightTexture, GPU_NEAREST, GPU_NEAREST);
     C3D_TexSetWrap(&sOutputRightTexture, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
-    sOutputRightTarget =
-            C3D_RenderTargetCreateFromTex(&sOutputRightTexture, GPU_TEXFACE_2D, 0, GPU_RB_DEPTH24_STENCIL8);
+    /* The left eye's depth and stencil are shared: the eyes are drawn one after the other and each
+     * draw clears them first. A buffer of its own (512 KiB) did not fit in the New 3DS's VRAM beside
+     * the presenter's right-eye target, and both eyes got the left picture. */
+    sOutputRightTarget = C3D_RenderTargetCreateFromTex(&sOutputRightTexture, GPU_TEXFACE_2D, 0, -1);
+    if (sOutputRightTarget)
+        C3D_FrameBufDepth(&sOutputRightTarget->frameBuf, sOutputTarget->frameBuf.depthBuf, GPU_RB_DEPTH24_STENCIL8);
     if (!sOutputRightTarget || !sOutputRightTarget->frameBuf.depthBuf) {
-        /* No VRAM left for it (stencil included): both eyes keep the left picture. */
+        /* No VRAM left for it: both eyes keep the left picture. */
         if (sOutputRightTarget) C3D_RenderTargetDelete(sOutputRightTarget);
         sOutputRightTarget = NULL;
         C3D_TexDelete(&sOutputRightTexture);
         sOutputRightTexture = (C3D_Tex){ 0 };
+        NoteRightOutputFailed();
         return false;
     }
     return true;
