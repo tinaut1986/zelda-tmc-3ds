@@ -20,6 +20,9 @@ SITE commands of platform/3ds/source/debug_link_3ds.h. Standard library only.
     dump                      screen dump: debug/tmc-dump-NNNN-* (written at the next frame)
     switch NAME               cycle a DEBUG -> SWITCHES value ("FRAME SYNC")
     shot [DIR]                screenshots of both screens as PNG, default /tmp/tmc-shot
+    perf start                the perf recorder (one row a presented frame, into RAM)
+    perf stop [DIR]           write debug/tmc-perf-NNNN.csv and fetch it to DIR (default
+                              /tmp/tmc-debug); tools/perf-csv/analyze.py summarises it
     scenerec start [N]        the top screen, full size, one frame in N (default 2), into RAM
     scenerec stop [DIR]       write it (debug/tmc-scene-NNNN.bin), fetch it to DIR (default
                               /tmp/tmc-scene); tools/scene-rec/decode.py makes PNGs and a GIF
@@ -267,6 +270,18 @@ def run(link, argv):
             path = os.path.join(out, name)
             with open(path, 'wb') as f:
                 link.connect().retrbinary('RETR %s/debug/%s' % (DATA, name), f.write)
+            print(path)
+    elif cmd == 'perf':
+        if not args or args[0].lower() not in ('start', 'stop'):
+            raise LinkError('perf start | stop [DIR]')
+        reply = link.site('PERF ' + args[0].upper())
+        print(reply)
+        if args[0].lower() == 'stop':
+            name = reply.split()[0]
+            out = args[1] if len(args) > 1 else '/tmp/tmc-debug'
+            os.makedirs(out, exist_ok=True)
+            path = os.path.join(out, name)
+            link.retrieve('%s/debug/%s' % (DATA, name), path)
             print(path)
     elif cmd == 'rec':
         print(link.site(('REC ' + (args[0] if args else '')).strip()))  # rec now: no trigger, the next 36 frames
