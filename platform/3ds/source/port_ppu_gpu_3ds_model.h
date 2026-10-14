@@ -392,6 +392,7 @@ typedef struct PpuGpu3DSCommandBuffer {
         uint16_t bgcnt;
         int32_t pa, pd, refX, refY0;
         uint32_t firstIndex, indexCount;
+        uint8_t texture; /* 0 the atlas (a quad a tile), else 1 + the ring it was decoded into */
     } affineShare;
     /* What the frame asked for, which on overflow exceeds the capacities. */
     uint32_t requiredVertices, requiredBatches;
@@ -443,6 +444,8 @@ void PpuGpu3DS_RingSetStorage(PpuGpu3DSCache* cache, unsigned index, uint16_t* p
  * platform to flush; false when nothing was. */
 bool PpuGpu3DS_RingTakeDirty(PpuGpu3DSCache* cache, unsigned index, size_t* offset, size_t* bytes);
 enum { PPU_GPU3DS_RING_COUNT = MODE1_GBA_BG_COUNT * 2 };
+/* BG2's native ring: an affine BG2 has no text ring, so a scaled one is decoded there. */
+enum { PPU_GPU3DS_AFFINE_RING = 2 * 2 };
 /* PpuGpu3DSBatch.texture of BG1 drawn from a picture (PpuGpu3DSFrameView::bg1Picture): a
  * PPU_GPU3DS_PICTURE_TEX_WIDTH x _HEIGHT RGBA5551 texture, rows from v = 1 down. */
 enum { PPU_GPU3DS_PICTURE_TEXTURE = 1 + PPU_GPU3DS_RING_COUNT, PPU_GPU3DS_PICTURE_TEX_WIDTH = 512,
