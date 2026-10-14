@@ -82,6 +82,9 @@ static C3D_RenderTarget* sOutputRightTarget;
 static bool sRightReady;
 static bool sEyeShifting;
 static float sEyeShiftNdc[PPU_GPU3DS_OBJ + 1][4];
+/* The same in whole pixels, for the batch's scissor: a layer's regions move with it, or their
+ * edges cut what moved (the R button split in two, a heart cut by the next). */
+static int sEyeShiftPx[PPU_GPU3DS_OBJ + 1][4];
 static DVLB_s* sShader;
 static shaderProgram_s sProgram;
 static int sOffsetUniform = -1;
@@ -861,7 +864,14 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
             break;
         }
     }
-    SetScissorCached(batch->scissorLeft, top, batch->scissorRight, bottom);
+    u32 left = batch->scissorLeft, right = batch->scissorRight;
+    if (sEyeShifting && batch->layer <= PPU_GPU3DS_OBJ) {
+        const int shift = sEyeShiftPx[batch->layer][batch->priority & 3u];
+        const int movedLeft = (int)left + shift, movedRight = (int)right + shift;
+        left = movedLeft < 0 ? 0u : (u32)movedLeft;
+        right = movedRight > (int)sPreparedWidth ? sPreparedWidth : (movedRight < 0 ? 0u : (u32)movedRight);
+    }
+    SetScissorCached(left, top, right, bottom);
     C3D_DrawElements(GPU_TRIANGLES, (int)batch->indexCount,
                      C3D_UNSIGNED_SHORT, sIndices + batch->firstIndex);
 }
@@ -1119,8 +1129,13 @@ static void SetEyeShifts(bool shifted, Stereo3DSEye eye) {
     if (!shifted) return;
     const float toNdc = 2.0f / (float)sPreparedWidth;
     for (unsigned layer = 0; layer <= PPU_GPU3DS_OBJ; ++layer)
-        for (unsigned priority = 0; priority < 4; ++priority)
-            sEyeShiftNdc[layer][priority] = Stereo3DS_LayerShift(layer, priority, eye) * toNdc;
+        for (unsigned priority = 0; priority < 4; ++priority) {
+            /* Whole pixels: the art and its scissor move together, with no pixel doubled. */
+            const float shift = Stereo3DS_LayerShift(layer, priority, eye);
+            const int pixels = (int)(shift < 0.0f ? shift - 0.5f : shift + 0.5f);
+            sEyeShiftPx[layer][priority] = pixels;
+            sEyeShiftNdc[layer][priority] = (float)pixels * toNdc;
+        }
 }
 
 bool PortPpuGpu3DS_DrawPrepared(void) {
