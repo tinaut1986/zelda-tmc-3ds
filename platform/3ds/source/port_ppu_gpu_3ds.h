@@ -35,6 +35,12 @@ void PortPpuGpu3DS_Shutdown(void);
 /* BG1 drawn from this picture (GBA 15-bit colours, row-major, up to 512x256) in frames whose view
  * has bg1Picture set; NULL frees it. The texture is remade when the pointer or colour correction changes. */
 void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsigned height);
+/* The picture texture from palette indices instead (one byte a pixel, (palette - firstPalette) * 16 +
+ * index into four BG palettes, 0 transparent, row-major, up to 512x256): its colours are remade
+ * from the palettes each frame is drawn with whenever they change, so a palette the game cycles
+ * animates it (the file select's cave). NULL frees it. Kept until cleared here: a NULL
+ * SetBg1Picture leaves it. */
+void PortPpuGpu3DS_SetIndexedPicture(const uint8_t* indices, unsigned width, unsigned height, unsigned firstPalette);
 bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame);
 bool PortPpuGpu3DS_DrawPrepared(void);
 bool PortPpuGpu3DS_BindPresentShader(void);

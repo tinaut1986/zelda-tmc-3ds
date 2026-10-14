@@ -12,6 +12,8 @@ extern bool Port_Config_GetColorCorrection(void);
 
 #define TITLE_SD TMC3DS_APP_DIR "/title-forest.bin"
 #define TITLE_ROMFS "romfs:/wide-scenes/title-forest.bin"
+#define CAVE_SD TMC3DS_APP_DIR "/fileselect-cave.bin"
+#define CAVE_ROMFS "romfs:/wide-scenes/fileselect-cave.bin"
 
 static int sAvailable = -1; /* -1 not looked, 0 none, 1 a file */
 static uint16_t* sFaded555;  /* scratch for the software renderer's faded copy */
@@ -86,4 +88,33 @@ void ScenePictures_Release(void) {
     sTitleAbgr = NULL;
     sFaded555 = NULL;
     sFadedAbgr = NULL;
+}
+
+static int sCaveAvailable = -1; /* as sAvailable */
+static uint8_t* sCave;
+
+bool ScenePictures_CaveAvailable(void) {
+    if (sCaveAvailable < 0) sCaveAvailable = access(CAVE_SD, F_OK) == 0 || access(CAVE_ROMFS, F_OK) == 0;
+    return sCaveAvailable != 0;
+}
+
+const uint8_t* ScenePictures_CaveIndices(void) {
+    if (sCave != NULL || !ScenePictures_CaveAvailable()) return sCave;
+    FILE* f = fopen(CAVE_SD, "rb");
+    if (f == NULL) f = fopen(CAVE_ROMFS, "rb");
+    uint8_t* indices = malloc(SCENE_CAVE_W * SCENE_CAVE_H);
+    if (f == NULL || indices == NULL || fread(indices, 1, SCENE_CAVE_W * SCENE_CAVE_H, f) != SCENE_CAVE_W * SCENE_CAVE_H) {
+        if (f) fclose(f);
+        free(indices);
+        sCaveAvailable = 0;
+        return NULL;
+    }
+    fclose(f);
+    sCave = indices;
+    return sCave;
+}
+
+void ScenePictures_ReleaseCave(void) {
+    free(sCave);
+    sCave = NULL;
 }

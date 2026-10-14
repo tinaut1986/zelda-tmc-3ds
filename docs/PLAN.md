@@ -71,6 +71,7 @@ boxes below. History: `git log` and the decisions log.
 | `feat/title-wide` (cut from `release/v0.1.3`) | P4.4 and P4.5 (the file select's cave around its 240x160 screen, shimmering with the palettes: on the console .141 by Claude, `0.1.3-dev.96.20+cave`, edges and centre change on the same frames, no seam): the title at 400x240 in Full View (forest picture as BG1, sword and logo centred; issue #24, GPU dots on the scaled sword); the light rays continued to the edges and four new rays in the gaps, computed in VRAM (`title_rays_3ds.c`); the title fades out after START still at 400x240 (it dropped to 240x160 with everything moved); the Nintendo/Capcom logos' edges stretched to the screen's | on the console at 192.168.1.141 by Claude (`0.1.3-dev.96.8+rays`, scene recordings, 2026-10-14): the rays with four new ones (left: a wide one, a thin one, a wide one in the corner, uneven gaps; lower right: a wide one), no seam, shimmer with the originals, 59.7 fps (GPU CHECK 0 structural on the 2DS .139 with two of them); START fades the title to white at 400x240, centred (the fade-out is told by the title's layers, which stay until DispReset), and the blank frame before file select is white across the screen; a reset (and the boot) is white across the screen from its first frame (`0.1.3-dev.96.19+rays`, every frame recorded); the logos fill the 400x240 screen with no step at the frame's edges through their fades, and they fade out at 240x160 centred (they were drawn wide in the corner, with a black-barred frame, once lastState named the title). Left: a one-step flicker (246/255) of the near-white while the logos fade to white, from the GPU fade quad, there before. Checked by the owner on the console (2026-10-14) | _(merged into `release/v0.1.3` 2026-10-14)_ |
 | `feat/link-perf` (cut from `release/v0.1.3`) | `tmc-link.py perf start` / `perf stop [DIR]`: the DEBUG tab's perf recorder over the link (`SITE PERF`), the CSV fetched | used on the .141 by Claude (perf 0035-0039) | _(merged into `release/v0.1.3` 2026-10-14)_ |
 | `perf/title-rings` (cut from `release/v0.1.3`) | the title at 400x240 ran at 37-41 fps on the Old 3DS, all on the GPU (no software frame): BG0/BG1 take their view rings in mode-1 frames too (only BG2/BG3 are affine there), rings read 512x256 maps, and a scaled affine BG2 of at most 256x256 that does not wrap is decoded into BG2's free ring and drawn as one quad (the sword was 7 ms of a 17 ms build) | on the .141 (Old 3DS) by Claude: the whole intro 59.7-60 fps, build 17 -> 5.5 ms; GPU CHECK 0 structural on the settled title (the one-step pixels are the rays' blend, by phase); the sword's zoom recorded clean. Host model test passes (its `test_affine_obj_texel_boundaries` failed before this branch too) checked by the owner on the console (2026-10-14) | _(merged into `release/v0.1.3` 2026-10-14)_ |
+| `feat/fileselect-wide` (cut from `release/v0.1.3`) | P4.5: the file select at 400x240 with the GPU renderer: BG0-BG3 in the centred 240x160, the cave as BG3's picture, sprites moved by `port_draw.c` and carried out by the wide screen's edge | on the .141 by Claude (language menu, R options, scene recordings) and the owner (name entry, copy, erase; 2026-10-14) | _(merged into `release/v0.1.3` 2026-10-14)_ |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
@@ -81,19 +82,14 @@ it (issue #13).
 **Start here (2026-10-14, end of the day):** everything is merged into `release/v0.1.3` and pushed
 (`feat/title-wide`, `feat/link-perf`, `perf/title-rings`); no worktree, nothing uncommitted. Next, in
 this order:
-1. **P4.5, the file select at 400x240** (spec below; owner, 2026-10-14): a new branch
-   `feat/fileselect-wide` from `release/v0.1.3`. The cave around the screen already ships (the
-   presenter draws it, `CaveReady`); what is missing is the sliding sprites leaving by the wide
-   screen's edge. GPU renderer only. The screen already runs at 60 fps; build it properly anyway.
-   Material: `~/Imágenes/elige-archivo/` (dump 0028, the owner's pictures).
-2. The README's before/after GIF of the portal shrink (owner's request): record it with the scene
+1. The README's before/after GIF of the portal shrink (owner's request): record it with the scene
    recorder (`tmc-link.py scenerec`, P1.6) once VISTA = ORIGINAL and once Full View; then rewrite
    the README (performance, Full View, bottom screen, states, updater) with the GIFs (2026-10-13).
-3. Issue #25 (GPU fade: one-step flicker of the near-white during the logos' fade), when it suits.
-4. Issue #4: the relaunch fix is merged; a few more installs without a loader dump, then close
+2. Issue #25 (GPU fade: one-step flicker of the near-white during the logos' fade), when it suits.
+3. Issue #4: the relaunch fix is merged; a few more installs without a loader dump, then close
    (this session installed some 20 builds on the .141 without one). Issue #23: resets from the
    title look right in recordings; a reset from inside a game is still to see.
-5. Issue #19 (states break when the port's statics grow), #13, #11 as before.
+4. Issue #19 (states break when the port's statics grow), #13, #11 as before.
 Scene pictures (portal, title, file select): procedure in `docs/wide-scene-extension.md`; the owner's material
 in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/intro-titulo/` and `~/Imágenes/elige-archivo/`
 (never in the repository).
@@ -437,7 +433,7 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   *Done when:* the owner sees the title at 400x240 on the console.
 ---
 
-- [ ] **P4.5** The file select screen in Full View (owner's request, 2026-10-14).
+- [x] **P4.5** The file select screen in Full View (owner's request, 2026-10-14).
   *Spec:* the cave around the screen from the owner's generated extension, shimmering with the
   original's palette cycling (`docs/wide-scene-extension.md`, "A generated picture over a
   palette-cycled background"), shipped in the romfs: **done** (the presenter draws it around the

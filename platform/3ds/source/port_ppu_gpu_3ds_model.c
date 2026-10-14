@@ -2516,14 +2516,16 @@ static void emit_ring_quad(const PpuGpu3DSFrameView* frame, PpuGpu3DSCommandBuff
     *indexCursor += 6;
 }
 
-/* The picture texture as part of BG1 (the title's forest extended around the game's): one quad
- * over the band's lines, across the whole frame, after BG1's own batches, as BG1 for priority,
- * windows and blending; its transparent texels (alpha test) leave BG1's tiles. */
-static bool build_bg1_picture(const PpuGpu3DSFrameView* frame, PpuGpu3DSCommandBuffer* cmd,
-                              const PpuGpu3DSBand* band, const uint8_t* io, unsigned priority,
-                              const PpuGpu3DSRegion* regions, size_t regionCount, bool emit,
-                              size_t* vertexCursor, size_t* indexCursor, size_t* batchCursor) {
-    if (!layer_has_region(regions, regionCount, PPU_GPU3DS_BG1, 0, (uint16_t)frame->width)) return true;
+/* The picture texture as part of a BG (the title's forest as BG1, the file select's cave as BG3,
+ * extended around the game's): one quad over the band's lines, across the whole frame, after the
+ * BG's own batches, as that BG for priority, windows and blending; its transparent texels (alpha
+ * test) leave the BG's tiles. */
+static bool build_bg_picture(const PpuGpu3DSFrameView* frame, PpuGpu3DSCommandBuffer* cmd,
+                             const PpuGpu3DSBand* band, const uint8_t* io, unsigned bg, unsigned priority,
+                             const PpuGpu3DSRegion* regions, size_t regionCount, bool emit,
+                             size_t* vertexCursor, size_t* indexCursor, size_t* batchCursor) {
+    const unsigned layer = PPU_GPU3DS_BG0 + bg;
+    if (!layer_has_region(regions, regionCount, layer, 0, (uint16_t)frame->width)) return true;
     const size_t first = *indexCursor;
     if (quad_room(cmd, vertexCursor, indexCursor)) {
         const float x0 = -1.0f, x1 = 1.0f;
@@ -2549,10 +2551,10 @@ static bool build_bg1_picture(const PpuGpu3DSFrameView* frame, PpuGpu3DSCommandB
         .firstLine = band->firstLine,
         .lineCount = band->lineCount,
         .scissorRight = (uint16_t)frame->width,
-        .layer = PPU_GPU3DS_BG1,
+        .layer = (uint8_t)layer,
         .priority = (uint8_t)priority,
         .effect = PPU_GPU3DS_EFFECT_NONE,
-        .target2 = (uint8_t)((bldcnt >> (PPU_GPU3DS_BG1 + 8u)) & 1u),
+        .target2 = (uint8_t)((bldcnt >> (layer + 8u)) & 1u),
         .objectIndex = UINT8_MAX,
         .texture = PPU_GPU3DS_PICTURE_TEXTURE,
     };
@@ -4071,15 +4073,15 @@ static size_t merge_layer_bands(const PpuGpu3DSFrameView* frame, unsigned layer,
     return count;
 }
 
-/* BG3 in native bounds (PpuGpu3DSFrameView::bg3NativeBounds): the layer is a
- * 240x160 canvas centred in the view, its scanline registers those of source
- * line = line - top. It is built as a native-sized frame at the origin, then
- * its vertices and batches are moved to the canvas. */
-static bool build_bg3_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
-                                    uint16_t* atlas, PpuGpu3DSCommandBuffer* cmd,
-                                    const PpuGpu3DSOamSet* oam, const PpuGpu3DSBand* band,
-                                    PpuGpu3DSRegion* regions, bool emit, size_t* vertexCursor,
-                                    size_t* indexCursor, size_t* batchCursor) {
+/* A BG in native bounds (PpuGpu3DSFrameView::bgNativeMask, bg3NativeBounds): the
+ * layer is a 240x160 canvas centred in the view, its scanline registers those of
+ * source line = line - top. It is built as a native-sized frame at the origin,
+ * then its vertices and batches are moved to the canvas. */
+static bool build_bg_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
+                                   uint16_t* atlas, PpuGpu3DSCommandBuffer* cmd,
+                                   const PpuGpu3DSOamSet* oam, const PpuGpu3DSBand* band, unsigned bg,
+                                   PpuGpu3DSRegion* regions, bool emit, size_t* vertexCursor,
+                                   size_t* indexCursor, size_t* batchCursor) {
     const int nativeW = (int)frame->width < MODE1_GBA_BG_CLIP_X ? (int)frame->width : MODE1_GBA_BG_CLIP_X;
     const int nativeH = (int)frame->height < MODE1_GBA_NATIVE_HEIGHT ? (int)frame->height : MODE1_GBA_NATIVE_HEIGHT;
     const int left = (int)frame->width > MODE1_GBA_BG_CLIP_X ? ((int)frame->width - MODE1_GBA_BG_CLIP_X) / 2 : 0;
@@ -4106,7 +4108,8 @@ static bool build_bg3_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCa
     native.wsMsgShift = 0;
     native.bg3Repeat = false;
     native.bgRepeatMask = 0;
-    native.bg1Picture = false;
+    native.pictureMask = 0;
+    native.bgNativeMask = 0;
     native.bg3NativeBounds = false;
     PpuGpu3DSBand part = *band;
     part.firstLine = (uint16_t)(lo - top);
@@ -4117,7 +4120,7 @@ static bool build_bg3_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCa
      * snapshot. */
     uint8_t io[MODE1_IO_MEM_SIZE];
     memcpy(io, frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE, sizeof(io));
-    {
+    if (bg == 3u && frame->bg3NativeBounds) {
         /* Same rule as mode1.c (mode1_render_text_bg_compact_tokens, native
          * bounds): with the base register off the 0 the effect is authored
          * around, what the game would have written natively is base + left; an
@@ -4136,7 +4139,7 @@ static bool build_bg3_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCa
         io[MODE1_IO_BG3HOFS] = (uint8_t)hofs;
         io[MODE1_IO_BG3HOFS + 1u] = (uint8_t)(hofs >> 8u);
     }
-    {
+    if (bg == 3u && frame->bg3NativeBounds) {
         /* Rows are sampled at the view's y, as mode1.c does (`line`, not
          * `line - native_top`): the effect's VOFS is relative to the view too. */
         const unsigned vofs = (read16(io, MODE1_IO_BG3VOFS) + (unsigned)top) & 0x1ffu;
@@ -4149,7 +4152,7 @@ static bool build_bg3_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCa
     const size_t regionCount = build_regions(&native, oam, &part, regions);
     const size_t firstVertex = *vertexCursor;
     const size_t firstBatch = *batchCursor;
-    if (!build_text_bg(&native, cache, atlas, cmd, &part, 3u, NULL, regions, regionCount, emit,
+    if (!build_text_bg(&native, cache, atlas, cmd, &part, bg, NULL, regions, regionCount, emit,
                        vertexCursor, indexCursor, batchCursor))
         return false;
 
@@ -4212,6 +4215,8 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     const PpuGpu3DSBand* objBands = layerBands[PPU_GPU3DS_LAYER_BAND_OBJ];
     const size_t objBandCount = layerBandCount[PPU_GPU3DS_LAYER_BAND_OBJ];
 
+    /* BGs drawn in the native canvas only, built per band from their tiles. */
+    const uint8_t nativeMask = (uint8_t)(frame->bgNativeMask | (frame->bg3NativeBounds ? 0x8u : 0u));
     PpuGpu3DSBgMap maps[MODE1_GBA_BG_COUNT] = { { 0 } };
     PROFILE_BEGIN(PPU_GPU3DS_PHASE_MAPS);
     if (mapSpaceFits) {
@@ -4220,7 +4225,7 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
         const size_t dynamicIndex =
                 (size_t)MODE1_GBA_BG_COUNT * PPU_GPU3DS_MAP_SLICE_INDICES;
         for (unsigned bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {
-            if (bg == 3u && frame->bg3NativeBounds) continue;
+            if ((nativeMask >> bg) & 1u) continue;
             const bool affineLayer = frame->affine && bg == 2u;
             if (affineLayer
                         ? !build_affine_map(frame, cache, atlas, cmd,
@@ -4241,7 +4246,7 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     ++cache->ringStamp;
     for (unsigned bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {
         gPpuGpu3DSRingWhy[bg] = 9;
-        maps[bg].ring = layerBandCount[bg] != 0 && !(bg == 3u && frame->bg3NativeBounds) &&
+        maps[bg].ring = layerBandCount[bg] != 0 && !((nativeMask >> bg) & 1u) &&
                         build_bg_ring(frame, cache, bg, layerBands[bg], layerBandCount[bg], &maps[bg]);
         if (maps[bg].ring) maps[bg].valid = false;
     }
@@ -4300,10 +4305,16 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                 if ((dispcnt & (MODE1_DISP_BG0_ON << bg)) == 0 ||
                     (bgcnt & 3u) != (unsigned)priority)
                     continue;
-                if (bg == 3 && frame->bg3NativeBounds) {
-                    if (!build_bg3_native_bounds(frame, cache, atlas, cmd, oam, band, regions, emit,
-                                                 vertexCursor, indexCursor, batchCursor))
+                if ((nativeMask >> bg) & 1u) {
+                    if (!build_bg_native_bounds(frame, cache, atlas, cmd, oam, band, (unsigned)bg, regions, emit,
+                                                vertexCursor, indexCursor, batchCursor))
                         return false;
+                    if ((frame->pictureMask >> bg) & 1u) {
+                        const size_t regionCount = build_regions(frame, oam, band, regions);
+                        if (!build_bg_picture(frame, cmd, band, io, (unsigned)bg, (unsigned)priority, regions,
+                                              regionCount, emit, vertexCursor, indexCursor, batchCursor))
+                            return false;
+                    }
                     continue;
                 }
                 PROFILE_BEGIN(PPU_GPU3DS_PHASE_REGIONS);
@@ -4325,10 +4336,10 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                                                 batchCursor);
                 PROFILE_END(PPU_GPU3DS_PHASE_BG);
                 if (!built) return false;
-                /* The picture over BG1's own tiles (its transparent texels let them show). */
-                if (bg == 1 && frame->bg1Picture &&
-                    !build_bg1_picture(frame, cmd, band, io, (unsigned)priority, regions, regionCount, emit,
-                                       vertexCursor, indexCursor, batchCursor))
+                /* The picture over the BG's own tiles (its transparent texels let them show). */
+                if (((frame->pictureMask >> bg) & 1u) &&
+                    !build_bg_picture(frame, cmd, band, io, (unsigned)bg, (unsigned)priority, regions, regionCount,
+                                      emit, vertexCursor, indexCursor, batchCursor))
                     return false;
             }
         }

@@ -65,6 +65,13 @@ static C3D_Tex sRingTex[PPU_GPU3DS_RING_COUNT];
 static C3D_Tex sPictureTex;
 static const uint16_t* sPicturePixels;
 static bool sPictureCorrected;
+/* Or from palette indices (PortPpuGpu3DS_SetIndexedPicture): the indices in the texture's
+ * layout, and the palettes the texels were last made from. */
+static const uint8_t* sPictureIndices;
+static uint8_t* sPictureSwizzled;
+static unsigned sPictureFirstPalette, sPictureTileRows, sPictureTileCols;
+static uint16_t sPicturePalettes[64];
+static bool sPicturePalettesValid;
 static unsigned sBoundTexture;
 static C3D_Tex sOutputTexture;
 static C3D_RenderTarget* sOutputTarget;
@@ -146,6 +153,9 @@ void PortPpuGpu3DS_Shutdown(void) {
     if (sPictureTex.data) C3D_TexDelete(&sPictureTex);
     memset(&sPictureTex, 0, sizeof(sPictureTex));
     sPicturePixels = NULL;
+    free(sPictureSwizzled);
+    sPictureSwizzled = NULL;
+    sPictureIndices = NULL;
     if (sProgramInitialized) shaderProgramFree(&sProgram);
     if (sShader) DVLB_Free(sShader);
     for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring)
@@ -191,30 +201,99 @@ void PortPpuGpu3DS_Shutdown(void) {
 
 extern bool Port_Config_GetColorCorrection(void);
 
-void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsigned height) {
-    const bool corrected = Port_Config_GetColorCorrection();
-    if (gbaPixels == sPicturePixels && (gbaPixels == NULL || corrected == sPictureCorrected)) return;
+/* The picture texture, the colour one or the indexed one, gone. */
+static void ReleasePicture(void) {
     if (sPictureTex.data) C3D_TexDelete(&sPictureTex);
     memset(&sPictureTex, 0, sizeof(sPictureTex));
     sPicturePixels = NULL;
-    if (gbaPixels == NULL || width > PPU_GPU3DS_PICTURE_TEX_WIDTH || height > PPU_GPU3DS_PICTURE_TEX_HEIGHT) return;
+    free(sPictureSwizzled);
+    sPictureSwizzled = NULL;
+    sPictureIndices = NULL;
+    sBoundTexture = UINT8_MAX;
+}
+
+static bool MakePictureTexture(void) {
     if (!C3D_TexInit(&sPictureTex, PPU_GPU3DS_PICTURE_TEX_WIDTH, PPU_GPU3DS_PICTURE_TEX_HEIGHT, GPU_RGBA5551)) {
         memset(&sPictureTex, 0, sizeof(sPictureTex));
+        return false;
+    }
+    memset(sPictureTex.data, 0, sPictureTex.size);
+    C3D_TexSetFilter(&sPictureTex, GPU_NEAREST, GPU_NEAREST);
+    C3D_TexSetWrap(&sPictureTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+    sBoundTexture = UINT8_MAX; /* rebind */
+    return true;
+}
+
+void PortPpuGpu3DS_SetIndexedPicture(const uint8_t* indices, unsigned width, unsigned height, unsigned firstPalette) {
+    if (indices == sPictureIndices && (indices == NULL || firstPalette == sPictureFirstPalette)) return;
+    if (sPictureIndices != NULL || indices != NULL) ReleasePicture();
+    if (indices == NULL || width > PPU_GPU3DS_PICTURE_TEX_WIDTH || height > PPU_GPU3DS_PICTURE_TEX_HEIGHT ||
+        firstPalette + 4u > 16u)
+        return;
+    sPictureSwizzled = calloc(PPU_GPU3DS_PICTURE_TEX_WIDTH * PPU_GPU3DS_PICTURE_TEX_HEIGHT, 1);
+    if (sPictureSwizzled == NULL || !MakePictureTexture()) {
+        ReleasePicture();
         return;
     }
+    /* In the texture's layout (8x8 Morton tiles, tile rows from the top, as the rings), so the
+     * texels are remade by one walk over the tiles the picture covers. */
+    for (unsigned y = 0; y < height; ++y)
+        for (unsigned x = 0; x < width; ++x)
+            sPictureSwizzled[((y >> 3) * (PPU_GPU3DS_PICTURE_TEX_WIDTH >> 3) + (x >> 3)) * 64u +
+                             PpuGpu3DS_MortonIndex(x & 7u, y & 7u)] = indices[y * width + x];
+    sPictureIndices = indices;
+    sPictureFirstPalette = firstPalette;
+    sPictureTileRows = (height + 7u) >> 3;
+    sPictureTileCols = (width + 7u) >> 3;
+    sPicturePalettesValid = false;
+}
+
+/* The indexed picture's texels from the palettes the frame is drawn with (unfaded under a GPU
+ * fade, as the tiles), when they or the colour correction changed. Run once the GPU frame is
+ * claimed, as the atlas's writes are. */
+static bool RefreshIndexedPicture(const PpuGpu3DSFrameView* frame) {
+    if (sPictureIndices == NULL || sPictureTex.data == NULL) return true;
+    const uint16_t* palettes = frame->memory.bg_palette + sPictureFirstPalette * 16u;
+    const bool corrected = Port_Config_GetColorCorrection();
+    if (sPicturePalettesValid && corrected == sPictureCorrected &&
+        memcmp(palettes, sPicturePalettes, sizeof(sPicturePalettes)) == 0)
+        return true;
+    memcpy(sPicturePalettes, palettes, sizeof(sPicturePalettes));
+    sPictureCorrected = corrected;
+    sPicturePalettesValid = true;
+    uint16_t colours[64];
+    for (unsigned i = 0; i < 64; ++i) colours[i] = (i & 15u) ? PpuGpu3DS_PackRgba5551(palettes[i], true) : 0;
+    uint16_t* texels = (uint16_t*)sPictureTex.data;
+    const size_t rowTexels = (size_t)(PPU_GPU3DS_PICTURE_TEX_WIDTH >> 3) * 64u;
+    const size_t used = (size_t)sPictureTileCols * 64u;
+    for (unsigned row = 0; row < sPictureTileRows; ++row) {
+        const uint8_t* in = sPictureSwizzled + row * rowTexels;
+        uint16_t* out = texels + row * rowTexels;
+        for (size_t i = 0; i < used; ++i) out[i] = in[i] ? colours[in[i] & 63u] : 0;
+    }
+    return Platform3DS_CleanDataCache(texels, sPictureTileRows * rowTexels * sizeof(uint16_t));
+}
+
+void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsigned height) {
+    const bool corrected = Port_Config_GetColorCorrection();
+    if (sPictureIndices != NULL) {
+        if (gbaPixels == NULL) return; /* the indexed picture is not this one's to clear */
+        ReleasePicture();
+    }
+    if (gbaPixels == sPicturePixels && (gbaPixels == NULL || corrected == sPictureCorrected)) return;
+    ReleasePicture();
+    if (gbaPixels == NULL || width > PPU_GPU3DS_PICTURE_TEX_WIDTH || height > PPU_GPU3DS_PICTURE_TEX_HEIGHT ||
+        !MakePictureTexture())
+        return;
     /* 8x8 Morton tiles, tile rows from the top (v = 1), as the rings are laid out. */
     uint16_t* texels = (uint16_t*)sPictureTex.data;
-    memset(texels, 0, sPictureTex.size);
     for (unsigned y = 0; y < height; ++y)
         for (unsigned x = 0; x < width; ++x)
             texels[((y >> 3) * (PPU_GPU3DS_PICTURE_TEX_WIDTH >> 3) + (x >> 3)) * 64u +
                    PpuGpu3DS_MortonIndex(x & 7u, y & 7u)] = PpuGpu3DS_PackRgba5551(gbaPixels[y * width + x], gbaPixels[y * width + x] != 0);
     C3D_TexFlush(&sPictureTex);
-    C3D_TexSetFilter(&sPictureTex, GPU_NEAREST, GPU_NEAREST);
-    C3D_TexSetWrap(&sPictureTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     sPicturePixels = gbaPixels;
     sPictureCorrected = corrected;
-    sBoundTexture = UINT8_MAX; /* rebind */
 }
 
 bool PortPpuGpu3DS_Init(void) {
@@ -497,6 +576,12 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
         }
         PpuGpu3DS_CacheClearDirty(sCache);
     Platform3DS_SetStage(23);
+    }
+    if ((frame->pictureMask & 0x8u) && !RefreshIndexedPicture(frame)) {
+        sCommands.vertexCount = 0;
+        sCommands.indexCount = 0;
+        sCommands.batchCount = 0;
+        return FinishPreflight(false, startTick);
     }
     for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring) {
         size_t offset, bytes;

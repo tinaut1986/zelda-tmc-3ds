@@ -208,7 +208,8 @@ static TopFrameState SelectTopFrame(void) {
     const Port3DSFullViewMode requested = Port_Widescreen_3DSViewMode();
     if (requested == PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
         MODE1_GBA_WIDTH >= 400 && MODE1_GBA_HEIGHT >= 240 &&
-        (Port_Widescreen_ShadowsLive() || Port_Widescreen_CutsceneViewLive() || Port_Widescreen_TitleViewLive())) {
+        (Port_Widescreen_ShadowsLive() || Port_Widescreen_CutsceneViewLive() || Port_Widescreen_TitleViewLive() ||
+         Port_Widescreen_FileSelectViewLive())) {
         state.width = 400;
         state.height = 240;
         state.validSourceWidth = 400;
@@ -240,6 +241,10 @@ static TopFrameState SelectTopFrame(void) {
     }
     return state;
 }
+
+/* The frame being built is the file select at 400x240 (Port_Widescreen_FileSelectViewLive): its four
+ * BGs in the middle, the cave's extension (PortPpuGpu3DS_SetIndexedPicture) as BG3 around them. */
+static bool sFileSelectFrame;
 
 static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     memset(view, 0, sizeof(*view));
@@ -284,7 +289,8 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
      * clouds) covers the whole view, not just the native 240 columns. */
     view->bg3Repeat = virtuappu_mode1_bg3_repeat || virtuappu_mode1_ws_full_view != 0;
     view->bgRepeatMask = virtuappu_mode1_bg_repeat_mask;
-    view->bg1Picture = virtuappu_mode1_bg1_picture != NULL;
+    view->pictureMask = virtuappu_mode1_bg1_picture != NULL ? 0x2u : sFileSelectFrame ? 0x8u : 0u;
+    view->bgNativeMask = sFileSelectFrame ? 0xFu : 0u;
     view->wsFullView = virtuappu_mode1_ws_full_view != 0;
     /* The software PPU's rule (mode1_bg3_native_bounds_active). */
     view->bg3HofsBase = virtuappu_mode1_bg3_hofs_base;
@@ -1265,6 +1271,10 @@ static void PresentFrame(void) {
         virtuappu_mode1_bg1_picture = title ? ScenePictures_TitleAbgr() : NULL; /* faded below if the CPU draws */
         PortPpuGpu3DS_SetBg1Picture(title ? ScenePictures_Title555() : NULL, SCENE_TITLE_W, SCENE_TITLE_H);
         if (!title && !Port_Widescreen_TitleWide()) ScenePictures_Release();
+        sFileSelectFrame = wideFrame && Port_Widescreen_FileSelectViewLive();
+        PortPpuGpu3DS_SetIndexedPicture(sFileSelectFrame ? ScenePictures_CaveIndices() : NULL, SCENE_CAVE_W,
+                                        SCENE_CAVE_H, SCENE_CAVE_FIRST_PALETTE);
+        if (gMain.task != TASK_FILE_SELECT) ScenePictures_ReleaseCave();
     }
     /* Only Vaati's appearing effect is placed on the native screen (BG3 drawn at an
      * entity's screen position); the other BG3 HBlank effects (Minish Woods light

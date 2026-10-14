@@ -7,6 +7,7 @@
 #include "port_widescreen.h"
 #include "app_paths_3ds.h"
 #include "fade_gpu_3ds.h"
+#include "scene_pictures_3ds.h"
 #include "cpu/mode1.h"
 
 #include <3ds.h>
@@ -720,19 +721,17 @@ static ScenePicture sTitleForest = { .path = TMC3DS_APP_DIR "/title-forest.bin",
  * palette indices of BG palettes 11-14, which the game cycles (src/fileselect.c, sub_0805066C), so
  * the texture is rebuilt from the palettes the shown frame used whenever they change and the
  * extension shimmers with the original. */
-enum { CAVE_W = 400, CAVE_H = 240, CAVE_TEX_W = 512, CAVE_TEX_H = 256, CAVE_FIRST_PALETTE = 11 };
+enum { CAVE_W = SCENE_CAVE_W, CAVE_H = SCENE_CAVE_H, CAVE_TEX_W = 512, CAVE_TEX_H = 256,
+       CAVE_FIRST_PALETTE = SCENE_CAVE_FIRST_PALETTE };
 static struct {
-    uint8_t* indices; /* (palette - 11) * 16 + index; 0 nothing */
+    const uint8_t* indices; /* ScenePictures_CaveIndices */
     uint32_t* linear; /* the texture's picture before the display transfer tiles it */
     ScenePicture picture;
     uint16_t palettes[64]; /* BG palettes 11-14 the texture was made with */
-} sCave = { .picture = { .path = TMC3DS_APP_DIR "/fileselect-cave.bin",
-                         .romfsPath = "romfs:/wide-scenes/fileselect-cave.bin", .width = CAVE_W,
-                         .height = CAVE_H, .texWidth = CAVE_TEX_W, .texHeight = CAVE_TEX_H } };
+} sCave = { .picture = { .width = CAVE_W, .height = CAVE_H, .texWidth = CAVE_TEX_W, .texHeight = CAVE_TEX_H } };
 
 static void ReleaseCave(void) {
     if (sCave.picture.state == 1) C3D_TexDelete(&sCave.picture.texture);
-    free(sCave.indices);
     if (sCave.linear) linearFree(sCave.linear);
     sCave.indices = NULL;
     sCave.linear = NULL;
@@ -747,13 +746,8 @@ static bool CaveReady(bool shown) {
     }
     if (picture->state == 0) {
         picture->state = -1;
-        FILE* f = fopen(picture->path, "rb");
-        if (f == NULL) f = fopen(picture->romfsPath, "rb");
-        if (f == NULL) return false;
-        sCave.indices = malloc(CAVE_W * CAVE_H);
-        const bool read = sCave.indices && fread(sCave.indices, 1, CAVE_W * CAVE_H, f) == CAVE_W * CAVE_H;
-        fclose(f);
-        sCave.linear = read ? linearAlloc(CAVE_TEX_W * CAVE_TEX_H * sizeof(uint32_t)) : NULL;
+        sCave.indices = ScenePictures_CaveIndices();
+        sCave.linear = sCave.indices ? linearAlloc(CAVE_TEX_W * CAVE_TEX_H * sizeof(uint32_t)) : NULL;
         if (!sCave.linear || !C3D_TexInit(&picture->texture, CAVE_TEX_W, CAVE_TEX_H, GPU_RGBA8)) {
             ReleaseCave();
             return false;

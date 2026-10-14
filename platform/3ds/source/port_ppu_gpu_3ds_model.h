@@ -231,9 +231,15 @@ typedef struct PpuGpu3DSFrameView {
     int wsMsgShift, wsMsgX0, wsMsgX1, wsMsgY0, wsMsgY1;
     bool bg3Repeat;
     uint8_t bgRepeatMask; /* virtuappu_mode1_bg_repeat_mask */
-    /* BG1 drawn from the picture texture (PortPpuGpu3DS_SetBg1Picture), as
-     * virtuappu_mode1_bg1_picture. */
-    bool bg1Picture;
+    /* BGs (bit n = BGn; one at a time) with the picture texture drawn over their
+     * tiles across the whole frame: the title's forest as BG1
+     * (virtuappu_mode1_bg1_picture, PortPpuGpu3DS_SetBg1Picture), the file
+     * select's cave as BG3 (PortPpuGpu3DS_SetIndexedPicture). */
+    uint8_t pictureMask;
+    /* BGs (bit n = BGn) drawn only in the GBA's 240x160 screen centred in a
+     * bigger view, at their own scroll (the file select's windows and text,
+     * whose 256-wide maps would repeat across it). */
+    uint8_t bgNativeMask;
     /* Full View (Wide + Pixel Perfect): the shadow tilemaps cover the whole
      * view from x=0, not only the columns past 240 (virtuappu_mode1_ws_full_view). */
     bool wsFullView;
@@ -446,7 +452,7 @@ bool PpuGpu3DS_RingTakeDirty(PpuGpu3DSCache* cache, unsigned index, size_t* offs
 enum { PPU_GPU3DS_RING_COUNT = MODE1_GBA_BG_COUNT * 2 };
 /* BG2's native ring: an affine BG2 has no text ring, so a scaled one is decoded there. */
 enum { PPU_GPU3DS_AFFINE_RING = 2 * 2 };
-/* PpuGpu3DSBatch.texture of BG1 drawn from a picture (PpuGpu3DSFrameView::bg1Picture): a
+/* PpuGpu3DSBatch.texture of a BG drawn from a picture (PpuGpu3DSFrameView::pictureMask): a
  * PPU_GPU3DS_PICTURE_TEX_WIDTH x _HEIGHT RGBA5551 texture, rows from v = 1 down. */
 enum { PPU_GPU3DS_PICTURE_TEXTURE = 1 + PPU_GPU3DS_RING_COUNT, PPU_GPU3DS_PICTURE_TEX_WIDTH = 512,
        PPU_GPU3DS_PICTURE_TEX_HEIGHT = 256 };
