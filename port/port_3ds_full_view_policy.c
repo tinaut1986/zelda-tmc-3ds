@@ -70,25 +70,17 @@ Port3DSFullViewMode Port3DSFullViewPolicy_Decide(const Port3DSFullViewInputs* in
         return PORT_3DS_FULL_VIEW_FALLBACK;
     }
 
-    if (inputs->areaIsExterior) {
-        /* Never ask the engine for a 400x240 camera unless both the room and
-         * the ratcheted painted-content scan can feed every requested pixel. */
-        if (inputs->roomWidth < PORT_3DS_FULL_VIEW_WIDTH ||
-            inputs->roomHeight < PORT_3DS_FULL_VIEW_HEIGHT ||
-            inputs->contentWidth < PORT_3DS_FULL_VIEW_WIDTH ||
-            inputs->contentHeight < PORT_3DS_FULL_VIEW_HEIGHT) {
-            if (reason != 0) *reason = PORT_3DS_FULL_VIEW_REASON_OUTDOOR_BOUNDS;
-            return PORT_3DS_FULL_VIEW_FALLBACK;
-        }
-        if (reason != 0) *reason = PORT_3DS_FULL_VIEW_REASON_NONE;
-        return PORT_3DS_FULL_VIEW_OUTDOOR_1X;
+    /* Every room is shown at 400x240 (owner, 2026-10-14): a room larger than the view scrolls,
+     * one smaller than it (in either axis) is centred in it and the rest is black, so the whole
+     * room is always on screen. Interiors run at 1x like everything else (no 2x zoom). The one
+     * thing asked for is that the painted-content scan has reported, so the camera's bounds do
+     * not change under the player once the view is up. */
+    if (inputs->contentWidth <= 0 || inputs->contentHeight <= 0) {
+        if (reason != 0) *reason = PORT_3DS_FULL_VIEW_REASON_OUTDOOR_BOUNDS;
+        return PORT_3DS_FULL_VIEW_FALLBACK;
     }
-
-    /* Interiors keep the pixel size of the rest of the game (owner's rule,
-     * 2026-10-11): the 200x120 viewport drawn at 2x is never selected. They
-     * run the established Wide path at 1x. */
-    if (reason != 0) *reason = PORT_3DS_FULL_VIEW_REASON_INTERIOR_NO_ZOOM;
-    return PORT_3DS_FULL_VIEW_FALLBACK;
+    if (reason != 0) *reason = PORT_3DS_FULL_VIEW_REASON_NONE;
+    return PORT_3DS_FULL_VIEW_OUTDOOR_1X;
 }
 
 Port3DSFullViewMode Port3DSFullViewPolicy_Desired(const Port3DSFullViewInputs* inputs) {
