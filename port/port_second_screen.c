@@ -1163,6 +1163,14 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
         sLastFix.valid = 1;
         sLastFix.mapX = mx;
         sLastFix.mapY = my;
+    } else if ((snap->overworldMapX | snap->overworldMapY) != 0 &&
+               Port_SecondScreenWorldMap_MapPoint(snap->overworldMapX, snap->overworldMapY, &mx, &my)) {
+        /* Not on the overworld (the Minish village, houses, caves): where the game's own pause map
+         * puts Link, which it keeps and saves, so a session started there (a loaded state, a
+         * continue) has a marker too. */
+        sLastFix.valid = 1;
+        sLastFix.mapX = mx;
+        sLastFix.mapY = my;
     }
 
     /* All view math runs on the stone-frame crop, not the raw composite,

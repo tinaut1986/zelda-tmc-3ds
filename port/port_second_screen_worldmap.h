@@ -58,6 +58,9 @@ int Port_SecondScreenWorldMap_DrawUnrevealedRegions(
  * zelda3-android's frozen-doorway-marker behavior. */
 int Port_SecondScreenWorldMap_LocatePlayer(uint8_t area, int32_t areaX, int32_t areaY,
                                            int32_t* outMapX, int32_t* outMapY);
+/* An overworld pixel (the game's overworld_map_x/y) to world-map image pixels, as the pause map
+ * places its marker. */
+int Port_SecondScreenWorldMap_MapPoint(int32_t worldX, int32_t worldY, int32_t* outMapX, int32_t* outMapY);
 
 /* World-map pixel position of a windcrest warp point (WindcrestID bit
  * index, matching gSave.windcrests' upper-byte flags — the caller decides
