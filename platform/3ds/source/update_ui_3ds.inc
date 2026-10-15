@@ -146,11 +146,9 @@ static void PaintUpdatePanel(const SSurf* s, TargetList* tl) {
     CColumn(s->w, 2, 0, 1, &x, &cw);
     CCell(s, tl, x, y, cw, CC_CELL_H, "CHANNEL", st.prerelease ? "+ BETAS" : "STABLE", CC_TEXT, SS_ACT_UPDATE_CHANNEL, 0);
     CColumn(s->w, 2, 1, 1, &x, &cw);
-    /* The + BETAS channel only looks at pre-releases (Update_ParseRelease): say so. */
+    /* st.version already says BETA when the release found is a pre-release. */
     if (st.version[0]) {
-        char release[64];
-        snprintf(release, sizeof(release), "%s%s", st.version, st.prerelease ? " BETA" : "");
-        UpdateUpper(text, sizeof(text), release);
+        UpdateUpper(text, sizeof(text), st.version);
     } else {
         UpdateUpper(text, sizeof(text), Port_Text_Tr("NONE"));
     }

@@ -33,6 +33,8 @@
 
 #include "virtuappu.h"
 #include "scene_pictures_3ds.h"
+#include "port_zone_tiles.h"
+#include "stereo_3ds.h"
 #include "scene_rec_3ds.h"
 #include "cpu/mode1.h"
 #include "main.h"
@@ -153,6 +155,8 @@ static int32_t sGpuAffRefX[MODE1_GBA_HEIGHT];
 static int32_t sGpuAffRefY[MODE1_GBA_HEIGHT];
 static uint16_t
     sGpuWsShadow[MODE1_GBA_BG_COUNT * MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_COLS];
+/* Each shadow entry's zone (port/port_zone_tiles.h), repacked beside sGpuWsShadow. */
+static uint8_t sGpuWsShadowZone[MODE1_GBA_BG_COUNT * MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_COLS];
 static bool sGpuPpuInitialized;
 static bool sGpuPpuDisabled;
 
@@ -305,6 +309,7 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     view->objClipMark = virtuappu_mode1_obj_clip_mark;
     view->objClipY = virtuappu_mode1_obj_clip_y;
     bool anyShadow = false;
+    bool anyZone = false;
     for (unsigned bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {
         view->wsShadowBaseTile[bg] = virtuappu_mode1_ws_shadow[bg]
                                                 ? virtuappu_mode1_ws_shadow_base_tile[bg]
@@ -326,10 +331,23 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
                     memcpy(dst + row * MODE1_WS_SHADOW_COLS, virtuappu_mode1_ws_shadow[bg] + row * stride,
                            cols * sizeof(uint16_t));
             }
+            uint8_t* zoneDst = &sGpuWsShadowZone[bg * MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_COLS];
+            const uint8_t* zoneSrc = Port_ZoneTiles_ShadowLive((int)bg);
+            if (zoneSrc && cols > 0 && cols <= MODE1_WS_SHADOW_COLS && stride >= cols && stride <= MODE1_WS_SHADOW_COLS) {
+                for (unsigned row = 0; row < MODE1_WS_SHADOW_ROWS; ++row) {
+                    memcpy(zoneDst + row * MODE1_WS_SHADOW_COLS, zoneSrc + row * stride, cols);
+                    memset(zoneDst + row * MODE1_WS_SHADOW_COLS + cols, 0, MODE1_WS_SHADOW_COLS - cols);
+                }
+                anyZone = true;
+            } else {
+                memset(zoneDst, 0, MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_COLS);
+            }
             anyShadow = true;
         }
     }
     view->wsShadow = anyShadow ? sGpuWsShadow : NULL;
+    view->wsShadowZone = anyShadow && anyZone ? sGpuWsShadowZone : NULL;
+    view->zones = view->wsShadowZone ? Port_ZoneTiles_Active() : NULL;
     view->wsShadowHalfwords =
         anyShadow ? (int)(sizeof(sGpuWsShadow) / sizeof(sGpuWsShadow[0])) : 0;
 }
@@ -1202,6 +1220,7 @@ static void PresentFrame(void) {
     const uint16_t dispcnt = (uint16_t)(gIoMem[0] | (gIoMem[1] << 8));
     const uint8_t mode = (uint8_t)(dispcnt & 7);
     TopFrameState topFrame = SelectTopFrame();
+    Stereo3DS_BeginFrame(); /* the 3D setting and slider for this frame's build and draw */
     /* Right after a door the field loads at 240/266 for a few frames before it
      * is Full View; the screen is still fading in, so keep showing the last
      * frame (the one the fade-out ended on) instead of two geometry steps. */
@@ -1420,7 +1439,8 @@ static void PresentFrame(void) {
         const uint64_t drawEndTick = Platform3DS_SystemTick();
         sTopDrawTicks += drawEndTick - renderEndTick;
         Platform3DS_SetStage(8);
-        PlatformGpu3DS_DrawTopTexture(PortPpuGpu3DS_OutputTexture(), (unsigned)sTopPresentWidth,
+        PlatformGpu3DS_DrawTopTexture(PortPpuGpu3DS_OutputTexture(), PortPpuGpu3DS_OutputTextureRight(),
+                                      (unsigned)sTopPresentWidth,
                                       (unsigned)sTopPresentHeight, sTopPresentMode, sTopCropX, sTopCropY);
         Platform3DS_SetStage(9);
         sTopBlitTicks += Platform3DS_SystemTick() - drawEndTick;

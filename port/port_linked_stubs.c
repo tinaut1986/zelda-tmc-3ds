@@ -39,6 +39,9 @@
 #include "port_config.h"
 #include "port_rom.h"
 #include "port_runtime_config.h"
+#ifdef TMC_3DS
+#include "port_zone_tiles.h"
+#endif
 #include "port_widescreen.h"
 #include "port_hdma.h"
 #include "port_widescreen_banner_state.h"
@@ -1215,16 +1218,12 @@ void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
     if (direction > 3 || gRoomControls.scrollAction > 1 || gArea.unk_0c_0 || (gRoomControls.scroll_flags & 1) ||
         room >= MAX_ROOMS)
         return;
-    /* Full View scrolls at 400x240 into a room that can hold that view (an
-     * exterior at least 400x240, as the policy asks); the next room's own
-     * content scan then confirms it. Anything else keeps the 266 scroll or
-     * none. */
+    /* Full View scrolls at 400x240 into a room that can hold that view, interiors included
+     * (every room is in Full View since P4.6: the castle's rooms scrolled at 266x160 when
+     * only exteriors counted); the next room's own content scan then confirms it. Anything
+     * else keeps the 266 scroll or none. */
     const int fullView = Port_WidescreenGameplayMode() == PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
-                         gRoomControls.area <= AREA_98 &&
-                         Port3DSFullViewPolicy_AreaIsExterior(gRoomControls.area, (int)room,
-                                                              gAreaMetadata[gRoomControls.area].flags) &&
-                         gArea.roomResInfos[room].pixel_width >= 400 &&
-                         gArea.roomResInfos[room].pixel_height >= 240 && gRoomControls.height >= 240;
+                         gRoomControls.area <= AREA_98;
     if (!fullView && (width <= 240 || width > 266 || gArea.roomResInfos[room].pixel_width <= 240 ||
                       gArea.roomResInfos[room].pixel_height < 160 || gRoomControls.height < 160))
         return;
@@ -1249,14 +1248,19 @@ void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
         const RoomResInfo* next = &gArea.roomResInfos[room];
         int shift;
         if (direction == 0 || direction == 2) {
-            sWsScroll.alignX = Port_WidescreenScrollAlign(gRoomControls.scroll_x, 400, gRoomControls.origin_x,
-                                                          gRoomControls.width, next->map_x, next->pixel_width);
+            /* A room narrower than the view is centred, the rest black: line up on that. */
+            sWsScroll.alignX = next->pixel_width < 400
+                                   ? (int)next->map_x - (400 - (int)next->pixel_width) / 2
+                                   : Port_WidescreenScrollAlign(gRoomControls.scroll_x, 400, gRoomControls.origin_x,
+                                                                gRoomControls.width, next->map_x, next->pixel_width);
             shift = sWsScroll.alignX - sWsScroll.startX;
             if (shift > (WS_SCROLL_COLS - 53) * 8 || -shift > (WS_SCROLL_COLS - 53) * 8)
                 sWsScroll.alignX = sWsScroll.startX, shift = 0;
         } else {
-            sWsScroll.alignY = Port_WidescreenScrollAlign(gRoomControls.scroll_y, 240, gRoomControls.origin_y,
-                                                          gRoomControls.height, next->map_y, next->pixel_height);
+            sWsScroll.alignY = next->pixel_height < 240
+                                   ? (int)next->map_y - (240 - (int)next->pixel_height) / 2
+                                   : Port_WidescreenScrollAlign(gRoomControls.scroll_y, 240, gRoomControls.origin_y,
+                                                                gRoomControls.height, next->map_y, next->pixel_height);
             shift = sWsScroll.alignY - sWsScroll.startY;
             if (shift > (WS_SCROLL_ROWS - 33) * 8 || -shift > (WS_SCROLL_ROWS - 33) * 8)
                 sWsScroll.alignY = sWsScroll.startY, shift = 0;
@@ -1337,6 +1341,13 @@ int Port_Widescreen_AdvanceScroll(void) {
             endX = gRoomControls.origin_x + gRoomControls.width - viewW;
             duration = 60;
             break;
+    }
+    /* Full View: a room smaller than the view on the scrolling axis ends centred in it. */
+    if (sWsScroll.fullView) {
+        if ((sWsScroll.direction == 0 || sWsScroll.direction == 2) && gRoomControls.height < viewH)
+            endY = gRoomControls.origin_y - (viewH - gRoomControls.height) / 2;
+        if ((sWsScroll.direction == 1 || sWsScroll.direction == 3) && gRoomControls.width < viewW)
+            endX = gRoomControls.origin_x - (viewW - gRoomControls.width) / 2;
     }
     int progress = gRoomControls.unk_18;
     if (progress > duration)
@@ -1672,6 +1683,12 @@ static int Port_WidescreenFixedCanvasSubtask(void) {
         return 1;
     }
     if (gMain.substate != GAMEMAIN_SUBTASK) {
+        return 0;
+    }
+    /* The new game's opening shot of Link's house (AuxCutscene 1, src/subtask/
+     * subtaskAuxCutscene.c: Hyrule Field room 1, a static camera on the open field) is
+     * the world drawn as in play, not a fixed picture: it takes the wide view too. */
+    if (gUI.lastState == SUBTASK_AUXCUTSCENE && gUI.field_0x3 == 1 && gUI.nextToLoad == 2) {
         return 0;
     }
     /* Pause/inventory replace the world with a fixed GBA canvas. State 3 is
@@ -2069,6 +2086,10 @@ static int Port_WidescreenCameraRestXForMode(int target_x, Port3DSFullViewMode m
     }
     int hi = lo + boundsW - viewW;
     int want = target_x - viewW / 2;
+    /* Room (or its painted part) narrower than a Full View: centre it, the rest is black. */
+    if (mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X && boundsW < viewW) {
+        return lo - (viewW - boundsW) / 2;
+    }
     if (want > hi) {
         want = hi;
     }
@@ -2091,6 +2112,9 @@ static int Port_WidescreenCameraRestYForMode(int target_y, Port3DSFullViewMode m
     }
     int hi = lo + boundsH - viewH;
     int want = target_y - viewH / 2;
+    if (mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X && boundsH < viewH) {
+        return lo - (viewH - boundsH) / 2;
+    }
     if (want > hi) {
         want = hi;
     }
@@ -2304,6 +2328,11 @@ static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* s
     if (room_tiles_h > kMapRows)
         room_tiles_h = kMapRows;
     const int scrolling = Port_WidescreenScrollActive();
+#ifdef TMC_3DS
+    /* Rooms that swap building graphics by zone (port/port_zone_tiles.h, issue #26): each entry's
+     * zone, so the renderer draws it from that zone's set. */
+    uint8_t* const zoneRows = !scrolling && Port_ZoneTiles_Active() ? Port_ZoneTiles_ShadowVariants(bg_index) : NULL;
+#endif
     for (int sr = 0; sr < MODE1_WS_SHADOW_ROWS; sr++) {
         int shadow_row = sr;
         s32 world_row = 2 * (ydiff >> 4) - 1 + sr;
@@ -2319,6 +2348,10 @@ static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* s
             world_row = ((ydiff + shake_y) >> 3) + sr;
         }
         u16* row_dst = shadow + (size_t)shadow_row * (size_t)shadow_cols;
+#ifdef TMC_3DS
+        uint8_t* const zone_dst = zoneRows ? zoneRows + (size_t)shadow_row * (size_t)shadow_cols : NULL;
+        if (zone_dst) memset(zone_dst, 0, (size_t)shadow_cols);
+#endif
         if (!scrolling && (world_row < 0 || world_row >= room_tiles_h)) {
             for (int C = 0; C < shadow_cols; C++)
                 row_dst[C] = 0;
@@ -2331,8 +2364,14 @@ static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* s
                                          ? mapSpecial[world_row * kMapStride + world_col]
                                          : (u16)0);
             row_dst[C] = entry;
+#ifdef TMC_3DS
+            if (zone_dst && entry != 0) zone_dst[C] = Port_ZoneTiles_Variant(world_col, world_row);
+#endif
         }
     }
+#ifdef TMC_3DS
+    Port_ZoneTiles_SetShadowLive(bg_index, zoneRows != NULL);
+#endif
     virtuappu_mode1_ws_shadow_cols[bg_index] = (uint8_t)shadow_cols;
     virtuappu_mode1_ws_shadow_stride[bg_index] = (uint8_t)shadow_cols;
     virtuappu_mode1_ws_shadow[bg_index] = shadow;
@@ -2506,7 +2545,13 @@ void Port_Widescreen_UpdateShadows(void) {
         virtuappu_mode1_ws_shadow[i] = NULL;
         virtuappu_mode1_ws_shadow_cols[i] = MODE1_WS_SHADOW_WIDE_COLS;
         virtuappu_mode1_ws_shadow_stride[i] = MODE1_WS_SHADOW_WIDE_COLS;
+#ifdef TMC_3DS
+        Port_ZoneTiles_SetShadowLive(i, false);
+#endif
     }
+#ifdef TMC_3DS
+    if (Port_Config_3DSFullViewComboEnabled()) Port_ZoneTiles_Update();
+#endif
     virtuappu_mode1_ws_hud_right_anchor = 0;
     virtuappu_mode1_ws_msg_shift = 0;
     virtuappu_mode1_ws_full_view = 0;

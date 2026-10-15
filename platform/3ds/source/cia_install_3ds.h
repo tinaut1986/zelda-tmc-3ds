@@ -8,3 +8,6 @@
 /* `sdPath` is an SD path without "sdmc:" ("/3ds/..."). Refuses any CIA whose
  * title ID is not TMC3DS_TITLE_ID. On failure `error` says why. */
 bool CiaInstall_File(const char* sdPath, char* error, unsigned errorCap);
+
+/* How much of the running CiaInstall_File is written, in bytes (any thread). */
+void CiaInstall_Progress(unsigned long long* done, unsigned long long* total);

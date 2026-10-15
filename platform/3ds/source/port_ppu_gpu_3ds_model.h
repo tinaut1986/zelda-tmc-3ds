@@ -129,6 +129,8 @@ typedef struct PpuGpu3DSRing {
     /* Per cell: the map entry, the low bits of its palette generation and a
      * valid bit (0 = empty), compared as one word. */
     uint32_t key[PPU_GPU3DS_RING_CELLS];
+    /* Per cell: the zone variant its tile was decoded from (wsShadowZone), 0 for VRAM. */
+    uint8_t variant[PPU_GPU3DS_RING_CELLS];
     /* What each 256-byte chunk of character data held when the cells that
      * sample it were last decoded. */
     uint32_t chunkDigest[PPU_GPU3DS_RING_CHUNKS];
@@ -225,6 +227,10 @@ typedef struct PpuGpu3DSFrameView {
     const int32_t* affineRefX;
     const int32_t* affineRefY;
     const uint16_t* wsShadow;
+    /* Beside wsShadow, each entry's zone (port/port_zone_tiles.h): a cell of a room that swaps
+     * building graphics by zone is drawn from its own zone's set and palettes. NULL: none. */
+    const uint8_t* wsShadowZone;
+    const struct PortZoneTiles* zones;
     int wsShadowBaseTile[4];
     int wsCols, wsShadowHalfwords;
     int wsHudRightAnchor, wsHudRightNativeX;

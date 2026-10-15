@@ -5,6 +5,7 @@
 #include "ndsp_psg_offload.h"
 #include "speaker_eq_3ds.h"
 #include "port_m4a_backend.h"
+#include "retro_ach.h"
 
 #include <3ds.h>
 #include <math.h>
@@ -47,6 +48,7 @@ static void FillBuffer(int index) {
     extern int Port_M4A_Backend_GetReverbLevel(void);
     NdspPsg_SetReverbLevel(Port_M4A_Backend_GetReverbLevel());
     Port_M4A_Backend_Render(dst, BUFFER_FRAMES, false);
+    RetroAch_MixAudio(dst, BUFFER_FRAMES, SAMPLE_RATE); /* the unlock sound, when one plays */
     /* DSP_FlushDataCache is IPC to the dsp sysmodule: the caller blocks while
      * that service is scheduled on core 1, with only the app's quota share of
      * it. This is the same round-trip that platform_3ds.c:638 measured at

@@ -196,7 +196,7 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
     if (!snap) return 0;
 
     /* The clock, Wi-Fi bars and battery in the tab bar. */
-    if (Compact_ChromeChanged() || Compact_ToastNeedsPaint() || Compact_BusyNeedsPaint() || Compact_DevFtpNeedsPaint())
+    if (Compact_ChromeChanged() || Compact_ToastNeedsPaint() || Compact_RaToastNeedsPaint() || Compact_BusyNeedsPaint() || Compact_DevFtpNeedsPaint())
         return 1;
 
     int tab;
@@ -218,6 +218,7 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
 
     /* Without a game the MAP, ITEMS and QUEST tabs are a still notice. */
     if (tab == SS_TAB_STATES) return Compact_StatesNeedsPaint();
+    if (tab == SS_TAB_RETRO) return Compact_RetroAchNeedsPaint();
     if (!snap->inGame && tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG) return 0;
 
     if (tab == SS_TAB_MAP) {

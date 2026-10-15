@@ -157,6 +157,10 @@ must stay identical in both places), or the commit list when the block is missin
 
 A **stable** release lists everything since the previous *stable* tag, betas included; a
 **beta** lists only what is new since the previous tag.
+The console's updater reads the release list: with + BETAS it offers the newest of betas and
+stable releases, with STABLE the newest stable one, and its notes join those of every release
+of the channel newer than the installed build (newest first). A stable player never sees beta
+pages, which is why a stable's notes must cover its betas.
 
 ### The channel is baked into the binary
 
@@ -242,12 +246,14 @@ tools/tmc-link/tmc-link.py wait && tools/tmc-link/tmc-link.py run SCRIPT   # dri
   takes screenshots (`shot`, then look at the PNGs), reads state and memory by symbol.
   `peek`/`poke` by symbol use this checkout's `build-3ds/game/tmc-3ds.elf`: when the console runs
   a build made in another worktree, pass that build's ELF with `--elf`.
-  A state survives rebuilds that only change the port (renderer, UI, platform), so the
+  A state survives rebuilds that only change the port (renderer, UI, platform; a change to the game's
+  globals or statics moves them and a state loaded after it corrupts memory, issue #31), so the
   loop is: save a state once, then install, `wait`, `loadstate`, play the scenario, measure. Use it to reproduce and check on the console without
   the owner; say before driving the game while the owner is playing.
 
-- `--install` uploads to `/3ds/Minish Cap 3DS/update/dev.cia` and sends `SITE INSTALL`
-  after the transfer (`curl -Q "-SITE INSTALL <path>"`; the leading `-` means "after").
+- `--install` uploads to `/3ds/Minish Cap 3DS/update/dev.cia`, sends `ALLO <size>` before the
+  transfer (`curl -Q "+ALLO <size>"`; the bottom screen's progress bar needs the total) and
+  `SITE INSTALL` after it (`curl -Q "-SITE INSTALL <path>"`; the leading `-` means "after").
   The game refuses a CIA with another title ID, installs over itself
   (`cia_install_3ds.c`), replies `200` and relaunches into the new build 10 s later
   (`Platform3DS_RequestRelaunch`, libctru's chainloader; jumping at once crashed the system

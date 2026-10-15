@@ -37,6 +37,8 @@ reproduced/redistributed here under their respective licenses.
 | SDL3 | https://github.com/libsdl-org/SDL | Zlib |
 | zlib | https://zlib.net | Zlib |
 | libpng | http://www.libpng.org/pub/png/libpng.html | libpng (PNG Reference Library) |
+| rcheevos (`third_party/rcheevos`, 3DS RetroAchievements) | https://github.com/RetroAchievements/rcheevos | MIT |
+| stb_image (`third_party/stb`, RetroAchievements badges) | https://github.com/nothings/stb | MIT or Public Domain |
 
 ## Build-time decompilation toolchain (`tools/src/`)
 

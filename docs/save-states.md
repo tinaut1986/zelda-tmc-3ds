@@ -41,10 +41,10 @@ from that ELF. A binary that was not post-processed has no table and saves forma
 On load: the file is read and parsed whole before anything is touched; each global is copied
 back by name (a global this build no longer has is dropped, a new one keeps its live value, a
 resized one gets the part both have); ROM pointers are moved; the relocations are applied; the
-room music restarts.
+entity lists are checked and repaired (below); the room music restarts.
 
 Format 1 (a raw copy of `.data`/`.bss` with the game pinned at fixed addresses by
-`3dsx.ld`: data at 0x620000, `.bss` at 0x630000) is still read, and loads only into a build
+`3dsx.ld`: data at 0x630000, `.bss` at 0x640000 (0x620000 / 0x630000 before RetroAchievements)) is still read, and loads only into a build
 with the same layout fingerprint.
 
 ## What to keep in mind when changing the game's code
@@ -68,7 +68,10 @@ after a rebuild and the game crashes on load. `state_pointers_3ds.c` has the rul
    latter; states written before 2026-10-13 hold it unrelocated, so on load it is put back from
    `gEntityScriptCtxTable` (`RepairEntityScriptContexts`), which `Port_SetEntityScriptCtx` keeps
    equal to it.
-4. `kNotSaved`: runtime objects and audio bookkeeping.
+4. A word that is exactly the start of a slot of `gEntities` / `gAuxPlayerEntities` is a pointer in
+   any holder (`kSlotTargets`): a static or a manager field that keeps an entity (as
+   `gSleepBubbleEntity` did, Luma dump 14) needs no rule. The middle of a slot still does.
+5. `kNotSaved`: runtime objects and audio bookkeeping.
 
 A pointer to something that is not the game's code, constants or globals (a heap object, a
 libctru handle) cannot be saved: keep it out of the game's globals, or in `kNotSaved`.
@@ -119,3 +122,26 @@ same: a rule for new states and a repair here for the old ones.
   nobody listed shows as a crash on load into a different build. Run the census on a state of
   each new kind of room.
 - Format 1 states are not converted.
+
+## Stale words are inherited (issue #31)
+
+A stale word does not stay in the state that brought it: loading the state puts it back in
+memory, and every state saved after that, by any build, saves it again. The owner's states of
+2026-10-15 (made by dev.45.7) still held, in the heads of the empty entity lists, the addresses
+those heads had before RetroAchievements moved `.bss` up 0x10000; on save they were "relocated"
+faithfully into the middle of `gMapTop`, and leaving the room walked a list into tile data
+(`ent = 0x101e101e`, or an entity with `ENT_SCRIPTED` and no context: Luma dumps 15 to 19). A
+rule added later cannot fix such a word, because by then it looks like a pointer to something
+else.
+
+So the load also checks the structures whose shape is known instead of trusting their words.
+`RepairEntityLists` walks each of the nine lists of `gEntityLists` from its head over slots of
+the entity pools (`gPlayerEntity`, `gAuxPlayerEntities`, `gEntities`) and of the manager pool
+(`gUnk_02033290`, 32 slots of 0x40) only, rebuilds the back links and `last`, closes a list where
+it leaves them, frees a live slot that no list reaches (never the player), and recounts
+`gEntCount` / `gManagerCount`. The SD log says `state: entity lists repaired: N closed, M stray
+slots freed` when it changed anything. The owner's Link's-room state: 6 lists closed, 2 stray
+slots (a second bed cover and a thought bubble) freed; it then leaves the room cleanly.
+
+A structure of the same kind (a pool with its own links) that shows up in a crash after a load
+gets the same treatment here, not only a rule in `state_pointers_3ds.c`.

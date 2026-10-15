@@ -47,23 +47,27 @@ int main(void) {
     inputs.pixelPerfect = 0;
     CHECK(Port3DSFullViewPolicy_Desired(&inputs) == PORT_3DS_FULL_VIEW_FALLBACK);
 
-    /* Full exterior frames require complete 400x240 room and content bounds. */
+    /* Every room is Full View whatever its size (a smaller one is centred, the rest black); the
+     * only requirement is that the painted-content scan has reported. */
     inputs = ReadyOutdoor();
-    inputs.contentWidth = 399;
+    inputs.contentWidth = 0;
     CHECK(Port3DSFullViewPolicy_Decide(&inputs, &reason) == PORT_3DS_FULL_VIEW_FALLBACK);
     CHECK(reason == PORT_3DS_FULL_VIEW_REASON_OUTDOOR_BOUNDS);
     inputs = ReadyOutdoor();
-    inputs.contentHeight = 239;
+    inputs.contentHeight = 0;
     CHECK(Port3DSFullViewPolicy_Desired(&inputs) == PORT_3DS_FULL_VIEW_FALLBACK);
-
-    /* The same combo inside selects a real 200x120 logical viewport. Both
-     * room and painted content must be large enough to feed it. */
     inputs = ReadyOutdoor();
     inputs.areaIsExterior = 0;
     inputs.roomWidth = 240;
     inputs.roomHeight = 160;
     inputs.contentWidth = 240;
     inputs.contentHeight = 160;
+    CHECK(Port3DSFullViewPolicy_Decide(&inputs, &reason) == PORT_3DS_FULL_VIEW_OUTDOOR_1X);
+    CHECK(reason == PORT_3DS_FULL_VIEW_REASON_NONE);
+    inputs.areaIsExterior = 1;
+    inputs.contentWidth = 399;
+    CHECK(Port3DSFullViewPolicy_Desired(&inputs) == PORT_3DS_FULL_VIEW_OUTDOOR_1X);
+    inputs.areaIsExterior = 0;
 
     /* Exterior classification is positive and fail-closed. Use immutable
      * metadata bits so runtime AR_HAS_NO_ENEMIES mutations cannot turn Royal
@@ -89,14 +93,7 @@ int main(void) {
     CHECK(!Port3DSFullViewPolicy_AreaIsExterior(AREA_LAKE_WOODS_CAVE, 0, AR_IS_MOLE_CAVE));
     CHECK(!Port3DSFullViewPolicy_AreaIsExterior(AREA_98 + 1, 0, AR_IS_OVERWORLD));
     CHECK(!Port3DSFullViewPolicy_AreaIsExterior(AREA_MINISH_VILLAGE, -1, 0));
-    /* Interiors are never zoomed: fallback at 1x whatever the room size. */
-    CHECK(Port3DSFullViewPolicy_Decide(&inputs, &reason) == PORT_3DS_FULL_VIEW_FALLBACK);
-    CHECK(reason == PORT_3DS_FULL_VIEW_REASON_INTERIOR_NO_ZOOM);
-    inputs.contentWidth = 199;
-    CHECK(Port3DSFullViewPolicy_Desired(&inputs) == PORT_3DS_FULL_VIEW_FALLBACK);
     inputs.contentWidth = 240;
-    inputs.contentHeight = 119;
-    CHECK(Port3DSFullViewPolicy_Desired(&inputs) == PORT_3DS_FULL_VIEW_FALLBACK);
     inputs.contentHeight = 160;
 
     /* Menus, dialogue/banners, outgoing transitions and invalid player

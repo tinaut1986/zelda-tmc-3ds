@@ -1,4 +1,5 @@
 #include "port_ppu_gpu_3ds_model.h"
+#include "port_zone_tiles.h"
 
 #if defined(__3DS__)
 #include "arm11_fast_mem.h"
@@ -2153,11 +2154,21 @@ static void ring_copy_cell(uint16_t* dest, const uint16_t* src) {
 
 static void ring_decode_cell(PpuGpu3DSCache* cache, PpuGpu3DSRing* ring, const uint8_t* source,
                              uint16_t entry, bool bpp8, unsigned cell, uint32_t generation,
-                             uint16_t* destOverride) {
+                             uint16_t* destOverride, const uint16_t* bankColors) {
     uint16_t* const dest = destOverride ? destOverride : ring->pixels + (size_t)cell * 64u;
     const uint8_t* const order = sRingMorton[(entry >> 10u) & 3u];
     if (source == NULL) {
         memset(dest, 0, 64u * sizeof(uint16_t));
+    } else if (!bpp8 && bankColors != NULL) {
+        /* A zone's own palette (port/port_zone_tiles.h): rare enough to pack here. */
+        uint16_t lut[16];
+        lut[0] = 0;
+        for (unsigned index = 1; index < 16u; ++index) lut[index] = PpuGpu3DS_PackRgba5551(bankColors[index], true);
+        for (unsigned pixel = 0; pixel < 64u; pixel += 2u) {
+            const uint8_t pair = source[pixel >> 1u];
+            dest[order[pixel]] = lut[pair & 0x0fu];
+            dest[order[pixel + 1u]] = lut[pair >> 4u];
+        }
     } else if (!bpp8) {
         const unsigned bankIndex = (entry >> 12u) & 15u;
         uint16_t* const lut = cache->bankLut[0][bankIndex];
@@ -2247,15 +2258,22 @@ static bool ring_update(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, 
             }
         }
         const uint8_t* const vramRow = frame->memory.vram + screenBase + ringRow * 64u;
+        /* Each entry's zone, beside the shadow (rooms that swap building graphics by zone). */
+        const uint8_t* const zoneRow =
+                shadowRow && frame->wsShadowZone && frame->zones && !bpp8
+                        ? frame->wsShadowZone + (((size_t)bg * 32u + ringRow) * shadowCols)
+                        : NULL;
         for (unsigned c = cLo; c <= cHi; ++c) {
             const unsigned A = firstTileX + c;
             uint16_t entry = 0;
             bool blank = false;
+            unsigned variant = 0;
             if (shadowSource) {
                 const unsigned column =
                         viewRelative ? c : (unsigned)((int)(A & 31u) - shadowBase + 32) & 31u;
                 if (column < available) {
                     entry = shadowRow[column];
+                    if (zoneRow) variant = zoneRow[column];
                 } else if (!viewRelative) {
                     blank = true;
                 }
@@ -2268,17 +2286,38 @@ static bool ring_update(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, 
                 entry = read16(vramRow + (wideMap ? ((A >> 5u) & 1u) * 0x800u : 0u), (A & 31u) * 2u);
             }
             const unsigned cell = (A & (PPU_GPU3DS_RING_COLS - 1u)) * PPU_GPU3DS_RING_ROWS + ringRow;
+            /* A zone cell whose tile lies in the swapped character data comes from its zone's set,
+             * in its zone's palette where that set has one. */
+            const uint8_t* zoneSource = NULL;
+            const uint16_t* bankColors = NULL;
+            if (variant != 0 && !blank) {
+                zoneSource = Port_ZoneTiles_Source(frame->zones, variant,
+                                                   charBase + (uint32_t)(entry & 0x03ffu) * tileBytes, tileBytes);
+                if (zoneSource == NULL) {
+                    variant = 0;
+                } else {
+                    const PortZoneVariant* zone = &frame->zones->variants[variant];
+                    const unsigned bank = (entry >> 12u) & 15u;
+                    if ((zone->paletteMask >> bank) & 1u) bankColors = zone->palettes + bank * 16u;
+                }
+            }
             const uint32_t generation =
-                    bpp8 ? cache->bg256Generation : cache->bgBankGeneration[(entry >> 12u) & 15u];
+                    bankColors ? frame->zones->generation
+                    : bpp8     ? cache->bg256Generation
+                               : cache->bgBankGeneration[(entry >> 12u) & 15u];
             const uint32_t key = blank ? 0x40000000u
                                        : (entry | ((generation & 0x3fffu) << 16u) | 0x80000000u);
             const uint32_t held = ring->key[cell];
-            if (held == key) continue;
+            const bool sameVariant = ring->variant[cell] == variant;
+            if (held == key && sameVariant) continue;
             /* A tile with no opaque pixel does not depend on the palette: it
              * stays valid through a fade that changes every bank. */
-            if ((held & 0x20000000u) != 0 && (held & 0xffffu) == entry) continue;
+            if ((held & 0x20000000u) != 0 && (held & 0xffffu) == entry && sameVariant) continue;
+            ring->variant[cell] = (uint8_t)variant;
             const uint8_t* source = NULL;
-            if (!blank) {
+            if (zoneSource != NULL) {
+                source = zoneSource;
+            } else if (!blank) {
                 const uint32_t tileOffset = charBase + (uint32_t)(entry & 0x03ffu) * tileBytes;
                 if (tileOffset > MODE1_VRAM_SIZE - tileBytes) return false;
                 const unsigned chunk = tileOffset / PPU_GPU3DS_RING_CHUNK;
@@ -2296,7 +2335,7 @@ static bool ring_update(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, 
                  * cell already decoded this frame: copy it. Asked before the
                  * emptiness scan below, which is the dearer test; a tile with
                  * no opaque pixel is never entered here. */
-                const uint32_t ctx = (charBase >> 14u) | (bpp8 ? 4u : 0u);
+                const uint32_t ctx = (charBase >> 14u) | (bpp8 ? 4u : 0u) | (variant << 8u);
                 const unsigned slot = (key * 0x9e3779b1u >> 22u) & (PPU_GPU3DS_RING_MEMO_SIZE - 1u);
                 struct PpuGpu3DSRingMemo* const memo = &cache->ringMemo[slot];
                 uint16_t* const pooled = sRingMemoPixels[slot];
@@ -2319,7 +2358,7 @@ static bool ring_update(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, 
                     source = NULL;
                     storedKey = entry | 0x20000000u | 0x80000000u;
                 } else {
-                    ring_decode_cell(cache, ring, source, entry, bpp8, cell, generation, pooled);
+                    ring_decode_cell(cache, ring, source, entry, bpp8, cell, generation, pooled, bankColors);
                     ring_copy_cell(ring->pixels + (size_t)cell * 64u, pooled);
                     ring->key[cell] = key;
                     memo->stamp = cache->ringStamp;
@@ -2328,7 +2367,7 @@ static bool ring_update(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache, 
                     continue;
                 }
             }
-            ring_decode_cell(cache, ring, source, entry, bpp8, cell, generation, NULL);
+            ring_decode_cell(cache, ring, source, entry, bpp8, cell, generation, NULL, bankColors);
             ring->key[cell] = storedKey;
         }
     }

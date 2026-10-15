@@ -64,6 +64,7 @@ blue: changed). None needs a restart.
 | AUDIO CORE | `audio_core` | AUTO / CORE 0 / CORE 1 | where the audio refill thread runs; it is recreated at once (the queued buffers cover the gap) |
 | COMPACT UP | `compact_upload` | ON / OFF | smaller upload surfaces, Old 3DS only; taken at the start of the next frame |
 | CPU LIMIT | `app_cpu_limit` | AUTO / 80 / 70 / 50 / 30 % | the app's share of core 1 (the rest goes to GSP and the sysmodules); the cell shows the share granted |
+| STEREO 3D | `stereo_3d_on` | OFF / ON | stereoscopic 3D on the top screen while the slider is up; ON by default (`docs/stereo-3d.md`) |
 
 `bottom_rgb565` is not offered: upstream's own note says it turns the bottom
 screen red. Upstream's comments on each are in `platform/3ds/source/port_config_3ds.c`.
@@ -113,8 +114,11 @@ on with it.
 `./build_3ds.sh --install IP` builds, uploads to
 `/3ds/Minish Cap 3DS/update/dev.cia` and installs in one go; the interactive menu
 offers it as "Install into the running game". Any unsaved progress is lost. While a
-`.cia` is being received and while it installs, the bottom screen says so
-(`RECEIVING NEW BUILD...`, then `INSTALLING NEW BUILD - GAME WILL RESTART`) on any tab.
+`.cia` is being received, while it installs and during the 10 s wait before the restart, the bottom
+screen says so on any tab, with a percent and a bar: `RECEIVING NEW BUILD 42%`, `INSTALLING NEW BUILD
+80%`, `RESTARTING IN 7 S`. The upload's total comes from `ALLO <bytes>`, which the client sends before
+`STOR` (`--install` does: `curl -Q "+ALLO <size>"`, the `+` meaning "before the transfer"); without it
+the notice shows no percent and no bar (`RECEIVING NEW BUILD...`).
 Keep `debug/` small: a listing of it with over a thousand files (old dumps and GPU checks) hung the
 server; fetch known names (`tmc-dump-NNNN-vram.bin`, `tmc-check-last.txt`) instead of listing.
 
@@ -282,13 +286,37 @@ the STATES tab (docs/save-states.md); `tmc-link.py shot/peek/poke/state` cover t
 The files' content is what `tools/` and `platform/3ds/tests/port_ppu_gpu_3ds_bench.c` read;
 the bench takes a dump's files by their old unprefixed names, rename or copy them.
 
+## Reading a Luma crash dump
+
+A crash on the console leaves `sdmc:/luma/dumps/arm11/crash_dump_NNNNNNNN.dmp` (the highest number is
+the newest; reachable over the game's FTP, `/luma/dumps/arm11/`). The format, as Luma3DS writes it
+(checked on dumps 14 to 16):
+
+| Offset | What |
+|---|---|
+| 0 | magic `0xDEADC0DE 0xDEADCAFE`, then `u16 major, minor` (3, 1) |
+| 12 | `u32` processor (11 = ARM11), `u32` the exception type, `u32` total size, `u32` register dump size (0x5c), `u32` code dump size (0x60), `u32` stack dump size, `u32` additional data size |
+| 40 | registers: r0 to r12, sp, lr, pc, cpsr, fpexc, fpinst, fpinst2, dfsr, ifsr, far (23 words) |
+| 40 + 0x5c | the code around pc, then the stack from sp (`stack dump size` bytes), then the additional data (the process name) |
+
+Steps: (1) the SD log's header (`debug/tmc-log-last.txt`, then `tmc-log-NNNN.txt`) names the
+build, e.g. `v0.3.0-dev.42.1+933b3f8`; (2) the symbols must be that build's ELF, not the working
+tree's: check out that commit (a detached HEAD, stashing what is uncommitted), `./build_3ds.sh
+--mode debug --no-ftp`, keep `build-3ds/game/tmc-3ds.elf`; (3) `arm-none-eabi-addr2line -f -C -e
+tmc-3ds.elf <pc>` for the faulting address, and the same over every stack word that falls in
+`0x100000..0x640000` for the call chain (the real return addresses are the ones that make sense as a
+chain; `lr` is often garbage). A `pc` in `memset` with `r0 = 0` is a clear of a NULL pointer;
+`far` is the data address of a data abort. A small Python script that does the parsing is two
+dozen lines (`struct.unpack_from('<23I', d, 40)`).
+
 ## On the PC
 
 `tools/ui-preview/build.sh [OUTDIR]` renders the bottom screen's tabs to PNG
 without a console or a ROM (`TMC3DS_DEBUG_TOOLS=0` for a production build's view).
 Without a ROM the map and item art take their fallbacks; the OPTIONS and DEBUG
 tabs draw exactly as on the console (with stand-in values for the log, recorder
-and switches). `THEME=n` picks the theme. The shots and the taps that reach them are
+and switches). `THEME=n` picks the theme. The RetroAchievements tab shows a sample set
+(`RA_OFF=1`: logged out; `RA_TOAST=1`: the unlock notice on the bottom screen). The shots and the taps that reach them are
 the `SHOTS` list in the script.
 
 ## Screen fades

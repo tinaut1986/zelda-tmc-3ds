@@ -45,6 +45,9 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame);
 bool PortPpuGpu3DS_DrawPrepared(void);
 bool PortPpuGpu3DS_BindPresentShader(void);
 void* PortPpuGpu3DS_OutputTexture(void);
+/* The right eye's picture of the frame just drawn, when its layers have a depth
+ * (stereo_3ds.h); NULL: both eyes show PortPpuGpu3DS_OutputTexture. */
+void* PortPpuGpu3DS_OutputTextureRight(void);
 void PortPpuGpu3DS_Disable(void);
 bool PortPpuGpu3DS_IsDisabled(void);
 void PortPpuGpu3DS_RecordDisabledFrame(void);

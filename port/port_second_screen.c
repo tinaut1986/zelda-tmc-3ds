@@ -141,7 +141,7 @@ static const int8_t kDungeonTopFloor[7] = { 2, 3, 3, 5, 2, 7, 5 };
 /* ------------------------------------------------------------------ */
 
 enum { SS_TAB_MAP = 0, SS_TAB_ITEMS, SS_TAB_QUEST, SS_TAB_SETTINGS, SS_TAB_DEBUG /* 3DS debug-tools builds */,
-       SS_TAB_STATES /* 3DS save states */ };
+       SS_TAB_STATES /* 3DS save states */, SS_TAB_RETRO /* RetroAchievements */ };
 
 /* What a tap target does when hit. arg meaning per action: item id,
  * tab id, ring (1 = A, 2 = B), plaque display-floor index, settings row.
@@ -173,6 +173,7 @@ enum {
     SS_ACT_DEBUG, /* DEBUG tab command, arg = DBG_CMD_* (bottom_compact_3ds.inc) */
     SS_ACT_STATES, /* STATES tab command, arg = STATES_CMD_* (bottom_compact_3ds.inc) */
     SS_ACT_DEVFTP_CANCEL, /* the install-only FTP bar's CANCEL (bottom_compact_3ds.inc) */
+    SS_ACT_RETRO, /* RETROACHIEVEMENTS tab command, arg = RA_CMD_* (bottom_compact_3ds.inc) */
 #endif
 };
 
@@ -1102,6 +1103,8 @@ static void BlitMapRegion(const SSurf* s, const uint32_t* img, int32_t imgW, int
 #ifdef TMC_3DS
 static void Compact_MapChip(const SSurf* s, const char* label, float cx, float cyBottom, float* out);
 static void Compact_MapFrame(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h);
+static void Compact_MapToggleChip(const SSurf* s, const char* label, bool on, float x, float yBottom, bool right,
+                                  float* out);
 #endif
 static void DrawMapChip(const SSurf* s, const char* label, float cx, float cyBottom, float u, float* out) {
 #ifdef TMC_3DS
@@ -1160,6 +1163,14 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
 
     int32_t mx, my;
     if (Port_SecondScreenWorldMap_LocatePlayer(snap->area, snap->playerX, snap->playerY, &mx, &my)) {
+        sLastFix.valid = 1;
+        sLastFix.mapX = mx;
+        sLastFix.mapY = my;
+    } else if ((snap->overworldMapX | snap->overworldMapY) != 0 &&
+               Port_SecondScreenWorldMap_MapPoint(snap->overworldMapX, snap->overworldMapY, &mx, &my)) {
+        /* Not on the overworld (the Minish village, houses, caves): where the game's own pause map
+         * puts Link, which it keeps and saves, so a session started there (a loaded state, a
+         * continue) has a marker too. */
         sLastFix.valid = 1;
         sLastFix.mapX = mx;
         sLastFix.mapY = my;
@@ -1401,6 +1412,17 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
         DrawMapChip(s, "ZOOM", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
         AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPZOOM, 0);
     }
+#ifdef TMC_3DS
+    /* MAP FOLLOW and CREST PINS (they were in OPTIONS): small toggles in the map's corners,
+     * on the ZOOM chip's line. Added ahead of the map's own target so they win the hit test. */
+    {
+        float chip[4];
+        Compact_MapToggleChip(s, "MAP FOLLOW", followCfg != 0, rx0 + 4, ry1 - 12 * u, false, chip);
+        AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_SETTING, (uint8_t)SS_SET_FOLLOW);
+        Compact_MapToggleChip(s, "CREST PINS", crestCfg != 0, rx1 - 4, ry1 - 12 * u, true, chip);
+        AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_SETTING, (uint8_t)SS_SET_CRESTS);
+    }
+#endif
     AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_MAP, 0);
 }
 
@@ -3141,7 +3163,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     TargetList tl = { .n = 0 };
 
 #ifdef TMC_3DS
-    const int noGamePanel = sCompactNoGame && tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && tab != SS_TAB_STATES;
+    const int noGamePanel = sCompactNoGame && tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && tab != SS_TAB_STATES && tab != SS_TAB_RETRO;
     if (noGamePanel) {
         Compact_PaintNoGame(&s);
     } else
@@ -3171,6 +3193,8 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
 #ifdef TMC_3DS
     } else if (tab == SS_TAB_STATES) {
         Compact_PaintStates(&s, &tl);
+    } else if (tab == SS_TAB_RETRO) {
+        Compact_PaintRetroAch(&s, &tl);
 #endif
 #if defined(TMC_3DS) && TMC3DS_DEBUG_TOOLS
     } else if (tab == SS_TAB_DEBUG) {
@@ -3204,13 +3228,14 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     SS_MARK(SS_PHASE_PANEL);
 
 #ifdef TMC_3DS
-    if (tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && tab != SS_TAB_STATES && !noGamePanel) {
+    if (tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && tab != SS_TAB_STATES && tab != SS_TAB_RETRO && !noGamePanel) {
         Compact_PaintSidebar(&s, snap, &tl, (int32_t)(width - sideW + 2), (int32_t)my0,
                              (int32_t)(sideW - 2 - CC_MARGIN), (int32_t)(my1 - my0), tick, armedRing);
     }
     SS_MARK(SS_PHASE_SIDEBAR);
     Compact_PaintTabBar(&s, &tl, tab, settingsPage);
     Compact_PaintToast(&s);
+    Compact_PaintRaToast(&s);
     Compact_PaintDevFtp(&s, &tl);
     SS_MARK(SS_PHASE_TABBAR);
 #else
@@ -3332,6 +3357,9 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
 #endif
         case SS_ACT_STATES:
             Compact_StatesCommand(hit.arg);
+            break;
+        case SS_ACT_RETRO:
+            Compact_RetroAchCommand(hit.arg);
             break;
         case SS_ACT_DEVFTP_CANCEL:
             FtpServer_Cancel();

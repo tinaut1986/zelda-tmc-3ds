@@ -26,6 +26,7 @@
 #include "debug_switches_3ds.h"
 #endif
 #include "ftp_server_3ds.h"
+#include "retro_ach.h"
 
 #define APP_DIR TMC3DS_APP_DIR
 #define ROM_PATH_SIZE 512
@@ -173,6 +174,8 @@ int main(int argc, char** argv) {
 
     Platform3DS_EnterGameplayDisplay();
     Updater_Init(argc > 0 ? argv[0] : NULL);
+    /* After the ROM (its hash) and in the data folder (retroachievements.ini). */
+    RetroAch_Init();
     AgbMain();
 #if TMC3DS_DEBUG_TOOLS
     /* Each step is flushed: if one never returns, the log says which. */
@@ -191,6 +194,8 @@ int main(int argc, char** argv) {
     EXIT_STEP("ftp stopped");
     Updater_Shutdown();
     EXIT_STEP("updater stopped");
+    RetroAch_Shutdown();
+    EXIT_STEP("retroachievements stopped");
     Port_PPU_Shutdown();
     EXIT_STEP("ppu stopped");
 #if TMC3DS_DEBUG_TOOLS

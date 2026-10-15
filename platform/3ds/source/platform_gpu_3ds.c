@@ -8,7 +8,11 @@
 #include "app_paths_3ds.h"
 #include "fade_gpu_3ds.h"
 #include "scene_pictures_3ds.h"
+#include "stereo_3ds.h"
 #include "cpu/mode1.h"
+#include "retro_ach.h"
+#include "ui_font_3ds.h"
+#include "port_text_i18n.h"
 
 #include <3ds.h>
 #include <citro2d.h>
@@ -36,6 +40,14 @@ bool Port_Config_CompactUpload(void);
 bool Port_Config_BottomRgb565(void);
 
 static C3D_RenderTarget* sTopTarget;
+/* Stereoscopic 3D (stereo_3ds.h): the right eye's target, made the first time it is needed and
+ * linked to the screen only while 3D is on; sEyeTarget is the one the top is being drawn on,
+ * sRightEye the second pass of a frame (no upload, no counting). */
+static C3D_RenderTarget* sTopRightTarget;
+static bool sStereoLinked;
+static C3D_RenderTarget* sEyeTarget;
+static bool sRightEye;
+static u32 sTopOutputFlags;
 static C3D_RenderTarget* sBottomTarget;
 static C3D_Tex sTopTexture;
 static C3D_Tex sBottomTexture;
@@ -129,6 +141,8 @@ static const uint8_t* StatusGlyph(char c) {
     }
     return NULL;
 }
+
+static void DrawRaToast(bool abgrAfter);
 
 static void DrawStatusTextColor(float x, float y, float scale, const char* text, uint32_t color) {
     for (; *text; ++text, x += 6.0f * scale) {
@@ -353,6 +367,8 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
                        GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565) |
                        GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
     C3D_RenderTargetSetOutput(sTopTarget, GFX_TOP, GFX_LEFT, output);
+    sTopOutputFlags = output;
+    sEyeTarget = sTopTarget;
     C3D_RenderTargetSetOutput(sBottomTarget, GFX_BOTTOM, GFX_LEFT, output);
     sReady = true;
     return true;
@@ -455,16 +471,18 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
     sTopCropX = presentation->sourceX;
     sTopCropY = presentation->sourceY;
 
-    const size_t topFlushBytes =
-        (size_t)sUploadLayout.topPitch * sTopPresentHeight * sizeof(uint32_t);
-    Platform3DS_CleanDataCache(pixels, topFlushBytes);
-    /* Old 3DS only: the CPU renderer publishes 160 rows. Describe that exact
-     * source rectangle so the display engine does not read another 96 unused
-     * RGBA rows. New 3DS retains the established transfer dimensions. */
-    const unsigned sourceHeight = sOld3DSProfile ? sUploadLayout.topRows : TOP_TEXTURE_HEIGHT;
-    C3D_SyncDisplayTransfer((u32*)pixels, GX_BUFFER_DIM(sUploadLayout.topPitch, sourceHeight),
-                            (u32*)sTopTexture.data, GX_BUFFER_DIM(TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT),
-                            TextureTransfer());
+    if (!sRightEye) { /* the right eye is drawn from the same upload */
+        const size_t topFlushBytes =
+            (size_t)sUploadLayout.topPitch * sTopPresentHeight * sizeof(uint32_t);
+        Platform3DS_CleanDataCache(pixels, topFlushBytes);
+        /* Old 3DS only: the CPU renderer publishes 160 rows. Describe that exact
+         * source rectangle so the display engine does not read another 96 unused
+         * RGBA rows. New 3DS retains the established transfer dimensions. */
+        const unsigned sourceHeight = sOld3DSProfile ? sUploadLayout.topRows : TOP_TEXTURE_HEIGHT;
+        C3D_SyncDisplayTransfer((u32*)pixels, GX_BUFFER_DIM(sUploadLayout.topPitch, sourceHeight),
+                                (u32*)sTopTexture.data, GX_BUFFER_DIM(TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT),
+                                TextureTransfer());
+    }
     sTopSubtexture = (Tex3DS_SubTexture){
         .width = (u16)presentation->sourceWidth,
         .height = (u16)presentation->sourceHeight,
@@ -479,7 +497,7 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
                  .w = (float)plan.drawWidth, .h = (float)plan.drawHeight },
         .center = { 0.0f, 0.0f }, .depth = 0.0f, .angle = 0.0f,
     };
-    C2D_TargetClear(sTopTarget, TopClearColor());
+    C2D_TargetClear(sEyeTarget, TopClearColor());
     const unsigned intermediateScale = (unsigned)plan.sharpBilinearScale;
     const bool validSharpBilinearScale = intermediateScale == 2u;
     const unsigned intermediateWidth = validSharpBilinearScale
@@ -579,26 +597,27 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
         };
         /* SceneBegin flushes the complete overwrite batch before changing
          * blend state for the physical-target batch. */
-        C2D_SceneBegin(sTopTarget);
+        C2D_SceneBegin(sEyeTarget);
         ConfigureStandardAlphaBlend();
         C3D_TexSetFilter(&sSharpBilinearTexture, GPU_LINEAR, GPU_LINEAR);
         C2D_DrawImage(intermediateImage, &params, NULL);
         DrawFrameEdges(&intermediateImage, &params);
         ConfigureAbgrTextureEnv();
-        ++sStats.sharpBilinearFrames;
+        if (!sRightEye) ++sStats.sharpBilinearFrames;
     } else {
         const GPU_TEXTURE_FILTER_PARAM filter =
             (plan.linearFilter || plan.useSharpBilinear) ? GPU_LINEAR : GPU_NEAREST;
         C3D_TexSetFilter(&sTopTexture, filter, filter);
-        C2D_SceneBegin(sTopTarget);
+        C2D_SceneBegin(sEyeTarget);
         ConfigureStandardAlphaBlend();
         C2D_DrawImage(image, &params, NULL);
         DrawFrameEdges(&image, &params);
         ConfigureAbgrTextureEnv();
-        if (plan.useSharpBilinear) ++sStats.sharpBilinearFallbacks;
+        if (plan.useSharpBilinear) if (!sRightEye) ++sStats.sharpBilinearFallbacks;
     }
     DrawScenePictures(plan.drawX, plan.drawY, plan.drawWidth, plan.drawHeight, true);
     if (Port_Config_GetShowFps()) DrawFpsOverlay();
+    DrawRaToast(true);
 }
 
 /* Pictures that extend a scene the GBA drew at 240x160 (docs/wide-scene-extension.md), drawn only
@@ -826,6 +845,107 @@ static void DrawScenePictures(int frameX, int frameY, int frameW, int frameH, bo
     }
 }
 
+/* The RetroAchievements unlock notice on the top screen (OPTIONS in the RA tab: NOTICE = TOP),
+ * as in ../sm-3ds: a box at the top centre with the badge, "ACHIEVEMENT UNLOCKED" and the title.
+ * It is painted on the CPU into a small texture when it changes (a new unlock, its badge
+ * arriving) and drawn as one quad, so it costs Citro2D one object a frame. The pixels are in
+ * the bottom screen's RGB() layout, which is the frame's: drawn with the ABGR env. */
+enum { RA_TOAST_W = 304, RA_TOAST_H = 40, RA_TOAST_TEX_W = 512, RA_TOAST_TEX_H = 64 };
+static C3D_Tex sRaToastTexture;
+static bool sRaToastReady;
+static struct {
+    uint32_t id, points;
+    char title[64];
+    bool badge;
+} sRaToastShown;
+
+static void RaToastFill(uint32_t* px, int x0, int y0, int x1, int y1, uint32_t color) {
+    for (int y = y0; y < y1; ++y)
+        for (int x = x0; x < x1; ++x) px[y * RA_TOAST_TEX_W + x] = color;
+}
+
+/* Text in the 5x7 UI font at 1x (UTF-8 read as Latin-1), at most maxX; returns the end x. */
+static int RaToastText(uint32_t* px, int x, int y, int maxX, uint32_t color, const char* text) {
+    for (const char* p = text; *p && x + kUiGlyphW <= maxX; x += kUiAdvance) {
+        const unsigned char c = Port_Text_Utf8Next(&p);
+        const uint8_t* g = UiFont_Glyph(c);
+        for (int gy = 0; g && gy < kUiGlyphH; ++gy)
+            for (int gx = 0; gx < kUiGlyphW; ++gx)
+                if (g[gy] & (0x10u >> gx)) px[(y + gy) * RA_TOAST_TEX_W + x + gx] = color;
+        const uint8_t* mark = c >= 0xC0 ? UiFont_Mark(c) : NULL;
+        for (int gy = 0; mark && gy < 2; ++gy)
+            for (int gx = 0; gx < kUiGlyphW; ++gx)
+                if (mark[gy] & (0x10u >> gx)) px[(y - kUiMarkRise + gy) * RA_TOAST_TEX_W + x + gx] = color;
+    }
+    return x;
+}
+
+static bool RaToastPaint(const RaAchievement* a, const uint32_t* badge) {
+    if (!sRaToastReady) {
+        if (!C3D_TexInit(&sRaToastTexture, RA_TOAST_TEX_W, RA_TOAST_TEX_H, GPU_RGBA8)) return false;
+        C3D_TexSetFilter(&sRaToastTexture, GPU_NEAREST, GPU_NEAREST);
+        sRaToastReady = true;
+    }
+    uint32_t* px = linearAlloc((size_t)RA_TOAST_TEX_W * RA_TOAST_TEX_H * sizeof(uint32_t));
+    if (px == NULL) return false;
+    const uint32_t edge = C2D_Color32(110, 220, 130, 255), body = C2D_Color32(14, 20, 32, 255);
+    RaToastFill(px, 0, 0, RA_TOAST_TEX_W, RA_TOAST_TEX_H, body);
+    RaToastFill(px, 0, 0, RA_TOAST_W, 1, edge);
+    RaToastFill(px, 0, RA_TOAST_H - 1, RA_TOAST_W, RA_TOAST_H, edge);
+    RaToastFill(px, 0, 0, 1, RA_TOAST_H, edge);
+    RaToastFill(px, RA_TOAST_W - 1, 0, RA_TOAST_W, RA_TOAST_H, edge);
+    int tx = 10;
+    if (badge) {
+        for (int y = 0; y < kRaBadgeSmall; ++y)
+            memcpy(&px[(6 + y) * RA_TOAST_TEX_W + 6], &badge[y * kRaBadgeSmall], kRaBadgeSmall * sizeof(uint32_t));
+        tx = 6 + kRaBadgeSmall + 6;
+    } else {
+        RaToastFill(px, 4, 4, 6, RA_TOAST_H - 4, C2D_Color32(40, 150, 90, 255));
+    }
+    RaToastText(px, tx, 9, RA_TOAST_W - 4, edge, "ACHIEVEMENT UNLOCKED");
+    char points[16];
+    snprintf(points, sizeof(points), " (+%u)", (unsigned)a->points);
+    const int pointsW = (int)strlen(points) * kUiAdvance;
+    const int end = RaToastText(px, tx, 23, RA_TOAST_W - 6 - pointsW, C2D_Color32(232, 236, 240, 255), a->title);
+    RaToastText(px, end, 23, RA_TOAST_W - 4, C2D_Color32(240, 200, 80, 255), points);
+    Platform3DS_CleanDataCache(px, (size_t)RA_TOAST_TEX_W * RA_TOAST_TEX_H * sizeof(uint32_t));
+    C3D_SyncDisplayTransfer((u32*)px, GX_BUFFER_DIM(RA_TOAST_TEX_W, RA_TOAST_TEX_H), (u32*)sRaToastTexture.data,
+                            GX_BUFFER_DIM(RA_TOAST_TEX_W, RA_TOAST_TEX_H), TextureTransfer());
+    linearFree(px);
+    return true;
+}
+
+/* abgrAfter: the texture env the caller leaves set (ABGR or identity) is put back. */
+static void DrawRaToast(bool abgrAfter) {
+    RaAchievement a;
+    if (!RetroAch_NotifyTop() || !RetroAch_Toast(&a)) return;
+    const uint32_t* badge = RetroAch_Badge(a.badge, kRaBadgeSmall);
+    if (sRaToastShown.id != a.id || sRaToastShown.points != a.points || sRaToastShown.badge != (badge != NULL) ||
+        strcmp(sRaToastShown.title, a.title) != 0 || !sRaToastReady) {
+        C2D_Flush(); /* the frame's quads go before the upload */
+        if (!RaToastPaint(&a, badge)) return;
+        sRaToastShown.id = a.id;
+        sRaToastShown.points = a.points;
+        sRaToastShown.badge = badge != NULL;
+        snprintf(sRaToastShown.title, sizeof(sRaToastShown.title), "%s", a.title);
+    }
+    const Tex3DS_SubTexture sub = {
+        .width = RA_TOAST_W,
+        .height = RA_TOAST_H,
+        .left = 0.0f,
+        .top = 1.0f,
+        .right = (float)RA_TOAST_W / RA_TOAST_TEX_W,
+        .bottom = 1.0f - (float)RA_TOAST_H / RA_TOAST_TEX_H,
+    };
+    const C2D_Image image = { .tex = &sRaToastTexture, .subtex = &sub };
+    C2D_Flush();
+    C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
+    ConfigureAbgrTextureEnv();
+    C2D_DrawImageAt(image, (float)((400 - RA_TOAST_W) / 2), 4.0f, 0.9f, NULL, 1.0f, 1.0f);
+    C2D_Flush();
+    if (!abgrAfter) ConfigureIdentityTextureEnv();
+}
+
 /* The numbers box (SHOW FPS), after ../mzm and ../sm-3ds: four small lines in a dim box at the
  * bottom-left corner, averaged over the last second. The first is the game's own rate (green from
  * 59, yellow from 50, red below); L is the logic's ms per tick, G the GPU's ms per presented
@@ -839,6 +959,7 @@ static void DrawFpsOverlay(void) {
     } win;
     static float gameFps, logicMs, gpuMs;
     const uint64_t nowMs = osGetTime();
+    if (!sRightEye) { /* counted once a frame, drawn for each eye */
     win.gpuMs += sStats.drawingTime > 0.0f ? sStats.drawingTime : 0.0f;
     ++win.frames;
     if (win.startMs == 0) {
@@ -860,6 +981,8 @@ static void DrawFpsOverlay(void) {
         win.workStart = work;
         win.gpuMs = 0.0;
         win.frames = 0;
+    }
+
     }
 
     char line[4][12];
@@ -1013,8 +1136,8 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
 
     /* Keep the clear as the render-to-texture submission boundary between
      * the PICA200 PPU target and its physical-screen sampling pass. */
-    if (sTopClearFrames != 0) --sTopClearFrames;
-    C2D_TargetClear(sTopTarget, TopClearColor());
+    if (sTopClearFrames != 0 && !sRightEye) --sTopClearFrames;
+    C2D_TargetClear(sEyeTarget, TopClearColor());
     const unsigned intermediateScale = (unsigned)plan.sharpBilinearScale;
     const unsigned intermediateWidth =
         intermediateScale == 2u ? (unsigned)presentation->sourceWidth * 2u : 0u;
@@ -1115,20 +1238,20 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
             .tex = &sSharpBilinearTexture,
             .subtex = &sSharpBilinearSubtexture,
         };
-        C2D_SceneBegin(sTopTarget);
+        C2D_SceneBegin(sEyeTarget);
         ConfigureStandardAlphaBlend();
         ConfigureIdentityTextureEnv();
         C3D_TexSetFilter(&sSharpBilinearTexture, GPU_LINEAR, GPU_LINEAR);
         C2D_DrawImage(intermediateImage, &params, NULL);
         DrawFrameEdges(&intermediateImage, &params);
-        ++sStats.sharpBilinearFrames;
+        if (!sRightEye) ++sStats.sharpBilinearFrames;
     } else {
         /* If the intermediate target is unavailable, Bilinear must remain a
          * bilinear mode rather than silently becoming nearest-neighbour. */
         const GPU_TEXTURE_FILTER_PARAM filter =
             (plan.linearFilter || plan.useSharpBilinear) ? GPU_LINEAR : GPU_NEAREST;
         C3D_TexSetFilter(texture, filter, filter);
-        C2D_SceneBegin(sTopTarget);
+        C2D_SceneBegin(sEyeTarget);
         ConfigureStandardAlphaBlend();
         if (Port_Config_GpuStaticQuad() && sPresentQuad &&
             PortPpuGpu3DS_BindPresentShader()) {
@@ -1153,7 +1276,7 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
             C3D_CullFace(GPU_CULL_NONE);
             C3D_DrawArrays(GPU_TRIANGLE_STRIP, 0, 4);
             C2D_Prepare();
-            C2D_SceneBegin(sTopTarget);
+            C2D_SceneBegin(sEyeTarget);
             ConfigureIdentityTextureEnv();
             DrawFrameEdges(&image, &params);
         } else {
@@ -1161,14 +1284,44 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
             C2D_DrawImage(image, &params, NULL);
             DrawFrameEdges(&image, &params);
         }
-        if (plan.useSharpBilinear) ++sStats.sharpBilinearFallbacks;
+        if (plan.useSharpBilinear) if (!sRightEye) ++sStats.sharpBilinearFallbacks;
     }
     if (configureAbgr) ConfigureAbgrTextureEnv();
 
     DrawScenePictures(plan.drawX, plan.drawY, plan.drawWidth, plan.drawHeight, configureAbgr);
     if (Port_Config_GetShowFps()) DrawFpsOverlay();
+    DrawRaToast(configureAbgr);
 }
 
+
+/* Between frames: the right eye's target on the screen while stereo_3ds.h says 3D is on, and
+ * the top screen in 3D mode with it. */
+static void UpdateStereoOutput(void) {
+    bool want = Stereo3DS_Active();
+    if (want && !sTopRightTarget) {
+        sTopRightTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH16);
+        if (!sTopRightTarget) want = false; /* no VRAM for it: stays 2D */
+    }
+    if (want == sStereoLinked) return;
+    if (want)
+        C3D_RenderTargetSetOutput(sTopRightTarget, GFX_TOP, GFX_RIGHT, sTopOutputFlags);
+    else
+        C3D_RenderTargetDetachOutput(sTopRightTarget);
+    gfxSet3D(want);
+    sStereoLinked = want;
+    sTopClearFrames = 3;
+}
+
+/* After the left eye: the right one, the same way, on its own target. */
+static void BeginRightEye(void) {
+    sEyeTarget = sTopRightTarget;
+    sRightEye = true;
+}
+
+static void EndRightEye(void) {
+    sEyeTarget = sTopTarget;
+    sRightEye = false;
+}
 
 void PlatformGpu3DS_BeginTop(const uint32_t* pixels, unsigned width, unsigned height,
                              unsigned validSourceWidth, unsigned validSourceHeight,
@@ -1177,6 +1330,7 @@ void PlatformGpu3DS_BeginTop(const uint32_t* pixels, unsigned width, unsigned he
     const u8 frameFlags = (u8)(Port_Config_GpuFrameSync() ? C3D_FRAME_SYNCDRAW : 0);
     /* Preflight may already have opened the frame before selecting the CPU
      * fallback. Reuse it so the freshly rendered image is actually uploaded. */
+    if (!sFrameActive) UpdateStereoOutput();
     if (!sFrameActive && !C3D_FrameBegin(frameFlags)) {
         ++sStats.frameBeginFailures;
         return;
@@ -1184,6 +1338,11 @@ void PlatformGpu3DS_BeginTop(const uint32_t* pixels, unsigned width, unsigned he
     sFrameActive = true;
     DrawTopImage(pixels, width, height, validSourceWidth, validSourceHeight,
                  mode, cropX, cropY);
+    if (sStereoLinked) {
+        BeginRightEye();
+        DrawTopImage(pixels, width, height, validSourceWidth, validSourceHeight, mode, cropX, cropY);
+        EndRightEye();
+    }
     ++sStats.topTransfers;
 }
 
@@ -1213,6 +1372,7 @@ bool PlatformGpu3DS_BeginCustomTop(void) {
      * Waiting is the correct behaviour: it is a frame's worth of pacing, not a
      * deadlock, and the watchdog now catches it if that ever stops being true. */
     const u8 frameFlags = (u8)(Port_Config_GpuFrameSync() ? C3D_FRAME_SYNCDRAW : 0);
+    UpdateStereoOutput();
     if (!C3D_FrameBegin(frameFlags)) {
         ++sStats.frameBeginFailures;
         return false;
@@ -1229,11 +1389,17 @@ PlatformGpu3DSUploadLayout PlatformGpu3DS_SetCompactUpload(bool compact) {
     return sUploadLayout;
 }
 
-void PlatformGpu3DS_DrawTopTexture(void* texturePointer, unsigned width, unsigned height,
-                                   Port3DSFullViewMode mode, int cropX, int cropY) {
+void PlatformGpu3DS_DrawTopTexture(void* texturePointer, void* rightTexturePointer, unsigned width,
+                                   unsigned height, Port3DSFullViewMode mode, int cropX, int cropY) {
     C3D_Tex* texture = texturePointer;
     if (!sFrameActive || !texture) return;
     DrawTopTexture(texture, width, height, mode, cropX, cropY, false);
+    if (sStereoLinked) {
+        BeginRightEye();
+        DrawTopTexture(rightTexturePointer ? (C3D_Tex*)rightTexturePointer : texture, width, height, mode, cropX,
+                       cropY, false);
+        EndRightEye();
+    }
 }
 
 bool PlatformGpu3DS_QueueRgba5551Readback(void* texturePointer, uint16_t* pixels) {
@@ -1447,6 +1613,9 @@ void PlatformGpu3DS_Shutdown(void) {
     if (!aptShouldClose()) C3D_FrameSync();
     C3D_RenderTargetDelete(sBottomTarget);
     C3D_RenderTargetDelete(sTopTarget);
+    if (sTopRightTarget) C3D_RenderTargetDelete(sTopRightTarget);
+    sTopRightTarget = NULL;
+    sStereoLinked = false;
     if (sSharpBilinearTarget) C3D_RenderTargetDelete(sSharpBilinearTarget);
     if (sStats.sharpBilinearAvailable) C3D_TexDelete(&sSharpBilinearTexture);
     C3D_TexDelete(&sBottomTexture);
