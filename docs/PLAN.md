@@ -49,7 +49,12 @@ uncommitted. `v0.2.1` is not tagged: before tagging, write `docs/release-notes/v
    and answered with "Unsupported Game Version" (id `1200000559`, one achievement). The port
    already has that patch's three fixes natively (`docs/eu-backport.md`; not verified that the
    patch does nothing else), so reporting the backport hash could be argued with RA: the owner's
-   call, later. The Japanese ROM and the USA kiosk demo are confirmed incompatible.
+   call, later. The Japanese ROM and the USA kiosk demo are confirmed incompatible. Tried
+   2026-10-15: Prof9's source built with ARMIPS on the owner's ROM changes 1159 bytes (the three
+   modules, nothing else) and gives md5 `fbda34fc9c8c826f38325cab89ef9ab4`, **not** RA's
+   `626a6f11...`; sent to RA (test account) it is "Unknown game". RA's hash is of the RHDN IPS
+   (https://www.romhacking.net/hacks/1714/, behind Cloudflare: the owner would download it);
+   only that file can tell whether an in-memory patch could give RA's hash.
    Meanwhile, to play the set on the EU ROM for testing only, with a test account, put the USA md5
    in `rom_md5=` of `retroachievements.ini` (the port keeps it while `rom_key` matches the file)
    and relaunch; never on the real account. Verified 2026-10-15 with `tinaut1986test`: the set loads
@@ -831,3 +836,9 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
 - **2026-10-15** Lesson: poking an inventory bit on the owner's running game leaves traces the
   game does not undo (the sword was auto-assigned to X and stayed after the bit was cleared). Ask
   first; use a loaded state or a build with the change instead.
+- **2026-10-15** Tried to give RA a hash of our own patched ROM: Prof9's EU Backport source
+  (ARMIPS, built locally, `Kingcom/armips`) applied to the clean EU ROM touches 1159 bytes (bomb
+  bag, Eenie, ocarina: nothing else) and hashes to `fbda34fc...`, which RA does not know ("Unknown
+  game"); RA's "European Backport Edition" hash is `626a6f11...`. So no patch-in-memory work was
+  started (P2.9 not opened). The `rom_md5` trick (a known hash in the ini) still works only for
+  test accounts and is not a feature.
