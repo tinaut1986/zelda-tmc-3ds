@@ -449,9 +449,21 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   smaller in either axis is centred in it with the rest black (the camera rests outside the room:
   `Port_WidescreenCameraRestXForMode`, `Scroll1`), and the HUD stays at the screen's corners. The
   policy only waits for the painted-content scan. **Done in code (needs the owner's check):** castle,
-  houses. **Still to do:** the corridor before the Minish village (Minish Paths parallax BGs only
-  have shadows in the 240/266 path, `Port_WidescreenParallaxShadows`), dungeons with BG3 parallax
-  or windows, cutscenes that move the camera by hand.
+  houses. **Still to do:** dungeons with BG3 parallax or windows, cutscenes that move the camera
+  by hand. **The corridor before the Minish village (Minish Paths, area 0x11, rooms 00-04, all
+  240x800) is in progress on `feat/minish-paths-centred`:** `Port_WidescreenParallaxShadows` now
+  also publishes shadows in Full View and places the room's 240 columns at view columns 10-39,
+  masking the rest (black borders, 80 px each side; the owner will generate side strips with a
+  generative AI, 80x256 per layer and side, tileable vertically: BG1 leaves, half speed; BG3
+  shadows, quarter speed; BG2 is the ground map; `docs/wide-scene-extension.md` is the flow).
+  **Open bug:** entering the corridor through the door from the village and scrolling, the bottom
+  ~48 px (tile rows 24-29) of the BG1 leaf layer is wrong in some frames (missing leaves; the
+  ground's bushes show) until the scroll starts. Not seen after loading a save state (another
+  data path). Ruled out: per-line scroll registers (constant), camera jumps, the shadow data (all
+  32 rows populated). Suspect: the GPU ring path for shadow-backed layers in a 240-line view
+  (`port_ppu_gpu_3ds_model.c`, `build_bg_ring`), which these layers did not use in Full View
+  before. Options: find it in the ring, or draw BG1/BG3 through the native path centred (as the
+  file select does with `bgNativeMask`). Check the other four rooms too.
   *Done when:* the owner sees small and large interiors, the corridor and a dungeon at 400x240 on
   the console.
 
