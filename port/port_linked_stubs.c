@@ -1677,6 +1677,12 @@ static int Port_WidescreenFixedCanvasSubtask(void) {
     if (gMain.substate != GAMEMAIN_SUBTASK) {
         return 0;
     }
+    /* The new game's opening shot of Link's house (AuxCutscene 1, src/subtask/
+     * subtaskAuxCutscene.c: Hyrule Field room 1, a static camera on the open field) is
+     * the world drawn as in play, not a fixed picture: it takes the wide view too. */
+    if (gUI.lastState == SUBTASK_AUXCUTSCENE && gUI.field_0x3 == 1 && gUI.nextToLoad == 2) {
+        return 0;
+    }
     /* Pause/inventory replace the world with a fixed GBA canvas. State 3 is
      * still fixed while its fade is active; fail closed until gameplay is
      * visibly restored. */
