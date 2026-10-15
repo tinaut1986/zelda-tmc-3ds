@@ -14,7 +14,9 @@
  *   curl -T game.cia "ftp://IP:5000/3ds/Minish%20Cap%203DS/update/dev.cia" \
  *        -Q "-SITE INSTALL /3ds/Minish Cap 3DS/update/dev.cia"   (the "-": after the upload)
  * (./build_3ds.sh --install does both). The bottom screen says so meanwhile
- * (FtpServer_Notice): an install never happens without a warning.
+ * (FtpServer_Notice, with FtpServer_Progress: percent and bar of the upload, of the install, then a
+ * 10 s restart countdown; the upload's total is the size the client announced with ALLO before
+ * STOR): an install never happens without a warning.
  *
  * Its thread runs at a lower priority than the game and blocks on the
  * network, so it costs nothing while idle. */
@@ -45,3 +47,7 @@ void FtpServer_Stats(unsigned* sent, unsigned* received, bool* connected);
 /* While a .cia is being received or SITE INSTALL runs, the line to show the
  * player (the bottom screen's toast); NULL otherwise. */
 const char* FtpServer_Notice(void);
+/* How far along that is: 1 while a .cia arrives, 2 while it installs, 3 during the wait before
+ * the game restarts into it (10 s), 0 otherwise; `done` of `total` (bytes, or ms for 3). `total`
+ * is 0 when the client did not announce the size with ALLO (no percent, no bar). Any thread. */
+int FtpServer_Progress(unsigned long long* done, unsigned long long* total);

@@ -246,8 +246,9 @@ tools/tmc-link/tmc-link.py wait && tools/tmc-link/tmc-link.py run SCRIPT   # dri
   loop is: save a state once, then install, `wait`, `loadstate`, play the scenario, measure. Use it to reproduce and check on the console without
   the owner; say before driving the game while the owner is playing.
 
-- `--install` uploads to `/3ds/Minish Cap 3DS/update/dev.cia` and sends `SITE INSTALL`
-  after the transfer (`curl -Q "-SITE INSTALL <path>"`; the leading `-` means "after").
+- `--install` uploads to `/3ds/Minish Cap 3DS/update/dev.cia`, sends `ALLO <size>` before the
+  transfer (`curl -Q "+ALLO <size>"`; the bottom screen's progress bar needs the total) and
+  `SITE INSTALL` after it (`curl -Q "-SITE INSTALL <path>"`; the leading `-` means "after").
   The game refuses a CIA with another title ID, installs over itself
   (`cia_install_3ds.c`), replies `200` and relaunches into the new build 10 s later
   (`Platform3DS_RequestRelaunch`, libctru's chainloader; jumping at once crashed the system

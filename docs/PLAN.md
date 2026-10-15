@@ -28,7 +28,6 @@ their history is in `git log` and the decisions log. Open:
 
 | Branch | What | State |
 |---|---|---|
-| `feat/retroachievements` (cut from `release/v0.1.3`) | P2.8: the RetroAchievements tab (`docs/retroachievements.md`): rcheevos, `retro_ach.c` from `../sm-3ds`, RA memory map from `linker.ld`, top/bottom unlock notice, `http:C` in the RSF | builds (debug); tab seen in `tools/ui-preview` only; not run on the console (login, set, an unlock); pushed, for the owner to check and merge | _(merged into `release/v0.2.1` 2026-10-15; the 3dsx.ld pins went up 0x10000 for it)_ |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run

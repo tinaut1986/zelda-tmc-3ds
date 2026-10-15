@@ -296,13 +296,14 @@ def run_build(debug=True, send_ftp=False, ftp_host="", ftp_port=5000, clean=Fals
         steps.append(("Cleaning (build-3ds/game)", ["rm", "-rf", BUILD_DIR]))
     steps.append(("Building the CIA", ["bash", BUILD_SH]))
     if send_ftp and install:
-        # Upload, then "-SITE INSTALL" (the "-" sends it after the transfer): the game
-        # installs the CIA over itself and relaunches into it.
+        # "+ALLO <size>" (the "+" sends it before the transfer) gives the game the total for its
+        # progress bar; then the upload, then "-SITE INSTALL" (the "-" sends it after the
+        # transfer): the game installs the CIA over itself and relaunches into it.
         from urllib.parse import quote
         steps.append((f"Sending to {ftp_host}:{ftp_port} and installing in the running game",
                       ["curl", "--max-time", "300", "--ftp-create-dirs", "-T", cia,
                        f"ftp://{ftp_host}:{ftp_port}{quote(INSTALL_SD_PATH)}",
-                       "-Q", f"-SITE INSTALL {INSTALL_SD_PATH}"]))
+                       "-Q", f"+ALLO {os.path.getsize(cia)}", "-Q", f"-SITE INSTALL {INSTALL_SD_PATH}"]))
     elif send_ftp:
         steps.append((f"Sending to {ftp_host}:{ftp_port}",
                       ["curl", "--ftp-create-dirs", "-T", cia, f"ftp://{ftp_host}:{ftp_port}/cias/{remote_name}"]))

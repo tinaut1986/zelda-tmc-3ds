@@ -114,8 +114,11 @@ on with it.
 `./build_3ds.sh --install IP` builds, uploads to
 `/3ds/Minish Cap 3DS/update/dev.cia` and installs in one go; the interactive menu
 offers it as "Install into the running game". Any unsaved progress is lost. While a
-`.cia` is being received and while it installs, the bottom screen says so
-(`RECEIVING NEW BUILD...`, then `INSTALLING NEW BUILD - GAME WILL RESTART`) on any tab.
+`.cia` is being received, while it installs and during the 10 s wait before the restart, the bottom
+screen says so on any tab, with a percent and a bar: `RECEIVING NEW BUILD 42%`, `INSTALLING NEW BUILD
+80%`, `RESTARTING IN 7 S`. The upload's total comes from `ALLO <bytes>`, which the client sends before
+`STOR` (`--install` does: `curl -Q "+ALLO <size>"`, the `+` meaning "before the transfer"); without it
+the notice shows no percent and no bar (`RECEIVING NEW BUILD...`).
 Keep `debug/` small: a listing of it with over a thousand files (old dumps and GPU checks) hung the
 server; fetch known names (`tmc-dump-NNNN-vram.bin`, `tmc-check-last.txt`) instead of listing.
 
