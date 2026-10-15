@@ -4131,18 +4131,19 @@ void sub_08074F2C(PlayerEntity* this) {
 void sub_08074F44(PlayerEntity* this) {
     this->unk_68.BYTES.byte0++;
 #ifdef PC_PORT
-    /* The bubble may be gone by now (a room or area change, a new game, a loaded state erase
-     * the entities) and its slot reused: deleting whatever lives there crashed in zFree
-     * (Luma dump 14, 2026-10-15). Only the bubble itself is deleted. */
-    if (gSleepBubbleEntity) {
-        Entity* bubble = gSleepBubbleEntity;
-        if (bubble >= (Entity*)&gEntities[0] && bubble < (Entity*)&gEntities[MAX_ENTITIES] &&
-            bubble->next != NULL && bubble->kind == OBJECT && bubble->id == THOUGHT_BUBBLE &&
-            bubble->parent == &gPlayerEntity.base) {
+    /* The pointer in gSleepBubbleEntity cannot be trusted: a room or area change, a new game or
+     * a loaded state erase the entities and reuse their slots, and the pointer is a static that
+     * states do not carry. Deleting whatever it named crashed in zFree (Luma dump 14,
+     * 2026-10-15); not deleting left the bubble on Link's head. Delete the sleep bubbles
+     * attached to the player by looking for them. */
+    for (u32 i = 0; i < MAX_ENTITIES; i++) {
+        Entity* bubble = (Entity*)&gEntities[i];
+        if (bubble->next != NULL && bubble->kind == OBJECT && bubble->id == THOUGHT_BUBBLE &&
+            bubble->type2 == 2 && bubble->parent == &gPlayerEntity.base) {
             DeleteEntity(bubble);
         }
-        gSleepBubbleEntity = NULL;
     }
+    gSleepBubbleEntity = NULL;
 #else
     {
         typedef struct {
