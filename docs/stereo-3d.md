@@ -2,22 +2,18 @@
 
 The game stays a flat GBA picture. In 3D the port moves chosen layers apart for each eye, so what
 lies over the playfield (fog, the leaves over the Minish village) can sit in front of the screen.
-It is off unless asked for (owner, 2026-10-14): which layers get a depth, and where, is the owner's
-call, scene by scene. In ON the HUD and the text boxes sit in front (owner, 2026-10-14).
+It is always on (owner, 2026-10-15): the player lowers the console's 3D slider to get the flat
+picture. Which layers get a depth, and where, is the owner's call, scene by scene. The HUD and the
+text boxes sit in front (owner, 2026-10-14).
 
 ## When it is on
 
-`stereo_3d` in `tmc3ds.ini` (debug builds: DEBUG -> SWITCHES -> STEREO 3D):
-
-| Value | What |
-|---|---|
-| 0 OFF | 2D, as always (the default) |
-| 1 ON | 3D with the depths of `kDepth` (`stereo_3ds.c`): BG0 at priority 0 (HUD, text boxes) and the priority-0 sprites (the HUD's buttons) 6 px in front; Link and the world on the screen plane |
-| 2 TEST | 3D with `kTestDepth`: BGs at priority 0 and the sprites pop out, to see that both eyes work |
-
-3D is on only while the slider is up (`osGet3DSliderState() > 0`); a 2DS always reads 0 and stays
-2D. Changes of the setting or of 3D on/off are written to the SD log (`stereo: setting N, slider
-S, 3D on|2D`).
+3D is on while the slider is up (`osGet3DSliderState() > 0`); a 2DS always reads 0 and stays 2D.
+`stereo_3d_on` in `tmc3ds.ini` (1 by default; debug builds: DEBUG -> SWITCHES -> STEREO 3D, ON/OFF)
+turns it off for good. The depths are `kDepth` in `stereo_3ds.c`: BG0 at priority 0 (HUD, text
+boxes) and the priority-0 sprites (the HUD's buttons) 6 px in front; Link and the world on the
+screen plane. Changes of the setting or of 3D on/off are written to the SD log (`stereo: setting N,
+slider S, 3D on|2D`).
 
 ## How it works
 

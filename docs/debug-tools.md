@@ -64,7 +64,7 @@ blue: changed). None needs a restart.
 | AUDIO CORE | `audio_core` | AUTO / CORE 0 / CORE 1 | where the audio refill thread runs; it is recreated at once (the queued buffers cover the gap) |
 | COMPACT UP | `compact_upload` | ON / OFF | smaller upload surfaces, Old 3DS only; taken at the start of the next frame |
 | CPU LIMIT | `app_cpu_limit` | AUTO / 80 / 70 / 50 / 30 % | the app's share of core 1 (the rest goes to GSP and the sysmodules); the cell shows the share granted |
-| STEREO 3D | `stereo_3d` | OFF / ON / TEST | stereoscopic 3D on the top screen while the slider is up; TEST gives the front layers a depth to see it work (`docs/stereo-3d.md`) |
+| STEREO 3D | `stereo_3d_on` | OFF / ON | stereoscopic 3D on the top screen while the slider is up; ON by default (`docs/stereo-3d.md`) |
 
 `bottom_rgb565` is not offered: upstream's own note says it turns the bottom
 screen red. Upstream's comments on each are in `platform/3ds/source/port_config_3ds.c`.
