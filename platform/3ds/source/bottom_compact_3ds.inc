@@ -511,11 +511,8 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
     CSettingCell(s, tl, 1, 1, 1, "VOLUME", SS_SET_VOLUME);
     CSettingCell(s, tl, 1, 2, 1, "AUTOSAVE", SS_SET_AUTOSAVE);
     CSettingCell(s, tl, 1, 3, 1, "HOLD TEXT", SS_SET_HOLD_ADVANCE);
-    /* Map panel and colours */
-    CSettingCell(s, tl, 2, 0, 1, "MAP FOLLOW", SS_SET_FOLLOW);
-    CSettingCell(s, tl, 2, 1, 1, "CREST PINS", SS_SET_CRESTS);
-    CSettingCell(s, tl, 2, 2, 1, "FLOOR BACK", SS_SET_FLOOR_RETURN);
-    CSettingCell(s, tl, 2, 3, 1, "COLOURS", SS_SET_COLOR_CORRECTION);
+    /* Colours (the map's switches, MAP FOLLOW, CREST PINS and FLOOR BACK, are chips on the map) */
+    CSettingCell(s, tl, 2, 0, 1, "COLOURS", SS_SET_COLOR_CORRECTION);
     /* Look and system */
     {
         int32_t x, w;
@@ -1285,6 +1282,20 @@ static void Compact_MapChip(const SSurf* s, const char* label, float cx, float c
     out[3] = (float)(y + h);
 }
 
+/* A small on/off toggle on the map (MAP FOLLOW, CREST PINS, FLOOR BACK moved here from OPTIONS):
+ * lit when on, dim when off. `x` is its left edge, or its right edge when `right`. */
+static void Compact_MapToggleChip(const SSurf* s, const char* label, bool on, float x, float yBottom, bool right,
+                                  float* out) {
+    const int32_t w = CTextWidth(label) + 10, h = 15;
+    const int32_t px = right ? (int32_t)x - w : (int32_t)x, y = (int32_t)yBottom - h;
+    CBox(s, px, y, w, h, on ? CC_TAB_ON : CC_BTN, on ? CC_TAB_ON_EDGE : CC_BTN_EDGE);
+    CTextCentered(s, px + w / 2, y + (h - kUiGlyphH) / 2, on ? CC_TAB_ON_TEXT : CC_DIM, label);
+    out[0] = (float)px;
+    out[1] = (float)y;
+    out[2] = (float)(px + w);
+    out[3] = (float)(y + h);
+}
+
 /* The box around the whole world map: the map is drawn over its inside. */
 static void Compact_MapFrame(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h) {
     CBox(s, x, y, w, h, CC_CELL, CC_CELL_EDGE);
@@ -1608,6 +1619,10 @@ static void Compact_PaintDungeonView(const SSurf* s, const SecondScreenSnapshot*
                                               snap->playerX, snap->playerY, tick)) {
             PaintSchematic(s, snap, mx0c, top, (int32_t)rx1, (int32_t)ry1, tick, 1);
         }
+        /* FLOOR BACK (moved here from OPTIONS): the preview returns to Link's floor by itself. */
+        float chip[4];
+        Compact_MapToggleChip(s, "FLOOR BACK", Port_Config_GetSecondScreenFloorReturn() != 0, rx1 - 4, ry1 - 4, true, chip);
+        AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_SETTING, (uint8_t)SS_SET_FLOOR_RETURN);
     }
 }
 
