@@ -7,10 +7,10 @@ touching it opens the existing Minish Cap Settings hierarchy.
 
 ## Console Installation
 
-Install the universal CIA:
+Install the CIA from the latest release (or `build-3ds/game/tmc-3ds-v<VERSION>.cia`):
 
 ```text
-tmc-3ds-v1.3-E3.cia
+tmc-3ds-v<VERSION>.cia
 ```
 
 Then create this directory on the SD card:
@@ -53,11 +53,11 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
 - Top screen: selectable Wide, Original, and Stretch aspect ratios.
 - Display styles, in menu order: linearly filtered Blur, 2x sharp Bilinear,
   and centered one-pixel-per-source-pixel Pixel Perfect. Fresh installations
-  start with Bilinear and Stretch; valid saved choices are restored on later
+  start with Bilinear and Wide; valid saved choices are restored on later
   launches.
-- Experimental Full View: on New 3DS and Old 3DS/2DS, selecting Wide + Pixel Perfect renders
-  compatible outdoor rooms at 400x240; interiors keep the 1x Wide view (no
-  zoom). Dialogues keep the 400x240 view (the text box is centred); room-name
+- Full View: on New 3DS and Old 3DS/2DS, selecting Wide + Pixel Perfect renders
+  every room at 400x240; a room smaller than that is centred with black borders and
+  interiors keep the 1x pixel size (no zoom). Dialogues keep the 400x240 view (the text box is centred); room-name
   banners, transitions and unsupported
   effects fall back safely to the established presentation.
 - Scenes the GBA drew as one fixed 240x160 picture are extended in Full View with generated
@@ -68,7 +68,8 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
   (`portal-cutscene-strips.bin`, `title-forest.bin`, from `tools/scene-extend/to_console.py`)
   replaces the shipped one.
 - Bottom screen: 320x240 map, dungeon/status information and touch item UI.
-- Rendering: PICA200/Citro2D presenter fed by the software GBA PPU.
+- Rendering: the GPU renderer (PICA200, Citro3D) draws every layer; the software GBA PPU
+  stays as the reference for GPU CHECK and as the fallback.
 - Performance profile: selected automatically from the detected console model.
 - New 3DS: requests 804 MHz, L2 cache and access to the extra application core.
 - New 3DS turbo: hold the C-stick in any direction and select 2x through 5x
@@ -80,21 +81,16 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
 - Bottom-screen scheduling: touch state is sampled on every engine tick;
   interactive hitboxes are promoted with the physically visible buffer, and
   unchanged static pages avoid redundant paint/upload work.
-- Settings: Minish Cap-themed Screen, Gameplay, and Developer submenus with
-  persistent options, a manual memory-dump command, and a live diagnostics
-  overlay.
-- Randomizer: reserved Settings entry showing an unavailable notice.
+- Bottom screen: a bar of icon tabs (map, items, quest, save states, achievements, options and,
+  in debug builds, the bug icon for DEBUG). OPTIONS holds the display, turbo, theme, tab
+  position and UPDATES channel.
 - Show FPS: a compact lower-left top-screen box of four lines, averaged over
   the last second: the game's rate (green from 59, yellow from 50, red below),
   `L` the logic's ms per tick, `G` the GPU's ms per presented frame and `S` the
   rate frames reach the screen.
-- Diagnostics: press `L + R + A` to pause the game, display `DUMP SAVED`, and
-  create `dumps/dump-*` with top and bottom physical-framebuffer BMP and raw
-  captures, EWRAM, IWRAM, VRAM, palettes, OAM, I/O and game state, frame
-  visual and engine cadence, adaptive-skip data, per-core PPU timings, GPU
-  work, audio buffer health, save
-  persistence state, memory availability, lifecycle state and complete input
-  data.
+- Diagnostics (debug builds): the DEBUG tab's SCREEN DUMP writes numbered `debug/tmc-dump-*`
+  files (top and bottom screenshots, memories, state, performance data); there is no button
+  chord. See `docs/debug-tools.md`.
 - System lifecycle: HOME, sleep and application close events are handled by the
   regular 3DS applet loop.
 - Boot: the top screen shows the logo (`romfs/splash.rgb565`, 400x240, the
@@ -113,12 +109,13 @@ ROM and save data.
 - CMake with the devkitPro Nintendo 3DS toolchain
 - `makerom` and `bannertool` for CIA packaging
 
-Run:
+Run `./build_3ds.sh` from the repository root (see the README's Building section), or the
+bare build:
 
 ```sh
 chmod +x platform/3ds/build.sh
-platform/3ds/build.sh
+TMC3DS_DEBUG_TOOLS=1 platform/3ds/build.sh   # 0 for a production build
 ```
 
-The universal packages are written under `build-3ds/game/`. No ROM, extracted
-asset package or save data is included in either package.
+The CIA (and a `.3dsx` for local use) is written under `build-3ds/game/`. No ROM, extracted
+asset package or save data is included.
