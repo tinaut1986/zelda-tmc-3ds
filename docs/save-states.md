@@ -119,3 +119,13 @@ same: a rule for new states and a repair here for the old ones.
   nobody listed shows as a crash on load into a different build. Run the census on a state of
   each new kind of room.
 - Format 1 states are not converted.
+
+## A state from a build with another memory layout (open, issue #31)
+
+A state is the game's memory with absolute pointers. If the globals sit elsewhere in the build
+that loads it (any change to a global or a static in the game's code moves them: `gEntities`
+moved 8 bytes between dev.42.1 and dev.45.x), the entity lists point off and the game crashes when
+it deletes the entities (leaving a room). States also do not carry the port's own tables (an
+entity's script context, `Port_GetEntityScriptCtx`) or statics (`gSleepBubbleEntity` in
+`src/player.c`). Until a layout fingerprint refuses such a state: test with states saved in the
+same build, and treat the build string shown in the STATES tab as the guard.

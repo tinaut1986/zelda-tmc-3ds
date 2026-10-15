@@ -24,59 +24,85 @@ merged into `main`), `v0.1.2` (2026-10-13, beta), `v0.1.1` (2026-10-12, stable) 
 (2026-10-11, beta).
 
 **Branches:** every branch merged into `release/v0.3.0` was deleted, here and on origin (2026-10-14);
-their history is in `git log` and the decisions log (2026-10-15: `feat/retroachievements` and
-`feat/ftp-install-progress` too, here; the remote `feat/retroachievements` still exists on origin,
-a delete was refused in the session: `git push origin --delete feat/retroachievements`). Open:
-none.
+their history is in `git log` and the decisions log (2026-10-15: `fix/fullview-scroll-interiors`,
+`fix/intro-cutscene-wide`, `fix/updater-channels-and-notes`, `feat/retroachievements` and
+`feat/ftp-install-progress` too; the remote `feat/retroachievements` still exists on origin, a
+delete was refused in the session: `git push origin --delete feat/retroachievements`). Open, all
+pushed to origin and cut from `release/v0.3.0` at `3c5a608`:
 
 | Branch | What | State |
 |---|---|---|
+| `fix/sleep-bubble-stale` | wake-up in the bedroom deletes the player's sleep bubbles by scanning the entity pool, not through the static `gSleepBubbleEntity` (Luma dump 14); 2 commits, the first one superseded by the second | in the test build 0.3.0-dev.45.7 on the 2DS; owner's check pending (the bubble went away in dev.45.5, the owner said "todo bien") |
+| `fix/script-ctx-null` | `DestroyScriptExecutionContext(NULL)` returns (Luma dump 15) | in dev.45.7; owner's check pending; a guard, not the cause (#31) |
+| `feat/map-toggle-chips` | MAP FOLLOW and CREST PINS as chips on the overworld map, FLOOR BACK on the dungeon map, out of OPTIONS (owner's request, 2026-10-15) | in dev.45.7; the owner has not reported on the chips yet |
+
+`test/crash-fix-and-map-chips` (local only) merges the three; it is where dev.45.x was built, not to be
+merged: merge the three topic branches above one by one.
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
 `tools/state-census` on a state of each; a holder nobody listed crashes on load into a different
 build, as the house door did: issue #14). A state saved inside the pause menu breaks on closing
-it (issue #13).
+it (issue #13). **A state made by a build whose globals sit elsewhere corrupts the game** (three
+Luma dumps on 2026-10-15: issue #31): until states refuse a different layout, test with states
+saved in the same build.
 
-**Start here (2026-10-15):** `release/v0.3.0` (on origin) has everything: RetroAchievements
-(P2.8), stereo 3D always on, the FTP install notice (percent + bar for receiving, installing and the
-10 s restart countdown; checked by the owner on the 2DS). No branch is open, no worktree, nothing
-uncommitted. `v0.3.0` is not tagged yet: the notes are in `docs/release-notes/v0.3.0.md`; the plan is a beta first (tag on the release branch, installed through the updater with BETAS on, a production build run on the consoles), then promote it to stable by re-running the workflow on the tag. Next:
-1. **RetroAchievements** works for both ROMs: USA by its own hash, the clean European one by
-   reporting the backport edition's (`docs/retroachievements.md`, "Which ROM"). Checked on the
-   2DS with the test account `tinaut1986test`: the set loads (66 achievements) and "A New Quest" and
-   "Where's the Boom?" unlocked in play; the real account and the USA ROM are not tried. Still to
-   see: more achievements as the owner plays (a condition on region data may differ), the unlock
-   sound, the RA site, and issue #28 ("Offense").
-2. Whatever the owner reports: they go through the game for screens still drawn at 240x160, and
-   say which more layers get a depth in 3D (fog, the Minish village's leaves; P5.1). Issue #26:
-   Hyrule Town in Full View not seen yet (same fix).
-3. The README's before/after GIF of the portal shrink (owner's request): record it with the scene
-   recorder (`tmc-link.py scenerec`, P1.6) once VISTA = ORIGINAL and once Full View; then rewrite
-   the README (performance, Full View, bottom screen, states, updater) with the GIFs (2026-10-13).
-4. Issue #25 (GPU fade: one-step flicker of the near-white during the logos' fade), when it suits.
-5. Issue #4: the relaunch fix is merged; a few more installs without a loader dump, then close
-   (the FTP install notice now also shows the 10 s wait). Issue #23: resets from the title look
-   right in recordings; a reset from inside a game is still to see.
-6. Issue #19 (states break when the port's statics grow), #13, #11 as before.
+**Start here (2026-10-15, end of the session):** `release/v0.3.0` (on origin, `3c5a608`) has the
+whole of v0.3.0 (RetroAchievements, stereo 3D, Full View in every room and its border scrolls
+including interiors and rooms narrower than the view, FTP install progress, EU backport text in
+the player's language, the updater reading the release list, the new-game opening shot in wide).
+`v0.3.0` is **not tagged**: the notes are in `docs/release-notes/v0.3.0.md` (add a line for the
+crash fixes and the map chips if they merge); the plan is a beta first (tag on the release branch,
+installed through the updater with BETAS on, a production build run on both consoles), then
+promote it to stable by re-running the workflow on the tag. Nothing uncommitted; three topic
+branches wait (table above). Next, in this order:
+1. **Owner's check, then merge** `fix/sleep-bubble-stale`, `fix/script-ctx-null` and
+   `feat/map-toggle-chips` into `release/v0.3.0` one by one (`--no-ff`, push). The owner's last
+   run (dev.45.7) crashed again, Luma dump 16, which is a corrupt entity list from a state made by
+   an older build (#31), not from these fixes; confirm by testing without old states.
+2. **#31** states and memory layout: a layout fingerprint in the state header and refuse a
+   different one with a notice; consider keeping the entity's script context inside the entity.
+   Before the beta, if the owner keeps using old states.
+3. **#30** the right edge of the top screen breaks on room changes and while rolling (2DS): the
+   owner asked for the dev.18 test first (install `0.2.1-dev.18+4e25311` with default settings,
+   the same room change: castle 80/02 <-> 80/01), then `gpucheck` loops during scrolls, then a
+   targeted SYNCDRAW on frames that rewrite slices. The scene recorder (FRAMES = "sin saltos")
+   shows clean frames, so look at the GPU stage. Not a blocker for a beta unless it is a regression.
+4. **The beta**: the owner's order is merges first, then the dev.18 test, then a production build
+   (`./build_3ds.sh --mode prod --no-ftp`) on the 2DS and the New 3DS, then the tag.
+5. **RetroAchievements** works for both ROMs (`docs/retroachievements.md`, "Which ROM"): the
+   owner heard the unlock sound (it is the one from `../mzm`). Still to see: the real account
+   (the console has `tinaut1986test`), the USA ROM, more achievements as the owner plays (#28
+   "Offense"), the RA site. Asking RA to add the European hash is the owner's call.
+6. Smaller: the README's before/after GIF of the portal shrink (scene recorder, P1.6); #25 GPU
+   fade flicker; #4 relaunch (a few more installs without a loader dump, then close); #23 reset
+   from inside a game; #26 Hyrule Town in Full View; the owner's walk for screens still drawn at
+   240x160 and which layers get depth in 3D (P5.1; a 2DS has no 3D slider, so a New 3DS only).
+7. Optional hardening of the sibling updaters (`../mzm`, `../sm-3ds`): both already fixed the two
+   bugs of ours (stable with + BETAS, notes of every release in between); remaining gaps from the
+   2026-10-15 audit: they take the first release in list order, not the highest version
+   (`Updater_PickRelease`), `per_page=8`, no digest check.
 Scene pictures (portal, title, file select): procedure in `docs/wide-scene-extension.md`; the owner's material
 in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/intro-titulo/` and `~/Imágenes/elige-archivo/`
 (never in the repository).
 To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
-**On the owner's consoles now (2026-10-14):**
-- Old 3DS/2DS, **`192.168.1.139`** (the owner calls it "the 2DS"; `.3ds_ftp_ip` holds it): a debug
-  build of the release line before the rename (`0.2.1-dev.34+8570754`, 2026-10-15), Full View
-  (`widescreen=1`, `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT,
-  FRAMES = AUTO, UPDATES channel + BETAS. **RetroAchievements is logged in as the test account
-  `tinaut1986test`** (the owner's test account; log in with the real one before playing for
-  real). The data folder has no test ROM and `rom_md5` is the true `2af78edb...`. The owner's save was in the Smith's
-  house at the start of the game (2026-10-15). **`dev-ftp.txt` is there**. Its save states: the
-  newest (1) is Claude's, saved just before the last install; never overwrite or delete the
-  owner's (protect their place with a *new* state: `savestate`, then `loadstate 1` and
-  `delstate 1` after the install; of the 14 on 2026-10-13, 3 = 00/00 on the Minish Woods stump
-  (#21, P4.3), 5 = 03/04 below the scroll up (#11)). Loading a state switches the bottom screen
-  to MAP: tap another tab after it, not before.
+**On the owner's consoles now (2026-10-15):**
+- Old 3DS/2DS, **`192.168.1.139`** (the owner calls it "the 2DS"; `.3ds_ftp_ip` holds it): the
+  test build `0.3.0-dev.45.7+537b5fa` of `test/crash-fix-and-map-chips` (the three open topic
+  branches together), debug, Full View (`widescreen=1`, `screen_aspect=wide`,
+  `display_style=pixel-perfect`), theme PARCHMENT, **FRAMES = "sin saltos" (the owner set it)**,
+  STEREO 3D ON (default; no effect on a 2DS), VBLANK LOCK OFF, FRAME SYNC OFF, COLOURS as the
+  owner left it (`color_correction=1`), UPDATES channel + BETAS. **RetroAchievements is logged in
+  as the test account `tinaut1986test`** (log in with the real one before playing for real); the
+  data folder has no test ROM and `rom_md5` is the true `2af78edb...`; the owner's ROM is in the
+  upstream app's folder. **`dev-ftp.txt` is there**. Save states: about 25, numbered by recency
+  (`tmc-link.py states`); Claude saved some as "new state" before installs; **never overwrite or
+  delete the owner's**; most were made by dev.42 or older, so loading them in dev.45.x can corrupt
+  memory (#31). `tmc-link.py loadstate N` numbering did not always match the listing during the
+  session: confirm the scene with `state` and a `shot` after loading. Loading a state switches
+  the bottom screen to MAP: tap another tab after it, not before. The recorder (`rec`) must not
+  be left armed: on the Old 3DS it drops the game to ~20 fps.
 - **`192.168.1.141`** (pass `--ip`): **the 2DS** (owner, 2026-10-14; its log says Old 3DS, which a 2DS
   is to the system: no 3D slider). The owner's console for the title and file select work: a debug
   build of `fix/zone-tilesets` (`0.2.1-dev.0+42f5761`, the village fix only) with **STEREO 3D =
@@ -88,8 +114,9 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
   The owner's game is in Hyrule Castle (area 0x80); its state 1 is Claude's, the owner's place before
   the last install.
   `debug/` holds checks up to `tmc-check-0198` and perf CSVs up to `tmc-perf-0039`.
-- The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP); 8 is
-  the newest on the 2DS (#4, before the relaunch fix).
+- The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP); 16 is
+  the newest on the 2DS (2026-10-15, #31). How to read one: `docs/debug-tools.md`, "Reading a Luma
+  crash dump".
 
 **Older notes (2026-10-12), still open:** check `perf/full-view-old3ds`-era Wide (266x160,
 interiors and map edges) and other areas (Deepwood, Mt. Crenel) on the 2DS; per-frame cost left
@@ -843,3 +870,29 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   down and up: every frame 400x240. The incoming room may now be smaller than the view too
   (Hyrule Castle's room 80/02 is ~270 wide): the scroll lines up on, and ends at, the centred
   position (black borders), instead of falling back to 266x160 (owner's report, 2026-10-15).
+- **2026-10-15** The new game's opening shot (AuxCutscene 1: Hyrule Field room 1 with Link's house,
+  `sCutsceneData[1]`) takes the wide view. The port treated every active subtask as a fixed 240x160
+  canvas (`Port_WidescreenFixedCanvasSubtask`); this one draws the world as in play, so it is
+  exempted in its update phase (`gUI.lastState == SUBTASK_AUXCUTSCENE`, `field_0x3 == 1`,
+  `nextToLoad == 2`). The other aux cutscenes (Ezlo, castle) are fixed pictures and stay fixed.
+  The entry and exit fades of that subtask are still a fixed canvas: the view steps at both ends.
+- **2026-10-15** The updater reads `/releases?per_page=100` for both channels
+  (`Update_ParseReleases`): + BETAS offers the newest of betas and stable releases (a pre-release
+  compared as `X.Y.Z-beta`), STABLE the newest stable one, and the notes join those of every
+  release of the channel newer than the installed build, newest first; an unusable old release in
+  the list is skipped. The sibling ports already did both (audit, see Start here).
+- **2026-10-15** Map switches moved out of OPTIONS onto the map (owner's request): MAP FOLLOW and
+  CREST PINS are small chips in the bottom corners of the overworld map, FLOOR BACK a chip in the
+  dungeon map; lit when on. Same `SS_SET_*` settings and handlers. Branch `feat/map-toggle-chips`.
+- **2026-10-15** The right-edge glitch (#30) was investigated and not found in the displayed
+  framebuffer: the scene recorder reads it through `GSPGPU_ImportDisplayCaptureInfo`, so a tearing
+  at presentation (a frame swapped mid-scanout) is invisible to it, as is anything that is only
+  on the LCD. VBLANK LOCK (phase-locked presentation) did not change it; stereo does not apply to
+  a 2DS. Left: a CPU/GPU race on the retained map slices (FRAME SYNC helps partly) or a regression
+  since dev.18. The recorder also reports colour: the owner's COLOURS toggle mid-recording changed
+  the palette between frames, which looked like a glitch.
+- **2026-10-15** Lesson: three Luma dumps in one evening (14, 15, 16) were one cause seen three
+  ways: states restored in builds whose globals had moved or whose port-side tables are not part of
+  a state. Test with states made in the build under test; do not load older ones. Symbolising a
+  dump needs the ELF of the *installed* commit, not the working tree's (rebuild that commit:
+  `git checkout --detach <commit>`, build, `arm-none-eabi-addr2line`).
