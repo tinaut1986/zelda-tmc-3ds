@@ -31,8 +31,11 @@ the achievements' conditions, nothing of the account).
 
 ## Which ROM
 
-RA's set for the game (id 559) lists only the **USA** ROM (md5 `a104896da0047abe8bee2a6e3f4c7290`,
-No-Intro) and a few hacks of it. The port runs the USA and the European ROM, but with the European
+RA's set for the game (id 559) supports the **USA** ROM (md5 `a104896da0047abe8bee2a6e3f4c7290`,
+No-Intro) and hacks of it, among them "European Backport Edition" (`626a6f11...`, Prof9's patch,
+whose three fixes the port has natively: `eu-backport.md`). The clean European ROM
+(`2af78edb...`) is listed as "needs a patch to be compatible"; the Japanese ROM and the USA kiosk
+demo are confirmed incompatible. The port runs the USA and the European ROM, but with the European
 one the server answers "Unsupported Game Version" (game `1200000559`, one achievement) and no set
 loads: the port sends the file's true md5, so nothing is wrong on this side. The data variables
 the set reads have the same addresses in both regions (`linker.ld`), so the mapping is expected to
