@@ -4131,8 +4131,16 @@ void sub_08074F2C(PlayerEntity* this) {
 void sub_08074F44(PlayerEntity* this) {
     this->unk_68.BYTES.byte0++;
 #ifdef PC_PORT
+    /* The bubble may be gone by now (a room or area change, a new game, a loaded state erase
+     * the entities) and its slot reused: deleting whatever lives there crashed in zFree
+     * (Luma dump 14, 2026-10-15). Only the bubble itself is deleted. */
     if (gSleepBubbleEntity) {
-        DeleteEntity(gSleepBubbleEntity);
+        Entity* bubble = gSleepBubbleEntity;
+        if (bubble >= (Entity*)&gEntities[0] && bubble < (Entity*)&gEntities[MAX_ENTITIES] &&
+            bubble->next != NULL && bubble->kind == OBJECT && bubble->id == THOUGHT_BUBBLE &&
+            bubble->parent == &gPlayerEntity.base) {
+            DeleteEntity(bubble);
+        }
         gSleepBubbleEntity = NULL;
     }
 #else
