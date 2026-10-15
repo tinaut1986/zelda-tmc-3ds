@@ -28,7 +28,7 @@ their history is in `git log` and the decisions log. Open:
 
 | Branch | What | State |
 |---|---|---|
-| `feat/retroachievements` (cut from `release/v0.1.3`) | P2.8: the RetroAchievements tab (`docs/retroachievements.md`): rcheevos, `retro_ach.c` from `../sm-3ds`, RA memory map from `linker.ld`, top/bottom unlock notice, `http:C` in the RSF | builds (debug); tab seen in `tools/ui-preview` only; not run on the console (login, set, an unlock); pushed, for the owner to check and merge |
+| `feat/retroachievements` (cut from `release/v0.1.3`) | P2.8: the RetroAchievements tab (`docs/retroachievements.md`): rcheevos, `retro_ach.c` from `../sm-3ds`, RA memory map from `linker.ld`, top/bottom unlock notice, `http:C` in the RSF | builds (debug); tab seen in `tools/ui-preview` only; not run on the console (login, set, an unlock); pushed, for the owner to check and merge | _(merged into `release/v0.2.1` 2026-10-15; the 3dsx.ld pins went up 0x10000 for it)_ |
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
@@ -790,3 +790,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   the GBA layout. The ROM is hashed from the file (the port patches `gRomData`). rcheevos and
   `retro_ach.c` are built `-Os` to stay under the pinned read-only segment instead of raising the
   pin, which would refuse every older save state.
+- **2026-10-15** Stereo 3D is always on (owner): only the console's 3D slider turns it off, so
+  the TEST mode is gone and `stereo_3d_on` (default 1) is the one switch (an older `stereo_3d=0`
+  in `tmc3ds.ini` was the former default, not a choice, hence the new key). `3dsx.ld` pins
+  moved up 0x10000 (.data 0x630000, .bss 0x640000) for rcheevos: format 1 save states of older
+  builds no longer load; format 2 is unaffected.
