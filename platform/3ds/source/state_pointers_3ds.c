@@ -48,6 +48,14 @@ static const char* const kInnerTargets[] = {
     "gScriptExecutionContextArray", /* every entity's scriptContext field points into it */
 };
 
+/* Arrays of entity slots: a word that is exactly the start of one of their slots is a pointer
+ * in any holder (a static kept by an entity's code, a manager's field, a table), so that
+ * the one that was not listed does not keep a stale address. A holder is never trusted for
+ * the middle of a slot. */
+static const char* const kSlotTargets[] = {
+    "gEntities", "gAuxPlayerEntities",
+};
+
 /* Globals too big to scan whose first word is a pointer (the map layers' BG settings). */
 static const char* const kHeadOnly[] = {
     "gMapBottom", "gMapTop",
@@ -122,7 +130,9 @@ int StatePointers_Collect(StateReloc** out) {
             uint32_t off = 0;
             const StateVar* t = hash ? NULL : StateVars_Containing(value, &off);
             if (!hash && t) {
-                bool allowed = off == 0 || inner || InList(kInnerTargets, sizeof(kInnerTargets) / sizeof(kInnerTargets[0]), t->name);
+                bool allowed = off == 0 || inner || InList(kInnerTargets, sizeof(kInnerTargets) / sizeof(kInnerTargets[0]), t->name) ||
+                               (off % ENTITY_SIZE == 0 &&
+                                InList(kSlotTargets, sizeof(kSlotTargets) / sizeof(kSlotTargets[0]), t->name));
                 if (entities && !allowed) {
                     const uint32_t slot = wordOff % ENTITY_SIZE;
                     allowed = EntityLinkOffset(slot) || (slot >= 0x68 && IsEntityArray(t->name) &&
