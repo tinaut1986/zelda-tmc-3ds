@@ -208,6 +208,15 @@ ScriptExecutionContext* CreateScriptExecutionContext(void) {
 }
 
 void DestroyScriptExecutionContext(ScriptExecutionContext* context) {
+#ifdef PC_PORT
+    /* An entity can carry ENT_SCRIPTED with no context: the port keeps the entity's context in a
+     * side table that save states do not carry, so a state loaded mid-cutscene leaves the flag
+     * and loses the context. Clearing NULL crashed leaving Link's room (Luma dump 15,
+     * 2026-10-15). */
+    if (context == NULL) {
+        return;
+    }
+#endif
     MemClear(context, sizeof(ScriptExecutionContext));
 }
 
