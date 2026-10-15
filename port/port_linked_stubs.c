@@ -2445,6 +2445,17 @@ static void Port_WidescreenParallaxShadows(int fullView) {
          * the owner's border pictures go): the room's own picture, the 240 columns the game
          * shows at its native scroll, is placed at view columns shift..shift+roomCols-1 and
          * the parallax layers draw nothing outside it. The game's scroll is left as it is. */
+        /* The vertical corridors point the layer at a window of 32 rows of a taller map and
+         * scroll it by yOffset & 0x3f. The GBA's 160 lines never reach past that window; the
+         * view's 240 lines do, and the hardware would wrap to the window's first rows. Those
+         * rows belong to the map rows that follow the window, so the slots above the first
+         * displayed one are read from there (the displayed rows are fewer than 32, so no slot
+         * serves both ends). */
+        int wrapRows = 0, srcLimit = 0;
+        if (cols == 32) {
+            wrapRows = (settings->yOffset & 0xff) >> 3;
+            srcLimit = (layer ? 0x2000 : 0x1000) - (int)(((uintptr_t)src - (uintptr_t)gMapDataTopSpecial) >> 1);
+        }
         int shift = 0, firstCol = 0, endCol = shadowCols;
         if (fullView && (int)gRoomControls.width < 400) {
             shift = (400 - (int)gRoomControls.width) / 16;
@@ -2460,7 +2471,10 @@ static void Port_WidescreenParallaxShadows(int fullView) {
                 int x = start + base + col - shift;
                 if (cols == 32)
                     x &= 31;
-                sWsParallax[layer][row * shadowCols + col] = x < cols ? src[row * cols + x] : 0;
+                int srcIdx = row * cols + x;
+                if (row < wrapRows && srcIdx + 32 * cols < srcLimit)
+                    srcIdx += 32 * cols;
+                sWsParallax[layer][row * shadowCols + col] = x < cols ? src[srcIdx] : 0;
             }
         }
         virtuappu_mode1_ws_shadow[bg] = sWsParallax[layer];
