@@ -14,6 +14,15 @@ static json_t *make(const char *tag, bool pre, bool homebrew) {
 static int parse(json_t *r,bool pre,bool hb,UpdateRelease *out) {
  char *s=json_dumps(r,JSON_COMPACT);int result=Update_ParseRelease(s,strlen(s),pre,hb,out);free(s);return result;
 }
+static json_t *make_notes(const char *tag, bool pre, const char *notes) {
+  json_t *r = make(tag, pre, false);
+  char body[256]; snprintf(body, sizeof(body), "intro\n<!-- tmc-notes -->\n%s\n<!-- /tmc-notes -->\nfooter", notes);
+  json_object_set_new(r, "body", json_string(body));
+  return r;
+}
+static int parse_list(json_t *r, bool betas, const char *installed, UpdateRelease *out) {
+  char *s = json_dumps(r, JSON_COMPACT); int result = Update_ParseReleases(s, strlen(s), betas, false, installed, out); free(s); return result;
+}
 int main(int argc,char **argv) {
  assert(Update_IsNewer("v3.1","3.1-E1"));assert(Update_IsNewer("v3.1-E10","3.1-E9"));
  assert(Update_IsNewer("v3.10","3.9"));assert(!Update_IsNewer("v3.1-E99","3.1"));
@@ -51,6 +60,39 @@ int main(int argc,char **argv) {
  json_array_append_new(r,make("v3.2-E2",true,false));json_array_append_new(r,make("v3.2-E10",true,false));
  json_array_append_new(r,make("v3.3",false,false));assert(parse(r,true,false,&out)==1&&!strcmp(out.version,"v3.2-E10"));json_decref(r);
  r=make("v3.1",false,true);assert(parse(r,false,true,&out)==1);json_decref(r);
+ {
+   // The list endpoint: channels, the newest of betas and stable, and the notes in between.
+   json_t *l=json_array();
+   json_array_append_new(l,make_notes("v0.3.0",false,"- stable three"));
+   json_array_append_new(l,make_notes("v0.2.1",true,"- beta two one"));
+   json_array_append_new(l,make_notes("v0.2.0",false,"- stable two"));
+   json_array_append_new(l,make_notes("v0.1.2",true,"- beta one two"));
+   json_array_append_new(l,make_notes("v0.1.1",false,"- stable one one"));
+   // BETAS on sees the stable release too (the newest of both), STABLE ignores the betas.
+   assert(parse_list(l,true,"0.2.0",&out)==1&&!strcmp(out.version,"v0.3.0")&&!out.prerelease);
+   assert(parse_list(l,false,"0.1.1",&out)==1&&!strcmp(out.version,"v0.3.0"));
+   // A pre-release newer than every stable one is found with BETAS only.
+   json_array_insert_new(l,0,make_notes("v0.4.0",true,"- beta four"));
+   assert(parse_list(l,true,"0.3.0",&out)==1&&!strcmp(out.version,"v0.4.0")&&out.prerelease);
+   assert(parse_list(l,false,"0.3.0",&out)==1&&!strcmp(out.version,"v0.3.0"));
+   // Stable only: the notes of every stable release newer than the installed build.
+   assert(parse_list(l,false,"0.1.0",&out)==1&&strstr(out.notes,"stable three")&&strstr(out.notes,"stable two")&&
+          strstr(out.notes,"stable one one")&&!strstr(out.notes,"beta"));
+   assert(strstr(out.notes,"stable three")<strstr(out.notes,"stable two"));
+   // BETAS: every release in between, betas included; a build already on the newest gets none.
+   assert(parse_list(l,true,"0.1.1",&out)==1&&strstr(out.notes,"beta four")&&strstr(out.notes,"beta two one")&&
+          strstr(out.notes,"beta one two")&&strstr(out.notes,"stable two")&&!strstr(out.notes,"stable one one"));
+   // The same number: a beta build is not offered its own pre-release, a dev build is.
+   json_t *only=json_array();json_array_append_new(only,make_notes("v0.5.0",true,"- beta five"));
+   assert(parse_list(only,true,"0.5.0-beta",&out)==1);assert(!Update_IsNewer("v0.5.0-beta","0.5.0-beta"));
+   assert(Update_IsNewer("v0.5.0-beta","0.5.0-dev.3+abc1234"));
+   assert(parse_list(only,false,"0.4.0",&out)==0);
+   // An unusable old release in the list is skipped, not fatal; non-arrays are invalid.
+   json_array_append_new(l,json_pack("{s:s,s:b,s:b}","tag_name","v0.0.9","draft",0,"prerelease",0));
+   assert(parse_list(l,false,"0.1.0",&out)==1);
+   assert(Update_ParseReleases("{}",2,true,false,"0.1.0",&out)==-1);
+   json_decref(l);json_decref(only);
+ }
  assert(Update_ParseRelease("{}garbage",9,false,false,&out)==-1);
  assert(Update_ParseRelease("{\"draft\":false,\"draft\":true}",28,false,false,&out)==-1);
  for(int i=1;i<argc;i++) {

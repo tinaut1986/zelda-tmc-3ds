@@ -65,10 +65,10 @@ static bool text(json_t *o, const char *key, char *dst, size_t cap) {
       strlen(json_string_value(v)) != json_string_length(v)) return false;
   strcpy(dst, json_string_value(v)); return true;
 }
-static bool candidate(json_t *o, bool pre, bool homebrew, UpdateRelease *out) {
+static bool candidate(json_t *o, int pre, bool homebrew, UpdateRelease *out) {
   if (!json_is_object(o) || !json_is_false(json_object_get(o, "draft")) ||
       !json_is_boolean(json_object_get(o, "prerelease")) ||
-      json_is_true(json_object_get(o, "prerelease")) != pre) return false;
+      (pre >= 0 && json_is_true(json_object_get(o, "prerelease")) != (pre != 0))) return false;
   char tag[48];
   if (!text(o, "tag_name", tag, sizeof(tag)) || !Update_ValidVersion(tag)) return false;
   const char *v = tag[0] == 'v' ? tag + 1 : tag;
@@ -90,6 +90,7 @@ static bool candidate(json_t *o, bool pre, bool homebrew, UpdateRelease *out) {
     json_t *body = json_object_get(o, "body");
     if (json_is_string(body)) snprintf(out->notes, sizeof(out->notes), "%s", json_string_value(body));
     out->size = (uint32_t)json_integer_value(s); found = true;
+    out->prerelease = json_is_true(json_object_get(o, "prerelease"));
   }
   return found;
 }
@@ -98,17 +99,67 @@ int Update_ParseRelease(const char *data, size_t size, bool pre, bool homebrew, 
   json_error_t err; json_t *root = json_loadb(data, size, JSON_REJECT_DUPLICATES, &err);
   if (!root) return -1;
   int result = 0;
-  if (!pre) result = candidate(root, false, homebrew, out) ? 1 : -1;
+  if (!pre) result = candidate(root, 0, homebrew, out) ? 1 : -1;
   else if (!json_is_array(root)) result = -1;
   else {
     size_t i; json_t *o;
     json_array_foreach(root, i, o) {
       if (!json_is_true(json_object_get(o, "prerelease"))) continue;
       UpdateRelease r;
-      if (!candidate(o, true, homebrew, &r)) { result = -1; break; }
+      if (!candidate(o, 1, homebrew, &r)) { result = -1; break; }
       if (!result || Update_IsNewer(r.version, out->version)) *out = r;
       result = 1;
     }
+  }
+  json_decref(root); return result;
+}
+
+
+// The player-facing part of one release body: its <!-- tmc-notes --> block, or all of it.
+static void notes_block(const char *body, const char **start, size_t *len) {
+  static const char open[] = "<!-- tmc-notes -->", close[] = "<!-- /tmc-notes -->";
+  const char *a = strstr(body, open);
+  if (!a) { *start = body; *len = strlen(body); return; }
+  a += sizeof(open) - 1;
+  const char *b = strstr(a, close);
+  *start = a; *len = b ? (size_t)(b - a) : strlen(a);
+}
+int Update_ParseReleases(const char *data, size_t size, bool betas, bool homebrew,
+                         const char *installed, UpdateRelease *out) {
+  static UpdateRelease r;
+  memset(out, 0, sizeof(*out));
+  json_error_t err; json_t *root = json_loadb(data, size, JSON_REJECT_DUPLICATES, &err);
+  if (!root) return -1;
+  if (!json_is_array(root)) { json_decref(root); return -1; }
+  size_t i; json_t *o; int result = 0; char best[64] = "";
+  // A release this build cannot use (no asset, bad digest) is skipped, not fatal: the list
+  // holds every old release too.
+  json_array_foreach(root, i, o) {
+    if (!json_is_object(o) || (!betas && json_is_true(json_object_get(o, "prerelease")))) continue;
+    if (!candidate(o, -1, homebrew, &r)) continue;
+    char cmp[64]; snprintf(cmp, sizeof(cmp), "%s%s", r.version, r.prerelease ? "-beta" : "");
+    if (!result || Update_IsNewer(cmp, best)) { *out = r; snprintf(best, sizeof(best), "%s", cmp); result = 1; }
+  }
+  if (result && installed && Update_IsNewer(best, installed)) {
+    static char acc[12289];
+    size_t used = 0; unsigned count = 0;
+    acc[0] = 0;
+    json_array_foreach(root, i, o) {
+      if (!json_is_object(o) || (!betas && json_is_true(json_object_get(o, "prerelease")))) continue;
+      if (!candidate(o, -1, homebrew, &r)) continue;
+      char cmp[64]; snprintf(cmp, sizeof(cmp), "%s%s", r.version, r.prerelease ? "-beta" : "");
+      if (!Update_IsNewer(cmp, installed)) continue;
+      const char *block; size_t len; notes_block(r.notes, &block, &len);
+      int head = snprintf(acc + used, sizeof(acc) - used, "%s## %s%s\n", count ? "\n" : "", r.version,
+                          r.prerelease ? " BETA" : "");
+      if (head < 0 || (size_t)head >= sizeof(acc) - used) break;
+      used += (size_t)head;
+      if (len > sizeof(acc) - used - 1) len = sizeof(acc) - used - 1;
+      memcpy(acc + used, block, len); used += len; acc[used] = 0;
+      count++;
+    }
+    // One release: its own body stays as it is. Several: one block, newest first.
+    if (count > 1) snprintf(out->notes, sizeof(out->notes), "<!-- tmc-notes -->\n%s\n<!-- /tmc-notes -->\n", acc);
   }
   json_decref(root); return result;
 }
