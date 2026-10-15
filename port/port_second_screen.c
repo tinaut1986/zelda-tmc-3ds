@@ -141,7 +141,7 @@ static const int8_t kDungeonTopFloor[7] = { 2, 3, 3, 5, 2, 7, 5 };
 /* ------------------------------------------------------------------ */
 
 enum { SS_TAB_MAP = 0, SS_TAB_ITEMS, SS_TAB_QUEST, SS_TAB_SETTINGS, SS_TAB_DEBUG /* 3DS debug-tools builds */,
-       SS_TAB_STATES /* 3DS save states */ };
+       SS_TAB_STATES /* 3DS save states */, SS_TAB_RETRO /* RetroAchievements */ };
 
 /* What a tap target does when hit. arg meaning per action: item id,
  * tab id, ring (1 = A, 2 = B), plaque display-floor index, settings row.
@@ -173,6 +173,7 @@ enum {
     SS_ACT_DEBUG, /* DEBUG tab command, arg = DBG_CMD_* (bottom_compact_3ds.inc) */
     SS_ACT_STATES, /* STATES tab command, arg = STATES_CMD_* (bottom_compact_3ds.inc) */
     SS_ACT_DEVFTP_CANCEL, /* the install-only FTP bar's CANCEL (bottom_compact_3ds.inc) */
+    SS_ACT_RETRO, /* RETROACHIEVEMENTS tab command, arg = RA_CMD_* (bottom_compact_3ds.inc) */
 #endif
 };
 
@@ -3149,7 +3150,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     TargetList tl = { .n = 0 };
 
 #ifdef TMC_3DS
-    const int noGamePanel = sCompactNoGame && tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && tab != SS_TAB_STATES;
+    const int noGamePanel = sCompactNoGame && tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && tab != SS_TAB_STATES && tab != SS_TAB_RETRO;
     if (noGamePanel) {
         Compact_PaintNoGame(&s);
     } else
@@ -3179,6 +3180,8 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
 #ifdef TMC_3DS
     } else if (tab == SS_TAB_STATES) {
         Compact_PaintStates(&s, &tl);
+    } else if (tab == SS_TAB_RETRO) {
+        Compact_PaintRetroAch(&s, &tl);
 #endif
 #if defined(TMC_3DS) && TMC3DS_DEBUG_TOOLS
     } else if (tab == SS_TAB_DEBUG) {
@@ -3212,13 +3215,14 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     SS_MARK(SS_PHASE_PANEL);
 
 #ifdef TMC_3DS
-    if (tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && tab != SS_TAB_STATES && !noGamePanel) {
+    if (tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && tab != SS_TAB_STATES && tab != SS_TAB_RETRO && !noGamePanel) {
         Compact_PaintSidebar(&s, snap, &tl, (int32_t)(width - sideW + 2), (int32_t)my0,
                              (int32_t)(sideW - 2 - CC_MARGIN), (int32_t)(my1 - my0), tick, armedRing);
     }
     SS_MARK(SS_PHASE_SIDEBAR);
     Compact_PaintTabBar(&s, &tl, tab, settingsPage);
     Compact_PaintToast(&s);
+    Compact_PaintRaToast(&s);
     Compact_PaintDevFtp(&s, &tl);
     SS_MARK(SS_PHASE_TABBAR);
 #else
@@ -3340,6 +3344,9 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
 #endif
         case SS_ACT_STATES:
             Compact_StatesCommand(hit.arg);
+            break;
+        case SS_ACT_RETRO:
+            Compact_RetroAchCommand(hit.arg);
             break;
         case SS_ACT_DEVFTP_CANCEL:
             FtpServer_Cancel();

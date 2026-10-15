@@ -10,6 +10,9 @@
 #include "scene_pictures_3ds.h"
 #include "stereo_3ds.h"
 #include "cpu/mode1.h"
+#include "retro_ach.h"
+#include "ui_font_3ds.h"
+#include "port_text_i18n.h"
 
 #include <3ds.h>
 #include <citro2d.h>
@@ -138,6 +141,8 @@ static const uint8_t* StatusGlyph(char c) {
     }
     return NULL;
 }
+
+static void DrawRaToast(bool abgrAfter);
 
 static void DrawStatusTextColor(float x, float y, float scale, const char* text, uint32_t color) {
     for (; *text; ++text, x += 6.0f * scale) {
@@ -612,6 +617,7 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
     }
     DrawScenePictures(plan.drawX, plan.drawY, plan.drawWidth, plan.drawHeight, true);
     if (Port_Config_GetShowFps()) DrawFpsOverlay();
+    DrawRaToast(true);
 }
 
 /* Pictures that extend a scene the GBA drew at 240x160 (docs/wide-scene-extension.md), drawn only
@@ -837,6 +843,107 @@ static void DrawScenePictures(int frameX, int frameY, int frameW, int frameH, bo
         VeilScenePicture(left, frameY, 80, 160);
         VeilScenePicture(frameX + 240, frameY, 80, 160);
     }
+}
+
+/* The RetroAchievements unlock notice on the top screen (OPTIONS in the RA tab: NOTICE = TOP),
+ * as in ../sm-3ds: a box at the top centre with the badge, "ACHIEVEMENT UNLOCKED" and the title.
+ * It is painted on the CPU into a small texture when it changes (a new unlock, its badge
+ * arriving) and drawn as one quad, so it costs Citro2D one object a frame. The pixels are in
+ * the bottom screen's RGB() layout, which is the frame's: drawn with the ABGR env. */
+enum { RA_TOAST_W = 304, RA_TOAST_H = 40, RA_TOAST_TEX_W = 512, RA_TOAST_TEX_H = 64 };
+static C3D_Tex sRaToastTexture;
+static bool sRaToastReady;
+static struct {
+    uint32_t id, points;
+    char title[64];
+    bool badge;
+} sRaToastShown;
+
+static void RaToastFill(uint32_t* px, int x0, int y0, int x1, int y1, uint32_t color) {
+    for (int y = y0; y < y1; ++y)
+        for (int x = x0; x < x1; ++x) px[y * RA_TOAST_TEX_W + x] = color;
+}
+
+/* Text in the 5x7 UI font at 1x (UTF-8 read as Latin-1), at most maxX; returns the end x. */
+static int RaToastText(uint32_t* px, int x, int y, int maxX, uint32_t color, const char* text) {
+    for (const char* p = text; *p && x + kUiGlyphW <= maxX; x += kUiAdvance) {
+        const unsigned char c = Port_Text_Utf8Next(&p);
+        const uint8_t* g = UiFont_Glyph(c);
+        for (int gy = 0; g && gy < kUiGlyphH; ++gy)
+            for (int gx = 0; gx < kUiGlyphW; ++gx)
+                if (g[gy] & (0x10u >> gx)) px[(y + gy) * RA_TOAST_TEX_W + x + gx] = color;
+        const uint8_t* mark = c >= 0xC0 ? UiFont_Mark(c) : NULL;
+        for (int gy = 0; mark && gy < 2; ++gy)
+            for (int gx = 0; gx < kUiGlyphW; ++gx)
+                if (mark[gy] & (0x10u >> gx)) px[(y - kUiMarkRise + gy) * RA_TOAST_TEX_W + x + gx] = color;
+    }
+    return x;
+}
+
+static bool RaToastPaint(const RaAchievement* a, const uint32_t* badge) {
+    if (!sRaToastReady) {
+        if (!C3D_TexInit(&sRaToastTexture, RA_TOAST_TEX_W, RA_TOAST_TEX_H, GPU_RGBA8)) return false;
+        C3D_TexSetFilter(&sRaToastTexture, GPU_NEAREST, GPU_NEAREST);
+        sRaToastReady = true;
+    }
+    uint32_t* px = linearAlloc((size_t)RA_TOAST_TEX_W * RA_TOAST_TEX_H * sizeof(uint32_t));
+    if (px == NULL) return false;
+    const uint32_t edge = C2D_Color32(110, 220, 130, 255), body = C2D_Color32(14, 20, 32, 255);
+    RaToastFill(px, 0, 0, RA_TOAST_TEX_W, RA_TOAST_TEX_H, body);
+    RaToastFill(px, 0, 0, RA_TOAST_W, 1, edge);
+    RaToastFill(px, 0, RA_TOAST_H - 1, RA_TOAST_W, RA_TOAST_H, edge);
+    RaToastFill(px, 0, 0, 1, RA_TOAST_H, edge);
+    RaToastFill(px, RA_TOAST_W - 1, 0, RA_TOAST_W, RA_TOAST_H, edge);
+    int tx = 10;
+    if (badge) {
+        for (int y = 0; y < kRaBadgeSmall; ++y)
+            memcpy(&px[(6 + y) * RA_TOAST_TEX_W + 6], &badge[y * kRaBadgeSmall], kRaBadgeSmall * sizeof(uint32_t));
+        tx = 6 + kRaBadgeSmall + 6;
+    } else {
+        RaToastFill(px, 4, 4, 6, RA_TOAST_H - 4, C2D_Color32(40, 150, 90, 255));
+    }
+    RaToastText(px, tx, 9, RA_TOAST_W - 4, edge, "ACHIEVEMENT UNLOCKED");
+    char points[16];
+    snprintf(points, sizeof(points), " (+%u)", (unsigned)a->points);
+    const int pointsW = (int)strlen(points) * kUiAdvance;
+    const int end = RaToastText(px, tx, 23, RA_TOAST_W - 6 - pointsW, C2D_Color32(232, 236, 240, 255), a->title);
+    RaToastText(px, end, 23, RA_TOAST_W - 4, C2D_Color32(240, 200, 80, 255), points);
+    Platform3DS_CleanDataCache(px, (size_t)RA_TOAST_TEX_W * RA_TOAST_TEX_H * sizeof(uint32_t));
+    C3D_SyncDisplayTransfer((u32*)px, GX_BUFFER_DIM(RA_TOAST_TEX_W, RA_TOAST_TEX_H), (u32*)sRaToastTexture.data,
+                            GX_BUFFER_DIM(RA_TOAST_TEX_W, RA_TOAST_TEX_H), TextureTransfer());
+    linearFree(px);
+    return true;
+}
+
+/* abgrAfter: the texture env the caller leaves set (ABGR or identity) is put back. */
+static void DrawRaToast(bool abgrAfter) {
+    RaAchievement a;
+    if (!RetroAch_NotifyTop() || !RetroAch_Toast(&a)) return;
+    const uint32_t* badge = RetroAch_Badge(a.badge, kRaBadgeSmall);
+    if (sRaToastShown.id != a.id || sRaToastShown.points != a.points || sRaToastShown.badge != (badge != NULL) ||
+        strcmp(sRaToastShown.title, a.title) != 0 || !sRaToastReady) {
+        C2D_Flush(); /* the frame's quads go before the upload */
+        if (!RaToastPaint(&a, badge)) return;
+        sRaToastShown.id = a.id;
+        sRaToastShown.points = a.points;
+        sRaToastShown.badge = badge != NULL;
+        snprintf(sRaToastShown.title, sizeof(sRaToastShown.title), "%s", a.title);
+    }
+    const Tex3DS_SubTexture sub = {
+        .width = RA_TOAST_W,
+        .height = RA_TOAST_H,
+        .left = 0.0f,
+        .top = 1.0f,
+        .right = (float)RA_TOAST_W / RA_TOAST_TEX_W,
+        .bottom = 1.0f - (float)RA_TOAST_H / RA_TOAST_TEX_H,
+    };
+    const C2D_Image image = { .tex = &sRaToastTexture, .subtex = &sub };
+    C2D_Flush();
+    C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
+    ConfigureAbgrTextureEnv();
+    C2D_DrawImageAt(image, (float)((400 - RA_TOAST_W) / 2), 4.0f, 0.9f, NULL, 1.0f, 1.0f);
+    C2D_Flush();
+    if (!abgrAfter) ConfigureIdentityTextureEnv();
 }
 
 /* The numbers box (SHOW FPS), after ../mzm and ../sm-3ds: four small lines in a dim box at the
@@ -1183,6 +1290,7 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
 
     DrawScenePictures(plan.drawX, plan.drawY, plan.drawWidth, plan.drawHeight, configureAbgr);
     if (Port_Config_GetShowFps()) DrawFpsOverlay();
+    DrawRaToast(configureAbgr);
 }
 
 

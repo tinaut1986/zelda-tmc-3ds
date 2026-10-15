@@ -720,6 +720,11 @@ void VBlankIntrWait(void) {
         Port_QuickSave_AutoTick();
     }
     VBlankIntr();
+    {
+        /* One game frame done: RetroAchievements reads the game's memory. */
+        extern void RetroAch_DoFrame(void);
+        RetroAch_DoFrame();
+    }
     Platform3DS_EndFrameBoundary();
 #else
     u64 nowNs;
@@ -1291,6 +1296,10 @@ s32 Div(s32 num, s32 denom) {
 void SoftReset(u32 flags) {
     (void)flags;
     if (gPortSoftResetArmed) {
+#ifdef TMC_3DS
+        extern void RetroAch_GameReset(void);
+        RetroAch_GameReset();
+#endif
         longjmp(gPortSoftResetJmp, 1);
     }
     /* Reset requested before the game loop armed the jump target (should not

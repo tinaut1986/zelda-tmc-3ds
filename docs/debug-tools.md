@@ -289,7 +289,8 @@ the bench takes a dump's files by their old unprefixed names, rename or copy the
 without a console or a ROM (`TMC3DS_DEBUG_TOOLS=0` for a production build's view).
 Without a ROM the map and item art take their fallbacks; the OPTIONS and DEBUG
 tabs draw exactly as on the console (with stand-in values for the log, recorder
-and switches). `THEME=n` picks the theme. The shots and the taps that reach them are
+and switches). `THEME=n` picks the theme. The RetroAchievements tab shows a sample set
+(`RA_OFF=1`: logged out; `RA_TOAST=1`: the unlock notice on the bottom screen). The shots and the taps that reach them are
 the `SHOTS` list in the script.
 
 ## Screen fades

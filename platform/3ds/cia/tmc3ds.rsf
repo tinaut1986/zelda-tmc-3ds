@@ -108,6 +108,7 @@ AccessControlInfo:
     - cfg:u
     - dsp::DSP
     - fs:USER
+    - http:C
     - gsp::Gpu
     - hid:USER
     - ptm:u
@@ -125,4 +126,5 @@ SystemControlInfo:
     dsp: 0x0004013000001a02
     gsp: 0x0004013000001c02
     hid: 0x0004013000001d02
+    http: 0x0004013000002902
     ptm: 0x0004013000002202
