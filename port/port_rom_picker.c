@@ -327,6 +327,11 @@ static const struct {
       "USA" },
     { "cff199b36ff173fb6faf152653d1bccf87c26fb7", "c84645731952b7677f514ae222683504066334ab2af904e64a8a84ffc1af46c6",
       "EU" },
+    /* The European ROM with Prof9's EU Backport applied (RetroAchievements' "European Backport
+     * Edition", md5 626a6f11...): same header, 1157 bytes of code/data changed. The port has
+     * those fixes natively and runs it as EU. */
+    { "9a6d87e718be921463f9ed7da6a58da7aedf3b4a", "3169053718c43890468eecbf3a4c70fb410e6656cea29db1aad7d1fa9050e0c4",
+      "EU" },
     { "6c5404a1effb17f481f352181d0f1c61a2765c5d", "16ac2572ba17e9cb2a70093d41f97ef8cff66c56417e45ea98adacdc51bb4b38",
       "JP" },
     { "63fcad218f9047b6a9edbb68c98bd0dec322d7a1", "", "USA Demo" },

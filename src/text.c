@@ -133,12 +133,27 @@ void sub_0805EEB4(Token* token, u32 textIndex) {
     token->textIndex = (u16)textIndex;
 #ifdef PC_PORT
     if (REGION_IS_EU && textIndex == TEXT_INDEX(TEXT_STOCKWELL, 0x25)) {
-        /* Original English wording for the added EU shop item; the final
-         * control code chains to the active ROM's existing buy/cancel menu. */
-        static const u8 bombBagOffer[] =
-            "Bomb bag upgrade: \x06\x01 Rupees.\n"
-            "Increase your bomb capacity.\n\x07\x2c\x14";
-        sub_0805EF40(token, bombBagOffer);
+        /* The added EU shop item's offer, in the player's language: the strings are
+         * Prof9's (Unlicense, Minish-Cap-EU-Backport, asm/bombbag.ext.asm), the final
+         * control code chains to the active ROM's existing buy/cancel menu. EU keeps
+         * its languages in save-header slots 2..6 (EN, FR, DE, ES, IT). Each escape is
+         * its own literal so that a hex digit after it is not read as part of it. */
+        static const u8 bombBagOfferEn[] = "That " "\x02\x01" "big bomb bag" "\x02\x00" " is a real bargain\n"
+                                           "at " "\x06\x01" " Rupees.\n" "\x07\x2c\x14";
+        static const u8 bombBagOfferFr[] = "Un " "\x02\x01" "Grand Sac de Bombes" "\x02\x00" " pour " "\x06\x01" " Rubis!\n"
+                                           "Le parfait outil de l'aventurier!\n" "\x07\x2c\x14";
+        static const u8 bombBagOfferDe[] = "\x02\x01" "Bombentasche" "\x02\x00" ". Das macht " "\x06\x01" " Rubine.\n"
+                                           "Eine gro" "\xdf" "e Hilfe bei deinen Abenteuern.\n" "\x07\x2c\x14";
+        static const u8 bombBagOfferEs[] = "Un " "\x02\x01" "saco de bombas " "\x02\x00" "cuesta " "\x06\x01" " rupias.\n"
+                                           "Es indispensable para tu aventura.\n" "\x07\x2c\x14";
+        static const u8 bombBagOfferIt[] = "\x02\x01" "Portabombe grande" "\x02\x00" ": " "\x06\x01" " Rupie.\n"
+                                           "Con questo la vita " "\xe8" " pi" "\xf9" " semplice!\n" "\x07\x2c\x14";
+        static const u8* const bombBagOffers[] = {
+            bombBagOfferEn, bombBagOfferFr, bombBagOfferDe, bombBagOfferEs, bombBagOfferIt,
+        };
+        u32 slot = gSaveHeader->language;
+        u32 offer = slot >= EU_LANGUAGE_EN_SLOT && slot < EU_LANGUAGE_EN_SLOT + 5 ? slot - EU_LANGUAGE_EN_SLOT : 0;
+        sub_0805EF40(token, bombBagOffers[offer]);
         return;
     }
 #endif

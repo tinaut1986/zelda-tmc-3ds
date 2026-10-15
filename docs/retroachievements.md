@@ -32,19 +32,26 @@ the achievements' conditions, nothing of the account).
 ## Which ROM
 
 RA's set for the game (id 559) supports the **USA** ROM (md5 `a104896da0047abe8bee2a6e3f4c7290`,
-No-Intro) and hacks of it, among them "European Backport Edition" (`626a6f11...`, Prof9's patch,
-whose three fixes the port has natively: `eu-backport.md`). The clean European ROM
-(`2af78edb...`) is listed as "needs a patch to be compatible"; the Japanese ROM and the USA kiosk
-demo are confirmed incompatible. The port runs the USA and the European ROM, but with the European
-one the server answers "Unsupported Game Version" (game `1200000559`, one achievement) and no set
-loads: the port sends the file's true md5, so nothing is wrong on this side. The data variables
-the set reads have the same addresses in both regions (`linker.ld`), so the mapping is expected to
-work for both; asking RA to add the European hash is the owner's to do.
+No-Intro) and hacks of it, among them "European Backport Edition" (`626a6f1134455c879dd8a5cbb84b116a`,
+Prof9's patch). The clean European ROM (`2af78edb...`) is listed as "needs a patch to be
+compatible"; the Japanese ROM and the USA kiosk demo are confirmed incompatible.
 
-To try the set on the European ROM (testing, with a test account, never the real one): put the USA
-md5 in `rom_md5=` of `retroachievements.ini`, leave `rom_key=` as it is (the port uses the cached
-hash while the key matches the file) and relaunch. 2026-10-15: the set loads (66 achievements) and
-unlocks work (the owner's check).
+What the port reports:
+
+| ROM | Reported to RA |
+|---|---|
+| USA | its own md5 |
+| European, clean (`2af78edb...`) | **`626a6f11...`**, the backport edition (`ReportedHash()`, `retro_ach.c`; logged as `reporting the European Backport hash`) |
+| European with the backport applied (`626a6f11...`, SHA-1 `9a6d87e7...`) | its own md5; the port runs it as EU |
+
+The substitution is justified, not just asserted: RA's own patch (RAPatches `GBA/Fix/559`, a
+BPS) applied to the clean European ROM gives exactly `626a6f11...`, and the port has that patch's
+three fixes natively (`eu-backport.md`). The patch's source (Prof9's, built with ARMIPS) differs
+from RA's file by two bytes, so building it ourselves does not give RA's hash. Other ROMs are
+reported as they are (RA answers "Unknown game").
+
+To try a hash by hand (testing, test account, never the real one): put it in `rom_md5=` of
+`retroachievements.ini`, leave `rom_key=` as it is and relaunch.
 
 ## How it works
 
