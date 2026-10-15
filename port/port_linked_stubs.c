@@ -1218,16 +1218,12 @@ void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
     if (direction > 3 || gRoomControls.scrollAction > 1 || gArea.unk_0c_0 || (gRoomControls.scroll_flags & 1) ||
         room >= MAX_ROOMS)
         return;
-    /* Full View scrolls at 400x240 into a room that can hold that view (an
-     * exterior at least 400x240, as the policy asks); the next room's own
-     * content scan then confirms it. Anything else keeps the 266 scroll or
-     * none. */
+    /* Full View scrolls at 400x240 into a room that can hold that view, interiors included
+     * (every room is in Full View since P4.6: the castle's rooms scrolled at 266x160 when
+     * only exteriors counted); the next room's own content scan then confirms it. Anything
+     * else keeps the 266 scroll or none. */
     const int fullView = Port_WidescreenGameplayMode() == PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
-                         gRoomControls.area <= AREA_98 &&
-                         Port3DSFullViewPolicy_AreaIsExterior(gRoomControls.area, (int)room,
-                                                              gAreaMetadata[gRoomControls.area].flags) &&
-                         gArea.roomResInfos[room].pixel_width >= 400 &&
-                         gArea.roomResInfos[room].pixel_height >= 240 && gRoomControls.height >= 240;
+                         gRoomControls.area <= AREA_98;
     if (!fullView && (width <= 240 || width > 266 || gArea.roomResInfos[room].pixel_width <= 240 ||
                       gArea.roomResInfos[room].pixel_height < 160 || gRoomControls.height < 160))
         return;
@@ -1252,14 +1248,19 @@ void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
         const RoomResInfo* next = &gArea.roomResInfos[room];
         int shift;
         if (direction == 0 || direction == 2) {
-            sWsScroll.alignX = Port_WidescreenScrollAlign(gRoomControls.scroll_x, 400, gRoomControls.origin_x,
-                                                          gRoomControls.width, next->map_x, next->pixel_width);
+            /* A room narrower than the view is centred, the rest black: line up on that. */
+            sWsScroll.alignX = next->pixel_width < 400
+                                   ? (int)next->map_x - (400 - (int)next->pixel_width) / 2
+                                   : Port_WidescreenScrollAlign(gRoomControls.scroll_x, 400, gRoomControls.origin_x,
+                                                                gRoomControls.width, next->map_x, next->pixel_width);
             shift = sWsScroll.alignX - sWsScroll.startX;
             if (shift > (WS_SCROLL_COLS - 53) * 8 || -shift > (WS_SCROLL_COLS - 53) * 8)
                 sWsScroll.alignX = sWsScroll.startX, shift = 0;
         } else {
-            sWsScroll.alignY = Port_WidescreenScrollAlign(gRoomControls.scroll_y, 240, gRoomControls.origin_y,
-                                                          gRoomControls.height, next->map_y, next->pixel_height);
+            sWsScroll.alignY = next->pixel_height < 240
+                                   ? (int)next->map_y - (240 - (int)next->pixel_height) / 2
+                                   : Port_WidescreenScrollAlign(gRoomControls.scroll_y, 240, gRoomControls.origin_y,
+                                                                gRoomControls.height, next->map_y, next->pixel_height);
             shift = sWsScroll.alignY - sWsScroll.startY;
             if (shift > (WS_SCROLL_ROWS - 33) * 8 || -shift > (WS_SCROLL_ROWS - 33) * 8)
                 sWsScroll.alignY = sWsScroll.startY, shift = 0;
@@ -1340,6 +1341,13 @@ int Port_Widescreen_AdvanceScroll(void) {
             endX = gRoomControls.origin_x + gRoomControls.width - viewW;
             duration = 60;
             break;
+    }
+    /* Full View: a room smaller than the view on the scrolling axis ends centred in it. */
+    if (sWsScroll.fullView) {
+        if ((sWsScroll.direction == 0 || sWsScroll.direction == 2) && gRoomControls.height < viewH)
+            endY = gRoomControls.origin_y - (viewH - gRoomControls.height) / 2;
+        if ((sWsScroll.direction == 1 || sWsScroll.direction == 3) && gRoomControls.width < viewW)
+            endX = gRoomControls.origin_x - (viewW - gRoomControls.width) / 2;
     }
     int progress = gRoomControls.unk_18;
     if (progress > duration)
