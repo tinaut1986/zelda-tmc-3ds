@@ -1218,14 +1218,12 @@ void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
     if (direction > 3 || gRoomControls.scrollAction > 1 || gArea.unk_0c_0 || (gRoomControls.scroll_flags & 1) ||
         room >= MAX_ROOMS)
         return;
-    /* Full View scrolls at 400x240 into a room that can hold that view (an
-     * exterior at least 400x240, as the policy asks); the next room's own
-     * content scan then confirms it. Anything else keeps the 266 scroll or
-     * none. */
+    /* Full View scrolls at 400x240 into a room that can hold that view, interiors included
+     * (every room is in Full View since P4.6: the castle's rooms scrolled at 266x160 when
+     * only exteriors counted); the next room's own content scan then confirms it. Anything
+     * else keeps the 266 scroll or none. */
     const int fullView = Port_WidescreenGameplayMode() == PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
                          gRoomControls.area <= AREA_98 &&
-                         Port3DSFullViewPolicy_AreaIsExterior(gRoomControls.area, (int)room,
-                                                              gAreaMetadata[gRoomControls.area].flags) &&
                          gArea.roomResInfos[room].pixel_width >= 400 &&
                          gArea.roomResInfos[room].pixel_height >= 240 && gRoomControls.height >= 240;
     if (!fullView && (width <= 240 || width > 266 || gArea.roomResInfos[room].pixel_width <= 240 ||

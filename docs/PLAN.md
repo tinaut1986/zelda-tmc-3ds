@@ -836,3 +836,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   European ROM with the patch applied (SHA-1 `9a6d87e7...`) is accepted as EU (3DS: header code only;
   PC picker: hash list) and was run on the 2DS. The bomb bag offer is in the player's language
   from Prof9's strings (issue #29).
+- **2026-10-15** Room-border scrolls in Full View now include interiors (#11 had been fixed for
+  exteriors only: the castle's rooms 80/01 <-> 80/00 still dropped to 266x160 for the whole
+  scroll). `Port_Widescreen_BeginScroll` no longer asks for an exterior; the incoming room must
+  still be at least 400x240 (a smaller one keeps the old 266 scroll). Recorded on the 2DS,
+  down and up: every frame 400x240.
