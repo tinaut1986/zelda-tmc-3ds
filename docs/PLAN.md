@@ -19,11 +19,11 @@ change (what goes where: the table in `CLAUDE.md`).
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.2.1` (on origin). Published: **`v0.2.0`** (2026-10-14, **stable**,
+**Release line:** `release/v0.3.0` (on origin; renamed from `release/v0.2.1` on 2026-10-15, the owner made this a minor). Published: **`v0.2.0`** (2026-10-14, **stable**,
 merged into `main`), `v0.1.2` (2026-10-13, beta), `v0.1.1` (2026-10-12, stable) and `v0.1.0`
 (2026-10-11, beta).
 
-**Branches:** every branch merged into `release/v0.2.1` was deleted, here and on origin (2026-10-14);
+**Branches:** every branch merged into `release/v0.3.0` was deleted, here and on origin (2026-10-14);
 their history is in `git log` and the decisions log (2026-10-15: `feat/retroachievements` and
 `feat/ftp-install-progress` too, here; the remote `feat/retroachievements` still exists on origin,
 a delete was refused in the session: `git push origin --delete feat/retroachievements`). Open:
@@ -38,10 +38,10 @@ Link's house and the Minish Woods are untested in builds other than their writer
 build, as the house door did: issue #14). A state saved inside the pause menu breaks on closing
 it (issue #13).
 
-**Start here (2026-10-15):** `release/v0.2.1` (on origin, `68e6d5d`) has everything: RetroAchievements
+**Start here (2026-10-15):** `release/v0.3.0` (on origin) has everything: RetroAchievements
 (P2.8), stereo 3D always on, the FTP install notice (percent + bar for receiving, installing and the
 10 s restart countdown; checked by the owner on the 2DS). No branch is open, no worktree, nothing
-uncommitted. `v0.2.1` is not tagged: before tagging, write `docs/release-notes/v0.2.1.md`. Next:
+uncommitted. `v0.3.0` is not tagged yet: the notes are in `docs/release-notes/v0.3.0.md`; the plan is a beta first (tag on the release branch, installed through the updater with BETAS on, a production build run on the consoles), then promote it to stable by re-running the workflow on the tag. Next:
 1. **RetroAchievements** works for both ROMs: USA by its own hash, the clean European one by
    reporting the backport edition's (`docs/retroachievements.md`, "Which ROM"). Checked on the
    2DS with the test account `tinaut1986test`: the set loads (66 achievements) and "A New Quest" and
@@ -66,7 +66,7 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
 
 **On the owner's consoles now (2026-10-14):**
 - Old 3DS/2DS, **`192.168.1.139`** (the owner calls it "the 2DS"; `.3ds_ftp_ip` holds it): a debug
-  build of `release/v0.2.1` plus `feat/eu-bombbag-text` (`0.2.1-dev.34+8570754`, 2026-10-15), Full View
+  build of the release line before the rename (`0.2.1-dev.34+8570754`, 2026-10-15), Full View
   (`widescreen=1`, `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT,
   FRAMES = AUTO, UPDATES channel + BETAS. **RetroAchievements is logged in as the test account
   `tinaut1986test`** (the owner's test account; log in with the real one before playing for
