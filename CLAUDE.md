@@ -157,6 +157,10 @@ must stay identical in both places), or the commit list when the block is missin
 
 A **stable** release lists everything since the previous *stable* tag, betas included; a
 **beta** lists only what is new since the previous tag.
+The console's updater reads the release list: with + BETAS it offers the newest of betas and
+stable releases, with STABLE the newest stable one, and its notes join those of every release
+of the channel newer than the installed build (newest first). A stable player never sees beta
+pages, which is why a stable's notes must cover its betas.
 
 ### The channel is baked into the binary
 

@@ -238,21 +238,23 @@ static void run_job(void *arg) {
   if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) goto done;
   curl_ready = true;
   if (!download_job) {
-    const char *url = s.prerelease ?
-      "https://api.github.com/repos/" UPDATE_REPOSITORY "/releases?per_page=100" :
-      "https://api.github.com/repos/" UPDATE_REPOSITORY "/releases/latest";
+    // The list, not /latest: with + BETAS the newest of betas and stable releases wins, and
+    // the notes cover every release between this build and it (Update_ParseReleases).
+    const char *url = "https://api.github.com/repos/" UPDATE_REPOSITORY "/releases?per_page=100";
     if (!fetch(url, &t)) goto done;
     UpdateRelease candidate;
-    int result = Update_ParseRelease(t.data, t.size, s.prerelease, homebrew, &candidate);
+    // A beta build is older than the stable release of its own number, but must never be
+    // offered its own pre-release page: a pre-release is compared as "-beta" too.
+    const char *installed = TMC_PORT_IS_BETA ? TMC_PORT_VERSION "-beta" : TMC_PORT_VERSION;
+    int result = Update_ParseReleases(t.data, t.size, s.prerelease, homebrew, installed, &candidate);
     if (result < 0) { publish(UPDATE_ERROR, "INVALID RELEASE DATA"); goto done; }
-    if (!result) { publish(UPDATE_EMPTY, "NO PRE-RELEASE AVAILABLE"); ok = true; goto done; }
-    LightLock_Lock(&lock); release = candidate; strcpy(status.version, release.version); LightLock_Unlock(&lock);
-    // A beta build is older than the stable release of its own number, but must
-    // never be offered its own pre-release page: compare a pre-release candidate
-    // as "-beta" too, so the same number is not newer.
+    if (!result) { publish(UPDATE_EMPTY, s.prerelease ? "NO RELEASE AVAILABLE" : "NO STABLE RELEASE AVAILABLE"); ok = true; goto done; }
+    LightLock_Lock(&lock); release = candidate;
+    snprintf(status.version, sizeof(status.version), "%s%s", release.version, release.prerelease ? " BETA" : "");
+    LightLock_Unlock(&lock);
     char candidate_version[64];
-    snprintf(candidate_version, sizeof(candidate_version), "%s%s", release.version, s.prerelease ? "-beta" : "");
-    bool newer = Update_IsNewer(candidate_version, TMC_PORT_IS_BETA ? TMC_PORT_VERSION "-beta" : TMC_PORT_VERSION);
+    snprintf(candidate_version, sizeof(candidate_version), "%s%s", release.version, release.prerelease ? "-beta" : "");
+    bool newer = Update_IsNewer(candidate_version, installed);
     publish(newer ? UPDATE_AVAILABLE : UPDATE_CURRENT, newer ? "UPDATE AVAILABLE" : "YOU ARE UP TO DATE");
     ok = true;
   } else {
