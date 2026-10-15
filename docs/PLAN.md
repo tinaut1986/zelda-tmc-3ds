@@ -42,10 +42,14 @@ it (issue #13).
 (P2.8), stereo 3D always on, the FTP install notice (percent + bar for receiving, installing and the
 10 s restart countdown; checked by the owner on the 2DS). No branch is open, no worktree, nothing
 uncommitted. `v0.2.1` is not tagged: before tagging, write `docs/release-notes/v0.2.1.md`. Next:
-1. **RetroAchievements on the EU ROM.** The set (game 559) lists only the USA hash
-   (`a104896da0047abe8bee2a6e3f4c7290`, No-Intro) and a few hacks of it; the owner's European ROM
-   (md5 `2af78edbe244b5de44471368ae2b6f0b`) is answered with "Unsupported Game Version" (id
-   `1200000559`, one achievement). The owner may ask RA to add the European hash (their call, later).
+1. **RetroAchievements on the EU ROM.** The set (game 559) supports the USA hash
+   (`a104896da0047abe8bee2a6e3f4c7290`, No-Intro) and hacks of it, among them "European Backport
+   Edition" (`626a6f1134455c879dd8a5cbb84b116a`, Prof9's patch). The owner's clean European ROM
+   (md5 `2af78edbe244b5de44471368ae2b6f0b`) is listed by RA under "needs a patch to be compatible"
+   and answered with "Unsupported Game Version" (id `1200000559`, one achievement). The port
+   already has that patch's three fixes natively (`docs/eu-backport.md`; not verified that the
+   patch does nothing else), so reporting the backport hash could be argued with RA: the owner's
+   call, later. The Japanese ROM and the USA kiosk demo are confirmed incompatible.
    Meanwhile, to play the set on the EU ROM for testing only, with a test account, put the USA md5
    in `rom_md5=` of `retroachievements.ini` (the port keeps it while `rom_key` matches the file)
    and relaunch; never on the real account. Verified 2026-10-15 with `tinaut1986test`: the set loads
@@ -811,8 +815,9 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   in `tmc3ds.ini` was the former default, not a choice, hence the new key). `3dsx.ld` pins
   moved up 0x10000 (.data 0x630000, .bss 0x640000) for rcheevos: format 1 save states of older
   builds no longer load; format 2 is unaffected.
-- **2026-10-15** RetroAchievements does not support the European ROM: the set (game 559) lists
-  the USA hash and hacks of it only, and the server answers the EU hash with the "Unsupported Game
+- **2026-10-15** RetroAchievements does not support the clean European ROM: the set (game 559)
+  supports the USA hash and hacks of it ("European Backport Edition" among them), lists the EU hash
+  as "needs a patch to be compatible", and the server answers it with the "Unsupported Game
   Version" pseudo-game (`1200000000 + 559`, one achievement). The port hashes the file correctly
   (md5 equals the file's), so it is not a port bug. The owner will, at some point, ask RA to add
   the European hash. To test the mapping on the EU ROM the owner used a test account
