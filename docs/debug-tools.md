@@ -64,7 +64,7 @@ blue: changed). None needs a restart.
 | AUDIO CORE | `audio_core` | AUTO / CORE 0 / CORE 1 | where the audio refill thread runs; it is recreated at once (the queued buffers cover the gap) |
 | COMPACT UP | `compact_upload` | ON / OFF | smaller upload surfaces, Old 3DS only; taken at the start of the next frame |
 | CPU LIMIT | `app_cpu_limit` | AUTO / 80 / 70 / 50 / 30 % | the app's share of core 1 (the rest goes to GSP and the sysmodules); the cell shows the share granted |
-| STEREO 3D | `stereo_3d` | OFF / ON / TEST | stereoscopic 3D on the top screen while the slider is up; TEST gives the front layers a depth to see it work (`docs/stereo-3d.md`) |
+| STEREO 3D | `stereo_3d_on` | OFF / ON | stereoscopic 3D on the top screen while the slider is up; ON by default (`docs/stereo-3d.md`) |
 
 `bottom_rgb565` is not offered: upstream's own note says it turns the bottom
 screen red. Upstream's comments on each are in `platform/3ds/source/port_config_3ds.c`.
@@ -292,7 +292,8 @@ the bench takes a dump's files by their old unprefixed names, rename or copy the
 without a console or a ROM (`TMC3DS_DEBUG_TOOLS=0` for a production build's view).
 Without a ROM the map and item art take their fallbacks; the OPTIONS and DEBUG
 tabs draw exactly as on the console (with stand-in values for the log, recorder
-and switches). `THEME=n` picks the theme. The shots and the taps that reach them are
+and switches). `THEME=n` picks the theme. The RetroAchievements tab shows a sample set
+(`RA_OFF=1`: logged out; `RA_TOAST=1`: the unlock notice on the bottom screen). The shots and the taps that reach them are
 the `SHOTS` list in the script.
 
 ## Screen fades

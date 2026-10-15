@@ -14,6 +14,7 @@
 
 #include "ui_font_3ds.h"
 #include "tmc3ds_build_config.h"
+#include "retro_ach.h"
 
 #include <stdarg.h>
 #include <time.h>
@@ -273,7 +274,7 @@ static void CColumn(int32_t width, int cols, int col, int span, int32_t* x, int3
  * button, and the clock, Wi-Fi bars and battery on the right. */
 
 static int CompactTabCount(void) {
-    return TMC3DS_DEBUG_TOOLS ? 6 : 5;
+    return TMC3DS_DEBUG_TOOLS ? 7 : 6;
 }
 
 /* Set by the 3DS glue (port_second_screen_3ds.c) while no game runs (intro,
@@ -308,6 +309,11 @@ static const char* const kIconDebug[12] = {
 static const char* const kIconStates[12] = {
     "###########..", "#..#####..##.", "#..#####..###", "#..#####..###", "#.........###", "#############",
     "#...........#", "#.#########.#", "#...........#", "#.#########.#", "#...........#", "#############",
+};
+
+static const char* const kIconRetro[12] = { /* a trophy */
+    "..#########..", "##.#######.##", "#..#######..#", "#..#######..#", ".#.#######.#.", "..#.#####.#..",
+    "....#####....", ".....###.....", "......#......", "......#......", "....#####....", "...#######...",
 };
 
 static void CIcon(const SSurf* s, int32_t cx, int32_t cy, const char* const* rows, uint32_t color) {
@@ -389,15 +395,15 @@ static int Compact_ChromeChanged(void) {
 }
 
 static void Compact_PaintTabBar(const SSurf* s, TargetList* tl, int activeTab, int settingsPage) {
-    static const char* const* const kIcons[6] = { kIconMap,    kIconItems,   kIconQuest,
-                                                  kIconStates, kIconOptions, kIconDebug };
-    static const uint8_t kTabs[6] = { SS_TAB_MAP,    SS_TAB_ITEMS,    SS_TAB_QUEST,
-                                      SS_TAB_STATES, SS_TAB_SETTINGS, SS_TAB_DEBUG };
+    static const char* const* const kIcons[7] = { kIconMap,    kIconItems,   kIconQuest,
+                                                  kIconStates, kIconRetro,   kIconOptions, kIconDebug };
+    static const uint8_t kTabs[7] = { SS_TAB_MAP,    SS_TAB_ITEMS,    SS_TAB_QUEST,
+                                      SS_TAB_STATES, SS_TAB_RETRO,    SS_TAB_SETTINGS, SS_TAB_DEBUG };
     int n = CompactTabCount();
     int32_t ty = CcTabY(s->h);
     FillRect(s, 0, ty, s->w, ty + CC_TAB_H, CC_BAR);
     FillRect(s, 0, sCcTabsBottom ? ty : ty + CC_TAB_H - 1, s->w, sCcTabsBottom ? ty + 1 : ty + CC_TAB_H,
-             CC_TAB_EDGE);
+              CC_TAB_EDGE);
     sCompactChromeKey = CompactChromeKey();
     CStatus(s, ty);
 
@@ -1610,4 +1616,402 @@ static void Compact_PaintNoMap(const SSurf* s, int x0, int y0, int x1, int y1) {
     CBox(s, x0, y0, x1 - x0, y1 - y0, CC_CELL, CC_CELL_EDGE);
     CTextCentered(s, (x0 + x1) / 2, (y0 + y1) / 2 - 8, CC_TEXT, "NO MAP YET");
     CTextCentered(s, (x0 + x1) / 2, (y0 + y1) / 2 + 4, CC_DIM, "FIND THE HYRULE MAP");
+}
+
+/* ---- RETROACHIEVEMENTS (retro_ach.h), as in ../sm-3ds and ../mzm ----
+ * The account and the settings on top (LOG IN / LOG OUT, on/off, where the unlock notice
+ * shows, its sound, a sample notice), the server's state on one line, then the set as
+ * cards with their badges, four a page, in the order picked (SORT, and its direction). A
+ * card opens its detail: the badge at full size, points, when it was unlocked, its type and
+ * the whole description. Taps run on the main thread, painting on the bottom worker: what
+ * is read from retro_ach.c is copied out under its lock. */
+
+enum {
+    RA_CMD_ACCOUNT = 1,
+    RA_CMD_ENABLE,
+    RA_CMD_NOTIFY,
+    RA_CMD_SOUND,
+    RA_CMD_PREVIEW,
+    RA_CMD_SORT,
+    RA_CMD_DIR,
+    RA_CMD_PREV,
+    RA_CMD_NEXT,
+    RA_CMD_BACK,
+    RA_CMD_CARD0 = 16, /* + the card's place on the page */
+    RA_PER_PAGE = 4,
+};
+
+static volatile int sRaPage;
+static volatile uint32_t sRaOpenId; /* 0 = the list */
+static volatile int sRaArmed;       /* LOG OUT waits for its second tap */
+static volatile uint32_t sRaArmedAt;
+static uint32_t sRaPaintedVersion = 0xFFFFFFFFu;
+static uint8_t sRaToastOnScreen;
+
+/* Text as it comes (an achievement's own words are not translated): at most `chars`
+ * characters. Returns the width drawn. */
+static int32_t CTextRaw(const SSurf* s, int32_t x, int32_t y, uint32_t color, const char* str, int chars) {
+    int32_t cx = x;
+    for (const char* p = str; *p && chars-- > 0;) {
+        const unsigned char c = Port_Text_Utf8Next(&p);
+        const uint8_t* g = UiFont_Glyph(c);
+        for (int32_t gy = 0; g && gy < kUiGlyphH; gy++)
+            for (int32_t gx = 0; gx < kUiGlyphW; gx++)
+                if (g[gy] & (0x10u >> gx)) FillRect(s, cx + gx, y + gy, cx + gx + 1, y + gy + 1, color);
+        const uint8_t* mark = c >= 0xC0 ? UiFont_Mark(c) : NULL;
+        for (int32_t gy = 0; mark && gy < 2; gy++)
+            for (int32_t gx = 0; gx < kUiGlyphW; gx++)
+                if (mark[gy] & (0x10u >> gx))
+                    FillRect(s, cx + gx, y - kUiMarkRise + gy, cx + gx + 1, y - kUiMarkRise + gy + 1, color);
+        cx += kUiAdvance;
+    }
+    return cx - x;
+}
+
+/* `text` on up to `lines` lines of `chars` characters, broken at spaces, `pitch` px apart.
+ * Returns the lines used. */
+static int CTextWrapped(const SSurf* s, int32_t x, int32_t y, int chars, int lines, int32_t pitch, uint32_t color,
+                        const char* text) {
+    int line = 0;
+    for (; line < lines && *text; line++) {
+        int n = 0, cutChars = 0;
+        size_t at = 0, cutAt = 0;
+        while (text[at] && n < chars) {
+            size_t len = 1;
+            while (text[at + len] && (text[at + len] & 0xC0) == 0x80) len++;
+            at += len, n++;
+            if (text[at] == ' ' || !text[at]) cutChars = n, cutAt = at;
+        }
+        if (!text[at] || !cutChars) cutAt = at, cutChars = n;
+        CTextRaw(s, x, y + line * pitch, color, text, cutChars);
+        text += cutAt;
+        while (*text == ' ') text++;
+    }
+    return line;
+}
+
+static uint32_t RaTypeColor(RaType t) {
+    switch (t) {
+        case kRaTypeMissable: return RGB(255, 140, 40);
+        case kRaTypeProgression: return RGB(90, 160, 255);
+        case kRaTypeWin: return RGB(210, 120, 255);
+        default: return CC_DIM;
+    }
+}
+
+static const char* RaTypeName(RaType t) {
+    switch (t) {
+        case kRaTypeMissable: return "MISSABLE";
+        case kRaTypeProgression: return "PROGRESSION";
+        case kRaTypeWin: return "WIN CONDITION";
+        default: return "";
+    }
+}
+
+/* RA's glyph for a special type, 12x12 at (x, y), as on its website: a warning triangle
+ * (missable), rising bars (progression), a flag (win condition). */
+static void RaTypeIcon(const SSurf* s, int32_t x, int32_t y, RaType t, bool dim) {
+    if (t == kRaTypeStandard) return;
+    uint32_t c = RaTypeColor(t);
+    if (dim) c = MixColor(c, CC_CELL, 128);
+    if (t == kRaTypeMissable) {
+        for (int r = 0; r < 6; r++) FillRect(s, x + 5 - r, y + r * 2, x + 7 + r, y + r * 2 + 2, c);
+        FillRect(s, x + 5, y + 3, x + 7, y + 7, CC_CELL);
+        FillRect(s, x + 5, y + 8, x + 7, y + 10, CC_CELL);
+    } else if (t == kRaTypeProgression) {
+        FillRect(s, x, y + 7, x + 3, y + 12, c);
+        FillRect(s, x + 4, y + 4, x + 7, y + 12, c);
+        FillRect(s, x + 8, y + 1, x + 11, y + 12, c);
+    } else {
+        FillRect(s, x + 1, y, x + 3, y + 12, c);
+        FillRect(s, x + 3, y + 1, x + 11, y + 7, c);
+        static const int8_t kSquares[5][2] = { { 3, 1 }, { 7, 1 }, { 5, 3 }, { 3, 5 }, { 7, 5 } };
+        for (int i = 0; i < 5; i++)
+            FillRect(s, x + kSquares[i][0], y + kSquares[i][1], x + kSquares[i][0] + 2, y + kSquares[i][1] + 2, CC_CELL);
+    }
+}
+
+/* The badge (greyed while locked), or while it loads a box with * (unlocked) or ?. */
+static void RaBadge(const SSurf* s, int32_t x, int32_t y, int size, const RaAchievement* a) {
+    const uint32_t* px = RetroAch_Badge(a->badge, size);
+    if (px) {
+        for (int j = 0; j < size; j++) {
+            if (y + j < 0 || y + j >= s->h) continue;
+            uint32_t* row = s->px + (size_t)(y + j) * (size_t)s->stride;
+            for (int i = 0; i < size; i++) {
+                if (x + i < 0 || x + i >= s->w) continue;
+                uint32_t c = px[j * size + i];
+                if (!a->unlocked) { /* grey and darker, as RA shows a locked badge */
+                    const uint32_t r = c & 0xFF, g = (c >> 8) & 0xFF, b = (c >> 16) & 0xFF;
+                    const uint32_t l = (r * 77 + g * 150 + b * 29) >> 9;
+                    c = RGB(l, l, l);
+                }
+                row[x + i] = c;
+            }
+        }
+        return;
+    }
+    FillRect(s, x, y, x + size, y + size, CC_BG);
+    const int m = size / 5;
+    FillRect(s, x + m, y + m, x + size - m, y + size - m, a->unlocked ? CC_GOOD : CC_TAB);
+    CText(s, x + size / 2 - 2, y + size / 2 - 3, a->unlocked ? CC_BG : CC_DIM, a->unlocked ? "*" : "?");
+}
+
+static void RaWhen(uint32_t t, char* out, size_t cap) {
+    const time_t tt = (time_t)t;
+    const struct tm* tm = t ? gmtime(&tt) : NULL;
+    if (tm) snprintf(out, cap, "%04d-%02d-%02d %02d:%02d", tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+                     tm->tm_hour, tm->tm_min);
+    else out[0] = 0;
+}
+
+static bool Compact_RaArmed(int cmd) {
+    return sRaArmed == cmd && (int32_t)(sCompactTick - sRaArmedAt) < STATES_ARM_TICKS;
+}
+
+static void Compact_RaStatusLine(char* out, int cap, uint32_t* color) {
+    RetroAch_Message(out, cap);
+    if (out[0]) {
+        *color = CC_WARN;
+        return;
+    }
+    char user[64];
+    *color = CC_DIM;
+    switch (RetroAch_Status()) {
+        case kRaOff: snprintf(out, (size_t)cap, "%s", Port_Text_Tr("ACHIEVEMENTS ARE OFF")); break;
+        case kRaNoAccount: snprintf(out, (size_t)cap, "%s", Port_Text_Tr("LOG IN WITH YOUR RA ACCOUNT")); break;
+        case kRaConnecting:
+            snprintf(out, (size_t)cap, "%s", Port_Text_Tr("CONNECTING..."));
+            *color = CC_WARN;
+            break;
+        case kRaOnline:
+            RetroAch_User(user, sizeof(user));
+            snprintf(out, (size_t)cap, "%s %s", Port_Text_Tr("ONLINE AS"), user);
+            *color = CC_GOOD;
+            break;
+        case kRaOffline:
+            snprintf(out, (size_t)cap, "%s", Port_Text_Tr("OFFLINE: UNLOCKS WILL BE SENT LATER"));
+            *color = CC_WARN;
+            break;
+        case kRaLoginError:
+            snprintf(out, (size_t)cap, "%s", Port_Text_Tr("LOGIN FAILED"));
+            *color = CC_BAD;
+            break;
+    }
+}
+
+static void Compact_PaintRaList(const SSurf* s, TargetList* tl) {
+    const int32_t top = CcContentTop() + 2, bottom = CcContentBottom(s->h) - CC_MARGIN;
+    int32_t x, w;
+    char buf[64];
+
+    /* Account and settings. */
+    const bool loggedIn = RetroAch_LoggedIn();
+    const bool armed = Compact_RaArmed(RA_CMD_ACCOUNT);
+    CColumn(s->w, 4, 0, 1, &x, &w);
+    if (loggedIn) {
+        RetroAch_User(buf, sizeof(buf));
+        buf[(w - 8) / kUiAdvance < (int)sizeof(buf) ? (w - 8) / kUiAdvance : (int)sizeof(buf) - 1] = 0;
+    }
+    CCell(s, tl, x, top, w, CC_CELL_H, armed ? "LOG OUT?" : "ACCOUNT", loggedIn ? buf : "LOG IN",
+          armed ? CC_WARN : (loggedIn ? CC_TEXT : CC_ACCENT), SS_ACT_RETRO, RA_CMD_ACCOUNT);
+    const bool on = RetroAch_Enabled();
+    CColumn(s->w, 4, 1, 1, &x, &w);
+    CCell(s, tl, x, top, w, CC_CELL_H, "ACTIVE", on ? "ON" : "OFF", on ? CC_GOOD : CC_DIM, SS_ACT_RETRO, RA_CMD_ENABLE);
+    CColumn(s->w, 4, 2, 1, &x, &w);
+    CCell(s, tl, x, top, w, CC_CELL_H, "NOTICE", RetroAch_NotifyTop() ? "TOP" : "BOTTOM", CC_TEXT, SS_ACT_RETRO,
+          RA_CMD_NOTIFY);
+    CColumn(s->w, 4, 3, 1, &x, &w);
+    const bool snd = RetroAch_Sound();
+    CCell(s, tl, x, top, w, CC_CELL_H, "SOUND", snd ? "ON" : "OFF", snd ? CC_GOOD : CC_DIM, SS_ACT_RETRO, RA_CMD_SOUND);
+
+    /* The server's last word, or the connection state; the sample notice on its right. */
+    int32_t y = top + CC_CELL_H + CC_GAP;
+    uint32_t color;
+    Compact_RaStatusLine(buf, sizeof(buf), &color);
+    const int32_t testW = 44;
+    CTextRaw(s, CC_MARGIN + 1, y + 6, color, buf, (s->w - 2 * CC_MARGIN - testW - 6) / kUiAdvance);
+    CButton(s, tl, s->w - CC_MARGIN - testW, y, testW, 20, "TEST", CC_TEXT, SS_ACT_RETRO, RA_CMD_PREVIEW);
+
+    /* Totals, the order and the pages. */
+    y += 20 + CC_GAP;
+    const int count = RetroAch_Count();
+    if (count == 0) {
+        const bool loading = on && RetroAch_Status() == kRaOnline;
+        char message[64];
+        RetroAch_Message(message, sizeof(message));
+        CTextCentered(s, s->w / 2, (y + bottom) / 2 - 8, CC_DIM,
+                      loading && !message[0] ? "LOADING THE ACHIEVEMENTS..." : "NO ACHIEVEMENTS TO SHOW");
+        if (!loggedIn) CTextCentered(s, s->w / 2, (y + bottom) / 2 + 4, CC_FAINT, "TAP ACCOUNT TO LOG IN");
+        return;
+    }
+    const int pages = (count + RA_PER_PAGE - 1) / RA_PER_PAGE;
+    int page = sRaPage;
+    if (page >= pages) page = sRaPage = pages - 1;
+    if (page < 0) page = sRaPage = 0;
+    snprintf(buf, sizeof(buf), "%d/%d  %u/%u %s", RetroAch_UnlockedCount(), count, (unsigned)RetroAch_Points(true),
+             (unsigned)RetroAch_Points(false), Port_Text_Tr("PTS"));
+    CText(s, CC_MARGIN + 1, y + 2, CC_GOOD, buf);
+    snprintf(buf, sizeof(buf), "%s %d/%d", Port_Text_Tr("PAGE"), page + 1, pages);
+    CText(s, CC_MARGIN + 1, y + 12, CC_FAINT, buf);
+    static const char* const kSorts[kRaSortCount] = { "DEFAULT", "TITLE", "POINTS", "RECENT" };
+    const int32_t pageX = s->w - CC_MARGIN - 2 * 26 - CC_GAP;
+    CButton(s, tl, pageX, y, 26, 20, "<", page > 0 ? CC_TEXT : CC_FAINT, SS_ACT_RETRO, RA_CMD_PREV);
+    CButton(s, tl, pageX + 26 + CC_GAP, y, 26, 20, ">", page + 1 < pages ? CC_TEXT : CC_FAINT, SS_ACT_RETRO,
+            RA_CMD_NEXT);
+    const int32_t dirX = pageX - 8 - 20;
+    CButton(s, tl, dirX, y, 20, 20, "", CC_TEXT, SS_ACT_RETRO, RA_CMD_DIR);
+    for (int row = 0; row < 4; row++) { /* a chevron: down = descending */
+        const int32_t cw = 1 + 2 * (RetroAch_Descending() ? 3 - row : row);
+        FillRect(s, dirX + 10 - cw / 2, y + 6 + row * 2, dirX + 10 - cw / 2 + cw, y + 8 + row * 2, CC_ACCENT);
+    }
+    CButton(s, tl, dirX - CC_GAP - 56, y, 56, 20, kSorts[RetroAch_Sort()], CC_ACCENT, SS_ACT_RETRO, RA_CMD_SORT);
+
+    /* The cards. */
+    y += 20 + CC_GAP;
+    const int32_t cardH = (bottom - y - (RA_PER_PAGE - 1) * CC_GAP) / RA_PER_PAGE;
+    const int32_t cardW = s->w - 2 * CC_MARGIN;
+    for (int k = 0; k < RA_PER_PAGE; ++k) {
+        RaAchievement a;
+        if (!RetroAch_CopyAt(page * RA_PER_PAGE + k, &a)) break;
+        const int32_t cy = y + k * (cardH + CC_GAP);
+        CBox(s, CC_MARGIN, cy, cardW, cardH, CC_CELL, a.unlocked ? CC_GOOD : CC_CELL_EDGE);
+        const int32_t by = cy + (cardH - kRaBadgeSmall) / 2;
+        RaBadge(s, CC_MARGIN + 3, by, kRaBadgeSmall, &a);
+        const int32_t tx = CC_MARGIN + 3 + kRaBadgeSmall + 6;
+        const int chars = (CC_MARGIN + cardW - 20 - tx) / kUiAdvance;
+        CTextRaw(s, tx, cy + cardH / 2 - 9, a.unlocked ? CC_GOOD : CC_TEXT, a.title, chars);
+        char when[24];
+        if (a.unlocked) RaWhen(a.unlock_time, when, sizeof(when));
+        snprintf(buf, sizeof(buf), "%u %s%s%s", (unsigned)a.points, Port_Text_Tr("PTS"), a.unlocked && when[0] ? "  " : "",
+                 a.unlocked ? when : "");
+        CText(s, tx, cy + cardH / 2 + 2, a.unlocked ? CC_DIM : CC_FAINT, buf);
+        RaTypeIcon(s, CC_MARGIN + cardW - 16, cy + (cardH - 12) / 2, a.type, !a.unlocked);
+        AddTarget(tl, (float)CC_MARGIN, (float)cy, (float)(CC_MARGIN + cardW), (float)(cy + cardH), SS_ACT_RETRO,
+                  (uint8_t)(RA_CMD_CARD0 + k));
+    }
+}
+
+static void Compact_PaintRaDetail(const SSurf* s, TargetList* tl, uint32_t id) {
+    RaAchievement a;
+    bool found = false;
+    for (int i = 0; !found && RetroAch_CopyAt(i, &a); ++i) found = a.id == id;
+    if (!found) { /* the list went away (logged out, switched off) */
+        sRaOpenId = 0;
+        Compact_PaintRaList(s, tl);
+        return;
+    }
+    const int32_t top = CcContentTop() + 2, bottom = CcContentBottom(s->h) - CC_MARGIN;
+    const int32_t frame = kRaBadgeBig + 4;
+    CBox(s, CC_MARGIN + 2, top + 2, frame, frame, CC_CELL, a.unlocked ? CC_GOOD : CC_CELL_EDGE);
+    RaBadge(s, CC_MARGIN + 4, top + 4, kRaBadgeBig, &a);
+    const int32_t tx = CC_MARGIN + 2 + frame + 8;
+    int32_t y = top + 4;
+    const int lines = CTextWrapped(s, tx, y, (s->w - CC_MARGIN - tx) / kUiAdvance, 3, 10, CC_ACCENT, a.title);
+    y += lines * 10 + 4;
+    char buf[48];
+    snprintf(buf, sizeof(buf), "%u %s", (unsigned)a.points, Port_Text_Tr("POINTS"));
+    CText(s, tx, y, CC_GOOD, buf);
+    y += 11;
+    CText(s, tx, y, a.unlocked ? CC_GOOD : CC_DIM, a.unlocked ? "UNLOCKED" : "LOCKED");
+    y += 11;
+    if (a.unlocked) {
+        RaWhen(a.unlock_time, buf, sizeof(buf));
+        CText(s, tx, y, CC_DIM, buf);
+        y += 11;
+    }
+    if (a.type != kRaTypeStandard) {
+        RaTypeIcon(s, tx, y, a.type, false);
+        CText(s, tx + 16, y + 3, RaTypeColor(a.type), RaTypeName(a.type));
+    }
+    y = top + frame + 10;
+    if (y < top + 4 + lines * 10 + 60) y = top + 4 + lines * 10 + 60;
+    const int32_t backY = bottom - 22;
+    CTextWrapped(s, CC_MARGIN + 3, y, (s->w - 2 * CC_MARGIN - 6) / kUiAdvance, (backY - y - 4) / 10, 10, CC_TEXT,
+                 a.description);
+    CButton(s, tl, (s->w - 88) / 2, backY, 88, 22, "BACK", CC_TEXT, SS_ACT_RETRO, RA_CMD_BACK);
+}
+
+static void Compact_PaintRetroAch(const SSurf* s, TargetList* tl) {
+    FillRect(s, 0, CcContentTop(), s->w, CcContentBottom(s->h), CC_BG);
+    sRaPaintedVersion = RetroAch_Version();
+    const uint32_t id = sRaOpenId;
+    if (id) Compact_PaintRaDetail(s, tl, id);
+    else Compact_PaintRaList(s, tl);
+}
+
+/* Repaint when anything retro_ach.c shows changed (a badge arriving too), or while the
+ * LOG OUT confirmation runs out. */
+static int Compact_RetroAchNeedsPaint(void) {
+    return RetroAch_Version() != sRaPaintedVersion ||
+           (sRaArmed && (int32_t)(sCompactTick - sRaArmedAt) < STATES_ARM_TICKS + 2);
+}
+
+/* SS_ACT_RETRO taps (main thread). */
+static void Compact_RetroAchCommand(int cmd) {
+    if (cmd >= RA_CMD_CARD0 && cmd < RA_CMD_CARD0 + RA_PER_PAGE) {
+        RaAchievement a;
+        if (RetroAch_CopyAt(sRaPage * RA_PER_PAGE + (cmd - RA_CMD_CARD0), &a)) sRaOpenId = a.id;
+        return;
+    }
+    if (cmd != RA_CMD_ACCOUNT) sRaArmed = 0;
+    switch (cmd) {
+        case RA_CMD_ACCOUNT:
+            if (!RetroAch_LoggedIn()) {
+                RetroAch_PromptLogin(); /* the system keyboard, over both screens */
+            } else if (!Compact_RaArmed(cmd)) {
+                sRaArmed = cmd; /* LOG OUT needs a second tap */
+                sRaArmedAt = sCompactTick;
+            } else {
+                sRaArmed = 0;
+                RetroAch_Logout();
+                sRaOpenId = 0;
+            }
+            break;
+        case RA_CMD_ENABLE: RetroAch_SetEnabled(!RetroAch_Enabled()); break;
+        case RA_CMD_NOTIFY: RetroAch_SetNotifyTop(!RetroAch_NotifyTop()); break;
+        case RA_CMD_SOUND: RetroAch_SetSound(!RetroAch_Sound()); break;
+        case RA_CMD_PREVIEW: RetroAch_ShowPreview(); break;
+        case RA_CMD_SORT:
+            RetroAch_SetSort((RaSort)((RetroAch_Sort() + 1) % kRaSortCount), RetroAch_Descending());
+            sRaPage = 0; /* the old page means nothing in a new order */
+            break;
+        case RA_CMD_DIR:
+            RetroAch_SetSort(RetroAch_Sort(), !RetroAch_Descending());
+            sRaPage = 0;
+            break;
+        case RA_CMD_PREV:
+            if (sRaPage > 0) --sRaPage;
+            break;
+        case RA_CMD_NEXT: ++sRaPage; break;
+        case RA_CMD_BACK: sRaOpenId = 0; break;
+        default: break;
+    }
+    ++sRaPaintedVersion; /* answer the tap at once */
+}
+
+/* The unlock notice on this screen (NOTICE = BOTTOM), over the tab bar on any tab, for as
+ * long as RetroAch_Toast says. */
+static int Compact_RaToastNeedsPaint(void) {
+    return (!RetroAch_NotifyTop() && RetroAch_Toast(NULL)) || sRaToastOnScreen;
+}
+
+static void Compact_PaintRaToast(const SSurf* s) {
+    RaAchievement a;
+    sRaToastOnScreen = (uint8_t)(!RetroAch_NotifyTop() && RetroAch_Toast(&a));
+    if (!sRaToastOnScreen) return;
+    const int32_t w = s->w - 8, h = 40, x = 4, y = sCcTabsBottom ? s->h - h - 2 : 2;
+    CWindow(s, x, y, w, h, CC_BAR, CC_GOOD);
+    const uint32_t* badge = RetroAch_Badge(a.badge, kRaBadgeSmall);
+    int32_t tx = x + 10;
+    if (badge) {
+        RaBadge(s, x + 7, y + 6, kRaBadgeSmall, &a);
+        tx = x + 7 + kRaBadgeSmall + 6;
+    }
+    CText(s, tx, y + 9, CC_GOOD, "ACHIEVEMENT UNLOCKED");
+    char points[16];
+    snprintf(points, sizeof(points), " (+%u)", (unsigned)a.points);
+    const int chars = (x + w - 8 - tx) / kUiAdvance - (int)strlen(points);
+    const int32_t end = tx + CTextRaw(s, tx, y + 23, CC_BAR_TEXT, a.title, chars);
+    CTextRaw(s, end, y + 23, CC_WARN, points, 16);
 }

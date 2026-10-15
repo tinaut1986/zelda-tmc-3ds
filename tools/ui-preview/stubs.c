@@ -203,3 +203,49 @@ void Port_Config_SetDebugFtpOn(bool on) { sDbgFtp = on; }
 /* ---- X/Y soft slots (port/port_softslots.c): none assigned ---- */
 uint8_t Port_SoftSlots_GetAssignment(int slot) { (void)slot; return 0; }
 void Port_SoftSlots_SetAssignment(int slot, uint8_t itemId) { (void)slot; (void)itemId; }
+
+/* ---- RetroAchievements (retro_ach.h): a logged-in account and a sample set; RA_OFF=1 shows
+ * the tab before logging in, RA_TOAST=1 the unlock notice on the bottom screen. ---- */
+#include "retro_ach.h"
+static const RaAchievement kRaSample[] = {
+    { 1, "Sword of the Smith", "Obtain the Smith's Sword", "", 5, kRaTypeProgression, true, 1760000000 },
+    { 2, "Deepwood Shrine", "Defeat the Big Green ChuChu in the Deepwood Shrine", "", 10, kRaTypeProgression, true,
+      1760100000 },
+    { 3, "Kinstone Collector", "Fuse 50 Kinstones", "", 25, kRaTypeStandard, false, 0 },
+    { 4, "Gone Missing", "Talk to the postman before he leaves town for good on his route", "", 5, kRaTypeMissable,
+      false, 0 },
+    { 5, "Hero of Men", "Defeat Vaati and save Hyrule", "", 50, kRaTypeWin, false, 0 },
+    { 6, "Figurine Hunter", "Complete the figurine collection", "", 25, kRaTypeStandard, false, 0 },
+};
+static bool RaOff(void) { return getenv("RA_OFF") != NULL; }
+bool RetroAch_Enabled(void) { return !RaOff(); }
+bool RetroAch_LoggedIn(void) { return !RaOff(); }
+RaStatus RetroAch_Status(void) { return RaOff() ? kRaNoAccount : kRaOnline; }
+void RetroAch_User(char* out, int cap) { snprintf(out, (size_t)cap, "%s", RaOff() ? "" : "tinaut1986"); }
+void RetroAch_Message(char* out, int cap) { if (cap > 0) out[0] = 0; }
+int RetroAch_Count(void) { return RaOff() ? 0 : (int)(sizeof(kRaSample) / sizeof(kRaSample[0])); }
+bool RetroAch_CopyAt(int i, RaAchievement* out) {
+    if (i < 0 || i >= RetroAch_Count()) return false;
+    *out = kRaSample[i];
+    return true;
+}
+int RetroAch_UnlockedCount(void) { return RaOff() ? 0 : 2; }
+uint32_t RetroAch_Points(bool unlocked_only) { return RaOff() ? 0 : unlocked_only ? 15 : 120; }
+const uint32_t* RetroAch_Badge(const char* badge, int size) { (void)badge, (void)size; return NULL; }
+uint32_t RetroAch_Version(void) { return 1; }
+bool RetroAch_Toast(RaAchievement* out) {
+    if (!getenv("RA_TOAST")) return false;
+    if (out) *out = kRaSample[1];
+    return true;
+}
+bool RetroAch_NotifyTop(void) { return false; }
+void RetroAch_SetNotifyTop(bool top) { (void)top; }
+bool RetroAch_Sound(void) { return true; }
+void RetroAch_SetSound(bool on) { (void)on; }
+RaSort RetroAch_Sort(void) { return kRaSortDefault; }
+bool RetroAch_Descending(void) { return false; }
+void RetroAch_SetSort(RaSort sort, bool descending) { (void)sort, (void)descending; }
+void RetroAch_SetEnabled(bool on) { (void)on; }
+void RetroAch_PromptLogin(void) {}
+void RetroAch_Logout(void) {}
+void RetroAch_ShowPreview(void) {}

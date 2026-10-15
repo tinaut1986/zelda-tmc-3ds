@@ -1,202 +1,159 @@
-# The Minish Cap 3DS (tinaut1986 fork)
-
-> This is a fork of [EstebanPdN/zelda-tmc-3ds](https://github.com/EstebanPdN/zelda-tmc-3ds)
-> with its own version line (`v0.1.0` onwards), aimed at smooth 60 fps on both
-> New 3DS and Old 3DS, a wide mode that fills the top screen, and on-console debug
-> tools. It installs as a separate app, **Minish Cap 3DS**, and reads its ROM and
-> saves from `sdmc:/3ds/Minish Cap 3DS/` (not upstream's `The Minish Cap 3DS`
-> folder), so both can be installed side by side. Downloads are on this
-> repository's [releases](https://github.com/tinaut1986/zelda-tmc-3ds/releases).
-> The rest of this README is upstream's.
-
 # The Minish Cap 3DS
 
-<img width="1672" height="941" alt="The Minish Cap 3DS" src="https://github.com/user-attachments/assets/db99e777-12a2-4222-86c3-7c8f14062586" />
+Nintendo 3DS dual-screen port of *The Legend of Zelda: The Minish Cap*, aimed at smooth
+60 fps on both New 3DS and Old 3DS, a wide view that fills the top screen, and on-console
+tools for testing and debugging.
 
-Nintendo 3DS dual-screen port of *The Legend of Zelda: The Minish Cap*, based on the open-source Minish Cap decompilation, Project Picori, and the dual-screen Android port.
+It installs as its own application, **Minish Cap 3DS**, and keeps its ROM and saves in
+`sdmc:/3ds/Minish Cap 3DS/`. Downloads are on this repository's
+[releases](https://github.com/tinaut1986/zelda-tmc-3ds/releases).
 
-Made with the help of Codex.
+No ROM or extracted Nintendo game assets are distributed with this project. You must provide
+your own legally obtained Game Boy Advance ROM.
 
-This project is based on open-source work from:
+## Origin
 
-* [samyost1/tmc-android](https://github.com/samyost1/tmc-android) — dual-screen Android source base
-* [Project Picori](https://github.com/999sian/tmc) — native Minish Cap engine and port infrastructure
-* [zeldaret/tmc](https://github.com/zeldaret/tmc) — original decompilation
+The game is the open-source decompilation of the original, running on a native engine:
 
-No ROM or extracted Nintendo game assets are distributed with this project. You must provide your own legally obtained compatible Game Boy Advance ROM.
-
-## Community
-
-Join my Discord for updates, support, bug reports, testing builds, suggestions, and other Nintendo 3DS homebrew projects:
-
-https://discord.gg/zy8BqH5ss
+* [zeldaret/tmc](https://github.com/zeldaret/tmc): the decompilation of the game.
+* [Project Picori](https://github.com/999sian/tmc): the native engine and port infrastructure.
+* [samyost1/tmc-android](https://github.com/samyost1/tmc-android): the dual-screen Android port
+  the second screen comes from.
+* [EstebanPdN/zelda-tmc-3ds](https://github.com/EstebanPdN/zelda-tmc-3ds): the Nintendo 3DS
+  port this repository was forked from. It has its own version line (`v0.1.0` onwards) and has
+  since diverged: its own application identity, renderer work, bottom screen and tools.
 
 ## Features
 
-* Native Nintendo 3DS port with full dual-screen support.
-* Supports both USA and European ROMs with automatic region detection.
-* Includes native [European gameplay backports](docs/eu-backport.md); no patched ROM is required.
-* True widescreen gameplay on the 400x240 top screen, plus Original and Stretch display modes.
-* Bottom-screen interface with live map, dungeon information, quest status, touch item controls, and settings.
-  The opening Picori legend keeps the bottom screen black; the overworld map
-  shows only its stone frame until Link receives it.
-* New 3DS enhancements including 804 MHz mode, L2 cache, multi-core rendering, and optional 2x–5x turbo using the C-Stick.
-* Three display styles: Blur, Bilinear, and Pixel Perfect.
-* On New Nintendo 3DS, the existing Wide + Pixel Perfect combination enables
-  experimental Full View: compatible outdoor rooms render at 400x240, while
-  interiors keep the same 1x pixel size as the rest of the game.
-* In-app updates with Stable and Pre-release channels, top-screen changelogs, and verified CIA/3DSX installation.
-* Native stereo audio, persistent settings, reliable save handling, FPS tools, and diagnostic dumps for bug reports.
+* Both USA and European ROMs, detected automatically, with the European gameplay backports
+  ([docs/eu-backport.md](docs/eu-backport.md)); no patched ROM is needed.
+* Original, Stretch and Wide display modes, and **Full View**: Wide + Pixel Perfect draws every
+  room at 400x240 (small rooms centred with black borders), on New and Old 3DS. The title
+  screen, file select and the Minish portal cutscene are 400x240 too.
+* Three display styles: Blur, Bilinear and Pixel Perfect. Everything is drawn by the GPU
+  renderer; the software renderer remains as reference and fallback.
+* New 3DS: 804 MHz mode, L2 cache, multi-core rendering, optional 2x-5x turbo on the C-Stick.
+  Old 3DS: an optimised renderer, a lighter audio path and an adaptive frame pacer.
+* X and Y fire items, shown as the console's A/B/X/Y diamond in the HUD and on the bottom
+  screen.
+* Bottom screen with live map, dungeon information, quest status, item touch controls, themes
+  and settings; its own text follows the language chosen in-game (EN/FR/DE/ES/IT).
+* **Save states** (STATES tab), independent of the build.
+* **RetroAchievements** (trophy tab, softcore): see
+  [docs/retroachievements.md](docs/retroachievements.md).
+* In-app updates with a STABLE and a + BETAS channel.
+* Stereoscopic 3D on the top screen: the HUD and text boxes come out of the screen; lower the
+  console's 3D slider for the flat picture ([docs/stereo-3d.md](docs/stereo-3d.md)).
+* Debug builds (the Beta releases) add a DEBUG tab: SD log, frame-time recorder, GPU CHECK,
+  screen dump and an FTP server. See [docs/debug-tools.md](docs/debug-tools.md).
 
-## Performance
+## Screenshots
 
-The port automatically selects a performance profile for the detected console.
+_Original and extended views, side by side: coming soon._
 
-**New Nintendo 3DS** keeps the full-presentation path with 804 MHz mode, L2 cache, multi-core rendering, and C-Stick turbo.
+<!-- Put the images or GIFs in docs/images/ and link them here. -->
 
-**Old Nintendo 3DS** uses an optimized renderer, lower-overhead audio path, and adaptive presentation-skip profile. When rendering cannot sustain 60 visual FPS, the engine can continue advancing near its 60 Hz target instead of slowing the entire game down. Input, touch, audio, and lifecycle handling continue to run on skipped presentation ticks.
+## Widescreen and generative AI
 
-The bottom-screen worker avoids redundant static redraws while keeping touch input sampled on every engine tick.
+The GBA drew some screens as one fixed 240x160 picture, so the columns beyond it do not exist
+in the game. For Full View (Wide + Pixel Perfect) to fill the 400x240 screen, the missing
+borders of a few scenes have been **extended with generative AI**, from a screen dump of the
+original picture:
+
+* the Minish portal cutscene,
+* the forest of the title screen,
+* the cave of the file select screen.
+
+Only the generated parts are included (the original area is left transparent), and the game's
+own picture is drawn untouched over them. The title's light rays are not AI: they are the
+game's own rays, copied and continued by the port at run time. Everywhere else the extra
+width is the game's real map. How it is done: [docs/wide-scene-extension.md](docs/wide-scene-extension.md).
 
 ## Installation
 
-**Experimental v2.2-E1** fixes normal saves being rejected when previous
-versions left empty legacy metadata beside them. Install it over the existing
-application; keep your `.sav` and companion files. The fix recognizes that
-inactive metadata without deleting it. Active or unrecognized legacy profiles
-remain protected. Download the experimental CIA or 3DSX from
-[v2.2-E1](https://github.com/EstebanPdN/zelda-tmc-3ds/releases/tag/v2.2-E1).
-The stable release remains v2.1.
-
-1. Install the CIA with FBI, or use the 3DSX build with the Homebrew Launcher.
-
-```text
-tmc-3ds-v2.1.cia
-```
-
+1. Install the CIA from the latest release with FBI (or scan the QR code in the release).
+   There is no 3DSX release: from the Homebrew Launcher the game does not get enough memory.
 2. Create this folder on your SD card:
 
 ```text
-sdmc:/3ds/The Minish Cap 3DS/
+sdmc:/3ds/Minish Cap 3DS/
 ```
 
-3. Place your legally obtained USA or European `.gba` ROM inside that folder.
+3. Place your legally obtained USA or European `.gba` ROM in it. Any filename works as long as
+   the extension is `.gba`. The ROM stays on the SD card and is never included in the CIA.
 
-The ROM can have **any filename** as long as it uses the `.gba` extension.
+If the folder has no ROM, the game reads the one in the original port's folder
+(`sdmc:/3ds/The Minish Cap 3DS/`) and offers once to copy its saves. The two applications can
+be installed side by side.
 
-### Recommended ROM
-
-Both the **USA** and **European** versions are supported, but I **highly recommend using the European ROM**.
-
-The European version is the ROM I used throughout the development and testing of this port, so it has received by far the most testing.
-
-The USA version should be compatible, but it behaves slightly differently in some parts of the game, so you may encounter bugs that are not present when using the European version.
-
-The European ROM also includes multiple languages, **including English**, so there is generally no disadvantage to using it.
-
-Expected clean ROM SHA-1 values:
+The **European** ROM is recommended: it is the one used the most during development and
+testing, and it includes English. Expected clean ROM SHA-1 values:
 
 ```text
 USA:    b4bd50e4131b027c334547b4524e2dbbd4227130
 Europe: cff199b36ff173fb6faf152653d1bccf87c26fb7
 ```
 
-The ROM stays on your SD card and is never included in the CIA.
-
 ### Audio
 
-Audio requires a working Nintendo 3DS DSP firmware setup.
+Audio requires a working Nintendo 3DS DSP firmware setup. If homebrew audio is not working,
+open the Luma3DS Rosalina Menu and use `Miscellaneous options > Dump DSP firmware`.
 
-If homebrew audio is not working, open the Luma3DS Rosalina Menu and use:
+## Updates
 
-```text
-Miscellaneous options > Dump DSP firmware
-```
+Open **OPTIONS > UPDATES**, pick the **STABLE** or **+ BETAS** channel and install. Save your game
+first: the application closes after a successful update. The CIA is checked against the
+application's title ID and a SHA-256 digest before it replaces the installed one. Wi-Fi is
+required; a failed connection leaves the current installation untouched.
 
 ## Diagnostics
 
-Debug builds (the Beta releases) have a DEBUG tab on the bottom screen: an SD log, a frame-time
-recorder, GPU CHECK and a SCREEN DUMP. There is no button chord. A screen dump writes
-numbered `debug/tmc-dump-NNNN-*` files (screenshots, memories, runtime state, performance data)
-under:
+Debug builds write numbered `debug/tmc-dump-NNNN-*` files (screenshots, memories, runtime
+state, performance data) under:
 
 ```text
 sdmc:/3ds/Minish Cap 3DS/debug/
 ```
 
-To go back to a game state, use the STATES tab. See `docs/debug-tools.md` for everything the
-tab offers and how to read the files.
-
-## Updates
-
-Open **Settings > Update**. Select **Stable** or **Pre-release**, then tap the
-release version to read its changelog on the top screen. Use **Prev / Next** to
-turn pages. **Download Update** asks for confirmation before downloading and
-installing. Save your game first: the application closes after a successful update.
-
-CIA builds overwrite only this application's title after checking its ID and
-SHA-256 digest. 3DSX builds replace the launched file with rollback protection.
-Wi-Fi is required; connection failures leave the current installation available.
-
-## Releases
-
-Every GitHub release includes:
-
-* Installable CIA
-* Homebrew Launcher 3DSX
-* FBI QR code
-* Source code archive
-
-Latest release:
-
-https://github.com/EstebanPdN/zelda-tmc-3ds/releases/latest
+Attach them to a bug report. [docs/debug-tools.md](docs/debug-tools.md) explains each one.
 
 ## Building
 
-Requirements:
-
-* devkitPro
-* devkitARM
-* libctru
-* Citro2D
-* Citro3D
-* CMake
-* `makerom` and `bannertool` for CIA packaging
-
-Build with:
+Requirements: devkitPro with devkitARM, libctru, Citro2D and Citro3D, and CMake. `makerom`
+and `bannertool` are in `platform/3ds/tools/bin/`.
 
 ```sh
-chmod +x platform/3ds/build.sh
-./platform/3ds/build.sh
+export DEVKITPRO=/opt/devkitpro DEVKITARM=/opt/devkitpro/devkitARM
+./build_3ds.sh                          # interactive menu (debug build by default)
+./build_3ds.sh --mode prod --no-ftp     # what a stable release is
+./build_3ds.sh --install <3ds-ip>       # build, upload and install over the running game
 ```
 
-Builds are generated under:
-
-```text
-build-3ds/game/tmc-3ds-v2.2-E1.cia
-build-3ds/game/tmc-3ds-v2.2-E1.3dsx
-```
-
-The build does not include or embed a ROM.
+The CIA is written to `build-3ds/game/tmc-3ds-v<VERSION>.cia` (a `.3dsx` is made alongside for
+local use). The build does not include or embed a ROM. Contributor and workflow notes are in
+[CLAUDE.md](CLAUDE.md) and [docs/PLAN.md](docs/PLAN.md); release notes in
+[docs/release-notes](docs/release-notes).
 
 ## Credits
 
-* [samyost1/tmc-android](https://github.com/samyost1/tmc-android) — dual-screen Android source base used for this port
-* [Project Picori](https://github.com/999sian/tmc) — native Minish Cap engine and port infrastructure
-* [Raekwon1603/tmc-android](https://github.com/Raekwon1603/tmc-android) — Android packaging and platform work behind the dual-screen fork
-* [zeldaret/tmc](https://github.com/zeldaret/tmc) — original decompilation
-* Esteban PDN — Nintendo 3DS port and release maintenance
+* [samyost1/tmc-android](https://github.com/samyost1/tmc-android): dual-screen Android source base
+* [Project Picori](https://github.com/999sian/tmc): native Minish Cap engine and port infrastructure
+* [Raekwon1603/tmc-android](https://github.com/Raekwon1603/tmc-android): Android packaging and platform work behind the dual-screen fork
+* [zeldaret/tmc](https://github.com/zeldaret/tmc): original decompilation
+* [EstebanPdN](https://github.com/EstebanPdN/zelda-tmc-3ds): the original Nintendo 3DS port this one is forked from
+* [ipatix/agbplay](https://github.com/ipatix/agbplay): the m4a music engine
+* [rcheevos](https://github.com/RetroAchievements/rcheevos): the RetroAchievements client
 
 ## License and Legal Notice
 
 Original port contributions are distributed under **GNU GPL v3.0 or later**.
 See [LICENSE](LICENSE) for the full terms and [COPYRIGHT.md](COPYRIGHT.md) for scope and attribution.
 
-Each release's **Source code** download contains the corresponding application
-and library sources and build scripts. The 3DS build uses **agbplay** by ipatix
-and contributors under **LGPL v3.0**; its [notice](libs/agbplay_core/LICENSE)
-and [license text](libs/agbplay_core/COPYING.LESSER) are included. You may modify
-that library and rebuild the CIA or 3DSX with the documented build command.
+Each release's **Source code** download contains the corresponding application and library
+sources and build scripts. The 3DS build uses **agbplay** by ipatix and contributors under
+**LGPL v3.0**; its [notice](libs/agbplay_core/LICENSE) and
+[license text](libs/agbplay_core/COPYING.LESSER) are included. You may modify that library and
+rebuild the CIA with the documented build command.
 
 Third-party components retain their respective licenses as listed in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
 

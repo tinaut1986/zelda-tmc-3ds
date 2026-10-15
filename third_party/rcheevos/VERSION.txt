@@ -1,0 +1,22 @@
+f1417fbf2236936e8334533628b2948dfa4a46d0
+
+Vendored subset of https://github.com/RetroAchievements/rcheevos at the
+commit above (the same copy as ../mzm/third_party/rcheevos). Only the sources
+this port links are kept:
+
+  src/{rc_client,rc_compat,rc_util,rc_version}.c
+  src/rapi/*.c        -- server request/response marshalling
+  src/rcheevos/*.c    -- the trigger/condition evaluator
+  src/rhash/md5.c     -- MD5, which rapi uses to sign unlock requests
+
+Deliberately NOT vendored:
+  src/rhash/*         -- everything except md5.c. The GBA hash is the MD5 of
+                         the ROM file, which platform/3ds/source/retro_ach.c
+                         computes itself; the file readers are dead weight.
+  src/rc_libretro.*, src/rc_client_external.*, src/rc_client_raintegration.*
+  src/rcheevos/rc_validate.c -- achievement-editor validation only, and it
+                         does not compile clean under devkitARM.
+  include/module.modulemap -- Swift/Clang modules, unused.
+
+No local modifications to the vendored sources: keep it that way so the
+next update is a straight re-copy. License: MIT (LICENSE).

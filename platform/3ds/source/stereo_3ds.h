@@ -1,13 +1,11 @@
 #pragma once
 /* Stereoscopic 3D on the top screen (docs/stereo-3d.md). The game stays a flat picture; layers
- * the port gives a depth are drawn shifted apart for each eye. Off unless stereo_3d is set
+ * the port gives a depth are drawn shifted apart for each eye. On unless stereo_3d_on is 0
  * (tmc3ds.ini, DEBUG -> SWITCHES -> STEREO 3D), and only while the 3D slider is up. */
 #include <stdbool.h>
 
 typedef enum Stereo3DSEye { STEREO3DS_LEFT, STEREO3DS_RIGHT } Stereo3DSEye;
 
-/* stereo_3d: off, on, or on with the test depths (Stereo3DS_LayerShift). */
-enum { STEREO3DS_OFF, STEREO3DS_ON, STEREO3DS_TEST, STEREO3DS_SETTING_COUNT };
 
 /* Once a frame, before it is built: reads the setting and the slider. */
 void Stereo3DS_BeginFrame(void);
