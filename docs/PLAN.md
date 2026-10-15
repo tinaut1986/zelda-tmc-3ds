@@ -14,7 +14,7 @@ change (what goes where: the table in `CLAUDE.md`).
   audio offload, an updater, a quick memory dump (L+R+A) and an experimental New 3DS
   "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors; the 2x indoor zoom is gone, see the decisions log).
 
-## Status (2026-10-14)
+## Status (2026-10-15)
 
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
@@ -24,7 +24,10 @@ merged into `main`), `v0.1.2` (2026-10-13, beta), `v0.1.1` (2026-10-12, stable) 
 (2026-10-11, beta).
 
 **Branches:** every branch merged into `release/v0.2.1` was deleted, here and on origin (2026-10-14);
-their history is in `git log` and the decisions log. Open:
+their history is in `git log` and the decisions log (2026-10-15: `feat/retroachievements` and
+`feat/ftp-install-progress` too, here; the remote `feat/retroachievements` still exists on origin,
+a delete was refused in the session: `git push origin --delete feat/retroachievements`). Open:
+none.
 
 | Branch | What | State |
 |---|---|---|
@@ -35,39 +38,50 @@ Link's house and the Minish Woods are untested in builds other than their writer
 build, as the house door did: issue #14). A state saved inside the pause menu breaks on closing
 it (issue #13).
 
-**Start here (2026-10-14, evening):** `v0.2.0` is out (stable). Everything of this session is merged
-into `release/v0.2.1` and pushed: P4.5 (file select at 400x240), issue #26 (zone tilesets), #27 (map
-marker), P5.1's first part (stereo 3D, ON = HUD and text boxes in front, checked by the owner on the
-New 3DS). Every merged branch was deleted; no worktree, nothing uncommitted. Next, in this order:
-1. Whatever the owner reports: they go through the game for screens still drawn at 240x160, and
+**Start here (2026-10-15):** `release/v0.2.1` (on origin, `68e6d5d`) has everything: RetroAchievements
+(P2.8), stereo 3D always on, the FTP install notice (percent + bar for receiving, installing and the
+10 s restart countdown; checked by the owner on the 2DS). No branch is open, no worktree, nothing
+uncommitted. `v0.2.1` is not tagged: before tagging, write `docs/release-notes/v0.2.1.md`. Next:
+1. **RetroAchievements on the EU ROM.** The set (game 559) lists only the USA hash
+   (`a104896da0047abe8bee2a6e3f4c7290`, No-Intro) and a few hacks of it; the owner's European ROM
+   (md5 `2af78edbe244b5de44471368ae2b6f0b`) is answered with "Unsupported Game Version" (id
+   `1200000559`, one achievement). The owner may ask RA to add the European hash (their call, later).
+   Meanwhile, to play the set on the EU ROM for testing only, with a test account, put the USA md5
+   in `rom_md5=` of `retroachievements.ini` (the port keeps it while `rom_key` matches the file)
+   and relaunch; never on the real account. Verified 2026-10-15 with `tinaut1986test`: the set loads
+   (66 achievements) and "A New Quest" unlocked in play. To check: the other achievements as the
+   owner plays (a condition that reads region data may differ; see `docs/retroachievements.md`),
+   the unlock sound, and issue #28 ("Offense").
+2. Whatever the owner reports: they go through the game for screens still drawn at 240x160, and
    say which more layers get a depth in 3D (fog, the Minish village's leaves; P5.1). Issue #26:
    Hyrule Town in Full View not seen yet (same fix).
-2. The README's before/after GIF of the portal shrink (owner's request): record it with the scene
+3. The README's before/after GIF of the portal shrink (owner's request): record it with the scene
    recorder (`tmc-link.py scenerec`, P1.6) once VISTA = ORIGINAL and once Full View; then rewrite
    the README (performance, Full View, bottom screen, states, updater) with the GIFs (2026-10-13).
-3. Issue #25 (GPU fade: one-step flicker of the near-white during the logos' fade), when it suits.
-4. Issue #4: the relaunch fix is merged; a few more installs without a loader dump, then close
-   (this session installed some 20 builds on the .141 without one). Issue #23: resets from the
-   title look right in recordings; a reset from inside a game is still to see.
-5. Issue #19 (states break when the port's statics grow), #13, #11 as before.
+4. Issue #25 (GPU fade: one-step flicker of the near-white during the logos' fade), when it suits.
+5. Issue #4: the relaunch fix is merged; a few more installs without a loader dump, then close
+   (the FTP install notice now also shows the 10 s wait). Issue #23: resets from the title look
+   right in recordings; a reset from inside a game is still to see.
+6. Issue #19 (states break when the port's statics grow), #13, #11 as before.
 Scene pictures (portal, title, file select): procedure in `docs/wide-scene-extension.md`; the owner's material
 in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/intro-titulo/` and `~/Imágenes/elige-archivo/`
 (never in the repository).
 To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
 **On the owner's consoles now (2026-10-14):**
-- Old 3DS/2DS, **`192.168.1.139`** (its address changed; `.3ds_ftp_ip` holds it): a debug build of
-  `feat/title-wide` with the first extended rays, `0.1.3-dev.96.5+rays` (2026-10-14), BOTTOM CORE = AUTO, UPDATES channel + BETAS, Full View
-  (`widescreen=1`, `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT, FRAMES = AUTO.
-  `portal-cutscene-strips.bin` from the owner's picture 1 is in the data folder (the same as the
-  shipped one). **`dev-ftp.txt` is there** (install-only server for production builds). `debug/` was
-  cleared of 1053 old dumps and checks (listing a folder that size hung the FTP server).
-  The owner plays on it (Minish Woods, sword and shield only) and keeps save states at spots that
-  reproduce bugs: never overwrite or delete one (protect their place with a *new* state:
-  `savestate`, then `loadstate 1` and `delstate 1` after the install). Of the 14 (2026-10-13):
-  **1 is Claude's**, the owner's place before the evening installs (00/00, to load and delete);
-  3 = 00/00 on the Minish Woods stump (#21, P4.3); 5 = 03/04 below the scroll up (#11).
-  Loading a state switches the bottom screen to MAP: tap another tab after it, not before.
+- Old 3DS/2DS, **`192.168.1.139`** (the owner calls it "the 2DS"; `.3ds_ftp_ip` holds it): a debug
+  build of `release/v0.2.1` at `68e6d5d`, `0.2.1-dev.24.2+3a5320f` (2026-10-15), Full View
+  (`widescreen=1`, `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT,
+  FRAMES = AUTO, UPDATES channel + BETAS. **RetroAchievements is logged in as the test account
+  `tinaut1986test`** and `retroachievements.ini` has `rom_md5=a104896d...` (the USA hash, set by
+  Claude for the test; the ROM is the European one, true md5 `2af78edb...`): restore that line or
+  delete it before the owner logs in with the real account. The owner's save was in the Smith's
+  house at the start of the game (2026-10-15). **`dev-ftp.txt` is there**. Its save states: the
+  newest (1) is Claude's, saved just before the last install; never overwrite or delete the
+  owner's (protect their place with a *new* state: `savestate`, then `loadstate 1` and
+  `delstate 1` after the install; of the 14 on 2026-10-13, 3 = 00/00 on the Minish Woods stump
+  (#21, P4.3), 5 = 03/04 below the scroll up (#11)). Loading a state switches the bottom screen
+  to MAP: tap another tab after it, not before.
 - **`192.168.1.141`** (pass `--ip`): **the 2DS** (owner, 2026-10-14; its log says Old 3DS, which a 2DS
   is to the system: no 3D slider). The owner's console for the title and file select work: a debug
   build of `fix/zone-tilesets` (`0.2.1-dev.0+42f5761`, the village fix only) with **STEREO 3D =
@@ -341,6 +355,9 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   `tools/gen_ra_map.py`. A first attempt with another tool had left only a stub.
   *Done when:* the owner logs in on the console, the list and badges load, and an achievement
   unlocks in play with its notice and sound (and is on the RA site).
+  *Checked 2026-10-15 (owner, test account, USA hash given to the EU ROM):* login, the set (66
+  achievements) and an unlock with its notice work; not yet: the sound, the RA site, the EU ROM
+  under its own hash (RA lists only the USA one). Left open: issue #28 ("Offense").
 
 ## Phase 3: performance (60 fps, New 3DS and Old 3DS, no 3D)
 
@@ -794,3 +811,18 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   in `tmc3ds.ini` was the former default, not a choice, hence the new key). `3dsx.ld` pins
   moved up 0x10000 (.data 0x630000, .bss 0x640000) for rcheevos: format 1 save states of older
   builds no longer load; format 2 is unaffected.
+- **2026-10-15** RetroAchievements does not support the European ROM: the set (game 559) lists
+  the USA hash and hacks of it only, and the server answers the EU hash with the "Unsupported Game
+  Version" pseudo-game (`1200000000 + 559`, one achievement). The port hashes the file correctly
+  (md5 equals the file's), so it is not a port bug. The owner will, at some point, ask RA to add
+  the European hash. To test the mapping on the EU ROM the owner used a test account
+  (`tinaut1986test`) and the USA md5 in the ini's `rom_md5`: the set loaded and "A New Quest"
+  unlocked, which supports the table from `linker.ld` being right for EU too (its data variables
+  have the same addresses in both regions: the EU/USA split in the linker script is only the
+  functions copied to IWRAM, which `gen_ra_map.py` skips). Not proven for the whole set.
+- **2026-10-15** The FTP install notice (percent and bar for the upload via `ALLO`, the install, and
+  the 10 s countdown) is only the interface: the 10 s wait before the relaunch, which stops the
+  loader crash (#4), was already in the release. Checked by the owner on the 2DS; merged.
+- **2026-10-15** Lesson: poking an inventory bit on the owner's running game leaves traces the
+  game does not undo (the sword was auto-assigned to X and stayed after the bit was cleared). Ask
+  first; use a loaded state or a build with the change instead.
