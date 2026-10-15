@@ -68,7 +68,10 @@ after a rebuild and the game crashes on load. `state_pointers_3ds.c` has the rul
    latter; states written before 2026-10-13 hold it unrelocated, so on load it is put back from
    `gEntityScriptCtxTable` (`RepairEntityScriptContexts`), which `Port_SetEntityScriptCtx` keeps
    equal to it.
-4. `kNotSaved`: runtime objects and audio bookkeeping.
+4. A word that is exactly the start of a slot of `gEntities` / `gAuxPlayerEntities` is a pointer in
+   any holder (`kSlotTargets`): a static or a manager field that keeps an entity (as
+   `gSleepBubbleEntity` did, Luma dump 14) needs no rule. The middle of a slot still does.
+5. `kNotSaved`: runtime objects and audio bookkeeping.
 
 A pointer to something that is not the game's code, constants or globals (a heap object, a
 libctru handle) cannot be saved: keep it out of the game's globals, or in `kNotSaved`.
