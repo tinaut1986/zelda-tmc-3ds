@@ -29,6 +29,20 @@ Files in the data folder: `retroachievements.ini` (settings, token, the ROM's ha
 without its query string, logins, unlocks) and `debug/ra-set.json` (the last set downloaded:
 the achievements' conditions, nothing of the account).
 
+## Which ROM
+
+RA's set for the game (id 559) lists only the **USA** ROM (md5 `a104896da0047abe8bee2a6e3f4c7290`,
+No-Intro) and a few hacks of it. The port runs the USA and the European ROM, but with the European
+one the server answers "Unsupported Game Version" (game `1200000559`, one achievement) and no set
+loads: the port sends the file's true md5, so nothing is wrong on this side. The data variables
+the set reads have the same addresses in both regions (`linker.ld`), so the mapping is expected to
+work for both; asking RA to add the European hash is the owner's to do.
+
+To try the set on the European ROM (testing, with a test account, never the real one): put the USA
+md5 in `rom_md5=` of `retroachievements.ini`, leave `rom_key=` as it is (the port uses the cached
+hash while the key matches the file) and relaunch. 2026-10-15: the set loads (66 achievements) and
+unlocks work (the owner's check).
+
 ## How it works
 
 `platform/3ds/source/retro_ach.c` is `../sm-3ds/source/retro_ach.c` adapted:
