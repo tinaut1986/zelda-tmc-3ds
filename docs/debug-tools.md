@@ -286,6 +286,29 @@ the STATES tab (docs/save-states.md); `tmc-link.py shot/peek/poke/state` cover t
 The files' content is what `tools/` and `platform/3ds/tests/port_ppu_gpu_3ds_bench.c` read;
 the bench takes a dump's files by their old unprefixed names, rename or copy them.
 
+## Reading a Luma crash dump
+
+A crash on the console leaves `sdmc:/luma/dumps/arm11/crash_dump_NNNNNNNN.dmp` (the highest number is
+the newest; reachable over the game's FTP, `/luma/dumps/arm11/`). The format, as Luma3DS writes it
+(checked on dumps 14 to 16):
+
+| Offset | What |
+|---|---|
+| 0 | magic `0xDEADC0DE 0xDEADCAFE`, then `u16 major, minor` (3, 1) |
+| 12 | `u32` processor (11 = ARM11), `u32` the exception type, `u32` total size, `u32` register dump size (0x5c), `u32` code dump size (0x60), `u32` stack dump size, `u32` additional data size |
+| 40 | registers: r0 to r12, sp, lr, pc, cpsr, fpexc, fpinst, fpinst2, dfsr, ifsr, far (23 words) |
+| 40 + 0x5c | the code around pc, then the stack from sp (`stack dump size` bytes), then the additional data (the process name) |
+
+Steps: (1) the SD log's header (`debug/tmc-log-last.txt`, then `tmc-log-NNNN.txt`) names the
+build, e.g. `v0.3.0-dev.42.1+933b3f8`; (2) the symbols must be that build's ELF, not the working
+tree's: check out that commit (a detached HEAD, stashing what is uncommitted), `./build_3ds.sh
+--mode debug --no-ftp`, keep `build-3ds/game/tmc-3ds.elf`; (3) `arm-none-eabi-addr2line -f -C -e
+tmc-3ds.elf <pc>` for the faulting address, and the same over every stack word that falls in
+`0x100000..0x640000` for the call chain (the real return addresses are the ones that make sense as a
+chain; `lr` is often garbage). A `pc` in `memset` with `r0 = 0` is a clear of a NULL pointer;
+`far` is the data address of a data abort. A small Python script that does the parsing is two
+dozen lines (`struct.unpack_from('<23I', d, 40)`).
+
 ## On the PC
 
 `tools/ui-preview/build.sh [OUTDIR]` renders the bottom screen's tabs to PNG
