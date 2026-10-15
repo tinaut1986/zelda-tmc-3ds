@@ -1103,6 +1103,8 @@ static void BlitMapRegion(const SSurf* s, const uint32_t* img, int32_t imgW, int
 #ifdef TMC_3DS
 static void Compact_MapChip(const SSurf* s, const char* label, float cx, float cyBottom, float* out);
 static void Compact_MapFrame(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h);
+static void Compact_MapToggleChip(const SSurf* s, const char* label, bool on, float x, float yBottom, bool right,
+                                  float* out);
 #endif
 static void DrawMapChip(const SSurf* s, const char* label, float cx, float cyBottom, float u, float* out) {
 #ifdef TMC_3DS
@@ -1410,6 +1412,17 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
         DrawMapChip(s, "ZOOM", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
         AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPZOOM, 0);
     }
+#ifdef TMC_3DS
+    /* MAP FOLLOW and CREST PINS (they were in OPTIONS): small toggles in the map's corners,
+     * on the ZOOM chip's line. Added ahead of the map's own target so they win the hit test. */
+    {
+        float chip[4];
+        Compact_MapToggleChip(s, "MAP FOLLOW", followCfg != 0, rx0 + 4, ry1 - 12 * u, false, chip);
+        AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_SETTING, (uint8_t)SS_SET_FOLLOW);
+        Compact_MapToggleChip(s, "CREST PINS", crestCfg != 0, rx1 - 4, ry1 - 12 * u, true, chip);
+        AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_SETTING, (uint8_t)SS_SET_CRESTS);
+    }
+#endif
     AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_MAP, 0);
 }
 
