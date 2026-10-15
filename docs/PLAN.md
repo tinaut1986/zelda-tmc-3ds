@@ -19,67 +19,45 @@ change (what goes where: the table in `CLAUDE.md`).
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.3.0` (on origin; renamed from `release/v0.2.1` on 2026-10-15, the owner made this a minor). Published: **`v0.2.0`** (2026-10-14, **stable**,
-merged into `main`), `v0.1.2` (2026-10-13, beta), `v0.1.1` (2026-10-12, stable) and `v0.1.0`
-(2026-10-11, beta).
+**Release line:** `release/v0.3.1` (on origin; renamed from `release/v0.3.0` right after the
+`v0.3.0` tag). Published: **`v0.3.0`** (2026-10-15, **stable**, merged into `main`, straight
+to stable without a beta at the owner's request), `v0.2.0` (2026-10-14, stable), `v0.1.2`
+(2026-10-13, beta), `v0.1.1` (2026-10-12, stable) and `v0.1.0` (2026-10-11, beta).
 
-**Branches:** every branch merged into `release/v0.3.0` was deleted, here and on origin (2026-10-14);
-their history is in `git log` and the decisions log (2026-10-15: `fix/fullview-scroll-interiors`,
-`fix/intro-cutscene-wide`, `fix/updater-channels-and-notes`, `feat/retroachievements` and
-`feat/ftp-install-progress` too; the remote `feat/retroachievements` still exists on origin, a
-delete was refused in the session: `git push origin --delete feat/retroachievements`). Open, all
-pushed to origin and cut from `release/v0.3.0` at `3c5a608`:
-
-| Branch | What | State |
-|---|---|---|
-| `fix/sleep-bubble-stale` | wake-up in the bedroom deletes the player's sleep bubbles by scanning the entity pool, not through the static `gSleepBubbleEntity` (Luma dump 14); 2 commits, the first one superseded by the second | in the test build 0.3.0-dev.45.7 on the 2DS; owner's check pending (the bubble went away in dev.45.5, the owner said "todo bien") |
-| `fix/script-ctx-null` | `DestroyScriptExecutionContext(NULL)` returns (Luma dump 15) | in dev.45.7; owner's check pending; a guard, not the cause (#31) |
-| `fix/states-build-independent` | #31: on load, `RepairEntityLists` rebuilds the nine entity lists over the entity and manager pools, frees live slots no list reaches and recounts; a word that is a slot of the entity pools is a pointer in any holder (`kSlotTargets`). 2 commits, cut from `9df344b` | on the 2DS (dev.47.1+c840af2, with a temporary layout probe in `src/player.c` not committed): the owner's state 3 (Link's room, 22/15, by dev.45.7) leaves the room cleanly, log `6 closed, 2 stray slots freed`; owner's check pending |
-| `feat/map-toggle-chips` | MAP FOLLOW and CREST PINS as chips on the overworld map, FLOOR BACK on the dungeon map, out of OPTIONS (owner's request, 2026-10-15) | in dev.45.7; the owner has not reported on the chips yet |
-
-`test/crash-fix-and-map-chips` (local only) merges the three; it is where dev.45.x was built, not to be
-merged: merge the three topic branches above one by one.
+**Branches:** none open. Every branch merged into the release line was deleted, here and on origin;
+their history is in `git log` and the decisions log (2026-10-15: `fix/sleep-bubble-stale`,
+`fix/script-ctx-null`, `feat/map-toggle-chips`, `fix/states-build-independent` and
+`docs/release-v0.3.0` too). The local `test/crash-fix-and-map-chips` (the dev.45.x test build) and
+the remote `feat/retroachievements` (a delete was refused in an earlier session:
+`git push origin --delete feat/retroachievements`) are leftovers to delete.
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
 `tools/state-census` on a state of each; a holder nobody listed crashes on load into a different
 build, as the house door did: issue #14). A state saved inside the pause menu breaks on closing
 it (issue #13). The crashes leaving a room after loading a state (Luma dumps 14 to 19, issue #31)
-were stale entity-list words inherited from states of much older builds; repaired on load in
-`fix/states-build-independent` (docs/save-states.md, "Stale words are inherited").
+were stale entity-list words inherited from states of much older builds; repaired on load since
+v0.3.0 (docs/save-states.md, "Stale words are inherited").
 
-**Start here (2026-10-15, end of the session):** `release/v0.3.0` (on origin, `3c5a608`) has the
-whole of v0.3.0 (RetroAchievements, stereo 3D, Full View in every room and its border scrolls
-including interiors and rooms narrower than the view, FTP install progress, EU backport text in
-the player's language, the updater reading the release list, the new-game opening shot in wide).
-`v0.3.0` is **not tagged**: the notes are in `docs/release-notes/v0.3.0.md` (add a line for the
-crash fixes and the map chips if they merge); the plan is a beta first (tag on the release branch,
-installed through the updater with BETAS on, a production build run on both consoles), then
-promote it to stable by re-running the workflow on the tag. Nothing uncommitted; three topic
-branches wait (table above). Next, in this order:
-1. **Owner's check, then merge** `fix/sleep-bubble-stale`, `fix/script-ctx-null` and
-   `feat/map-toggle-chips` into `release/v0.3.0` one by one (`--no-ff`, push). The owner's last
-   run (dev.45.7) crashed again, Luma dump 16, which is a corrupt entity list from a state made by
-   an older build (#31), not from these fixes; confirm by testing without old states.
-2. **#31** owner's check of `fix/states-build-independent`, then merge it with the others; try
-   old states of other rooms (80/02, 22/11, Hyrule Field) leaving the room. No layout
-   fingerprint: refusing a state would lose the player's place (owner's rule).
-3. **#30** the right edge of the top screen breaks on room changes and while rolling (2DS): the
-   owner asked for the dev.18 test first (install `0.2.1-dev.18+4e25311` with default settings,
-   the same room change: castle 80/02 <-> 80/01), then `gpucheck` loops during scrolls, then a
-   targeted SYNCDRAW on frames that rewrite slices. The scene recorder (FRAMES = "sin saltos")
-   shows clean frames, so look at the GPU stage. Not a blocker for a beta unless it is a regression.
-4. **The beta**: the owner's order is merges first, then the dev.18 test, then a production build
-   (`./build_3ds.sh --mode prod --no-ftp`) on the 2DS and the New 3DS, then the tag.
-5. **RetroAchievements** works for both ROMs (`docs/retroachievements.md`, "Which ROM"): the
+**Start here (2026-10-15, after v0.3.0):** `v0.3.0` is published as stable (CIA on the GitHub
+release, offered by the updater to STABLE and + BETAS). Nothing uncommitted. Next, in this order:
+1. **Watch v0.3.0**: the owner installs it through the updater on both consoles (a production
+   build: no DEBUG tab; `dev-ftp.txt` still allows `--install`). Crashes after loading an old
+   state: fetch the Luma dump and symbolise it against the tag's ELF (rebuild `v0.3.0`); the
+   owner's old states of other rooms (80/02, 22/11, Hyrule Field) leaving the room are untested.
+2. **#30** the right edge of the top screen breaks on room changes and while rolling (2DS). Not a
+   regression (the owner, 2026-10-15: room changes were worse before). Next: `gpucheck` loops
+   during scrolls, then a targeted SYNCDRAW on frames that rewrite slices; the scene recorder
+   (FRAMES = "sin saltos") shows clean frames, so look at the GPU stage.
+3. **RetroAchievements** works for both ROMs (`docs/retroachievements.md`, "Which ROM"): the
    owner heard the unlock sound (it is the one from `../mzm`). Still to see: the real account
    (the console has `tinaut1986test`), the USA ROM, more achievements as the owner plays (#28
    "Offense"), the RA site. Asking RA to add the European hash is the owner's call.
-6. Smaller: the README's before/after GIF of the portal shrink (scene recorder, P1.6); #25 GPU
+4. Smaller: the README's before/after GIF of the portal shrink (scene recorder, P1.6); #25 GPU
    fade flicker; #4 relaunch (a few more installs without a loader dump, then close); #23 reset
    from inside a game; #26 Hyrule Town in Full View; the owner's walk for screens still drawn at
    240x160 and which layers get depth in 3D (P5.1; a 2DS has no 3D slider, so a New 3DS only).
-7. Optional hardening of the sibling updaters (`../mzm`, `../sm-3ds`): both already fixed the two
+5. Optional hardening of the sibling updaters (`../mzm`, `../sm-3ds`): both already fixed the two
    bugs of ours (stable with + BETAS, notes of every release in between); remaining gaps from the
    2026-10-15 audit: they take the first release in list order, not the highest version
    (`Updater_PickRelease`), `per_page=8`, no digest check.
@@ -90,8 +68,8 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
 
 **On the owner's consoles now (2026-10-15):**
 - Old 3DS/2DS, **`192.168.1.139`** (the owner calls it "the 2DS"; `.3ds_ftp_ip` holds it): the
-  test build `0.3.0-dev.45.7+537b5fa` of `test/crash-fix-and-map-chips` (the three open topic
-  branches together), debug, Full View (`widescreen=1`, `screen_aspect=wide`,
+  debug build `0.3.0-dev.47.2+c363f1f` of `fix/states-build-independent` (what v0.3.0 shipped, minus
+  the map chips and the two guards), debug, Full View (`widescreen=1`, `screen_aspect=wide`,
   `display_style=pixel-perfect`), theme PARCHMENT, **FRAMES = "sin saltos" (the owner set it)**,
   STEREO 3D ON (default; no effect on a 2DS), VBLANK LOCK OFF, FRAME SYNC OFF, COLOURS as the
   owner left it (`color_correction=1`), UPDATES channel + BETAS. **RetroAchievements is logged in
@@ -907,3 +885,7 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   dropped: refusing a state loses the player's place, the owner's rule is that states load in any
   build. Lesson: a crash after loading a "new" state can come from the old state it was played
   from; check the state's lists (`gEntityLists`, pools) before blaming the build.
+- **2026-10-15** v0.3.0 went straight to stable, no beta, at the owner's request ("súbelo todo
+  como estable, confío"): the four topic branches merged after the owner's checks of the test
+  builds and of the #31 repair on the 2DS; no production build was run on the consoles first.
+  #30 is not a regression: room changes were worse before (owner), so it did not hold the release.
