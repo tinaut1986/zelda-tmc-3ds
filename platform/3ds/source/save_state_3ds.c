@@ -14,6 +14,7 @@
 #include "port_config.h"
 #include "port_audio_3ds.h"
 #include "port_entity_ctx.h"
+#include "debug_log_3ds.h"
 #include "port_second_screen_3ds.h"
 #include "state_pointers_3ds.h"
 #include "state_symbols_3ds.h"
@@ -686,6 +687,71 @@ static void RepairScreenPointers(void) {
     }
 }
 
+/* The game's lists of entities, checked after a load. A state holds whatever the game held,
+ * stale words included, and a stale word is saved again by every state made after loading it:
+ * the heads of the empty lists of the owner's states still held the addresses of a layout older
+ * than the 0x10000 move of .bss, and leaving the room walked them into tile data (Luma dumps 15
+ * to 19, issue #31). Each list is walked from its head over slots of the entity and manager
+ * pools only, its back links rebuilt, and closed where it leaves them. A live slot that no list
+ * reaches is freed, and the counters are recounted from what the lists hold. */
+extern unsigned char gUnk_02033290[]; /* the manager pool, src/entity.c */
+enum { MANAGER_SLOTS = 32, MANAGER_SLOT_SIZE = 0x40, ENTITY_LISTS = 9 };
+
+/* Index of a pool slot (player, aux, entities, managers), or -1 if `p` is not the start of one. */
+static int PoolSlot(const void* p) {
+    const uintptr_t a = (uintptr_t)p;
+    const int slot = Port_EntitySlot((Entity*)p);
+    if (slot >= 0) return slot;
+    const uintptr_t mgr = (uintptr_t)gUnk_02033290;
+    if (a >= mgr && a < mgr + MANAGER_SLOTS * MANAGER_SLOT_SIZE && (a - mgr) % MANAGER_SLOT_SIZE == 0)
+        return PC_MAX_ENTITY_SLOTS + (int)((a - mgr) / MANAGER_SLOT_SIZE);
+    return -1;
+}
+
+static Entity* PoolEntity(int slot) {
+    if (slot < PC_MAX_ENTITY_SLOTS) return Port_EntityFromSlot(slot);
+    return (Entity*)(gUnk_02033290 + (slot - PC_MAX_ENTITY_SLOTS) * MANAGER_SLOT_SIZE);
+}
+
+static void RepairEntityLists(void) {
+    bool reached[PC_MAX_ENTITY_SLOTS + MANAGER_SLOTS] = { false };
+    unsigned closed = 0, freed = 0, entities = 0, managers = 0;
+    for (int i = 0; i < ENTITY_LISTS; ++i) {
+        LinkedList* const list = &gEntityLists[i];
+        Entity* const head = (Entity*)list;
+        Entity* prev = head;
+        Entity* e = list->first;
+        while (e != head) {
+            const int slot = PoolSlot(e);
+            if (slot < 0 || reached[slot]) { /* off the pools, or a loop or a node of another list */
+                ++closed;
+                break;
+            }
+            reached[slot] = true;
+            e->prev = prev;
+            prev->next = e; /* for the head, this is list->first */
+            prev = e;
+            if (e->kind == MANAGER) ++managers;
+            else ++entities;
+            e = e->next;
+        }
+        prev->next = head;
+        list->last = prev;
+    }
+    for (int slot = 0; slot < PC_MAX_ENTITY_SLOTS + MANAGER_SLOTS; ++slot) {
+        Entity* const e = PoolEntity(slot);
+        if (slot == 0 || e == NULL || reached[slot] || e->next == NULL) continue; /* never the player */
+        /* Alive by its own links but in no list: nothing would ever update or delete it. */
+        memset(e, 0, slot < PC_MAX_ENTITY_SLOTS ? sizeof(GenericEntity) : MANAGER_SLOT_SIZE);
+        if (slot < PC_MAX_ENTITY_SLOTS) gEntityScriptCtxTable[slot] = NULL;
+        ++freed;
+    }
+    gEntCount = (u8)entities;
+    gManagerCount = (u8)managers;
+    if (closed || freed)
+        DebugLog_Printf("state: entity lists repaired: %u closed, %u stray slots freed\n", closed, freed);
+}
+
 /* `f` is positioned after the header. Closes it. */
 static void LoadNamed(FILE* f, const StateHeader* h, uint32_t id) {
     /* All of it into RAM and parsed before anything is applied: a short or
@@ -758,6 +824,7 @@ static void LoadNamed(FILE* f, const StateHeader* h, uint32_t id) {
     free(body);
     Port_Audio_3DSSetPaused(false);
     RepairScreenPointers();
+    RepairEntityLists();
     RepairEntityScriptContexts();
     /* The players' state came back with everything else; start the saved
      * room music afresh so the mixer and the game agree on it. */

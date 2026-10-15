@@ -34,6 +34,7 @@ pushed to origin and cut from `release/v0.3.0` at `3c5a608`:
 |---|---|---|
 | `fix/sleep-bubble-stale` | wake-up in the bedroom deletes the player's sleep bubbles by scanning the entity pool, not through the static `gSleepBubbleEntity` (Luma dump 14); 2 commits, the first one superseded by the second | in the test build 0.3.0-dev.45.7 on the 2DS; owner's check pending (the bubble went away in dev.45.5, the owner said "todo bien") |
 | `fix/script-ctx-null` | `DestroyScriptExecutionContext(NULL)` returns (Luma dump 15) | in dev.45.7; owner's check pending; a guard, not the cause (#31) |
+| `fix/states-build-independent` | #31: on load, `RepairEntityLists` rebuilds the nine entity lists over the entity and manager pools, frees live slots no list reaches and recounts; a word that is a slot of the entity pools is a pointer in any holder (`kSlotTargets`). 2 commits, cut from `9df344b` | on the 2DS (dev.47.1+c840af2, with a temporary layout probe in `src/player.c` not committed): the owner's state 3 (Link's room, 22/15, by dev.45.7) leaves the room cleanly, log `6 closed, 2 stray slots freed`; owner's check pending |
 | `feat/map-toggle-chips` | MAP FOLLOW and CREST PINS as chips on the overworld map, FLOOR BACK on the dungeon map, out of OPTIONS (owner's request, 2026-10-15) | in dev.45.7; the owner has not reported on the chips yet |
 
 `test/crash-fix-and-map-chips` (local only) merges the three; it is where dev.45.x was built, not to be
@@ -43,9 +44,9 @@ merged: merge the three topic branches above one by one.
 Link's house and the Minish Woods are untested in builds other than their writer's (run
 `tools/state-census` on a state of each; a holder nobody listed crashes on load into a different
 build, as the house door did: issue #14). A state saved inside the pause menu breaks on closing
-it (issue #13). **A state made by a build whose globals sit elsewhere corrupts the game** (three
-Luma dumps on 2026-10-15: issue #31): until states refuse a different layout, test with states
-saved in the same build.
+it (issue #13). The crashes leaving a room after loading a state (Luma dumps 14 to 19, issue #31)
+were stale entity-list words inherited from states of much older builds; repaired on load in
+`fix/states-build-independent` (docs/save-states.md, "Stale words are inherited").
 
 **Start here (2026-10-15, end of the session):** `release/v0.3.0` (on origin, `3c5a608`) has the
 whole of v0.3.0 (RetroAchievements, stereo 3D, Full View in every room and its border scrolls
@@ -60,9 +61,9 @@ branches wait (table above). Next, in this order:
    `feat/map-toggle-chips` into `release/v0.3.0` one by one (`--no-ff`, push). The owner's last
    run (dev.45.7) crashed again, Luma dump 16, which is a corrupt entity list from a state made by
    an older build (#31), not from these fixes; confirm by testing without old states.
-2. **#31** states and memory layout: a layout fingerprint in the state header and refuse a
-   different one with a notice; consider keeping the entity's script context inside the entity.
-   Before the beta, if the owner keeps using old states.
+2. **#31** owner's check of `fix/states-build-independent`, then merge it with the others; try
+   old states of other rooms (80/02, 22/11, Hyrule Field) leaving the room. No layout
+   fingerprint: refusing a state would lose the player's place (owner's rule).
 3. **#30** the right edge of the top screen breaks on room changes and while rolling (2DS): the
    owner asked for the dev.18 test first (install `0.2.1-dev.18+4e25311` with default settings,
    the same room change: castle 80/02 <-> 80/01), then `gpucheck` loops during scrolls, then a
@@ -896,3 +897,13 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   a state. Test with states made in the build under test; do not load older ones. Symbolising a
   dump needs the ELF of the *installed* commit, not the working tree's (rebuild that commit:
   `git checkout --detach <commit>`, build, `arm-none-eabi-addr2line`).
+- **2026-10-15** #31 was not a layout the states could not follow but stale words a state
+  inherits: loading a state puts every word back and the next save writes it again, so the heads
+  of the empty entity lists kept addresses from before the 0x10000 move of `.bss` through every
+  later state, faithfully "relocated" into `gMapTop`. Leaving a room walked them into tile data
+  (dumps 15 to 19; the NULL script context of dump 15/17 was the same walk). A relocation rule
+  cannot fix a word that already looks like a pointer to something else, so the load now repairs
+  the structures of known shape (`RepairEntityLists`). The layout fingerprint proposed in #31 was
+  dropped: refusing a state loses the player's place, the owner's rule is that states load in any
+  build. Lesson: a crash after loading a "new" state can come from the old state it was played
+  from; check the state's lists (`gEntityLists`, pools) before blaming the build.

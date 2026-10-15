@@ -41,7 +41,7 @@ from that ELF. A binary that was not post-processed has no table and saves forma
 On load: the file is read and parsed whole before anything is touched; each global is copied
 back by name (a global this build no longer has is dropped, a new one keeps its live value, a
 resized one gets the part both have); ROM pointers are moved; the relocations are applied; the
-room music restarts.
+entity lists are checked and repaired (below); the room music restarts.
 
 Format 1 (a raw copy of `.data`/`.bss` with the game pinned at fixed addresses by
 `3dsx.ld`: data at 0x630000, `.bss` at 0x640000 (0x620000 / 0x630000 before RetroAchievements)) is still read, and loads only into a build
@@ -123,12 +123,25 @@ same: a rule for new states and a repair here for the old ones.
   each new kind of room.
 - Format 1 states are not converted.
 
-## A state from a build with another memory layout (open, issue #31)
+## Stale words are inherited (issue #31)
 
-A state is the game's memory with absolute pointers. If the globals sit elsewhere in the build
-that loads it (any change to a global or a static in the game's code moves them: `gEntities`
-moved 8 bytes between dev.42.1 and dev.45.x), the entity lists point off and the game crashes when
-it deletes the entities (leaving a room). States also do not carry the port's own tables (an
-entity's script context, `Port_GetEntityScriptCtx`) or statics (`gSleepBubbleEntity` in
-`src/player.c`). Until a layout fingerprint refuses such a state: test with states saved in the
-same build, and treat the build string shown in the STATES tab as the guard.
+A stale word does not stay in the state that brought it: loading the state puts it back in
+memory, and every state saved after that, by any build, saves it again. The owner's states of
+2026-10-15 (made by dev.45.7) still held, in the heads of the empty entity lists, the addresses
+those heads had before RetroAchievements moved `.bss` up 0x10000; on save they were "relocated"
+faithfully into the middle of `gMapTop`, and leaving the room walked a list into tile data
+(`ent = 0x101e101e`, or an entity with `ENT_SCRIPTED` and no context: Luma dumps 15 to 19). A
+rule added later cannot fix such a word, because by then it looks like a pointer to something
+else.
+
+So the load also checks the structures whose shape is known instead of trusting their words.
+`RepairEntityLists` walks each of the nine lists of `gEntityLists` from its head over slots of
+the entity pools (`gPlayerEntity`, `gAuxPlayerEntities`, `gEntities`) and of the manager pool
+(`gUnk_02033290`, 32 slots of 0x40) only, rebuilds the back links and `last`, closes a list where
+it leaves them, frees a live slot that no list reaches (never the player), and recounts
+`gEntCount` / `gManagerCount`. The SD log says `state: entity lists repaired: N closed, M stray
+slots freed` when it changed anything. The owner's Link's-room state: 6 lists closed, 2 stray
+slots (a second bed cover and a thought bubble) freed; it then leaves the room cleanly.
+
+A structure of the same kind (a pool with its own links) that shows up in a crash after a load
+gets the same treatment here, not only a rule in `state_pointers_3ds.c`.
