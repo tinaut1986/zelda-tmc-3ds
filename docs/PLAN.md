@@ -42,25 +42,12 @@ it (issue #13).
 (P2.8), stereo 3D always on, the FTP install notice (percent + bar for receiving, installing and the
 10 s restart countdown; checked by the owner on the 2DS). No branch is open, no worktree, nothing
 uncommitted. `v0.2.1` is not tagged: before tagging, write `docs/release-notes/v0.2.1.md`. Next:
-1. **RetroAchievements on the EU ROM.** The set (game 559) supports the USA hash
-   (`a104896da0047abe8bee2a6e3f4c7290`, No-Intro) and hacks of it, among them "European Backport
-   Edition" (`626a6f1134455c879dd8a5cbb84b116a`, Prof9's patch). The owner's clean European ROM
-   (md5 `2af78edbe244b5de44471368ae2b6f0b`) is listed by RA under "needs a patch to be compatible"
-   and answered with "Unsupported Game Version" (id `1200000559`, one achievement). The port
-   already has that patch's three fixes natively (`docs/eu-backport.md`; not verified that the
-   patch does nothing else), so reporting the backport hash could be argued with RA: the owner's
-   call, later. The Japanese ROM and the USA kiosk demo are confirmed incompatible. Tried
-   2026-10-15: Prof9's source built with ARMIPS on the owner's ROM changes 1159 bytes (the three
-   modules, nothing else) and gives md5 `fbda34fc9c8c826f38325cab89ef9ab4`, **not** RA's
-   `626a6f11...`; sent to RA (test account) it is "Unknown game". RA's hash is of the RHDN IPS
-   (https://www.romhacking.net/hacks/1714/, behind Cloudflare: the owner would download it);
-   only that file can tell whether an in-memory patch could give RA's hash.
-   Meanwhile, to play the set on the EU ROM for testing only, with a test account, put the USA md5
-   in `rom_md5=` of `retroachievements.ini` (the port keeps it while `rom_key` matches the file)
-   and relaunch; never on the real account. Verified 2026-10-15 with `tinaut1986test`: the set loads
-   (66 achievements) and "A New Quest" unlocked in play. To check: the other achievements as the
-   owner plays (a condition that reads region data may differ; see `docs/retroachievements.md`),
-   the unlock sound, and issue #28 ("Offense").
+1. **RetroAchievements** works for both ROMs: USA by its own hash, the clean European one by
+   reporting the backport edition's (`docs/retroachievements.md`, "Which ROM"). Checked on the
+   2DS with the test account `tinaut1986test`: the set loads (66 achievements) and "A New Quest" and
+   "Where's the Boom?" unlocked in play; the real account and the USA ROM are not tried. Still to
+   see: more achievements as the owner plays (a condition on region data may differ), the unlock
+   sound, the RA site, and issue #28 ("Offense").
 2. Whatever the owner reports: they go through the game for screens still drawn at 240x160, and
    say which more layers get a depth in 3D (fog, the Minish village's leaves; P5.1). Issue #26:
    Hyrule Town in Full View not seen yet (same fix).
@@ -79,12 +66,11 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
 
 **On the owner's consoles now (2026-10-14):**
 - Old 3DS/2DS, **`192.168.1.139`** (the owner calls it "the 2DS"; `.3ds_ftp_ip` holds it): a debug
-  build of `release/v0.2.1` at `68e6d5d`, `0.2.1-dev.24.2+3a5320f` (2026-10-15), Full View
+  build of `release/v0.2.1` plus `feat/eu-bombbag-text` (`0.2.1-dev.34+8570754`, 2026-10-15), Full View
   (`widescreen=1`, `screen_aspect=wide`, `display_style=pixel-perfect`), theme PARCHMENT,
   FRAMES = AUTO, UPDATES channel + BETAS. **RetroAchievements is logged in as the test account
-  `tinaut1986test`** and `retroachievements.ini` has `rom_md5=a104896d...` (the USA hash, set by
-  Claude for the test; the ROM is the European one, true md5 `2af78edb...`): restore that line or
-  delete it before the owner logs in with the real account. The owner's save was in the Smith's
+  `tinaut1986test`** (the owner's test account; log in with the real one before playing for
+  real). The data folder has no test ROM and `rom_md5` is the true `2af78edb...`. The owner's save was in the Smith's
   house at the start of the game (2026-10-15). **`dev-ftp.txt` is there**. Its save states: the
   newest (1) is Claude's, saved just before the last install; never overwrite or delete the
   owner's (protect their place with a *new* state: `savestate`, then `loadstate 1` and
@@ -842,3 +828,11 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   game"); RA's "European Backport Edition" hash is `626a6f11...`. So no patch-in-memory work was
   started (P2.9 not opened). The `rom_md5` trick (a known hash in the ini) still works only for
   test accounts and is not a feature.
+- **2026-10-15** For the clean European ROM the port tells RA the backport edition's hash
+  (`626a6f11...`) (owner's call, softcore only). RA's BPS (RAPatches `GBA/Fix/559`) applied to the
+  owner's ROM gives exactly that hash, so it is the same content the port already has natively;
+  Prof9's source built with ARMIPS differs from it by two bytes (md5 `fbda34fc...`, unknown to
+  RA). The cleaner way, applying the BPS in memory and hashing the result, was not needed. The
+  European ROM with the patch applied (SHA-1 `9a6d87e7...`) is accepted as EU (3DS: header code only;
+  PC picker: hash list) and was run on the 2DS. The bomb bag offer is in the player's language
+  from Prof9's strings (issue #29).

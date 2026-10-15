@@ -94,6 +94,18 @@ static volatile int g_hash_state;
 static char g_hash[33];
 static char g_hash_key[96]; /* "<size>:<path>" the cached hash belongs to */
 
+/* The hash RetroAchievements is told. RA lists the clean European ROM as "needs a patch" and
+ * supports "European Backport Edition" (Prof9's patch, RAPatches GBA/Fix/559). The port has that
+ * patch's three fixes natively (docs/eu-backport.md), so for the clean European ROM it reports
+ * the patched edition's hash. Checked 2026-10-15: RA's BPS applied to this ROM (md5 below) gives
+ * exactly the hash below. Every other ROM is reported as it is. */
+static const char kRomMd5Europe[] = "2af78edbe244b5de44471368ae2b6f0b";
+static const char kRomMd5EuropeBackport[] = "626a6f1134455c879dd8a5cbb84b116a";
+
+static const char* ReportedHash(void) {
+    return strcmp(g_hash, kRomMd5Europe) == 0 ? kRomMd5EuropeBackport : g_hash;
+}
+
 static bool RomKey(char* out, size_t size) {
     const char* path = Port_GetLoadedRomPath();
     struct stat st;
@@ -764,7 +776,7 @@ static void LoadGameDone(int result, const char* error, rc_client_t* client, voi
     } else if (result == RC_NO_GAME_LOADED) {
         g_load_attempts = 99; /* an unknown hash stays unknown */
         SetMessage("ROM not recognised by RetroAchievements");
-        LogLine("game load: hash %s not recognised", g_hash);
+        LogLine("game load: hash %s not recognised", ReportedHash());
     } else {
         SetMessage("%s", error ? error : "game load failed");
         LogLine("game load failed (%d): %s", result, error ? error : "");
@@ -782,7 +794,8 @@ static void BeginLoadGame(void) {
     if (osGetTime() < g_load_retry_at || g_load_attempts >= 5) return;
     g_load_in_flight = true;
     g_load_attempts++;
-    rc_client_begin_load_game(g_client, g_hash, LoadGameDone, NULL);
+    if (ReportedHash() != g_hash) LogLine("reporting the European Backport hash %s for the clean European ROM", ReportedHash());
+    rc_client_begin_load_game(g_client, ReportedHash(), LoadGameDone, NULL);
 }
 
 static void LoginDone(int result, const char* error, rc_client_t* client, void* userdata) {

@@ -8,8 +8,10 @@ documented by [Prof9's Minish Cap EU Backport](https://github.com/Prof9/Minish-C
   identified older vanilla save can recover that offer after a durable profile
   backup; completed fusions and unsupported profiles are excluded from this repair.
 - Stockwell sells the missing 600-Rupee bomb bag upgrade after the wallet and
-  boomerang prerequisites. The added offer uses original English wording and
-  the active ROM's purchase menu. The European item-receipt message remains
+  boomerang prerequisites. The added offer is shown in the player's language
+  (English, French, German, Spanish, Italian: Prof9's own strings from his
+  Unlicense `asm/bombbag.ext.asm`, chosen by the save header's language slot) and
+  uses the active ROM's purchase menu. The European item-receipt message remains
   European.
 - The Ocarina works on the Wind Tribe tower roof using the port's shared area
   permission flag.
@@ -31,3 +33,9 @@ to run actual regional world-event scripts. Run it from an isolated working
 directory with a privately supplied ROM: the normal save subsystem remains
 active. These tests do not establish physical 3DS performance or completion of
 an entire playthrough.
+
+The European ROM **with** the backport applied (RetroAchievements' "European Backport Edition",
+SHA-1 `9a6d87e718be921463f9ed7da6a58da7aedf3b4a`) is accepted as EU too: the 3DS checks only the
+game code in the header (`BZMP`), which the patch leaves alone, and the PC/Android picker lists its
+hashes. Checked on a 2DS (2026-10-15): it boots, the Stockwell shop shows one bomb bag and the
+offer reads in Spanish.
