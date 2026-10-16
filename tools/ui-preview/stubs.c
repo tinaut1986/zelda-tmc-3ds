@@ -55,6 +55,9 @@ const char* Port_Config_Get3DSAspectRatioName(void) { return kAspect[sAspect]; }
 int Port_Config_Get3DSDisplayStyle(void) { return sStyle; }
 const char* Port_Config_Get3DSDisplayStyleName(void) { return kStyle[sStyle]; }
 bool Port_Config_GetColorCorrection(void) { return sColor; }
+int sTopHudMode = 0;
+int Port_Config_GetTopHudMode(void) { return sTopHudMode; }
+void Port_Config_CycleTopHudMode(void) { sTopHudMode = (sTopHudMode + 1) % 3; }
 bool Port_Config_GetHideTopHud(void) { return sHideHud; }
 bool Port_Config_GetHoldToAdvanceText(void) { return sHold; }
 int Port_Config_GetSecondScreenBackdrop(void) { return sBackdrop; }

@@ -287,6 +287,12 @@ void Port_Config_SetTurboMultiplier(unsigned multiplier);
  * only — menus keep their UI. Default off. */
 bool Port_Config_GetHideTopHud(void);
 void Port_Config_SetHideTopHud(bool on);
+#ifdef TMC_3DS
+/* The setting itself: 0 SHOW, 1 HIDE, 2 AUTO. Port_Config_GetHideTopHud answers for the moment: AUTO is
+ * hidden while the bottom screen's sidebar (hearts, buttons, rupees, keys) is on it. */
+int Port_Config_GetTopHudMode(void);
+void Port_Config_CycleTopHudMode(void);
+#endif
 
 /* Speedrun practice mode (port_practice.c). Overlay toggles + slow-mo factor
  * (0.05..1.0; 1.0 = normal speed). All persisted to config.json. */

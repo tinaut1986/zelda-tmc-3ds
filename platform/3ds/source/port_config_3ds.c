@@ -26,7 +26,10 @@ static _Atomic int sFramePacing;
 static _Atomic bool sFollow = true;
 static _Atomic bool sCrests = true;
 static _Atomic bool sFloorReturn = true;
-static _Atomic bool sHideHud;
+/* OPTIONS -> TOP HUD: 0 SHOW, 1 HIDE, 2 AUTO (hidden while the bottom screen shows its sidebar). */
+enum { TOP_HUD_SHOW = 0, TOP_HUD_HIDE, TOP_HUD_AUTO, TOP_HUD_COUNT };
+static _Atomic int sTopHud;
+extern int Port_SecondScreen_TopHudCovered(void);
 static _Atomic bool sHoldText;
 static _Atomic bool sColorCorrection;
 static _Atomic bool sAutosave;
@@ -167,7 +170,7 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("follow_cam=%u\n", sFollow ? 1u : 0u);
     APPEND("windcrest_pins=%u\n", sCrests ? 1u : 0u);
     APPEND("floor_auto_return=%u\n", sFloorReturn ? 1u : 0u);
-    APPEND("hide_top_hud=%u\n", sHideHud ? 1u : 0u);
+    APPEND("hide_top_hud=%d\n", (int)sTopHud);
     APPEND("hold_to_advance_text=%u\n", sHoldText ? 1u : 0u);
     APPEND("color_correction=%u\n", sColorCorrection ? 1u : 0u);
     APPEND("autosave=%u\n", sAutosave ? 1u : 0u);
@@ -380,7 +383,10 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "follow_cam") == 0) sFollow = ParseBool(value);
             else if (strcmp(key, "windcrest_pins") == 0) sCrests = ParseBool(value);
             else if (strcmp(key, "floor_auto_return") == 0) sFloorReturn = ParseBool(value);
-            else if (strcmp(key, "hide_top_hud") == 0) sHideHud = ParseBool(value);
+            else if (strcmp(key, "hide_top_hud") == 0) {
+                /* 0/1 as older builds wrote them (the flag), 2 AUTO; true/false/yes also read. */
+                sTopHud = value[0] == '2' ? TOP_HUD_AUTO : (ParseBool(value) ? TOP_HUD_HIDE : TOP_HUD_SHOW);
+            }
             else if (strcmp(key, "hold_to_advance_text") == 0) sHoldText = ParseBool(value);
             else if (strcmp(key, "color_correction") == 0) sColorCorrection = ParseBool(value);
             else if (strcmp(key, "autosave") == 0) sAutosave = ParseBool(value);
@@ -674,8 +680,18 @@ int Port_Config_GetSecondScreenBackdrop(void) { return sBackdrop; }
 void Port_Config_SetSecondScreenBackdrop(int style) { sBackdrop = style; SaveConfig(); }
 bool Port_Config_GetSecondScreenSwap(void) { return false; }
 void Port_Config_SetSecondScreenSwap(bool on) { (void)on; }
-bool Port_Config_GetHideTopHud(void) { return sHideHud; }
-void Port_Config_SetHideTopHud(bool on) { sHideHud = on; SaveConfig(); }
+/* What the game asks: is the top HUD hidden right now. AUTO hides it exactly while the bottom
+ * screen shows the sidebar that has the same things (hearts, buttons, rupees, keys). */
+bool Port_Config_GetHideTopHud(void) {
+    const int mode = sTopHud;
+    return mode == TOP_HUD_HIDE || (mode == TOP_HUD_AUTO && Port_SecondScreen_TopHudCovered());
+}
+void Port_Config_SetHideTopHud(bool on) { sTopHud = on ? TOP_HUD_HIDE : TOP_HUD_SHOW; SaveConfig(); }
+int Port_Config_GetTopHudMode(void) { return (int)sTopHud; }
+void Port_Config_CycleTopHudMode(void) {
+    sTopHud = (sTopHud + 1) % TOP_HUD_COUNT;
+    SaveConfig();
+}
 float Port_Config_GetPracticeSlowmo(void) { return 1.0f; }
 void Port_Config_SetPracticeSlowmo(float v) { (void)v; }
 bool Port_Config_GetVSync(void) { return sVsync; }
