@@ -29,6 +29,8 @@ static _Atomic bool sFloorReturn = true;
 static _Atomic bool sHideHud;
 static _Atomic bool sHoldText;
 static _Atomic bool sColorCorrection;
+static _Atomic int sGbaGrid; /* 0 OFF .. 3 HIGH */
+static _Atomic bool sGbaFrame;
 static _Atomic bool sAutosave;
 static bool sConsoleParity;
 static _Atomic Port3DSAspectRatio sAspectRatio = CONFIG_3DS_DEFAULT_ASPECT;
@@ -170,6 +172,8 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("hide_top_hud=%u\n", sHideHud ? 1u : 0u);
     APPEND("hold_to_advance_text=%u\n", sHoldText ? 1u : 0u);
     APPEND("color_correction=%u\n", sColorCorrection ? 1u : 0u);
+    APPEND("gba_grid=%d\n", (int)sGbaGrid);
+    APPEND("gba_frame=%u\n", sGbaFrame ? 1u : 0u);
     APPEND("autosave=%u\n", sAutosave ? 1u : 0u);
     APPEND("widescreen=%u\n", sAspectRatio == PORT_3DS_ASPECT_WIDE ? 1u : 0u);
     APPEND("screen_aspect=%s\n", ConfigValues3DS_AspectName(sAspectRatio));
@@ -383,6 +387,10 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "hide_top_hud") == 0) sHideHud = ParseBool(value);
             else if (strcmp(key, "hold_to_advance_text") == 0) sHoldText = ParseBool(value);
             else if (strcmp(key, "color_correction") == 0) sColorCorrection = ParseBool(value);
+            else if (strcmp(key, "gba_grid") == 0) {
+                const int level = atoi(value);
+                sGbaGrid = level >= 0 && level <= 3 ? level : 0;
+            } else if (strcmp(key, "gba_frame") == 0) sGbaFrame = ParseBool(value);
             else if (strcmp(key, "autosave") == 0) sAutosave = ParseBool(value);
             else if (strcmp(key, "widescreen") == 0 && !hasScreenAspect)
                 sAspectRatio = ParseBool(value) ? PORT_3DS_ASPECT_WIDE : PORT_3DS_ASPECT_ORIGINAL;
@@ -764,6 +772,17 @@ void Port_Config_Cycle3DSDisplayStyle(void) {
     sDisplayStyle = (Port3DSDisplayStyle)((sDisplayStyle + 1) % PORT_3DS_DISPLAY_COUNT);
     SaveConfig();
 }
+int Port_Config_GetGbaGrid(void) { return (int)sGbaGrid; }
+const char* Port_Config_GetGbaGridName(void) {
+    static const char* const names[4] = { "OFF", "LOW", "MED", "HIGH" };
+    return names[sGbaGrid & 3];
+}
+void Port_Config_CycleGbaGrid(void) {
+    sGbaGrid = (sGbaGrid + 1) & 3;
+    SaveConfig();
+}
+bool Port_Config_GetGbaFrame(void) { return sGbaFrame; }
+void Port_Config_SetGbaFrame(bool on) { sGbaFrame = on; SaveConfig(); }
 bool Port_Config_3DSFullViewComboEnabled(void) {
     /* Load each atomic once so a bottom-screen option tap can only select one
      * complete policy on this call. A mixed/transient value fails closed on

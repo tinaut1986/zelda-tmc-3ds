@@ -54,6 +54,14 @@ void Port_Config_Cycle3DSDisplayStyle(void) { sStyle = (sStyle + 1) % 3; }
 const char* Port_Config_Get3DSAspectRatioName(void) { return kAspect[sAspect]; }
 int Port_Config_Get3DSDisplayStyle(void) { return sStyle; }
 const char* Port_Config_Get3DSDisplayStyleName(void) { return kStyle[sStyle]; }
+static int sGrid = 0;
+static bool sGbaFrame = false;
+static const char* const kGrid[] = { "OFF", "LOW", "MED", "HIGH" };
+int Port_Config_GetGbaGrid(void) { return sGrid; }
+const char* Port_Config_GetGbaGridName(void) { return kGrid[sGrid]; }
+void Port_Config_CycleGbaGrid(void) { sGrid = (sGrid + 1) % 4; }
+bool Port_Config_GetGbaFrame(void) { return sGbaFrame; }
+void Port_Config_SetGbaFrame(bool on) { sGbaFrame = on; }
 bool Port_Config_GetColorCorrection(void) { return sColor; }
 bool Port_Config_GetHideTopHud(void) { return sHideHud; }
 bool Port_Config_GetHoldToAdvanceText(void) { return sHold; }

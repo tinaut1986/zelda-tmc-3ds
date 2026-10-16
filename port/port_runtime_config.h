@@ -273,6 +273,13 @@ void Port_Config_Cycle3DSAspectRatio(void);
 int Port_Config_Get3DSDisplayStyle(void);
 const char* Port_Config_Get3DSDisplayStyleName(void);
 void Port_Config_Cycle3DSDisplayStyle(void);
+/* GBA look on the top screen (platform/3ds/source/gba_look_3ds.h), as in ../mzm: the pixel-grid
+ * lines (OFF / LOW / MED / HIGH, 0..3) and the console's frame around a 240x160 or 360x240 picture. */
+int Port_Config_GetGbaGrid(void);
+const char* Port_Config_GetGbaGridName(void);
+void Port_Config_CycleGbaGrid(void);
+bool Port_Config_GetGbaFrame(void);
+void Port_Config_SetGbaFrame(bool on);
 /* Experimental presentation gate only. It does not add a persisted enum or
  * INI key: New 3DS + the existing Wide + Pixel Perfect selections opt in. */
 bool Port_Config_3DSFullViewComboEnabled(void);

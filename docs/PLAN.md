@@ -31,6 +31,10 @@ their history is in `git log` and the decisions log (2026-10-15: `fix/sleep-bubb
 the remote `feat/retroachievements` (a delete was refused in an earlier session:
 `git push origin --delete feat/retroachievements`) are leftovers to delete.
 
+| Branch | State |
+|---|---|
+| `feat/gba-look` | P4.7 (GBA GRID and GBA FRAME), cut from `release/v0.3.1`. Built (`0.3.1-dev.0+7aeff29` plus the uncommitted work), **not yet seen on a console**: install it, then check the owner's list under P4.7. |
+
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
 `tools/state-census` on a state of each; a holder nobody listed crashes on load into a different
@@ -454,6 +458,20 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   or windows, cutscenes that move the camera by hand.
   *Done when:* the owner sees small and large interiors, the corridor and a dungeon at 400x240 on
   the console.
+
+- [ ] **P4.7** GBA grid and GBA frame on the top screen (owner's request, 2026-10-17; from `../mzm`).
+  *Spec:* two options in OPTIONS (the second row of cells): **GBA GRID** (OFF / LOW / MED / HIGH,
+  `gba_grid`) darkens one screen row in every two of the game's own pixels, HIGH also the columns,
+  lined up with those pixels at any scale; **GBA FRAME** (`gba_frame`) draws the console's body in
+  the border around a picture that leaves one: the 240x160 of Pixel Perfect (whole frame) and the
+  360x240 of Scaled (two side strips). Full View (400x240) and Wide at 400 have no border, so the
+  frame never shows there; the grid does (it follows the 400x240 source 1:1). The mzm colour and
+  vignette options are left out (COLOURS is ours; the owner had no use for the vignette). Code:
+  `platform/3ds/source/gba_look_3ds.c`, called from both top presenters in `platform_gpu_3ds.c`.
+  The artwork is mzm's, shipped as `romfs:/gba-look-frame.lz4` (not in the binary: the read-only
+  segment is pinned below `.data` at 0x630000 in `3dsx.ld` and 115 KB more overflowed it).
+  *Done when:* the owner has seen both on the console in Pixel Perfect, Scaled/Original and Full View,
+  in 3D too, and the frame rate does not drop on the Old 3DS with the grid on HIGH.
 
 ## Phase 5: stereoscopic 3D
 
@@ -889,3 +907,10 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   como estable, confío"): the four topic branches merged after the owner's checks of the test
   builds and of the #31 repair on the 2DS; no production build was run on the consoles first.
   #30 is not a regression: room changes were worse before (owner), so it did not hold the release.
+- **2026-10-17** GBA grid and frame (P4.7): taken from `../mzm`, whose third effect (the colour
+  mix) is our COLOURS option and whose vignette the owner did not want. The grid mask is an 8-bit
+  texture (128 KB) with a constant black tint, not mzm's 512 KB RGBA one; the frame is read from the
+  romfs when first needed and unpacked into its own texture (512 KB), so a player who never turns it
+  on pays nothing. First attempt embedded the artwork as a C array like mzm: the link failed on
+  `3dsx.ld`'s pin (read-only data 0x6411a1 against 0x630000). Raising the pin would have moved
+  `.data`/`.bss` again and cost the old format-1 states once more; the romfs avoids that.

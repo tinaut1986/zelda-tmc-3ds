@@ -212,6 +212,8 @@ enum {
     SS_SET_ASPECT_RATIO,
     SS_SET_DISPLAY_STYLE,
     SS_SET_FRAMES,        /* frame_pacing: AUTO / LOCK 30 / NO SKIP */
+    SS_SET_GBA_GRID,      /* gba_grid: OFF / LOW / MED / HIGH (gba_look_3ds.h) */
+    SS_SET_GBA_FRAME,     /* gba_frame: the console's body around a 240x160 / 360x240 picture */
 #endif
     SS_SET_COUNT
 };
@@ -1992,6 +1994,7 @@ static const char* const kSettingLabels[SS_SET_COUNT] = {
     "RANDOMIZER",       "PANEL BACKDROP",     "SWAP SCREENS",
 #ifdef TMC_3DS
     "ASPECT RATIO",     "DISPLAY STYLE",    "FRAMES",
+    "GBA GRID",         "GBA FRAME",
 #endif
 };
 
@@ -2019,6 +2022,7 @@ static const char* SettingValueMinWord(int setting) {
 #ifdef TMC_3DS
         case SS_SET_ASPECT_RATIO: return "ORIGINAL";
         case SS_SET_DISPLAY_STYLE: return "PIXEL PERFECT";
+        case SS_SET_GBA_GRID: return "HIGH";
 #endif
         default: return "OFF";
     }
@@ -2040,6 +2044,8 @@ static int SettingsPageRows(int page, uint8_t* out) {
 #ifdef TMC_3DS
         out[n++] = SS_SET_ASPECT_RATIO;
         out[n++] = SS_SET_DISPLAY_STYLE;
+        out[n++] = SS_SET_GBA_GRID;
+        out[n++] = SS_SET_GBA_FRAME;
         out[n++] = SS_SET_TOP_HUD;
         out[n++] = SS_SET_COLOR_CORRECTION;
         out[n++] = SS_SET_BACKDROP;
@@ -2280,6 +2286,10 @@ static int GetSettingState(int row, char* out, int outCap) {
         case SS_SET_DISPLAY_STYLE:
             snprintf(out, (size_t)outCap, "%s", Port_Config_Get3DSDisplayStyleName());
             return Port_Config_Get3DSDisplayStyle() != PORT_3DS_DISPLAY_BILINEAR;
+        case SS_SET_GBA_GRID:
+            snprintf(out, (size_t)outCap, "%s", Port_Config_GetGbaGridName());
+            return Port_Config_GetGbaGrid() != 0;
+        case SS_SET_GBA_FRAME: on = Port_Config_GetGbaFrame(); break;
         case SS_SET_FRAMES: {
             static const char* const kPacing[PORT_3DS_PACING_COUNT] = { "AUTO", "LOCK 30", "NO SKIP" };
             int pacing = Port_Config_GetFramePacing();
@@ -3502,6 +3512,12 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
                     break;
                 case SS_SET_DISPLAY_STYLE:
                     Port_Config_Cycle3DSDisplayStyle();
+                    break;
+                case SS_SET_GBA_GRID:
+                    Port_Config_CycleGbaGrid();
+                    break;
+                case SS_SET_GBA_FRAME:
+                    Port_Config_SetGbaFrame(!Port_Config_GetGbaFrame());
                     break;
                 case SS_SET_FRAMES: {
                     int next = (Port_Config_GetFramePacing() + 1) % PORT_3DS_PACING_COUNT;
