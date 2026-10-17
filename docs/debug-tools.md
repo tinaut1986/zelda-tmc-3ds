@@ -66,6 +66,7 @@ blue: changed). None needs a restart.
 | CPU LIMIT | `app_cpu_limit` | AUTO / 80 / 70 / 50 / 30 % | the app's share of core 1 (the rest goes to GSP and the sysmodules); the cell shows the share granted |
 | STEREO 3D | `stereo_3d_on` | OFF / ON | stereoscopic 3D on the top screen while the slider is up; ON by default (`docs/stereo-3d.md`) |
 | PLANE TINT | not saved (OFF at boot) | OFF / LAYERS / DEPTH | GPU renderer only: every quad painted in one flat colour, keeping its silhouette. LAYERS: BG0 magenta, BG1 cyan, BG2 orange, BG3 green, sprites white, darker the further back the priority. DEPTH: the depth `stereo_3ds.c` gives each layer (`Stereo3DS_LayerDepth`), blue, dark behind the screen and bright in front of it; it works with the slider down. The backdrop and OBJ windows are left as they are. After `../mzm` and `../sm-3ds`. `tmc-link.py switch "PLANE TINT"` cycles it. |
+| FORCE 3D | not saved (OFF at boot) | OFF / ON | the 3D slider reads fully up whatever it is (`Stereo3DS_SetForce`): the right eye is drawn and `tmc-link.py shot` writes it as `top-right.png`, so a 3D scene can be checked from the PC; a 2DS shows the depth in PLANE TINT's DEPTH view too |
 
 `bottom_rgb565` is not offered: upstream's own note says it turns the bottom
 screen red. Upstream's comments on each are in `platform/3ds/source/port_config_3ds.c`.

@@ -20,7 +20,7 @@ Only what no other place records. Bugs: the open GitHub issues. Tasks: the untic
 boxes below. History: `git log` and the decisions log.
 
 **Release line:** `release/v0.3.2` (on origin; renamed from `release/v0.3.1` right after the
-`v0.3.1` tag). Published: **`v0.3.1`** (2026-10-17, **beta**, CI building it), **`v0.3.0`** (2026-10-15, **stable**, merged into `main`, straight
+`v0.3.1` tag). Published: **`v0.3.1`** (2026-10-17, **beta**; the release page and its CIA exist, the CI is green), **`v0.3.0`** (2026-10-15, **stable**, merged into `main`, straight
 to stable without a beta at the owner's request), `v0.2.0` (2026-10-14, stable), `v0.1.2`
 (2026-10-13, beta), `v0.1.1` (2026-10-12, stable) and `v0.1.0` (2026-10-11, beta).
 
@@ -35,47 +35,68 @@ was deleted). Their history is in `git log` and the decisions log.
 |---|---|
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
-**`release/v0.3.1` (2026-10-17), now `v0.3.1`:** holds everything the owner checked on the New 3DS today: TOP HUD AUTO
-(P2.9), the GBA grid and frame (P4.7), WIDE + AI and its one-time question (P4.8), the Minish Paths
-corridor centred (P4.6, its borders black), the title's logo and sword following VIEW/STYLE, and the 3D of
-P5.1 (sun rays, leaves of the Minish Paths, the title, the file select, the logos, the boot splash, the
-numbers box). **No tag yet**: `v0.3.1` needs `docs/release-notes/v0.3.1.md` first (CLAUDE.md), and the
-owner decides beta or stable. Not seen on the Old 3DS: the grid on HIGH (frame rate), WIDE + AI.
+**In `release/v0.3.2` since the `v0.3.1` tag (2026-10-17, all seen working on the New 3DS, no tag yet; a
+`v0.3.2` needs `docs/release-notes/v0.3.2.md` first):** the garbage beside a narrow room whose BG3 has no blank
+tile 0 (area 0x20 room 09), the village's gap cells taking the nearest zone's graphics, the top-frame HOLD
+also for doors into interiors, a state saved inside a subtask keeping the room's entities (Link locked after
+a map hint), the 3D depth of the map screens (hint and pause map), PLANE TINT / FORCE 3D / right-eye
+screenshots, and the bottom map in COLOURS with its hints over the unrevealed regions, swapping with Link
+every 32 game frames. v0.3.1 itself holds what the owner checked on 2026-10-17 (TOP HUD AUTO, GBA grid and
+frame, WIDE + AI, the Minish Paths corridor centred, the 3D of P5.1, the heart in use, the village intro's
+Minish walking in). Not seen on the Old 3DS: the grid on HIGH (frame rate), WIDE + AI.
 
 **Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
 
-**Start here (2026-10-17, after the 3D and look session):** `release/v0.3.1` is pushed (see the first
-line of `git log`) and everything on it was checked on the New 3DS. Next, in this order:
-1. **v0.3.1** is tagged as a beta (2026-10-17). Next: check the CI release and the updater's notes on a console; promote it
-   to stable by re-running the workflow on the tag only if nothing is committed after it, else tag the next version.
+**Start here (2026-10-17, end of the long session):** `release/v0.3.2` is pushed and clean, no branch is open
+but the parked `feat/village-3d`. Next, in this order:
+1. **v0.3.1 beta** is published: check, with a console, that OPTIONS -> UPDATES offers it and shows its notes
+   (not done). Promoting it to stable (re-run the workflow on the tag) is only valid if nothing was committed
+   after it, which is not the case: the next stable is a `v0.3.2` (notes first, CLAUDE.md "Releases"; the
+   owner has chosen beta first this time).
 2. **Old 3DS/2DS check** of what only the New 3DS has seen: the grid on HIGH (frame rate), WIDE + AI,
    the file select and title without 3D, TOP HUD AUTO. The 2DS is `192.168.1.139` (its FTP answered
    `530 Login incorrect` on 2026-10-17: ask the owner what that console runs).
-3. **`feat/village-3d`** is parked (owner, 2026-10-17): none of it goes into a release; kept only to see
-   whether it can be retaken one day (the houses back, the hanging fruits). Do not work on it unasked.
+3. **Side strips for narrow map rooms (P4.6).** The owner is generating, with Antigravity, the 80 px on each
+   side of the shrine yard (area 0x4A room 00; material in `~/Imágenes/outpaint-area-4A/`: template with black
+   bands, mask, reference and `prompt.txt`, made with `tools/scene-extend/extract_map_room.py`). When the
+   picture comes: check it (`check_extension.py`), then the game needs a way to draw a picture beside a map
+   room (the Minish Paths corridor has one; map rooms have only black there). Same for every other small
+   interior the owner wants to fill.
 4. **#30** the right edge of the top screen breaks on room changes and while rolling (2DS only: the owner
    sees nothing on the New 3DS, so a CPU-speed race is the lead: the retained map slices rewritten while
    the GPU still reads them is far likelier to show on the slower Old 3DS CPU). Not a regression. Next:
    `gpucheck` loops during scrolls, then a targeted SYNCDRAW on frames that rewrite slices; the scene
    recorder (FRAMES = "sin saltos") shows clean frames, so look at the GPU stage.
-5. Smaller: the generated side strips for the Minish Paths corridor (P4.6); the README's before/after GIF
-   of the portal shrink (P1.6).
+5. Smaller: the bottom screen's UI theme (hearts, buttons, sidebar chrome) is not corrected by COLOURS (only
+   the game art is; `port_second_screen_color.h`); sm-3ds's DRAW ORDER tint view could join PLANE TINT; the
+   light rays of the room 0x20/09 hang over its black border on the right (left as the game's rays);
+   the shoe house's door and other scripted entrances may pop in Full View like the village intro's Minish did
+   (look when the owner reports one); P3.4's old claim that dialogues go per pixel was not borne out (the C
+   line of the numbers box read C0 through a dialogue), recheck before rebuilding anything; the generated
+   side strips of the Minish Paths corridor (P4.6); the README's before/after GIF of the portal shrink (P1.6).
+Parked (owner, 2026-10-17): **`feat/village-3d`**, none of it goes into a release; do not work on it unasked.
 Closed by the owner (2026-10-17), do not re-propose: RetroAchievements (the achievements he looked at
 work; he will report any that should fire and does not), the save states across builds, issue #5
-(the dissolve works), the sibling updaters' hardening (done), #25, #4, #23 and #26 (all four closed on
-GitHub already).
-Scene pictures (portal, title, file select): procedure in `docs/wide-scene-extension.md`; the owner's material
-in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/intro-titulo/` and `~/Imágenes/elige-archivo/`
-(never in the repository).
+(the dissolve works), the sibling updaters' hardening (done), #25, #4, #23, #26 and #20 (all closed on
+GitHub).
+Scene pictures (portal, title, file select, shrine yard): procedure in `docs/wide-scene-extension.md`; the owner's
+material in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/intro-titulo/`, `~/Imágenes/elige-archivo/` and
+`~/Imágenes/outpaint-area-4A/` (never in the repository).
+**Checking 3D without a 3D screen:** DEBUG -> SWITCHES -> FORCE 3D (slider fully up, not saved), then
+`tmc-link.py shot` also writes `top-right.png`; PLANE TINT (LAYERS / DEPTH) paints each layer flat. `docs/debug-tools.md`.
 To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
 **On the owner's consoles now (2026-10-17, newer than the lines below):**
 - **New 3DS, `192.168.1.133`** (the owner, 2026-10-17: "es la 133 (new3ds)"; its address changes with the
   router: it answered on `.141` earlier the same day, and `.142` on 2026-10-14, so ping before assuming):
-  a debug build of the code of `release/v0.3.1` at `b6916ee` (built from the topic branch just before its
-  merge), WIDE + AI answered YES, VIEW wide, STYLE pixel-perfect, GBA GRID LOW, GBA FRAME off, TOP HUD AUTO,
-  FRAMES "sin saltos", SHOW FPS on, stereo on. State 1 is Claude's (a place in the Minish village before
-  an install); the owner's own states were not touched. `.3ds_ftp_ip` may hold `.141`: pass `--ip`.
+  a debug build of the code of `release/v0.3.2` at `aeb0c48` (`0.3.2-dev.*`), WIDE + AI answered YES, VIEW wide,
+  STYLE pixel-perfect, GBA GRID LOW, GBA FRAME off, TOP HUD AUTO, FRAMES "sin saltos", SHOW FPS on (debug
+  builds show the fifth line `C<n>`), stereo on, COLOURS on. FORCE 3D and PLANE TINT are off (they reset at
+  boot). State 1 is Claude's (the shrine yard, area 0x4A, saved before going out to take the pictures); the
+  states made the same day before it (the Minish village, the map hint at the owner's place) are the owner's
+  or Claude's from earlier installs: never overwrite or delete any, the owner's own were not touched. The owner
+  tests while Claude drives the console and accepted several relaunches in one evening: say so before each
+  install anyway. `.3ds_ftp_ip` may hold `.141`: pass `--ip`.
 - `192.168.1.141` did not answer on 2026-10-17 afternoon (off or another address); the 2DS `.139` answers
   `530 Login incorrect`. Their entries below are from 2026-10-15 and may be stale.
 
@@ -472,7 +493,7 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   untouched). The software renderer does not have to follow (owner: everything through the GPU).
   *Done when:* the owner sees the menus slide out by the wide screen's edge on the console.
 
-- [ ] **P4.6** Full View in every room, interiors and small rooms included (owner's request, 2026-10-14). *2026-10-17: the Minish Paths corridor (area 0x11) is done and seen on the New 3DS, merged: centred at view columns 10-39 with 80 black pixels each side, waiting for the owner's generated side strips (`docs/wide-scene-extension.md`).*
+- [ ] **P4.6** Full View in every room, interiors and small rooms included (owner's request, 2026-10-14). *2026-10-17: the Minish Paths corridor (area 0x11) is done and seen on the New 3DS, merged: centred at view columns 10-39 with 80 black pixels each side, waiting for the owner's generated side strips (`docs/wide-scene-extension.md`). Narrow map rooms (houses, shrines) are black at the sides; the owner is generating the strips for the shrine yard, area 0x4A room 00 (Start here, 3).*
   *Spec:* with Full View the top screen is always 400x240. A room larger than the view scrolls; one
   smaller in either axis is centred in it with the rest black (the camera rests outside the room:
   `Port_WidescreenCameraRestXForMode`, `Scroll1`), and the HUD stays at the screen's corners. The
@@ -1012,3 +1033,37 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   in both sidebars (`bottom_compact_3ds.inc` is the one on the console). The numbers box has a fifth line in
   debug builds, `C<n>`: frames the software renderer drew in the last second (`tmc3ds_build_config.h` must be
   included for `TMC3DS_DEBUG_TOOLS` to be seen); dialogues showed C0, so P3.4's old claim needs rechecking.
+- **2026-10-17** Narrow rooms in Full View (area 0x20 room 09): the shadow layers filled what is not the room (and
+  left of the light rays' picture) with entry 0, which draws tile 0; that tile is blank in most tilesets but
+  was a dither in this one, and showed as noise beside the room. `Port_WidescreenBlankEntry` picks the first
+  fully transparent tile of the layer's own character block (up to 1024 tiles, into the next blocks).
+- **2026-10-17** Minish village cells outside every zone region (`port_zone_tiles.c`): the game only swaps graphics
+  for the regions on screen, so a gap cell next to a zone never showed before that zone's set was loaded; the
+  400x240 view showed it as a block of garbage that came and went with the camera. Gap cells within 128 px of a
+  region take its set (Hyrule Town unchanged).
+- **2026-10-17** The hold of the faded top frame at a room change (`Port_Widescreen_3DSHoldTop`) was only for
+  exteriors; every room is a Full View candidate since P4.6, so doors into interiors hold it too. One frame at
+  240x160 before the hold remains, in both.
+- **2026-10-17** A state saved inside a subtask loses nothing now: `Subtask_FadeIn` moves the room's entity lists
+  into `gEntityListsBackup`, and the load's list repair freed those entities as strays (the NPC whose script
+  gives Link back his controls after a map hint: Link stayed in `controlMode` 3). It walks the backup while a
+  subtask is up and logs each stray it frees. Details in `docs/save-states.md`.
+- **2026-10-17** 3D of the map screens (scene bit 32, `windowOutsideControl == 0x3d3f` inside a subtask, so the
+  map hints and the pause menu's map): the grey and its frame (BG2) on the screen plane with the backdrop (which
+  cannot move: moving the frame alone made it slide against the green), the unlocked map (BG1) at 2 and the
+  markers (sprites) at 5. The OBJ-window sprites, which cut the map out, stay with BG2 (`Stereo3DS_ObjWindowFollows`):
+  moved with BG1 they left a 2 px line of backdrop at its edges, because the renderer cuts BG2 into batches along the
+  window's edges as the game drew them. Found with both eyes captured (`FORCE 3D`, `top-right.png`).
+- **2026-10-17** Debug views after `../mzm` and `../sm-3ds`: PLANE TINT (LAYERS, DEPTH; `PortPpuGpu3DS_SetTintMode`),
+  FORCE 3D (`Stereo3DS_SetForce`) and the right eye in `tmc-link.py shot`. Not saved. The depth view reads
+  `Stereo3DS_LayerDepth`, which works with the slider down.
+- **2026-10-17** The bottom map shows what the game's map shows: the game art of the second screen goes through the
+  COLOURS curve (`port_second_screen_color.c`; the theme's chrome does not, cached once), the hints are drawn over
+  the unrevealed regions (the game's WINOUT 0x3d3f keeps sprites on inside the OBJ window; the port had drawn
+  the grey last "so hidden terrain cannot leak"), and hints and Link swap every 32 game frames by bit 5 of
+  `gMain.ticks`, published in the snapshot (the bottom's own tick runs at 20 Hz, three times slower). Owner's
+  request; the repaint predicate follows the phase.
+- **2026-10-17** `tools/scene-extend/extract_map_room.py` draws a room that is a scrolling map (houses, shrines)
+  from a dump's `map-*-special.bin`; `extract_bg.py` only finds the 32x32 window of such a room's BGs. The
+  owner's outpainting material for area 0x4A is in `~/Imágenes/outpaint-area-4A/` (template with black bands,
+  mask, marked exterior reference, prompt).

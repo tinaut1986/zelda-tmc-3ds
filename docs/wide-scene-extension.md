@@ -36,6 +36,12 @@ default 80 for a 240 picture centred in 400) and `bgN-with-sprites.png` (the pic
 dump's sprites, for context). Look at what moves: sprites and other BGs are drawn by the game
 over the picture and must not be painted into it.
 
+**Rooms that are a scrolling map** (houses, shrines, most interiors; `DISPCNT` shows the map layers, the
+dump's `info.txt` has `Map BG controls`): their BGs hold a 32x32 window of the room, so `extract_bg.py` finds a
+few tiles. Use `tools/scene-extend/extract_map_room.py` instead, which draws the room from the dump's
+`-map-bottom-special.bin` and `-map-top-special.bin` (fetch them and `-room-controls.bin` too) and writes
+`room-ground.png`, `room-top.png`, `room-picture.png` and `room-template.png`.
+
 ## 2. The prompt for the AI
 
 Give it `bgN-template.png` to fill, `bgN-picture.png` and `bgN-with-sprites.png` as references, and:
