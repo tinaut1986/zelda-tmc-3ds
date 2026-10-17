@@ -24,7 +24,7 @@ static const signed char kDepth[5][4] = {
  * (owner, 2026-10-17): the title's (BG0 at priority 2) and the Minish Woods' and the barrel
  * house's (BG3 at priority 0, LightRayManager). */
 /* The leaves of the Minish Paths (BG1 at priority 1) hang the same way. */
-enum { RAYS_DEPTH = 4, LEAVES_DEPTH = 4 };
+enum { RAYS_DEPTH = 4, LEAVES_DEPTH = 4, TITLE_FRONT_DEPTH = 8 };
 
 static bool sActive;
 static bool sHasDepth;
@@ -66,6 +66,10 @@ float Stereo3DS_LayerShift(unsigned layer, unsigned priority, Stereo3DSEye eye) 
         ((sScenes & SCENE_LIGHT_RAYS) && layer == PPU_GPU3DS_BG3 && priority == 0))
         depth = RAYS_DEPTH;
     if ((sScenes & SCENE_PATH_LEAVES) && layer == PPU_GPU3DS_BG1 && priority == 1) depth = LEAVES_DEPTH;
+    /* On the title the logo (sprites) and the sword (BG2 at priority 1) are drawn in front of the rays,
+     * so they hang in front of them too (owner, 2026-10-17). */
+    if ((sScenes & SCENE_TITLE_RAYS) && (layer == PPU_GPU3DS_OBJ || (layer == PPU_GPU3DS_BG2 && priority == 1)))
+        depth = TITLE_FRONT_DEPTH;
     const float half = 0.5f * (float)depth * sSlider;
     return eye == STEREO3DS_LEFT ? half : -half;
 }
