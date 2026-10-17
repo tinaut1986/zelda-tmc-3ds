@@ -1508,6 +1508,35 @@ int Port_Widescreen_TitleRays(void) {
 #endif
 }
 
+/* Which scenes the stereoscopic 3D gives a layer a depth in (platform/3ds/source/stereo_3ds.c):
+ * a bit each of the PORT_STEREO_SCENE_* of port_widescreen.h, from the layers the game has on. */
+int Port_Stereo_Scenes(void) {
+#ifdef TMC_3DS
+    int scenes = 0;
+    const unsigned dispcnt = gScreen.lcd.displayControl;
+    /* The title (its forest on BG1 at screen base 30): BG0 is the light rays, in any view. Read from the
+     * registers the shown frame was drawn from, as Port_Widescreen_TitleForestShown does, not from
+     * gScreen: the game sets those up in state 0 and the view code rewrites BG0 for the rays. */
+    if (gMain.task == TASK_TITLE) {
+        const unsigned io = gIoMem[REG_OFFSET_DISPCNT] | (gIoMem[REG_OFFSET_DISPCNT + 1] << 8);
+        const unsigned bg1 = gIoMem[REG_OFFSET_BG1CNT] | (gIoMem[REG_OFFSET_BG1CNT + 1] << 8);
+        if ((io & DISPCNT_BG0_ON) && (io & DISPCNT_BG1_ON) && bg1 == (BGCNT_SCREENBASE(30) | BGCNT_PRIORITY(3)))
+            scenes |= PORT_STEREO_SCENE_TITLE_RAYS;
+    }
+    /* The sun rays of the Minish Woods and the barrel house (LightRayManager): BG3 at priority 0,
+     * alpha-blended (the steam overlay shares the control word but not the blend's). */
+    if ((dispcnt & DISPCNT_BG3_ON) && gScreen.bg3.control == 0x1e04 && gScreen.controls.layerFXControl == 0x3648)
+        scenes |= PORT_STEREO_SCENE_LIGHT_RAYS;
+    /* The leaves of the Minish Paths corridors (area 0x11, BG1 at priority 1 over the shadows of
+     * BG3 and the ground of BG2), vertical (0x1e49) and horizontal (0x1e09). */
+    if (gRoomControls.area == 0x11 && (dispcnt & DISPCNT_BG1_ON) && (gScreen.bg1.control & 0x1f03) == 0x1e01)
+        scenes |= PORT_STEREO_SCENE_PATH_LEAVES;
+    return scenes;
+#else
+    return 0;
+#endif
+}
+
 int Port_Widescreen_PortalCutsceneWide(void) {
 #ifdef TMC_3DS
     return Port_Config_3DSFullViewComboEnabled() && gMain.task == TASK_GAME &&
@@ -2793,6 +2822,9 @@ int Port_Widescreen_FileSelectViewLive(void) {
     return 0;
 }
 int Port_Widescreen_TitleViewLive(void) {
+    return 0;
+}
+int Port_Stereo_Scenes(void) {
     return 0;
 }
 int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {
