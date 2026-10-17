@@ -464,9 +464,19 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   smaller in either axis is centred in it with the rest black (the camera rests outside the room:
   `Port_WidescreenCameraRestXForMode`, `Scroll1`), and the HUD stays at the screen's corners. The
   policy only waits for the painted-content scan. **Done in code (needs the owner's check):** castle,
-  houses. **Still to do:** the corridor before the Minish village (Minish Paths parallax BGs only
-  have shadows in the 240/266 path, `Port_WidescreenParallaxShadows`), dungeons with BG3 parallax
-  or windows, cutscenes that move the camera by hand.
+  houses. **Still to do:** dungeons with BG3 parallax or windows, cutscenes that move the camera
+  by hand. **The corridor before the Minish village (Minish Paths, area 0x11, rooms 00-04, all
+  240x800) is in progress on `feat/minish-paths-centred`:** `Port_WidescreenParallaxShadows` now
+  also publishes shadows in Full View and places the room's 240 columns at view columns 10-39,
+  masking the rest (black borders, 80 px each side; the owner will generate side strips with a
+  generative AI, 80x256 per layer and side, tileable vertically: BG1 leaves, half speed; BG3
+  shadows, quarter speed; BG2 is the ground map; `docs/wide-scene-extension.md` is the flow).
+  **Bug found and fixed (owner confirmed on the console, 2026-10-15):** while scrolling, the bottom
+  ~48 px (tile rows 24-29) of the BG1 leaf layer lost its leaves and the ground's bushes showed.
+  Cause: the vertical corridors point the layer at a 32-row window of a taller map and scroll it
+  by `yOffset & 0x3f`; the GBA's 160 lines never leave the window, the 240-line view wraps to the
+  window's first rows. `Port_WidescreenParallaxShadows` now reads the slots above the first
+  displayed row from the map rows that follow the window. Check the other four rooms too.
   *Done when:* the owner sees small and large interiors, the corridor and a dungeon at 400x240 on
   the console.
 
