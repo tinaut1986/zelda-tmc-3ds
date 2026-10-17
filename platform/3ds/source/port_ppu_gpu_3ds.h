@@ -41,6 +41,12 @@ void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsi
  * animates it (the file select's cave). NULL frees it. Kept until cleared here: a NULL
  * SetBg1Picture leaves it. */
 void PortPpuGpu3DS_SetIndexedPicture(const uint8_t* indices, unsigned width, unsigned height, unsigned firstPalette);
+/* Debug view (DEBUG -> SWITCHES -> PLANE TINT, not saved): every quad of the frame painted in one flat colour
+ * keeping its silhouette. 0 off; 1 LAYERS: a colour per GBA layer (BG0 magenta, BG1 cyan, BG2 orange, BG3 green,
+ * sprites white), darker the further back its priority; 2 DEPTH: the depth stereo_3ds.c gives the layer, in blue,
+ * dark behind the screen and bright in front of it. Backdrop and windows are left as they are. */
+void PortPpuGpu3DS_SetTintMode(int mode);
+int PortPpuGpu3DS_TintMode(void);
 bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame);
 bool PortPpuGpu3DS_DrawPrepared(void);
 bool PortPpuGpu3DS_BindPresentShader(void);

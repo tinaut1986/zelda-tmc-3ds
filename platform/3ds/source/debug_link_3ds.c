@@ -393,6 +393,9 @@ static void RunRequest(LinkOp op) {
             mkdir(DEBUG_FILES_DIR, 0777);
             const bool ok = Platform3DS_SaveDisplayedScreens(DEBUG_FILES_DIR "/shot-top.bmp",
                                                              DEBUG_FILES_DIR "/shot-bottom.bmp");
+            /* The right eye when 3D shows one; a stale file is removed so a flat frame does not fetch an old one. */
+            if (!Platform3DS_SaveTopRightEye(DEBUG_FILES_DIR "/shot-top-right.bmp"))
+                remove(DEBUG_FILES_DIR "/shot-top-right.bmp");
             snprintf(sResult, sizeof(sResult), ok ? "200 debug/shot-top.bmp debug/shot-bottom.bmp"
                                                   : "550 Could not write the screenshots.");
             break;

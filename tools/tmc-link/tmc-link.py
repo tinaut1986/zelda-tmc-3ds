@@ -19,7 +19,7 @@ SITE commands of platform/3ds/source/debug_link_3ds.h. Standard library only.
     states                    the save states: number=area/room
     dump                      screen dump: debug/tmc-dump-NNNN-* (written at the next frame)
     switch NAME               cycle a DEBUG -> SWITCHES value ("FRAME SYNC")
-    shot [DIR]                screenshots of both screens as PNG, default /tmp/tmc-shot
+    shot [DIR]                screenshots of both screens as PNG, default /tmp/tmc-shot (top-right.png too when 3D shows a right eye: DEBUG -> SWITCHES -> FORCE 3D)
     perf start                the perf recorder (one row a presented frame, into RAM)
     perf stop [DIR]           write debug/tmc-perf-NNNN.csv and fetch it to DIR (default
                               /tmp/tmc-debug); tools/perf-csv/analyze.py summarises it
@@ -236,6 +236,15 @@ def run(link, argv):
             with open(path, 'wb') as f:
                 f.write(bmp_to_png(buf.getvalue()))
             print(path)
+        buf = io.BytesIO()  # the right eye, when 3D showed one
+        try:
+            link.connect().retrbinary('RETR %s/debug/shot-top-right.bmp' % DATA, buf.write)
+            path = os.path.join(out, 'top-right.png')
+            with open(path, 'wb') as f:
+                f.write(bmp_to_png(buf.getvalue()))
+            print(path)
+        except Exception:
+            pass
     elif cmd == 'scenerec':
         # start [N]: record; stop [DIR]: write it on the console, wait for the file, fetch it to DIR
         def last_scene():

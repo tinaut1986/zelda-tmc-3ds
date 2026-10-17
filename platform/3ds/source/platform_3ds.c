@@ -1282,6 +1282,17 @@ bool Platform3DS_SaveDisplayedScreensDetailed(const char* topPath, const char* b
     return topOk && bottomOk && topRawOk && bottomRawOk;
 }
 
+/* The top screen's right eye as shown, when the system has a second framebuffer for it (3D on): false otherwise. */
+bool Platform3DS_SaveTopRightEye(const char* path) {
+    GSPGPU_CaptureInfo capture;
+    memset(&capture, 0, sizeof(capture));
+    if (R_FAILED(GSPGPU_ImportDisplayCaptureInfo(&capture))) return false;
+    GSPGPU_CaptureInfoEntry top = capture.screencapture[GSP_SCREEN_TOP];
+    if (!top.framebuf1_vaddr || top.framebuf1_vaddr == top.framebuf0_vaddr) return false;
+    top.framebuf0_vaddr = top.framebuf1_vaddr;
+    return SaveCapturedFramebufferBmp(path, &top, 400, 240);
+}
+
 bool Platform3DS_SaveDisplayedScreens(const char* topPath, const char* bottomPath) {
     return Platform3DS_SaveDisplayedScreensDetailed(topPath, bottomPath, NULL, NULL, NULL);
 }

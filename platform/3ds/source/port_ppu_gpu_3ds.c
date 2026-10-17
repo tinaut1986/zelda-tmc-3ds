@@ -85,6 +85,10 @@ static float sEyeShiftNdc[PPU_GPU3DS_OBJ + 1][4];
 /* The same in whole pixels, for the batch's scissor: a layer's regions move with it, or their
  * edges cut what moved (the R button split in two, a heart cut by the next). */
 static int sEyeShiftPx[PPU_GPU3DS_OBJ + 1][4];
+/* The OBJ-window masks' own shift when they follow a layer (Stereo3DS_ObjWindowFollows). */
+static bool sEyeWindowFollows;
+static int sEyeWindowPx;
+static float sEyeWindowNdc;
 static DVLB_s* sShader;
 static shaderProgram_s sProgram;
 static int sOffsetUniform = -1;
@@ -698,6 +702,32 @@ static void SetScissorCached(u32 left, u32 bottom, u32 right, u32 top) {
     C3D_SetScissor(GPU_SCISSOR_NORMAL, left, bottom, right, top);
 }
 
+static int sTintMode;
+void PortPpuGpu3DS_SetTintMode(int mode) { sTintMode = mode < 0 || mode > 2 ? 0 : mode; }
+int PortPpuGpu3DS_TintMode(void) { return sTintMode; }
+
+/* The flat colour (0xBBGGRR, with a bit 24 mark) a batch is painted in under the tint view; 0: not tinted. */
+static uint32_t TintOf(const PpuGpu3DSBatch* batch) {
+    if (sTintMode == 0 || batch->objWindow || batch->layer > PPU_GPU3DS_OBJ) return 0;
+    const unsigned priority = batch->priority & 3u;
+    unsigned r, g, b;
+    if (sTintMode == 1) {
+        static const unsigned kRgb[5][3] = { { 255, 0, 255 }, { 0, 255, 255 }, { 255, 150, 0 }, { 0, 220, 0 }, { 255, 255, 255 } };
+        static const unsigned kScale[4] = { 256, 192, 140, 96 };
+        r = kRgb[batch->layer][0] * kScale[priority] / 256u;
+        g = kRgb[batch->layer][1] * kScale[priority] / 256u;
+        b = kRgb[batch->layer][2] * kScale[priority] / 256u;
+    } else {
+        int depth = Stereo3DS_LayerDepth(batch->layer, priority);
+        depth = depth < -4 ? -4 : depth > 8 ? 8 : depth;
+        const unsigned t = (unsigned)(depth + 4); /* 0..12 */
+        r = t * 5u;
+        g = t * 10u;
+        b = 40u + t * 17u;
+    }
+    return 0x1000000u | r | (g << 8u) | (b << 16u);
+}
+
 static uint32_t TevKey(const PpuGpu3DSBatch* batch) {
     return (uint32_t)batch->effect | ((uint32_t)batch->evy << 8u);
 }
@@ -707,16 +737,27 @@ static uint32_t BlendKey(const PpuGpu3DSBatch* batch) {
            ((uint32_t)batch->evb << 16u);
 }
 
+static uint32_t sTintKey;
+
 static void ResetTev(const PpuGpu3DSBatch* batch) {
     const uint32_t key = TevKey(batch);
-    if (key == sTevKey) return;
+    const uint32_t tint = TintOf(batch);
+    if (key == sTevKey && tint == sTintKey) return;
     sTevKey = key;
+    sTintKey = tint;
     for (int stage = 0; stage < 3; ++stage)
         C3D_TexEnvInit(C3D_GetTexEnv(stage));
     C3D_TexEnv* texture = C3D_GetTexEnv(0);
     C3D_TexEnvSrc(texture, C3D_Both, GPU_TEXTURE0, GPU_TEXTURE0,
                   GPU_TEXTURE0);
     C3D_TexEnvFunc(texture, C3D_Both, GPU_REPLACE);
+    if (tint != 0) {
+        /* The picture's alpha as it is, its colour one flat tone: brightening, darkening and blending would hide
+         * the difference between a dark picture and a far plane. */
+        C3D_TexEnvColor(texture, 0xff000000u | (tint & 0xffffffu));
+        C3D_TexEnvSrc(texture, C3D_RGB, GPU_CONSTANT, GPU_CONSTANT, GPU_CONSTANT);
+        return;
+    }
     if (batch->effect != PPU_GPU3DS_EFFECT_BRIGHTEN &&
         batch->effect != PPU_GPU3DS_EFFECT_DARKEN)
         return;
@@ -737,10 +778,10 @@ static void ResetTev(const PpuGpu3DSBatch* batch) {
 }
 
 static void ResetBlend(const PpuGpu3DSBatch* batch) {
-    const uint32_t key = BlendKey(batch);
+    const uint32_t key = BlendKey(batch) | (TintOf(batch) != 0 ? 0x80000000u : 0u);
     if (key == sBlendKey) return;
     sBlendKey = key;
-    if (batch->effect == PPU_GPU3DS_EFFECT_ALPHA) {
+    if (batch->effect == PPU_GPU3DS_EFFECT_ALPHA && TintOf(batch) == 0) {
         const u32 eva = Coefficient8(batch->eva);
         const u32 evb = Coefficient8(batch->evb);
         C3D_BlendingColor(eva | (eva << 8u) | (eva << 16u) | (evb << 24u));
@@ -836,7 +877,9 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
                                                                       : &sRingTex[batch->texture - 1u]);
     }
     SetBatchOffset(batch->offsetX + (sEyeShifting && batch->layer <= PPU_GPU3DS_OBJ
-                                             ? sEyeShiftNdc[batch->layer][batch->priority & 3u]
+                                             ? (batch->objWindow && sEyeWindowFollows
+                                                        ? sEyeWindowNdc
+                                                        : sEyeShiftNdc[batch->layer][batch->priority & 3u])
                                              : 0.0f),
                    batch->offsetY);
     const u32 yOffset = sViewportOffset;
@@ -866,7 +909,8 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
     }
     u32 left = batch->scissorLeft, right = batch->scissorRight;
     if (sEyeShifting && batch->layer <= PPU_GPU3DS_OBJ) {
-        const int shift = sEyeShiftPx[batch->layer][batch->priority & 3u];
+        const int shift = batch->objWindow && sEyeWindowFollows ? sEyeWindowPx
+                                                                 : sEyeShiftPx[batch->layer][batch->priority & 3u];
         const int movedLeft = (int)left + shift, movedRight = (int)right + shift;
         left = movedLeft < 0 ? 0u : (u32)movedLeft;
         right = movedRight > (int)sPreparedWidth ? sPreparedWidth : (movedRight < 0 ? 0u : (u32)movedRight);
@@ -958,6 +1002,7 @@ static bool DrawOutput(C3D_RenderTarget* target) {
     SetBatchOffset(0.0f, 0.0f);
     sTevKey = 0xffffffffu;
     sBlendKey = 0xffffffffu;
+    sTintKey = 0xffffffffu;
     for (int stage = 0; stage < 6; ++stage)
         C3D_TexEnvInit(C3D_GetTexEnv(stage));
     C3D_TexSetFilter(&sAtlas, GPU_NEAREST, GPU_NEAREST);
@@ -1139,6 +1184,12 @@ static void SetEyeShifts(bool shifted, Stereo3DSEye eye) {
             sEyeShiftPx[layer][priority] = pixels;
             sEyeShiftNdc[layer][priority] = (float)pixels * toNdc;
         }
+    unsigned followLayer, followPriority;
+    sEyeWindowFollows = Stereo3DS_ObjWindowFollows(&followLayer, &followPriority);
+    if (sEyeWindowFollows) {
+        sEyeWindowPx = sEyeShiftPx[followLayer][followPriority & 3u];
+        sEyeWindowNdc = sEyeShiftNdc[followLayer][followPriority & 3u];
+    }
 }
 
 bool PortPpuGpu3DS_DrawPrepared(void) {

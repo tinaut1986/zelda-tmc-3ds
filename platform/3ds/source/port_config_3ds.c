@@ -485,6 +485,10 @@ bool Port_Config_AudioDspPcm(void) {
  * change is saved like any other setting. `bottom_rgb565` is left out: per
  * its own note above it turns the bottom screen red. */
 #include "debug_switches_3ds.h"
+extern void PortPpuGpu3DS_SetTintMode(int mode);
+extern int PortPpuGpu3DS_TintMode(void);
+extern void Stereo3DS_SetForce(bool on);
+extern bool Stereo3DS_Forced(void);
 
 #if TMC3DS_DEBUG_TOOLS
 bool Port_Config_DebugLogOn(void) { return sDebugLogOn; }
@@ -521,6 +525,8 @@ static int SwitchValue(int id) {
         case DEBUG_SW_COMPACT_UPLOAD: return sCompactUpload;
         case DEBUG_SW_CPU_LIMIT: return sAppCpuLimit;
         case DEBUG_SW_STEREO_3D: return sStereo3D ? 1 : 0;
+        case DEBUG_SW_PLANE_TINT: return PortPpuGpu3DS_TintMode();
+        case DEBUG_SW_FORCE_3D: return Stereo3DS_Forced() ? 1 : 0;
         default: return 0;
     }
 }
@@ -528,13 +534,13 @@ static int SwitchValue(int id) {
 const char* DebugSwitch_Name(int id) {
     static const char* const kNames[DEBUG_SW_COUNT] = {
         "RENDERER", "FRAME SYNC", "VBLANK LOCK", "STATIC QUAD", "MAP SKIP",
-        "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT", "STEREO 3D",
+        "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT", "STEREO 3D", "PLANE TINT", "FORCE 3D",
     };
     return id >= 0 && id < DEBUG_SW_COUNT ? kNames[id] : "?";
 }
 
 bool DebugSwitch_IsDefault(int id) {
-    static const int kDefaults[DEBUG_SW_COUNT] = { 1, 0, 0, 0, 1, -1, -1, 0, 0, 0 };
+    static const int kDefaults[DEBUG_SW_COUNT] = { 1, 0, 0, 0, 1, -1, -1, 0, 0, 0, 0, 0 };
     return id >= 0 && id < DEBUG_SW_COUNT && SwitchValue(id) == kDefaults[id];
 }
 
@@ -543,6 +549,9 @@ void DebugSwitch_Value(int id, char* out, unsigned cap) {
     switch (id) {
         case DEBUG_SW_RENDERER:
             snprintf(out, cap, "%s", v ? "GPU" : "CPU (TEST)");
+            return;
+        case DEBUG_SW_PLANE_TINT:
+            snprintf(out, cap, "%s", v == 1 ? "LAYERS" : (v == 2 ? "DEPTH" : "OFF"));
             return;
         case DEBUG_SW_BOTTOM_CORE:
             snprintf(out, cap, "%s", v < 0 ? (Platform3DS_IsNew3DS() ? "AUTO 0" : "AUTO 1") : (v ? "CORE 1" : "CORE 0"));
@@ -570,6 +579,8 @@ void DebugSwitch_Cycle(int id) {
         case DEBUG_SW_VBLANK_LOCK: sVblankPhaseLock = !sVblankPhaseLock; break;
         case DEBUG_SW_STATIC_QUAD: sGpuStaticQuad = !sGpuStaticQuad; break;
         case DEBUG_SW_STEREO_3D: sStereo3D = !sStereo3D; break;
+        case DEBUG_SW_PLANE_TINT: PortPpuGpu3DS_SetTintMode((PortPpuGpu3DS_TintMode() + 1) % 3); return; /* not saved */
+        case DEBUG_SW_FORCE_3D: Stereo3DS_SetForce(!Stereo3DS_Forced()); return; /* not saved */
         case DEBUG_SW_MAP_SKIP: sBottomMapSkip = !sBottomMapSkip; break;
         case DEBUG_SW_BOTTOM_CORE:
             sBottomCore = sBottomCore < 0 ? 0 : (sBottomCore == 0 ? 1 : -1);
