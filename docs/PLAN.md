@@ -33,6 +33,7 @@ was deleted). Their history is in `git log` and the decisions log.
 
 | Branch | State |
 |---|---|
+| `perf/stereo-3d-deepwood` | Cut from `release/v0.3.2` at `d91a57f` (with #32). Committed, not merged: waits for the owner's look on the New 3DS (3D in the Deepwood Shrine). Checked by Claude in eight gameplay scenes (both eyes identical to the old path); the title, file select, logos and map hints were not checked (the map hints always take the old path). Decisions log 2026-10-18. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **In `release/v0.3.2` since the `v0.3.1` tag (2026-10-17, all seen working on the New 3DS, no tag yet; a
@@ -1072,3 +1073,20 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   GPU renderer takes the view-wide lines as WIN0 itself (`PpuGpu3DSFrameView::win0Lines`), not as the iris's backdrop
   mask, because the dark room's window settings differ (inside: no BG3). 60 fps on the New 3DS with 3D off; with 3D
   up the shrine is under 60 in both views, a separate matter. Details in `docs/gpu-fade.md`.
+- **2026-10-18** Stereo 3D drew the whole frame twice on the GPU, so the right eye doubled its cost. Measured on the
+  New 3DS (perf recorder, FPS overlay's G = `C3D_GetDrawingTime`, `gPpuGpu3DSEyesWhole` to switch paths on the same
+  state), Full View with #32: the dark room 0x48/0x10 takes G 9.0 ms in 2D (60 fps), 17.1 ms in 3D (40 fps); room
+  0x0B 6.0 / 11.0 (60 both); the Minish Woods with its rays 7.4 / 13.8 (58). The frame is serial: the CPU builds the
+  commands only after `C3D_FrameBegin` has waited for the previous GPU frame (the vertex, index and atlas buffers
+  are single, `port_ppu_3ds.c`), so the interval is the build (3.0 ms in the dark room, its 21 bands and 300
+  batches; ~1 ms elsewhere) plus ~3 ms of recording and presenting plus the GPU frame. Now the layers on the screen
+  plane are drawn once, the right eye copies them and each eye draws only its layers in front
+  (`DrawEyesOverBase`, docs/stereo-3d.md); a frame with nothing in front is drawn once for both. Dark room: G 12.6
+  ms, 54 fps; 0x0B 9.1; the Woods 11.6 and 60 fps. Both eyes compared pixel by pixel with the old path from the
+  same state in eight scenes (dark room, 0x0B, Minish Woods' rays, Minish Paths' leaves, areas 0x03, 0x15, 0x22,
+  0x80): identical; GPU CHECK 0 in the dark room. What the dark room still pays in 3D over 2D (~3.6 ms): the copy
+  (~0.5), BG0 at priority 0 drawn per eye although transparent (the HUD layer is a full view ring), and the
+  presenter's right eye (clear, quad, GBA grid, transfer, ~2). 60 there needs the build overlapped with the GPU
+  (double-buffered command buffers and atlas), or a lighter dark room; both are separate work. The narrow
+  266x160 view (before #32) was worse: no view rings, 7.4 ms of build, 45 fps.
+

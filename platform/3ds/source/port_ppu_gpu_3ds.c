@@ -3,6 +3,10 @@
 #include "stereo_3ds.h"
 
 #include "platform_gpu_3ds.h"
+#include "tmc3ds_build_config.h"
+#if TMC3DS_DEBUG_TOOLS
+#include "debug_log_3ds.h"
+#endif
 #include "ppu_gpu_3ds_budget.h"
 
 #include "ppu_gpu_3ds_shader_shbin.h"
@@ -34,8 +38,11 @@ enum {
      * See ClearStencilPlane. */
     PPU_GPU3DS_CLEAR_FIRST_VERTEX = PPU_GPU3DS_MAX_VERTICES - 4,
     PPU_GPU3DS_CLEAR_FIRST_INDEX = PPU_GPU3DS_MAX_INDICES - 6,
-    PPU_GPU3DS_BUILD_VERTICES = PPU_GPU3DS_CLEAR_FIRST_VERTEX,
-    PPU_GPU3DS_BUILD_INDICES = PPU_GPU3DS_CLEAR_FIRST_INDEX,
+    /* And the quad before it, which copies the left eye's picture to the right (CopyLeftOutput). */
+    PPU_GPU3DS_COPY_FIRST_VERTEX = PPU_GPU3DS_CLEAR_FIRST_VERTEX - 4,
+    PPU_GPU3DS_COPY_FIRST_INDEX = PPU_GPU3DS_CLEAR_FIRST_INDEX - 6,
+    PPU_GPU3DS_BUILD_VERTICES = PPU_GPU3DS_COPY_FIRST_VERTEX,
+    PPU_GPU3DS_BUILD_INDICES = PPU_GPU3DS_COPY_FIRST_INDEX,
     PPU_GPU3DS_MAX_BATCHES = 4096,
     PPU_GPU3DS_OUTPUT_WIDTH = 512,
     PPU_GPU3DS_OUTPUT_HEIGHT = 256,
@@ -156,6 +163,9 @@ static void AppendIrisMask(const PpuGpu3DSFrameView* frame) {
 /* Debug: poke 1 to skip the fade's full-screen quad (the picture then shows the
  * unfaded palettes), to time it (tmc-link.py poke gPpuGpu3DSFadeQuadDisable 01). */
 volatile uint8_t gPpuGpu3DSFadeQuadDisable;
+/* Debug: 1 draws both eyes whole again instead of over one base (DrawEyesOverBase), to compare the two
+ * (tmc-link.py poke gPpuGpu3DSEyesWhole 01). */
+volatile uint8_t gPpuGpu3DSEyesWhole;
 static PortPpuGpu3DSStats sStats;
 
 void PortPpuGpu3DS_Shutdown(void) {
@@ -810,6 +820,12 @@ static void SetWindowStencil(const PpuGpu3DSBatch* batch) {
         C3D_StencilTest(false, GPU_ALWAYS, 0, 0xff, 0);
 }
 
+/* Stencil bit 0x08 marks a pixel whose top layer so far is a second blend target. With the eyes
+ * drawn over one shared picture (DrawEyesOverBase) the base keeps the mark in 0x10 as well, and
+ * each eye's layers in front read and write only their own copy: the eyes share one depth-stencil
+ * buffer, so what the first eye wrote would otherwise reach the second. */
+static unsigned sTarget2Bit = 0x08u, sTarget2WriteMask = 0x08u;
+
 /* Every path that relies on the stencil keeps the depth test enabled with
  * GPU_ALWAYS rather than disabling it. The two are equivalent as tests, but on
  * PICA200 the stencil belongs to the depth-stencil stage, and a console draws
@@ -830,18 +846,18 @@ static void SetColorStencil(const PpuGpu3DSBatch* batch) {
     unsigned mask = region < 2u ? 0x04u : 0;
     unsigned ref = region == 1u ? 0x04u : 0;
     if (alphaBranch) {
-        mask |= 0x08u;
-        if (oldTarget) ref |= 0x08u;
+        mask |= sTarget2Bit;
+        if (oldTarget) ref |= sTarget2Bit;
         C3D_StencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP,
                       oldTarget == (batch->target2 != 0)
                               ? GPU_STENCIL_KEEP
                               : GPU_STENCIL_INVERT);
     } else {
-        if (batch->target2) ref |= 0x08u;
+        if (batch->target2) ref |= sTarget2WriteMask;
         C3D_StencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP,
                       GPU_STENCIL_REPLACE);
     }
-    C3D_StencilTest(true, mask ? GPU_EQUAL : GPU_ALWAYS, ref, mask, 0x08);
+    C3D_StencilTest(true, mask ? GPU_EQUAL : GPU_ALWAYS, ref, mask, sTarget2WriteMask);
 }
 
 /* The vertex shader adds this to every position; only map-space background
@@ -973,15 +989,90 @@ static void ClearStencilPlane(void) {
                      sIndices + PPU_GPU3DS_CLEAR_FIRST_INDEX);
 }
 
+/* What a DrawOutput call draws. ALL: the whole frame. BASE: only the layers on the screen plane,
+ * without the iris and fade; FRONT_LEFT / FRONT_RIGHT: over it, only the layers with a depth, then
+ * the iris and fade (DrawEyesOverBase). */
+typedef enum OutputPass { PASS_ALL, PASS_BASE, PASS_FRONT_LEFT, PASS_FRONT_RIGHT } OutputPass;
+
+/* The layers off the screen plane this frame: their shift is not zero (SetEyeShifts). */
+static bool sFrontLayer[PPU_GPU3DS_OBJ + 1][4];
+/* Whether a sprite is among them: only then does each eye reset the depth (ClearDepthPlane). */
+static bool sFrontHasObj;
+
+static bool IsFrontBatch(const PpuGpu3DSBatch* batch) {
+    return batch->layer <= PPU_GPU3DS_OBJ && sFrontLayer[batch->layer][batch->priority & 3u];
+}
+
+static bool PassDraws(OutputPass pass, const PpuGpu3DSBatch* batch) {
+    return pass == PASS_ALL || (pass == PASS_BASE) != IsFrontBatch(batch);
+}
+
+/* The right eye starts as a copy of the left's base picture: one quad sampling the left output, colour only, so
+ * the shared depth-stencil keeps the base's marks. Commands run in order, so it reads the base before the left
+ * eye's own layers are drawn over it. */
+static void CopyLeftOutput(void) {
+    PpuGpu3DSVertex* quad = sVertices + PPU_GPU3DS_COPY_FIRST_VERTEX;
+    /* Same corners as the reset quad (top-left, top-right, bottom-right, bottom-left), each sampling the output
+     * texel under it: the viewport's bottom edge is target row sViewportOffset. */
+    const float u1 = (float)sPreparedWidth / (float)PPU_GPU3DS_OUTPUT_WIDTH;
+    const float v0 = (float)sViewportOffset / (float)PPU_GPU3DS_OUTPUT_HEIGHT;
+    const float v1 = (float)(sViewportOffset + sPreparedHeight) / (float)PPU_GPU3DS_OUTPUT_HEIGHT;
+    static const float kX[4] = { -1.0f, 1.0f, 1.0f, -1.0f };
+    static const float kY[4] = { 1.0f, 1.0f, -1.0f, -1.0f };
+    for (unsigned corner = 0; corner < 4u; ++corner) {
+        quad[corner].x = kX[corner];
+        quad[corner].y = kY[corner];
+        quad[corner].z = 0.0f;
+        quad[corner].u = PpuGpu3DS_PackUV(kX[corner] < 0.0f ? 0.0f : u1);
+        quad[corner].v = PpuGpu3DS_PackUV(kY[corner] < 0.0f ? v0 : v1);
+    }
+    Platform3DS_CleanDataCache(quad, 4u * sizeof(*quad));
+    for (int stage = 0; stage < 3; ++stage)
+        C3D_TexEnvInit(C3D_GetTexEnv(stage));
+    C3D_TexEnv* env = C3D_GetTexEnv(0);
+    C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, GPU_TEXTURE0, GPU_TEXTURE0);
+    C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+    sTevKey = 0xffffffffu;
+    sTintKey = 0xffffffffu;
+    C3D_TexSetFilter(&sOutputTexture, GPU_NEAREST, GPU_NEAREST);
+    C3D_TexBind(0, &sOutputTexture);
+    sBoundTexture = UINT8_MAX;
+    C3D_BlendingColor(0);
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+    sBlendKey = 0xffffffffu;
+    C3D_AlphaTest(false, GPU_ALWAYS, 0);
+    C3D_StencilTest(false, GPU_ALWAYS, 0, 0xff, 0);
+    C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_COLOR);
+    SetBatchOffset(0.0f, 0.0f);
+    SetScissorCached(0, sViewportOffset, sPreparedWidth, sViewportOffset + sPreparedHeight);
+    C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, sIndices + PPU_GPU3DS_COPY_FIRST_INDEX);
+}
+
+/* Depth back to the clear value, stencil kept: the sprites in front pick their order among themselves again
+ * (they are in front of every base sprite whatever the depth holds), so neither eye sees the other's. */
+static void ClearDepthPlane(void) {
+    SetBatchOffset(0.0f, 0.0f);
+    SetScissorCached(0, sViewportOffset, sPreparedWidth, sViewportOffset + sPreparedHeight);
+    C3D_AlphaTest(false, GPU_ALWAYS, 0);
+    C3D_StencilTest(false, GPU_ALWAYS, 0, 0xff, 0);
+    C3D_StencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_KEEP);
+    C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_DEPTH);
+    C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, sIndices + PPU_GPU3DS_CLEAR_FIRST_INDEX);
+}
+
 /* The prepared frame drawn on one output target, each layer moved by its eye's shift
- * (sEyeShiftNdc, none for a single picture). */
-static bool DrawOutput(C3D_RenderTarget* target) {
+ * (sEyeShiftNdc, none for a single picture); `pass` says which part of it (OutputPass). */
+static bool DrawOutput(C3D_RenderTarget* target, OutputPass pass) {
+    const bool front = pass == PASS_FRONT_LEFT || pass == PASS_FRONT_RIGHT;
     /* citro2d programs the scissor for its own draws between our frames, so
      * the cache cannot survive across a frame boundary. */
     sScissorKeyLow = 0xffffffffu;
     sScissorKeyHigh = 0xffffffffu;
-    C3D_RenderTargetClear(target, C3D_CLEAR_ALL,
-                          ClearColor(sCommands.batches[0].color), 0);
+    /* The layers in front go over the base already drawn; the right eye's picture is all copied from the
+     * left, so only its colour is cleared (outside the view) and the shared depth-stencil is left alone. */
+    if (pass != PASS_FRONT_LEFT)
+        C3D_RenderTargetClear(target, pass == PASS_FRONT_RIGHT ? C3D_CLEAR_COLOR : C3D_CLEAR_ALL,
+                              ClearColor(sCommands.batches[0].color), 0);
     if (!C3D_FrameDrawOn(target)) return false;
     /* Scanline 0 has to land in target row 0, where the presenter samples it,
      * so the viewport sits at the top of the 512x256 surface; the scissor is
@@ -1009,20 +1100,27 @@ static bool DrawOutput(C3D_RenderTarget* target) {
     C3D_TexSetWrap(&sAtlas, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     C3D_TexBind(0, &sAtlas);
     sBoundTexture = 0;
-    LogBatchList();
-
+    if (pass == PASS_ALL || pass == PASS_BASE) LogBatchList();
+    /* The base keeps the blend-target mark in both bits; each eye in front uses its own. */
+    sTarget2Bit = pass == PASS_FRONT_RIGHT ? 0x10u : 0x08u;
+    sTarget2WriteMask = pass == PASS_BASE ? 0x18u : sTarget2Bit;
     /* Windows and blending read the stencil as though it starts at zero every
      * frame. citro3d's target clear is the only thing that guarantees that,
      * and it skips the depth/stencil fill entirely when the attachment is
      * missing while still clearing colour -- which reads on screen as a frame
      * that is uniformly clear-coloured (every gated batch rejected) or
      * uniformly blended (only the alpha half passing). Resetting the plane
-     * with a draw costs one quad and depends on nothing. */
-    ClearStencilPlane();
+     * with a draw costs one quad and depends on nothing. The layers in front
+     * read the marks the base left (DrawEyesOverBase), so they keep them. */
+    if (!front) ClearStencilPlane();
+    else {
+        if (pass == PASS_FRONT_RIGHT) CopyLeftOutput();
+        if (sFrontHasObj) ClearDepthPlane();
+    }
 
     for (size_t i = 1; i < sCommands.batchCount; ++i) {
         const PpuGpu3DSBatch* batch = &sCommands.batches[i];
-        if (!batch->objWindow) continue;
+        if (!batch->objWindow || front) continue; /* DrawEyesOverBase: the OBJ windows are all in the base */
         ResetTev(batch);
         ResetBlend(batch);
         C3D_AlphaTest(true, GPU_GREATER, 0);
@@ -1035,7 +1133,7 @@ static bool DrawOutput(C3D_RenderTarget* target) {
 
     for (size_t i = 1; i < sCommands.batchCount; ++i) {
         const PpuGpu3DSBatch* batch = &sCommands.batches[i];
-        if (batch->layer != PPU_GPU3DS_OBJ || batch->objWindow) continue;
+        if (batch->layer != PPU_GPU3DS_OBJ || batch->objWindow || !PassDraws(pass, batch)) continue;
         ResetTev(batch);
         ResetBlend(batch);
         C3D_AlphaTest(true, GPU_GREATER, 0);
@@ -1046,13 +1144,13 @@ static bool DrawOutput(C3D_RenderTarget* target) {
 
     for (size_t i = 1; i < sCommands.batchCount; ++i) {
         const PpuGpu3DSBatch* batch = &sCommands.batches[i];
-        if (batch->objWindow) continue;
+        if (batch->objWindow || !PassDraws(pass, batch)) continue;
         if (batch->layer == PPU_GPU3DS_BACKDROP) {
             ResetTev(batch);
             ResetBlend(batch);
             C3D_AlphaTest(false, GPU_ALWAYS, 0);
             C3D_DepthTest(true, GPU_ALWAYS, (GPU_WRITEMASK)0);
-            C3D_StencilTest(true, GPU_ALWAYS, 0x08, 0, 0x08);
+            C3D_StencilTest(true, GPU_ALWAYS, sTarget2WriteMask, 0, sTarget2WriteMask);
             C3D_StencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP,
                           GPU_STENCIL_REPLACE);
             DrawBatch(batch);
@@ -1071,7 +1169,7 @@ static bool DrawOutput(C3D_RenderTarget* target) {
 
     /* The iris (PpuGpu3DSFrameView::irisLines): the backdrop outside the circle,
      * before the fade quad so a fade darkens it as PAL_RAM's backdrop was. */
-    if (sIrisIndexCount != 0) {
+    if (sIrisIndexCount != 0 && pass != PASS_BASE) {
         for (int stage = 0; stage < 3; ++stage)
             C3D_TexEnvInit(C3D_GetTexEnv(stage));
         C3D_TexEnv* env = C3D_GetTexEnv(0);
@@ -1095,7 +1193,7 @@ static bool DrawOutput(C3D_RenderTarget* target) {
      * opaque as its weight, over the finished frame is the game's fade. Blending
      * is linear, so it commutes with the alpha blends and the fades the frame
      * already did; the target's 5-bit channels quantise it as PAL_RAM did. */
-    if (sFadeWeight != 0 && gPpuGpu3DSFadeQuadDisable == 0) {
+    if (sFadeWeight != 0 && gPpuGpu3DSFadeQuadDisable == 0 && pass != PASS_BASE) {
         for (int stage = 0; stage < 3; ++stage)
             C3D_TexEnvInit(C3D_GetTexEnv(stage));
         C3D_TexEnv* env = C3D_GetTexEnv(0);
@@ -1192,6 +1290,78 @@ static void SetEyeShifts(bool shifted, Stereo3DSEye eye) {
     }
 }
 
+/* Why the eyes cannot be drawn over one base picture this frame (0: they can). */
+enum { SPLIT_OK, SPLIT_WINDOW_FOLLOWS, SPLIT_FRONT_WINDOW, SPLIT_FRONT_BLENDED_OBJ, SPLIT_BASE_OVER_FRONT, SPLIT_FORCED_WHOLE,
+       SPLIT_NOTHING_IN_FRONT, SPLIT_LINES_UNCLIPPED };
+
+/* With the left eye's shifts set (SetEyeShifts): marks the layers in front (sFrontLayer) and says whether the
+ * frame can be drawn as one base picture with them over it, each eye moving only those (DrawEyesOverBase), or,
+ * SPLIT_NOTHING_IN_FRONT, needs one picture for both eyes (no batch is on a layer in front: the HUD hidden).
+ * It can when nothing on the screen plane is drawn after a layer in front on the same lines, no OBJ window
+ * moves, and no sprite in front is semi-transparent: the GBA blends a sprite with the background under it,
+ * never with a lower sprite, which the base would have drawn there. The lines are a batch's only while the scissor
+ * cuts them (gpu_scissor_mode 0 lets a band's tile rows overhang). */
+static int EyesOverBaseRefusal(void) {
+    for (unsigned layer = 0; layer <= PPU_GPU3DS_OBJ; ++layer)
+        for (unsigned priority = 0; priority < 4; ++priority)
+            sFrontLayer[layer][priority] = sEyeShiftPx[layer][priority] != 0;
+    if (sEyeWindowFollows) return SPLIT_WINDOW_FOLLOWS;
+    if (Port_Config_GpuScissorMode() == 0) return SPLIT_LINES_UNCLIPPED;
+    sFrontHasObj = false;
+    uint32_t frontLines[(PPU_GPU3DS_OUTPUT_HEIGHT + 31) / 32] = { 0 };
+    bool anyFront = false;
+    for (size_t i = 1; i < sCommands.batchCount; ++i) {
+        const PpuGpu3DSBatch* batch = &sCommands.batches[i];
+        const unsigned first = batch->firstLine;
+        unsigned end = first + batch->lineCount;
+        if (end > PPU_GPU3DS_OUTPUT_HEIGHT) end = PPU_GPU3DS_OUTPUT_HEIGHT;
+        if (IsFrontBatch(batch)) {
+            if (batch->objWindow) return SPLIT_FRONT_WINDOW;
+            if (batch->layer == PPU_GPU3DS_OBJ &&
+                (batch->effect == PPU_GPU3DS_EFFECT_ALPHA || batch->semiTransparent ||
+                 (batch->color & PPU_GPU3DS_ALPHA_COMPLEMENT) != 0))
+                return SPLIT_FRONT_BLENDED_OBJ;
+            for (unsigned line = first; line < end; ++line)
+                frontLines[line / 32u] |= 1u << (line % 32u);
+            anyFront = true;
+            if (batch->layer == PPU_GPU3DS_OBJ) sFrontHasObj = true;
+        } else if (anyFront && !batch->objWindow) {
+            for (unsigned line = first; line < end; ++line)
+                if (frontLines[line / 32u] & (1u << (line % 32u))) return SPLIT_BASE_OVER_FRONT;
+        }
+    }
+    return anyFront ? SPLIT_OK : SPLIT_NOTHING_IN_FRONT;
+}
+
+/* The layers on the screen plane are drawn once, on the left output; the right eye's output copies that picture,
+ * and only the layers in front are drawn for each eye with its shift. Drawing the whole frame twice doubled the
+ * GPU's work: in the Deepwood Shrine's dark room (area 0x48 room 0x10, New 3DS) 9.0 ms a frame in 2D, 17.1 with
+ * both eyes whole (40 fps), 12.6 this way (54 fps; docs/PLAN.md, decisions log 2026-10-18). */
+static bool DrawEyesOverBase(void) {
+    SetEyeShifts(false, STEREO3DS_LEFT);
+    if (!DrawOutput(sOutputTarget, PASS_BASE)) return false;
+    if (EnsureRightOutput()) {
+        SetEyeShifts(true, STEREO3DS_RIGHT);
+        sRightReady = DrawOutput(sOutputRightTarget, PASS_FRONT_RIGHT);
+    }
+    SetEyeShifts(true, STEREO3DS_LEFT);
+    return DrawOutput(sOutputTarget, PASS_FRONT_LEFT);
+}
+
+static void NoteEyesPath(int refusal) {
+#if TMC3DS_DEBUG_TOOLS
+    static int last = -1;
+    if (refusal != last)
+        DebugLog_Printf("stereo: eyes %s (%d)", refusal == SPLIT_OK                 ? "over one base"
+                                                : refusal == SPLIT_NOTHING_IN_FRONT ? "share one picture"
+                                                                                    : "drawn whole",
+                        refusal);
+    last = refusal;
+#else
+    (void)refusal;
+#endif
+}
+
 bool PortPpuGpu3DS_DrawPrepared(void) {
     const uint64_t startTick = svcGetSystemTick();
     sRightReady = false;
@@ -1209,10 +1379,21 @@ bool PortPpuGpu3DS_DrawPrepared(void) {
      * shows this one to both. */
     const bool stereo = Stereo3DS_HasDepth();
     SetEyeShifts(stereo, STEREO3DS_LEFT);
-    bool drawn = DrawOutput(sOutputTarget);
-    if (drawn && stereo && EnsureRightOutput()) {
-        SetEyeShifts(true, STEREO3DS_RIGHT);
-        sRightReady = DrawOutput(sOutputRightTarget);
+    bool drawn;
+    const int refusal = !stereo ? SPLIT_OK : gPpuGpu3DSEyesWhole ? SPLIT_FORCED_WHOLE : EyesOverBaseRefusal();
+    if (stereo) NoteEyesPath(refusal);
+    if (stereo && refusal == SPLIT_OK) {
+        drawn = DrawEyesOverBase();
+    } else if (stereo && refusal == SPLIT_NOTHING_IN_FRONT) {
+        /* No batch moves: one picture, which the presenter shows to both eyes. */
+        SetEyeShifts(false, STEREO3DS_LEFT);
+        drawn = DrawOutput(sOutputTarget, PASS_ALL);
+    } else {
+        drawn = DrawOutput(sOutputTarget, PASS_ALL);
+        if (drawn && stereo && EnsureRightOutput()) {
+            SetEyeShifts(true, STEREO3DS_RIGHT);
+            sRightReady = DrawOutput(sOutputRightTarget, PASS_ALL);
+        }
     }
     SetEyeShifts(false, STEREO3DS_LEFT);
     return FinishDraw(drawn, startTick);
