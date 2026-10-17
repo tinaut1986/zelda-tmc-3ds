@@ -65,6 +65,9 @@ bool Port_Config_GbaFrameAvailable(void) { return sAspect == 1; }
 bool Port_Config_GbaFrameActive(void) { return sGbaFrame && sAspect == 1; }
 void Port_Config_SetGbaFrame(bool on) { sGbaFrame = on; }
 bool Port_Config_GetColorCorrection(void) { return sColor; }
+int sTopHudMode = 0;
+int Port_Config_GetTopHudMode(void) { return sTopHudMode; }
+void Port_Config_CycleTopHudMode(void) { sTopHudMode = (sTopHudMode + 1) % 3; }
 bool Port_Config_GetHideTopHud(void) { return sHideHud; }
 bool Port_Config_GetHoldToAdvanceText(void) { return sHold; }
 int Port_Config_GetSecondScreenBackdrop(void) { return sBackdrop; }

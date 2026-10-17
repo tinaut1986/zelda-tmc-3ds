@@ -364,6 +364,17 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   achievements) and an unlock with its notice work; not yet: the sound, the RA site, the EU ROM
   under its own hash (RA lists only the USA one). Left open: issue #28 ("Offense").
 
+- [ ] **P2.9** TOP HUD: AUTO (owner's request, 2026-10-17).
+  *Spec:* OPTIONS -> TOP HUD cycles SHOW / HIDE / AUTO (`hide_top_hud=0|1|2`; a config of an older
+  build holds 0 or 1 and keeps its meaning). AUTO hides the top screen's HUD (hearts, charge bar,
+  rupees, keys, the item buttons) exactly while the bottom screen shows the sidebar that has the same
+  things (the MAP, ITEMS and QUEST tabs, with a game running), and shows it on the other tabs
+  (OPTIONS, STATES, RETRO, DEBUG). `Port_Config_GetHideTopHud` answers for the moment, so the engine's
+  gate (`src/ui.c`) and the snapshot's `topHudHidden` need no change; the paint thread publishes the
+  tab (`Port_SecondScreen_TopHudCovered`).
+  *Done when:* the owner sees the HUD go and come back as he changes tabs, and that nothing is left
+  half drawn (the hearts repaint) on the way back.
+
 ## Phase 3: performance (60 fps, New 3DS and Old 3DS, no 3D)
 
 Measured with P1 tools, one change at a time, on hardware; numbers in the table

@@ -45,6 +45,9 @@
  * behind a map and a vitals column.
  */
 
+#ifdef TMC_3DS
+#include <stdatomic.h>
+#endif
 #include "port_second_screen.h"
 #include "port_softslots.h"
 #include "port_second_screen_camera.h"
@@ -1987,6 +1990,14 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
 /*  Settings panel                                                     */
 /* ------------------------------------------------------------------ */
 
+#ifdef TMC_3DS
+/* Whether the bottom screen shows the sidebar (hearts, charge, buttons, rupees, keys) as of its last
+ * paint: set by the paint thread, read by the game's thread through Port_Config_GetHideTopHud when
+ * TOP HUD is AUTO. */
+static _Atomic int sSidebarShown;
+int Port_SecondScreen_TopHudCovered(void) { return sSidebarShown; }
+#endif
+
 static const char* const kSettingLabels[SS_SET_COUNT] = {
     "TOP HUD",          "WIDESCREEN",        "FOLLOW CAM",       "WINDCREST PINS",
     "FLOOR AUTO RETURN", "TURBO SPEED",       "MASTER VOLUME",    "AUTOSAVE",
@@ -2233,8 +2244,17 @@ static int GetSettingState(int row, char* out, int outCap) {
         case SS_SET_TOP_HUD:
             /* The row states what the top screen DOES: SHOW is the (red)
              * default, HIDE hands vitals duty to this panel. */
+#ifdef TMC_3DS
+            /* SHOW, HIDE, or AUTO: hidden while the sidebar below has the same things. */
+            {
+                const int mode = Port_Config_GetTopHudMode();
+                on = mode != 1;
+                txt = mode == 0 ? "SHOW" : (mode == 1 ? "HIDE" : "AUTO");
+            }
+#else
             on = !Port_Config_GetHideTopHud();
             txt = on ? "SHOW" : "HIDE";
+#endif
             break;
         case SS_SET_WIDESCREEN: on = Port_Config_WidescreenEnabled(); break;
         case SS_SET_FOLLOW: on = Port_Config_GetSecondScreenFollowCam(); break;
@@ -3180,6 +3200,9 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
 
 #ifdef TMC_3DS
     const int noGamePanel = sCompactNoGame && tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && tab != SS_TAB_STATES && tab != SS_TAB_RETRO;
+    /* TOP HUD = AUTO: the top screen's HUD goes while the sidebar that has the same things is shown. */
+    sSidebarShown = tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && tab != SS_TAB_STATES && tab != SS_TAB_RETRO &&
+                    !noGamePanel;
     if (noGamePanel) {
         Compact_PaintNoGame(&s);
     } else
@@ -3504,7 +3527,11 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
                 case SS_SET_TOP_HUD:
                     /* Just the flag — the engine-side DrawUIElements gate
                      * reads it each frame. */
+#ifdef TMC_3DS
+                    Port_Config_CycleTopHudMode();
+#else
                     Port_Config_SetHideTopHud(!Port_Config_GetHideTopHud());
+#endif
                     break;
                 case SS_SET_WIDESCREEN:
                     /* Just the flag: the PPU's view width and the engine's
