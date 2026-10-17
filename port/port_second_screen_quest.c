@@ -1,3 +1,4 @@
+#include "port_second_screen_color.h"
 #include "port_second_screen_quest.h"
 
 #include "item.h"
@@ -209,10 +210,7 @@ static uint32_t sFrame[QUEST_W * QUEST_H];
 static const uint32_t* volatile sPublished = NULL;
 
 static uint32_t Rgb555ToRgba8888(uint16_t c) {
-    uint8_t r = (uint8_t)((c & 0x1Fu) << 3);
-    uint8_t g = (uint8_t)(((c >> 5) & 0x1Fu) << 3);
-    uint8_t b = (uint8_t)(((c >> 10) & 0x1Fu) << 3);
-    return 0xFF000000u | ((uint32_t)b << 16) | ((uint32_t)g << 8) | (uint32_t)r;
+    return Port_SecondScreen_Rgb555(c); /* COLOURS, like the top screen */
 }
 
 static const u8* SlotEntry(int slot) {

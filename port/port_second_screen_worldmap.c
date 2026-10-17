@@ -1,3 +1,4 @@
+#include "port_second_screen_color.h"
 #include "port_second_screen_worldmap.h"
 
 #include "port_asset_loader.h" /* Port_IsRoomHeaderPtrReadable */
@@ -126,6 +127,7 @@ static uint32_t sImagePixels[WORLDMAP_IMAGE_W * WORLDMAP_IMAGE_H];
 static uint32_t sFramePixels[WORLDMAP_IMAGE_W * WORLDMAP_IMAGE_H];
 #endif
 static const uint32_t* volatile sPublishedImage = NULL;
+static void CheckColorEpoch(void); /* art cached under another COLOURS setting is remade */
 
 typedef struct {
     int32_t x, y;
@@ -142,10 +144,7 @@ typedef struct {
 } GfxBlob;
 
 static uint32_t Rgb555ToRgba8888(uint16_t c) {
-    uint8_t r = (uint8_t)((c & 0x1Fu) << 3);
-    uint8_t g = (uint8_t)(((c >> 5) & 0x1Fu) << 3);
-    uint8_t b = (uint8_t)(((c >> 10) & 0x1Fu) << 3);
-    return 0xFF000000u | ((uint32_t)b << 16) | ((uint32_t)g << 8) | (uint32_t)r;
+    return Port_SecondScreen_Rgb555(c); /* COLOURS, like the top screen */
 }
 
 static int RangeInRom(const u8* p, u32 len) {
@@ -423,6 +422,7 @@ static int BuildWorldMapImage(void) {
 }
 
 const uint32_t* Port_SecondScreenWorldMap_GetImage(int32_t* outW, int32_t* outH) {
+    CheckColorEpoch();
     const uint32_t* image = sPublishedImage;
 
     if (image == NULL && BuildWorldMapImage()) {
@@ -840,6 +840,7 @@ static const uint32_t* RegionImage(int32_t region, int32_t* outW, int32_t* outH)
     if (region < 0 || region >= WORLDMAP_REGION_COUNT) {
         return NULL;
     }
+    CheckColorEpoch();
     image = sRegionImage[region];
     if (image == NULL) {
         if (!BuildRegionImage(region)) {
@@ -1081,6 +1082,16 @@ typedef struct {
 static MarkerGlyph sMarkerCache[MARKER_CACHE_MAX];
 static int sMarkerCacheCount;
 
+static void CheckColorEpoch(void) {
+    static unsigned epoch = 0xffffffffu;
+    const unsigned now = Port_SecondScreen_ColorEpoch();
+    if (now == epoch) return;
+    epoch = now;
+    sPublishedImage = NULL;
+    for (int region = 0; region < WORLDMAP_REGION_COUNT; ++region) sRegionImage[region] = NULL;
+    sMarkerCacheCount = 0;
+}
+
 static const uint16_t* MarkerObjPalette(u32 row) {
     int i;
     for (i = (int)sizeof(sWorldMapPaletteGroups) - 1; i >= 0; i--) {
@@ -1288,6 +1299,7 @@ static const uint32_t* MarkerGlyphArt(u32 frame, int32_t region) {
     MarkerGlyph* slot;
     int i;
 
+    CheckColorEpoch();
     for (i = 0; i < sMarkerCacheCount; i++) {
         if (sMarkerCache[i].ready && sMarkerCache[i].frame == frame && sMarkerCache[i].sheet == region) {
             return sMarkerCache[i].px;

@@ -1,3 +1,4 @@
+#include "port_second_screen_color.h"
 #include "port_second_screen_dungeonmap.h"
 
 /*
@@ -128,10 +129,7 @@ static const u8 kMapScreenObjGfxGroups[] = { 129, 92, 86, 16, 23 };
 static uint32_t sCanvas[CANVAS_W * CANVAS_W];
 
 static uint32_t Rgb555ToRgba8888(uint16_t c) {
-    uint8_t r = (uint8_t)((c & 0x1Fu) << 3);
-    uint8_t g = (uint8_t)(((c >> 5) & 0x1Fu) << 3);
-    uint8_t b = (uint8_t)(((c >> 10) & 0x1Fu) << 3);
-    return 0xFF000000u | ((uint32_t)b << 16) | ((uint32_t)g << 8) | (uint32_t)r;
+    return Port_SecondScreen_Rgb555(c); /* COLOURS, like the top screen */
 }
 
 static const DungeonLayout* GetFloorList(uint8_t dungeonIdx, uint32_t floor) {

@@ -830,6 +830,7 @@ target("tmc_pc")
     add_files("port/port_second_screen.c") -- Second-display panel (AYN Thor); compositor compiles everywhere, surface plumbing is Android-only
     add_files("port/port_second_screen_state.c") -- Thread-safe gSave/gRoomControls snapshot for the second screen
     add_files("port/port_text_i18n.c") -- Port UI strings in the language selected in-game
+    add_files("port/port_second_screen_color.c") -- COLOURS curve for the second screen's game art
     add_files("port/port_second_screen_render.c") -- Item-icon compositor for the second screen (reads ROM/asset data directly)
     add_files("port/port_second_screen_worldmap.c") -- Hyrule map art for the second screen, decoded from ROM at runtime
     add_files("port/port_second_screen_dungeonmap.c") -- Authentic dungeon-map art for the second screen

@@ -1156,6 +1156,12 @@ static float WholeMapCenterX(float width, float scale) {
  * and from the whole view a tap on a map tile brackets it and zooms into
  * that region; windcrest warp points draw as small pins. While Link is
  * indoors the marker holds the doorway fix. */
+/* The blink phase the last map paint drew, for the repaint predicate (Port_SecondScreen_MapPhaseChanged). */
+static volatile int sPaintedHintsPhase;
+int Port_SecondScreen_MapPhaseChanged(const SecondScreenSnapshot* snap) {
+    return SecondScreen_HintsPhase(snap) != sPaintedHintsPhase;
+}
+
 static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
                            float ry0, float rx1, float ry1, float u, uint32_t tick, int wholeMap,
                            int followCfg, int crestCfg, uint32_t tickForPulse) {
@@ -1261,6 +1267,18 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
     BlitMapRegion(s, img, imgW, imgH, ox, oy, sCam.scale, (int32_t)rx0, (int32_t)ry0, (int32_t)rx1,
                   (int32_t)ry1);
 
+    /* The native pause map stamps one opaque gray DrawDirect frame over every region whose discovery bit is
+     * still clear (sub_080A6498: OBJ-window sprites that hide BG1, the terrain). Sprites stay on in that window
+     * (WINOUT 0x3d3f), so the hints, the crest pins and Link are drawn over it, as on the game's own screen. */
+    Port_SecondScreenWorldMap_DrawUnrevealedRegions(
+        s->px, s->w, s->h, s->stride, snap->windcrests, ox, oy, sCam.scale, (int32_t)rx0,
+        (int32_t)ry0, (int32_t)rx1, (int32_t)ry1);
+
+    /* sub_080A6378 counts frames and, every 32, swaps what it draws: the map hints while bit 5 of the count is
+     * set, Link while it is clear. */
+    const int hintsPhase = SecondScreen_HintsPhase(snap);
+    sPaintedHintsPhase = hintsPhase;
+
     /* Map hints — the red checks and errand glyphs the game's own world map
      * shows — right above the map art, below the crest pins and the player
      * marker. Kinstone fusions deliberately do NOT belong here: the game
@@ -1269,7 +1287,7 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
      * and a marker simply skips that frame. */
     {
         SecondScreenMapMarker hints[16];
-        int32_t nHints = Port_SecondScreenWorldMap_GetMapHints(snap->mapHints, hints, 16);
+        int32_t nHints = hintsPhase ? Port_SecondScreenWorldMap_GetMapHints(snap->mapHints, hints, 16) : 0;
         /* Stamp size is pinned to the FITTED map scale, never the live camera
          * scale. Sized off sCam.scale the glyphs inflated along with the
          * terrain, so the follow view — the one that exists to show detail —
@@ -1317,7 +1335,7 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
 
     /* Player marker: a pulsing gold diamond (live it also blinks white,
      * like the game's own map dot; the frozen doorway fix holds steady). */
-    if (sLastFix.valid) {
+    if (sLastFix.valid && !hintsPhase) {
         float px = ox + (sLastFix.mapX + 0.5f) * sCam.scale;
         float py = oy + (sLastFix.mapY + 0.5f) * sCam.scale;
         int32_t base =
@@ -1340,14 +1358,6 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
 #endif
         DrawMapMarker(s, (int32_t)px, (int32_t)py, base, c);
     }
-
-    /* The native pause map stamps one opaque gray DrawDirect frame over
-     * every region whose discovery bit is still clear. Draw these last,
-     * exactly like sub_080A6498, so hidden terrain and its markers cannot
-     * leak through the bottom screen. */
-    Port_SecondScreenWorldMap_DrawUnrevealedRegions(
-        s->px, s->w, s->h, s->stride, snap->windcrests, ox, oy, sCam.scale, (int32_t)rx0,
-        (int32_t)ry0, (int32_t)rx1, (int32_t)ry1);
 
     /* Zoom-grid availability, asked once per frame at the view center: the
      * map screen's own tile grid answering means a tap can zoom, which is

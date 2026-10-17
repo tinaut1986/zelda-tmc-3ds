@@ -190,6 +190,7 @@ int Port_SecondScreen_3DS_NeedsRefresh(void) {
     return BottomFrameState3DS_NeedsPaint(&sFrameState);
 }
 
+extern int Port_SecondScreen_MapPhaseChanged(const SecondScreenSnapshot* snap);
 int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap, uint32_t tick,
                                                uint32_t paintedTick, int32_t width,
                                                int32_t height) {
@@ -231,6 +232,7 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
         if (cameraMoving || regionState == SS_REGION_BRACKET || floorPreview != SS_NO_FLOOR) {
             return 1;
         }
+        if (Port_SecondScreen_MapPhaseChanged(snap)) return 1; /* the hints and Link swap every 32 game frames */
         if (BottomMapAnim_NeedsPaint(tick, paintedTick,
                                      (snap->areaFlags & SECOND_SCREEN_AR_IS_DUNGEON) != 0, width,
                                      height)) {
