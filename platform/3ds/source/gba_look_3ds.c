@@ -12,6 +12,7 @@
 
 extern int Port_Config_GetGbaGrid(void);
 extern bool Port_Config_GbaFrameActive(void);
+extern int Port_Config_Get3DSAspectRatio(void);
 
 enum { FRAME_UNPACKED_BYTES = 524288 }; /* 512 x 256 x 4 */
 
@@ -22,7 +23,14 @@ enum { SCREEN_W = 400, SCREEN_H = 240, TEX_W = 512, TEX_H = 256 };
 static C3D_Tex sMaskTex;
 static bool sMaskReady, sMaskFailed;
 /* What the mask was baked for (-1: nothing yet). */
-static int sBaked[7] = { -1, -1, -1, -1, -1, -1, -1 }; /* level, x, y, w, h, srcW, srcH */
+typedef struct GridKey {
+    int level;
+    int rx, ry, rw, rh; /* the region the lines are drawn over */
+    int px, py, pw, ph; /* the game's picture in it, which sets the step and the phase of the lines */
+    int sw, sh;         /* the game pixels it holds */
+} GridKey;
+static GridKey sBaked;
+static bool sBakedValid;
 
 /* Byte offset of texel (x, y) in the 3DS tiled layout (8x8 tiles, Morton order inside each). */
 static uint32_t SwizzleOffset(uint32_t x, uint32_t y) {
@@ -36,15 +44,24 @@ static uint32_t SwizzleOffset(uint32_t x, uint32_t y) {
  * screen pixel on the first row of every other source row (`row` is the source row this pixel
  * falls in), so it follows the game's pixels at any scale; HIGH adds the same on the columns.
  * The strengths are the ones of ../mzm. */
+static int FloorDiv(int a, int b) {
+    int q = a / b;
+    if (a % b != 0 && ((a < 0) != (b < 0))) --q;
+    return q;
+}
+
+/* (lx, ly) may be outside the picture (negative or past its size): the lines go on across the border
+ * in the same step, so a WIDE screen gets them all over (the border of a 240x160 picture is the game's
+ * own backdrop, white in the CAPCOM logo). */
 static uint8_t GridAlpha(int level, int lx, int ly, int dw, int dh, int sw, int sh) {
     static const uint8_t kRow[4] = { 0, 55, 95, 95 };
     static const uint8_t kCol[4] = { 0, 0, 0, 95 };
-    const int row = ly * sh / dh;
-    const int prevRow = ly > 0 ? (ly - 1) * sh / dh : -1;
+    const int row = FloorDiv(ly * sh, dh);
+    const int prevRow = FloorDiv((ly - 1) * sh, dh);
     if (row != prevRow && (row & 1) == 0) return kRow[level];
     if (kCol[level]) {
-        const int col = lx * sw / dw;
-        const int prevCol = lx > 0 ? (lx - 1) * sw / dw : -1;
+        const int col = FloorDiv(lx * sw, dw);
+        const int prevCol = FloorDiv((lx - 1) * sw, dw);
         if (col != prevCol && (col & 1) == 0) return kCol[level];
     }
     return 0;
@@ -64,18 +81,18 @@ static bool MaskInit(void) {
     return true;
 }
 
-static void MaskBake(int level, int x, int y, int w, int h, int sw, int sh) {
+static void MaskBake(const GridKey* k) {
     uint8_t* data = (uint8_t*)sMaskTex.data;
     memset(data, 0, (size_t)TEX_W * TEX_H);
-    for (int ly = 0; ly < h; ++ly) {
-        for (int lx = 0; lx < w; ++lx) {
-            const uint8_t a = GridAlpha(level, lx, ly, w, h, sw, sh);
-            if (a) data[SwizzleOffset((uint32_t)(x + lx), (uint32_t)(y + ly))] = a;
+    for (int y = k->ry; y < k->ry + k->rh; ++y) {
+        for (int x = k->rx; x < k->rx + k->rw; ++x) {
+            const uint8_t a = GridAlpha(k->level, x - k->px, y - k->py, k->pw, k->ph, k->sw, k->sh);
+            if (a) data[SwizzleOffset((uint32_t)x, (uint32_t)y)] = a;
         }
     }
     GSPGPU_FlushDataCache(data, (size_t)TEX_W * TEX_H);
-    sBaked[0] = level; sBaked[1] = x; sBaked[2] = y; sBaked[3] = w; sBaked[4] = h;
-    sBaked[5] = sw; sBaked[6] = sh;
+    sBaked = *k;
+    sBakedValid = true;
 }
 
 /* A black tint whose alpha is the mask's. */
@@ -91,10 +108,9 @@ static void SetMaskEnv(void) {
     C3D_TexEnvInit(C3D_GetTexEnv(2));
 }
 
-static void DrawGrid(int x, int y, int w, int h, int sw, int sh, int level) {
-    if (sBaked[0] != level || sBaked[1] != x || sBaked[2] != y || sBaked[3] != w ||
-        sBaked[4] != h || sBaked[5] != sw || sBaked[6] != sh)
-        MaskBake(level, x, y, w, h, sw, sh);
+static void DrawGrid(const GridKey* k) {
+    if (!sBakedValid || memcmp(&sBaked, k, sizeof(*k)) != 0) MaskBake(k);
+    const int x = k->rx, y = k->ry, w = k->rw, h = k->rh;
     SetMaskEnv();
     /* Only the picture's part of the mask: the rest is empty. */
     const Tex3DS_SubTexture sub = {
@@ -250,7 +266,18 @@ bool GbaLook3DS_Draw(int drawX, int drawY, int drawW, int drawH, int srcW, int s
     /* Fully transparent texels are dropped before they read the target. */
     C3D_AlphaTest(true, GPU_GREATER, 0);
     if (frame != FRAME_NONE) DrawFrame(frame, drawX, drawY, drawW, drawH);
-    if (level != 0) DrawGrid(drawX, drawY, drawW, drawH, srcW, srcH, level);
+    if (level != 0) {
+        /* WIDE: the lines cover the whole screen, border included; otherwise only the picture. */
+        const bool wide = Port_Config_Get3DSAspectRatio() == 0 /* PORT_3DS_ASPECT_WIDE */;
+        const GridKey key = {
+            .level = level,
+            .rx = wide ? 0 : drawX, .ry = wide ? 0 : drawY,
+            .rw = wide ? SCREEN_W : drawW, .rh = wide ? SCREEN_H : drawH,
+            .px = drawX, .py = drawY, .pw = drawW, .ph = drawH,
+            .sw = srcW, .sh = srcH,
+        };
+        DrawGrid(&key);
+    }
     C3D_AlphaTest(false, GPU_ALWAYS, 0);
     return true;
 }
@@ -260,5 +287,5 @@ void GbaLook3DS_Shutdown(void) {
     if (sFrameReady) C3D_TexDelete(&sFrameTex);
     sMaskReady = sFrameReady = false;
     sMaskFailed = sFrameFailed = false;
-    for (int i = 0; i < 7; ++i) sBaked[i] = -1;
+    sBakedValid = false;
 }
