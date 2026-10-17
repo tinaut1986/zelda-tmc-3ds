@@ -25,6 +25,8 @@ typedef struct PortPpuGpu3DSStats {
     uint64_t lastBuildTicks;
     uint32_t lastBands, lastVertices;
     uint64_t commandBudgetFallbacks;
+    /* Map slices copied into the buffer being built because the other one had them (build ahead). */
+    uint64_t sliceCopies;
     uint32_t lastCommandWords, maxCommandWords;
     uint8_t lastMapLayerMask;
     bool initialized, enabled, disabled;
@@ -47,7 +49,14 @@ void PortPpuGpu3DS_SetIndexedPicture(const uint8_t* indices, unsigned width, uns
  * dark behind the screen and bright in front of it. Backdrop and windows are left as they are. */
 void PortPpuGpu3DS_SetTintMode(int mode);
 int PortPpuGpu3DS_TintMode(void);
+/* A frame is prepared in two steps (docs/gpu-build-ahead.md). Preflight builds it: the geometry
+ * into the vertex buffer the GPU is not drawing from, the tiles into copies of the atlas and the
+ * rings, so it may run before the GPU frame is claimed when PortPpuGpu3DS_BuildsAhead says so
+ * (otherwise claim it first). Commit, once the frame is claimed (C3D_FrameBegin has waited for
+ * the previous one), checks the command budget and moves the new tiles into the textures. */
+bool PortPpuGpu3DS_BuildsAhead(void);
 bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame);
+bool PortPpuGpu3DS_Commit(const PpuGpu3DSFrameView* frame);
 bool PortPpuGpu3DS_DrawPrepared(void);
 bool PortPpuGpu3DS_BindPresentShader(void);
 void* PortPpuGpu3DS_OutputTexture(void);

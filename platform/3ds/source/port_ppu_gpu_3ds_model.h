@@ -139,8 +139,11 @@ typedef struct PpuGpu3DSRing {
      * only they are watched for change. */
     unsigned chunkEnd;
     bool bpp8, contextValid;
-    /* Cells written since the platform last flushed them. */
+    /* Cells written since the platform last flushed them: the span, and each
+     * cell, so a platform building into a copy of the texture can move just
+     * those (a vertical scroll's row spans the whole texture but is 64 cells). */
     uint32_t dirtyFirst, dirtyLast;
+    uint32_t dirtyCells[PPU_GPU3DS_RING_CELLS / 32];
     bool dirty;
 } PpuGpu3DSRing;
 
@@ -458,8 +461,10 @@ void PpuGpu3DS_SetMapSpaceEnabled(bool enabled);
 /* Gives view ring `index` (bg * 2 + variant) its storage in `pixels` (256 x 512 RGBA5551, 256 KiB); NULL takes it away. */
 void PpuGpu3DS_RingSetStorage(PpuGpu3DSCache* cache, unsigned index, uint16_t* pixels);
 /* The byte range of the ring's pixels written since the last call, for the
- * platform to flush; false when nothing was. */
-bool PpuGpu3DS_RingTakeDirty(PpuGpu3DSCache* cache, unsigned index, size_t* offset, size_t* bytes);
+ * platform to flush; false when nothing was. `cells` (PPU_GPU3DS_RING_CELLS
+ * bits, may be NULL) receives which cells of it were written. */
+bool PpuGpu3DS_RingTakeDirty(PpuGpu3DSCache* cache, unsigned index, size_t* offset, size_t* bytes,
+                             uint32_t* cells);
 enum { PPU_GPU3DS_RING_COUNT = MODE1_GBA_BG_COUNT * 2 };
 /* BG2's native ring: an affine BG2 has no text ring, so a scaled one is decoded there. */
 enum { PPU_GPU3DS_AFFINE_RING = 2 * 2 };

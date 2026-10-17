@@ -1351,34 +1351,37 @@ static void PresentFrame(void) {
             frameView.frameDispcnt &= (uint16_t)~MODE1_DISP_WIN0_ON;
         }
         sGpuSnapshotValid = true;
-        /* Claim the GPU frame first: preflight writes the vertex, index and
-         * atlas buffers the previous frame may still be drawing from, so this
-         * wait is a correctness barrier, not incidental ordering. It cannot be
-         * moved later or dropped to shorten the block -- doing so overwrites
-         * geometry still being drawn, which an emulator hides because its GPU
-         * completes instantly. Removing the block properly means double
-         * buffering those buffers so preflight can write B while the GPU reads A.
+        /* The frame is built while the GPU still draws the previous one: preflight writes only
+         * the vertex buffer the GPU is not reading and copies of the atlas and rings, and
+         * commit moves the new tiles into the textures once C3D_FrameBegin has waited for that
+         * frame (docs/gpu-build-ahead.md). Before, the wait came first and this frame's build
+         * was serial with the last one's GPU work: a dark room in 3D stopped at 54 fps on a
+         * New 3DS with a 12.6 ms GPU frame. An emulator, whose GPU completes instantly, cannot
+         * show a mistake here: anything the GPU reads must not be written before the wait.
          *
-         * Stage 2 covered both the frame-begin wait and the whole of preflight.
          * C3D_FrameBegin waits on the GX queue with no timeout, so a command
-         * list the GPU never retires stops the main thread here forever. Split
-         * them so the watchdog names which. */
-        /* The PPU-render span is 4.249 ms average, of which preflight is 3.024
-         * and the builder 2.906 -- so on AVERAGE this is CPU builder work, not
-         * the GPU wait. But 89 of 1681 frames exceed 16 ms in this span and an
-         * average cannot say which half spikes. Split them: if the wait spikes
-         * it is GSP starvation (attack with app_cpu_limit / core placement); if
-         * preflight spikes it is the builder, most likely `maps` at 2.31 ms
-         * with atlas decode bursts on area change (111 decodes/frame average
-         * over 199496). The two fixes have nothing in common, so guessing here
-         * would waste a run. */
-        Platform3DS_SetStage(20);
-        const uint64_t beginStart = Platform3DS_SystemTick();
-        const bool frameBegun = PlatformGpu3DS_BeginCustomTop();
-        const uint64_t beginTicks = Platform3DS_SystemTick() - beginStart;
+         * list the GPU never retires stops the main thread there forever; the
+         * stages tell the watchdog which of the wait and the build it was. */
+        const bool buildAhead = PortPpuGpu3DS_BuildsAhead();
+        uint64_t beginTicks = 0;
+        bool frameBegun = true;
+        const uint64_t preflightStart = Platform3DS_SystemTick();
+        if (!buildAhead) {
+            Platform3DS_SetStage(20);
+            frameBegun = PlatformGpu3DS_BeginCustomTop();
+            beginTicks = Platform3DS_SystemTick() - preflightStart;
+        }
         Platform3DS_SetStage(21);
         gpuReady = frameBegun && PortPpuGpu3DS_Preflight(&frameView);
-        const uint64_t preflightTicks = Platform3DS_SystemTick() - beginStart - beginTicks;
+        if (buildAhead && gpuReady) {
+            Platform3DS_SetStage(20);
+            const uint64_t beginStart = Platform3DS_SystemTick();
+            gpuReady = PlatformGpu3DS_BeginCustomTop();
+            beginTicks = Platform3DS_SystemTick() - beginStart;
+            Platform3DS_SetStage(21);
+        }
+        gpuReady = gpuReady && PortPpuGpu3DS_Commit(&frameView);
+        const uint64_t preflightTicks = Platform3DS_SystemTick() - preflightStart - beginTicks;
         Platform3DS_SetStage(3);
         perfBeginTicks = beginTicks;
         perfPreflightTicks = preflightTicks;
