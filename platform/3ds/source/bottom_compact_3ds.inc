@@ -1166,6 +1166,8 @@ static void Compact_PaintDebugSwitches(const SSurf* s, TargetList* tl) {
     }
     int32_t y = y0 + ((DEBUG_SW_COUNT + 3) / 4) * (CC_CELL_H + CC_GAP) + 2;
     CText(s, CC_MARGIN + 1, y, CC_FAINT, "WHITE: DEFAULT  BLUE: CHANGED  (TMC3DS.INI)");
+    CText(s, CC_MARGIN + 1, y + 10, CC_FAINT, "PLANE TINT LAYERS: BG0 PINK BG1 CYAN BG2 ORANGE BG3 GREEN");
+    CText(s, CC_MARGIN + 1, y + 20, CC_FAINT, "SPRITES WHITE, DARKER AT THE BACK. DEPTH: BLUE, BRIGHT IN FRONT");
 }
 
 static void Compact_PaintDebug(const SSurf* s, TargetList* tl, const SecondScreenSnapshot* snap, uint32_t tick,
