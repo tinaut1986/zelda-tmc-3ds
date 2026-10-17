@@ -1993,10 +1993,9 @@ int Port_Widescreen_3DSHoldTop(void) {
             return 0;
     }
     if (!Port_Config_3DSFullViewComboEnabled() || Port_WidescreenFixedCanvasSubtask()) return 0;
-    if (gRoomControls.area > AREA_98 ||
-        !Port3DSFullViewPolicy_AreaIsExterior(gRoomControls.area, gRoomControls.room,
-                                              gAreaMetadata[gRoomControls.area].flags))
-        return 0;
+    /* Every room is a Full View candidate now (interiors included, P4.6), so a door into a house holds
+     * the faded frame as well, instead of showing its first frames at 240/266 before the 400x240 latch. */
+    if (gRoomControls.area > AREA_98) return 0;
     Port3DSFullViewMode published = PORT_3DS_FULL_VIEW_FALLBACK;
     (void)Port_WidescreenRead3DSView(NULL, &published);
     return published == PORT_3DS_FULL_VIEW_FALLBACK;
