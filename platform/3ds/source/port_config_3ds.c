@@ -782,6 +782,8 @@ void Port_Config_CycleGbaGrid(void) {
     SaveConfig();
 }
 bool Port_Config_GetGbaFrame(void) { return sGbaFrame; }
+bool Port_Config_GbaFrameAvailable(void) { return sAspectRatio == PORT_3DS_ASPECT_ORIGINAL; }
+bool Port_Config_GbaFrameActive(void) { return sGbaFrame && Port_Config_GbaFrameAvailable(); }
 void Port_Config_SetGbaFrame(bool on) { sGbaFrame = on; SaveConfig(); }
 bool Port_Config_3DSFullViewComboEnabled(void) {
     /* Load each atomic once so a bottom-screen option tap can only select one

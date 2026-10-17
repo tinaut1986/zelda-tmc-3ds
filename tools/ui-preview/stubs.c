@@ -61,6 +61,8 @@ int Port_Config_GetGbaGrid(void) { return sGrid; }
 const char* Port_Config_GetGbaGridName(void) { return kGrid[sGrid]; }
 void Port_Config_CycleGbaGrid(void) { sGrid = (sGrid + 1) % 4; }
 bool Port_Config_GetGbaFrame(void) { return sGbaFrame; }
+bool Port_Config_GbaFrameAvailable(void) { return sAspect == 1; }
+bool Port_Config_GbaFrameActive(void) { return sGbaFrame && sAspect == 1; }
 void Port_Config_SetGbaFrame(bool on) { sGbaFrame = on; }
 bool Port_Config_GetColorCorrection(void) { return sColor; }
 bool Port_Config_GetHideTopHud(void) { return sHideHud; }

@@ -11,7 +11,7 @@
 #include <string.h>
 
 extern int Port_Config_GetGbaGrid(void);
-extern bool Port_Config_GetGbaFrame(void);
+extern bool Port_Config_GbaFrameActive(void);
 
 enum { FRAME_UNPACKED_BYTES = 524288 }; /* 512 x 256 x 4 */
 
@@ -238,7 +238,7 @@ static void DrawFrame(enum FrameKind kind, int x, int y, int w, int h) {
 bool GbaLook3DS_Draw(int drawX, int drawY, int drawW, int drawH, int srcW, int srcH) {
     int level = Port_Config_GetGbaGrid();
     if (level < 0 || level > 3) level = 0;
-    enum FrameKind frame = Port_Config_GetGbaFrame() ? FrameFor(drawX, drawY, drawW, drawH) : FRAME_NONE;
+    enum FrameKind frame = Port_Config_GbaFrameActive() ? FrameFor(drawX, drawY, drawW, drawH) : FRAME_NONE;
     if (frame != FRAME_NONE && !FrameInit()) frame = FRAME_NONE;
     if (level != 0 && (drawW <= 0 || drawH <= 0 || srcW <= 0 || srcH <= 0 || !MaskInit())) level = 0;
     if (level == 0 && frame == FRAME_NONE) return false;

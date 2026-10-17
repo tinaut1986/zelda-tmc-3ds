@@ -2289,7 +2289,13 @@ static int GetSettingState(int row, char* out, int outCap) {
         case SS_SET_GBA_GRID:
             snprintf(out, (size_t)outCap, "%s", Port_Config_GetGbaGridName());
             return Port_Config_GetGbaGrid() != 0;
-        case SS_SET_GBA_FRAME: on = Port_Config_GetGbaFrame(); break;
+        case SS_SET_GBA_FRAME:
+            if (!Port_Config_GbaFrameAvailable()) { /* locked: only VIEW ORIGINAL has a border to fill */
+                snprintf(out, (size_t)outCap, "---");
+                return 0;
+            }
+            on = Port_Config_GetGbaFrame();
+            break;
         case SS_SET_FRAMES: {
             static const char* const kPacing[PORT_3DS_PACING_COUNT] = { "AUTO", "LOCK 30", "NO SKIP" };
             int pacing = Port_Config_GetFramePacing();
@@ -3517,7 +3523,8 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
                     Port_Config_CycleGbaGrid();
                     break;
                 case SS_SET_GBA_FRAME:
-                    Port_Config_SetGbaFrame(!Port_Config_GetGbaFrame());
+                    if (Port_Config_GbaFrameAvailable()) Port_Config_SetGbaFrame(!Port_Config_GetGbaFrame());
+                    else Compact_Toast("%s", Port_Text_Tr("ONLY IN VIEW: ORIGINAL"));
                     break;
                 case SS_SET_FRAMES: {
                     int next = (Port_Config_GetFramePacing() + 1) % PORT_3DS_PACING_COUNT;
