@@ -43,6 +43,10 @@ static bool sTabsBottom;
 bool Port_Config_GetUiTabsBottom(void) { return sTabsBottom; }
 void Port_Config_SetUiTabsBottom(bool bottom) { sTabsBottom = bottom; }
 static int sAspect = 0, sStyle = 2, sBackdrop = 0;
+static bool sWideAi = false, sWideAiAsked = false;
+bool Port_Config_GetWideAi(void) { return sWideAi; }
+bool Port_Config_WideAiQuestionDue(void) { return !sWideAiAsked; }
+void Port_Config_AnswerWideAi(bool yes) { sWideAi = yes; sWideAiAsked = true; }
 static bool sColor = true, sHideHud = false, sHold = true, sCrests = true, sFloor = true, sFollow = true;
 static bool sSwap = false, sFps = false, sWide = true, sAuto = true;
 static unsigned sTurbo = 5;

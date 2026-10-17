@@ -169,6 +169,7 @@ enum {
     SS_ACT_LOAD_CONFIRM,
     SS_ACT_NOTICE_CLOSE,
 #ifdef TMC_3DS
+    SS_ACT_WIDEAI_NO, SS_ACT_WIDEAI_YES, /* the one-time question about WIDE + AI */
     SS_ACT_UPDATE_CHANNEL, SS_ACT_UPDATE_RELEASE, SS_ACT_UPDATE_ACTION,
     SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT,
     SS_ACT_THEME, /* OPTIONS -> THEME (bottom_compact_3ds.inc) */
@@ -2548,6 +2549,16 @@ static void PaintLoadStateConfirmation(const SSurf* s, TargetList* tl, float u, 
               layout.buttonBottom, SS_ACT_LOAD_CONFIRM, 0);
 }
 
+static void PaintWideAiQuestion(const SSurf* s, TargetList* tl) {
+    /* Asked once, the first time WIDE is on (Port_Config_WideAiQuestionDue): some scenes have nothing
+     * past the GBA's screen, and their edges were made with a generative AI. YES is WIDE + AI. */
+    static const char* const kLines[] = {
+        "SOME SCENES HAVE NOTHING PAST THE", "EDGES OF THE GBA SCREEN. NEW EDGES", "WERE MADE FOR THEM WITH A GENERATIVE",
+        "AI TO FILL THE WIDE SCREEN.", "SHOW THESE EDGES?", "(YOU CAN CHANGE IT IN VIEW)",
+    };
+    Compact_PaintModal(s, tl, "WIDE VIEW", kLines, 6, "NO", SS_ACT_WIDEAI_NO, "YES", SS_ACT_WIDEAI_YES);
+}
+
 static void PaintUnavailableNotice(const SSurf* s, TargetList* tl, float u, int32_t ts) {
 #ifdef TMC_3DS
     static const char* const kLines[] = { "THIS OPTION IS NOT AVAILABLE YET." };
@@ -3294,6 +3305,8 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
         PaintLoadStateConfirmation(&s, &tl, u, ts);
     } else if (unavailableNoticeActive) {
         PaintUnavailableNotice(&s, &tl, u, ts);
+    } else if (Port_Config_WideAiQuestionDue()) {
+        PaintWideAiQuestion(&s, &tl);
     }
     Compact_PaintBusy(&s, &tl);
 #endif
@@ -3468,6 +3481,14 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             sUi.unavailableNoticeActive = 0;
             UI_UNLOCK();
             break;
+#ifdef TMC_3DS
+        case SS_ACT_WIDEAI_NO:
+            Port_Config_AnswerWideAi(false);
+            break;
+        case SS_ACT_WIDEAI_YES:
+            Port_Config_AnswerWideAi(true);
+            break;
+#endif
         case SS_ACT_QUESTVIEW:
             UI_LOCK();
             sUi.questView = hit.arg;
