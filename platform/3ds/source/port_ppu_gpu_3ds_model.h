@@ -274,6 +274,11 @@ typedef struct PpuGpu3DSFrameView {
      * what the iris's window settings (inside everything, outside nothing)
      * show; splitting the frame into a band per line cost the Old 3DS 40 ms. */
     const uint16_t* irisLines;
+    /* A circle the game draws with WIN0 under its own window settings (a dark
+     * room's light around Link) in a wide view: {left, right} per line, which
+     * replace WIN0H and WIN0V (the game's 8-bit table stops at x=255, y=159);
+     * WININ/WINOUT apply as usual. NULL: the registers. */
+    const uint16_t* win0Lines;
 } PpuGpu3DSFrameView;
 
 typedef struct PpuGpu3DSInterval {

@@ -149,8 +149,10 @@ static bool sGpuSnapshotValid;
 static uint64_t sTopDrawTicks;
 static uint64_t sTopBlitTicks;
 static uint16_t sGpuDispcntPerLine[MODE1_GBA_HEIGHT];
-/* The iris fade's WIN0 in view pixels (virtuappu_mode1_ws_win0_lines). */
+/* The iris fade's WIN0 in view pixels (virtuappu_mode1_ws_win0_lines), or a
+ * dark room's light (sWin0LinesWindow: the GPU draws it as WIN0, not as a mask). */
 static uint16_t sWin0Lines[MODE1_GBA_HEIGHT * 2];
+static bool sWin0LinesWindow;
 static int32_t sGpuAffRefX[MODE1_GBA_HEIGHT];
 static int32_t sGpuAffRefY[MODE1_GBA_HEIGHT];
 static uint16_t
@@ -298,7 +300,8 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     view->wsFullView = virtuappu_mode1_ws_full_view != 0;
     /* The software PPU's rule (mode1_bg3_native_bounds_active). */
     view->bg3HofsBase = virtuappu_mode1_bg3_hofs_base;
-    view->irisLines = virtuappu_mode1_ws_win0_lines;
+    view->irisLines = sWin0LinesWindow ? NULL : virtuappu_mode1_ws_win0_lines;
+    view->win0Lines = sWin0LinesWindow ? virtuappu_mode1_ws_win0_lines : NULL;
     view->bg3NativeBounds = virtuappu_mode1_ws_full_view != 0 && virtuappu_mode1_bg3_hdma_native_bounds &&
                             (view->width > MODE1_GBA_BG_CLIP_X ||
                              (unsigned)virtuappu_mode1_frame_height() > MODE1_GBA_NATIVE_HEIGHT);
@@ -1303,10 +1306,13 @@ static void PresentFrame(void) {
         DeepFindEntityByID(MANAGER, VAATI_APPARATE_MANAGER) != NULL;
     /* BG3HOFS before any HBlank DMA step of this frame. */
     virtuappu_mode1_bg3_hofs_base = (int)((gIoMem[MODE1_IO_BG3HOFS] | (gIoMem[MODE1_IO_BG3HOFS + 1] << 8)) & 0x1ff);
-    /* The game's iris (WIN0 from an HBlank table: 8-bit, 160 lines) redrawn
-     * for the whole view; both renderers take WIN0 from here then. */
-    virtuappu_mode1_ws_win0_lines =
-        Port_Widescreen_Win0Lines(sTopPresentWidth, sTopPresentHeight, sWin0Lines) ? sWin0Lines : NULL;
+    /* The game's iris or a dark room's light (WIN0 from an HBlank table: 8-bit,
+     * 160 lines) redrawn for the whole view; both renderers take WIN0 from here then. */
+    {
+        const int win0Kind = Port_Widescreen_Win0Lines(sTopPresentWidth, sTopPresentHeight, sWin0Lines);
+        virtuappu_mode1_ws_win0_lines = win0Kind != PORT_WS_WIN0_NONE ? sWin0Lines : NULL;
+        sWin0LinesWindow = win0Kind == PORT_WS_WIN0_WINDOW;
+    }
 
     Platform3DS_Heartbeat();
     Platform3DS_SetStage(1);

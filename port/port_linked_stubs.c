@@ -1016,6 +1016,9 @@ typedef struct {
  * not a field: these statics sit among the game's globals, and growing them moves
  * every global after them, which breaks loading states saved by other builds. */
 #define WS_CIRCLE_RADIUS_PX 0x80000000u
+/* With WS_CIRCLE_RADIUS_PX: a dark room's light (Port_Widescreen_NoteLightCircle), drawn
+ * at its own radius under the game's window settings. */
+#define WS_CIRCLE_LIGHT 0x40000000u
 static PortWsIris sWsIris[2];
 /* The circle of the last frame drawn with one: the game tears the HBlank DMA
  * down in the tick that ends the iris (sub_0801E104), but the frame presented
@@ -1063,6 +1066,13 @@ void Port_Widescreen_NoteWindowCircle(int x, int y, int radius) {
     Port_WidescreenNoteCircle(x, y, (u32)radius | WS_CIRCLE_RADIUS_PX);
 }
 
+/* A dark room's light (src/manager/lightManager.c) is a circle of `radius` pixels
+ * around Link with the game's own window settings: inside WIN0 no darkness (BG3),
+ * outside it all. Drawn across a wide view as it is, not scaled to the view. */
+void Port_Widescreen_NoteLightCircle(int x, int y, int radius) {
+    Port_WidescreenNoteCircle(x, y, (u32)radius | WS_CIRCLE_RADIUS_PX | WS_CIRCLE_LIGHT);
+}
+
 /* The window the game drives now is a noted iris. */
 static int Port_WidescreenIrisLive(void) {
     return sWsIrisLatest && (gScreen.lcd.displayControl & (DISPCNT_WIN0_ON | DISPCNT_WIN1_ON | DISPCNT_OBJWIN_ON)) ==
@@ -1094,12 +1104,8 @@ int Port_Widescreen_Win0Lines(int width, int height, u16* out) {
     if ((width <= 240 && height <= 160) || height > 240 ||
         (dispcnt & (DISPCNT_WIN0_ON | DISPCNT_WIN1_ON | DISPCNT_OBJWIN_ON)) != DISPCNT_WIN0_ON) {
         sWsIrisDrawn.table = NULL;
-        return 0;
+        return PORT_WS_WIN0_NONE;
     }
-    /* The iris's settings (SetFadeIris): everything inside, the backdrop alone
-     * outside. The GPU renderer draws it as that mask. */
-    if ((gIoMem[REG_OFFSET_WINOUT] & 0x3f) != 0)
-        return 0;
     table = port_hdma_source_for_dest(&gIoMem[REG_OFFSET_WIN0H]);
     for (i = 0; i < 2 && table != NULL; i++) {
         if (sWsIris[i].table == table)
@@ -1109,12 +1115,18 @@ int Port_Widescreen_Win0Lines(int width, int height, u16* out) {
         iris = &sWsIrisDrawn;
     if (iris == NULL) {
         sWsIrisDrawn.table = NULL;
-        return 0;
+        return PORT_WS_WIN0_NONE;
     }
-    /* The portal's circle hides BG3 inside as well: the software PPU honours that
-     * (WININ), the GPU renderer's mask shows BG3 inside. */
-    if ((gIoMem[REG_OFFSET_WININ] & 0x3f) != 0x3f && !(iris->size & WS_CIRCLE_RADIUS_PX))
-        return 0;
+    if (!(iris->size & WS_CIRCLE_LIGHT)) {
+        /* The iris's settings (SetFadeIris): everything inside, the backdrop alone
+         * outside. The GPU renderer draws it as that mask. */
+        if ((gIoMem[REG_OFFSET_WINOUT] & 0x3f) != 0)
+            return PORT_WS_WIN0_NONE;
+        /* The portal's circle hides BG3 inside as well: the software PPU honours that
+         * (WININ), the GPU renderer's mask shows BG3 inside. */
+        if ((gIoMem[REG_OFFSET_WININ] & 0x3f) != 0x3f && !(iris->size & WS_CIRCLE_RADIUS_PX))
+            return PORT_WS_WIN0_NONE;
+    }
     sWsIrisDrawn = *iris;
     /* The game opens the iris up to 150 and then drops the window: on 240x160
      * around the middle that clears the corners. Scale 150 to this view's
@@ -1124,7 +1136,9 @@ int Port_Widescreen_Win0Lines(int width, int height, u16* out) {
         const s32 dx = iris->x > width / 2 ? iris->x : width - iris->x;
         const s32 dy = iris->y > height / 2 ? iris->y : height - iris->y;
         const u32 farthest = Port_WidescreenIsqrt((u32)(dx * dx + dy * dy));
-        if (iris->size & WS_CIRCLE_RADIUS_PX) {
+        if (iris->size & WS_CIRCLE_LIGHT) {
+            radius = iris->size & ~(WS_CIRCLE_RADIUS_PX | WS_CIRCLE_LIGHT);
+        } else if (iris->size & WS_CIRCLE_RADIUS_PX) {
             /* The portal's circle starts at 128 px (MinishPortalCloseup_Init) and
              * closes 2 px a frame. Its start is scaled to this view's farthest
              * corner, so the first frame with the window still shows the whole
@@ -1154,7 +1168,7 @@ int Port_Widescreen_Win0Lines(int width, int height, u16* out) {
         out[line * 2] = (u16)left;
         out[line * 2 + 1] = (u16)right;
     }
-    return 1;
+    return (iris->size & WS_CIRCLE_LIGHT) ? PORT_WS_WIN0_WINDOW : PORT_WS_WIN0_MASK;
 }
 
 #if defined(MODE1_GBA_WIDTH) && (MODE1_GBA_WIDTH > 240)
@@ -1750,7 +1764,8 @@ static int Port_WidescreenFullViewUiOverlayActive(void) {
      * Port_Widescreen_UpdateShadows centres with ws_msg_shift at any view width. Counting it
      * as an overlay dropped Full View to E2 for the whole banner (about four seconds) and the
      * camera then snapped to the 400-wide rest position when it ended. */
-    /* The iris fade is drawn across the whole view (Port_Widescreen_Win0Lines). */
+    /* The iris fade and a dark room's light are drawn across the whole view
+     * (Port_Widescreen_Win0Lines). */
     if (Port_WidescreenIrisLive())
         return 0;
     return Port3DSFullViewPolicy_NativeWindowActive(gScreen.lcd.displayControl);
