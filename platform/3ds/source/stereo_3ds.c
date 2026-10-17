@@ -10,6 +10,8 @@
 #include <string.h>
 
 extern bool Port_Config_Stereo3D(void);
+extern int Port_Stereo_Scenes(void); /* PORT_STEREO_SCENE_* of port_widescreen.h */
+enum { SCENE_TITLE_RAYS = 1, SCENE_LIGHT_RAYS = 2, SCENE_PATH_LEAVES = 4 };
 
 /* Pixels at the full slider, by layer (BG0..BG3, OBJ) and priority (docs/stereo-3d.md). In front of
  * the screen: BG0 at priority 0, the HUD and the text boxes, and the sprites at priority 0, the HUD's
@@ -18,8 +20,15 @@ static const signed char kDepth[5][4] = {
     { 6, 0, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, { 6, 0, 0, 0 },
 };
 
+/* Sun rays hang in front of the screen, behind the HUD's 6, only in the scenes that have them
+ * (owner, 2026-10-17): the title's (BG0 at priority 2) and the Minish Woods' and the barrel
+ * house's (BG3 at priority 0, LightRayManager). */
+/* The leaves of the Minish Paths (BG1 at priority 1) hang the same way. */
+enum { RAYS_DEPTH = 4, LEAVES_DEPTH = 4 };
+
 static bool sActive;
 static bool sHasDepth;
+static int sScenes;
 static float sSlider;
 
 void Stereo3DS_BeginFrame(void) {
@@ -33,7 +42,13 @@ void Stereo3DS_BeginFrame(void) {
     lastSetting = setting;
     lastActive = sActive;
 #endif
-    sHasDepth = false;
+    sScenes = sActive ? Port_Stereo_Scenes() : 0;
+    sHasDepth = sScenes != 0;
+#if TMC3DS_DEBUG_TOOLS
+    static int lastScenes = -1;
+    if (sScenes != lastScenes) DebugLog_Printf("stereo: scenes %d", sScenes);
+    lastScenes = sScenes;
+#endif
     if (sActive)
         for (unsigned layer = 0; layer < 5 && !sHasDepth; ++layer)
             for (unsigned priority = 0; priority < 4; ++priority)
@@ -46,6 +61,11 @@ bool Stereo3DS_HasDepth(void) { return sHasDepth; }
 
 float Stereo3DS_LayerShift(unsigned layer, unsigned priority, Stereo3DSEye eye) {
     if (!sHasDepth || layer > PPU_GPU3DS_OBJ || priority > 3) return 0.0f;
-    const float half = 0.5f * (float)kDepth[layer][priority] * sSlider;
+    int depth = kDepth[layer][priority];
+    if (((sScenes & SCENE_TITLE_RAYS) && layer == PPU_GPU3DS_BG0 && priority == 2) ||
+        ((sScenes & SCENE_LIGHT_RAYS) && layer == PPU_GPU3DS_BG3 && priority == 0))
+        depth = RAYS_DEPTH;
+    if ((sScenes & SCENE_PATH_LEAVES) && layer == PPU_GPU3DS_BG1 && priority == 1) depth = LEAVES_DEPTH;
+    const float half = 0.5f * (float)depth * sSlider;
     return eye == STEREO3DS_LEFT ? half : -half;
 }

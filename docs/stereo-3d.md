@@ -15,6 +15,18 @@ boxes) and the priority-0 sprites (the HUD's buttons) 6 px in front; Link and th
 screen plane. Changes of the setting or of 3D on/off are written to the SD log (`stereo: setting N,
 slider S, 3D on|2D`).
 
+## Scenes with a depth
+
+Besides `kDepth`, `Stereo3DS_BeginFrame` asks `Port_Stereo_Scenes` (`port_linked_stubs.c`) which
+scenes are up, from the layers the game has on; each puts one layer at 4 px (HUD stays at 6, in front).
+Written to the SD log as `stereo: scenes N` when it changes.
+
+| Bit | Scene | Layer |
+|---|---|---|
+| 1 | the title's light rays | BG0, priority 2 |
+| 2 | sun rays of the Minish Woods and the barrel house (`LightRayManager`) | BG3, priority 0 |
+| 4 | the leaves of the Minish Paths corridors (area 0x11) | BG1, priority 1 |
+
 ## How it works
 
 - `stereo_3ds.c`, once a frame (`Stereo3DS_BeginFrame` in `PresentFrame`): the setting, the slider,
