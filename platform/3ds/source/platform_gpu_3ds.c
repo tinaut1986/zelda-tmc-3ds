@@ -10,6 +10,7 @@
 #include "gba_look_3ds.h"
 #include "scene_pictures_3ds.h"
 #include "stereo_3ds.h"
+#include "tmc3ds_build_config.h"
 #include "cpu/mode1.h"
 #include "retro_ach.h"
 #include "ui_font_3ds.h"
@@ -957,13 +958,28 @@ static void DrawRaToast(bool abgrAfter) {
  * 59, yellow from 50, red below); L is the logic's ms per tick, G the GPU's ms per presented
  * frame and S the rate frames reach the screen. Called once per presented frame, inside a C2D
  * scene with the ABGR texture env, so it is also where the window accumulates. */
+#if TMC3DS_DEBUG_TOOLS
+enum { LINES = 5 }; /* + C: frames the CPU renderer drew in the last second (0 = all on the GPU) */
+#else
+enum { LINES = 4 };
+#endif
+
+/* Frames drawn by the software renderer: GPU preflight refused them, or the GPU path is off. */
+static uint64_t CpuRenderedFrames(void) {
+    PortPpuGpu3DSStats gpu;
+    PortPpuGpu3DS_GetStats(&gpu);
+    return gpu.fallbackFrames + gpu.disabledFrames;
+}
+
 static void DrawFpsOverlay(void) {
     static struct {
         uint64_t startMs, logicStart, workStart;
         double gpuMs;
         unsigned frames;
+        uint64_t cpuStart;
     } win;
     static float gameFps, logicMs, gpuMs;
+    static unsigned cpuFrames; /* frames the software renderer drew in the last second */
     const uint64_t nowMs = osGetTime();
     if (!sRightEye) { /* counted once a frame, drawn for each eye */
     win.gpuMs += sStats.drawingTime > 0.0f ? sStats.drawingTime : 0.0f;
@@ -972,6 +988,7 @@ static void DrawFpsOverlay(void) {
         win.startMs = nowMs;
         win.logicStart = Platform3DS_LogicFrameCount();
         win.workStart = Platform3DS_EngineWorkTotalTicks();
+        win.cpuStart = CpuRenderedFrames();
     } else if (nowMs - win.startMs >= 1000u) {
         const uint64_t elapsed = nowMs - win.startMs;
         const uint64_t logic = Platform3DS_LogicFrameCount();
@@ -985,23 +1002,31 @@ static void DrawFpsOverlay(void) {
         win.startMs = nowMs;
         win.logicStart = logic;
         win.workStart = work;
+        {
+            const uint64_t cpu = CpuRenderedFrames();
+            cpuFrames = (unsigned)(cpu - win.cpuStart);
+            win.cpuStart = cpu;
+        }
         win.gpuMs = 0.0;
         win.frames = 0;
     }
 
     }
 
-    char line[4][12];
+    char line[LINES][12];
     snprintf(line[0], sizeof(line[0]), "%.1f", gameFps);
     snprintf(line[1], sizeof(line[1]), "L%.1f", logicMs);
     snprintf(line[2], sizeof(line[2]), "G%.1f", gpuMs);
     snprintf(line[3], sizeof(line[3]), "S%.1f", Port_PPU_3DS_CurrentFps());
+#if TMC3DS_DEBUG_TOOLS
+    snprintf(line[4], sizeof(line[4]), "C%u", cpuFrames);
+#endif
     int chars = 0;
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < LINES; ++i) {
         const int n = (int)strlen(line[i]);
         if (n > chars) chars = n;
     }
-    enum { LINES = 4, PITCH = 10, MARGIN = 2 };
+    enum { PITCH = 10, MARGIN = 2 };
     const float w = (float)(chars * 6 + 3), h = (float)(LINES * PITCH + 2);
     /* In 3D the box is in front with the HUD (BG0 at priority 0): the same move per eye, in whole pixels. */
     float depthX = 0.0f;
@@ -1017,6 +1042,9 @@ static void DrawFpsOverlay(void) {
                          : (gameFps >= 50.0f ? C2D_Color32(240, 200, 80, 255)
                                              : C2D_Color32(240, 100, 100, 255)),
         light, light, C2D_Color32(140, 148, 170, 255),
+#if TMC3DS_DEBUG_TOOLS
+        cpuFrames ? C2D_Color32(240, 100, 100, 255) : C2D_Color32(110, 220, 130, 255),
+#endif
     };
     for (int i = 0; i < LINES; ++i)
         DrawStatusTextColor(boxX + 2.0f, boxY + 2.0f + (float)(i * PITCH), 1.0f, line[i], colors[i]);

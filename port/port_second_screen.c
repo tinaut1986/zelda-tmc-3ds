@@ -2914,6 +2914,15 @@ static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, Targe
             FillRect(s, hx + hk, hyy + hk, hx + 7 * hk, hyy + 7 * hk, c);
         }
     }
+    if (quarters > 0 && quarters <= maxHearts * 4) {
+        /* HeartUIElement: the last heart with life wears a 16x16 face over its 8x8 tile, twice the row's
+         * size, so the eye finds where the life stops. */
+        const int cur = (quarters + 3) / 4 - 1;
+        const uint8_t frame = (uint8_t)(0x71 + ((quarters & 3) == 0 ? 4 : (quarters & 3)));
+        Port_SecondScreenTheme_DrawHeartInUse(s->px, s->w, s->h, s->stride,
+                                              (int32_t)(hx0 + (cur % cols) * 8 * hk + 4 * hk),
+                                              (int32_t)(hy + (cur / cols) * 8 * hk + 4 * hk), hk, frame);
+    }
     float vitalsBottom = hy + rows * 8 * hk + 4 * u;
 
     /* The charge cue occupies the top of the R-prompt reservation. The

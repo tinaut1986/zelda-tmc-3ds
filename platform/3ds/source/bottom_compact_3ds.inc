@@ -1368,6 +1368,13 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
         if (edgeInk && i % cols == 0) BlitSprite(s, edge, hx - 8, cy + (i / cols) * 8, 1);
         if (hs) BlitSprite(s, hs, hx + (i % cols) * 8, cy + (i / cols) * 8, 1);
     }
+    if (quarters > 0 && quarters <= maxHearts * 4) {
+        /* HeartUIElement: the last heart with life wears a 16x16 face over its 8x8 tile. */
+        const int cur = (quarters + 3) / 4 - 1;
+        Port_SecondScreenTheme_DrawHeartInUse(s->px, s->w, s->h, s->stride, hx + (cur % cols) * 8 + 4,
+                                              cy + (cur / cols) * 8 + 4, 1,
+                                              (uint8_t)(0x71 + ((quarters & 3) == 0 ? 4 : (quarters & 3))));
+    }
     cy += ((maxHearts + cols - 1) / cols) * 8 + 4;
 
     /* The charge meter while the HUD is hidden, else the R prompt. */
