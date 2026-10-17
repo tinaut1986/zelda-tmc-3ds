@@ -145,3 +145,14 @@ slots (a second bed cover and a thought bubble) freed; it then leaves the room c
 
 A structure of the same kind (a pool with its own links) that shows up in a crash after a load
 gets the same treatment here, not only a rule in `state_pointers_3ds.c`.
+
+## States saved inside a subtask (the map hint that locked Link)
+
+A subtask (pause menu, map hints, kinstone menu: `src/subtask.c`) moves the room's entity lists into
+`gEntityListsBackup` in `Subtask_FadeIn` and runs on empty ones until `Subtask_FadeOut` copies them back
+(`gUI.nextToLoad` 1 to 3 while `gMain.substate` is `GAMEMAIN_SUBTASK`). A state saved there has the room's
+entities only in the backup, so `RepairEntityLists` took them for strays and freed them: with the NPC whose
+script would give Link his controls back (the map hint of Gentari's house, area 0x20 room 00) gone, Link
+stayed in `controlMode` 3 after closing the hint. Since 2026-10-17 the repair also walks the backup while a
+subtask is up (its lists end at the live heads, not at the backup's). Each stray it does free is written to
+the SD log (`state: stray slot N kind K id I ...`).
