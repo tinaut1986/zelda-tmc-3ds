@@ -19,8 +19,8 @@ change (what goes where: the table in `CLAUDE.md`).
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.3.1` (on origin; renamed from `release/v0.3.0` right after the
-`v0.3.0` tag). Published: **`v0.3.0`** (2026-10-15, **stable**, merged into `main`, straight
+**Release line:** `release/v0.3.2` (on origin; renamed from `release/v0.3.1` right after the
+`v0.3.1` tag). Published: **`v0.3.1`** (2026-10-17, **beta**, CI building it), **`v0.3.0`** (2026-10-15, **stable**, merged into `main`, straight
 to stable without a beta at the owner's request), `v0.2.0` (2026-10-14, stable), `v0.1.2`
 (2026-10-13, beta), `v0.1.1` (2026-10-12, stable) and `v0.1.0` (2026-10-11, beta).
 
@@ -35,7 +35,7 @@ was deleted). Their history is in `git log` and the decisions log.
 |---|---|
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
-**`release/v0.3.1` (2026-10-17):** holds everything the owner checked on the New 3DS today: TOP HUD AUTO
+**`release/v0.3.1` (2026-10-17), now `v0.3.1`:** holds everything the owner checked on the New 3DS today: TOP HUD AUTO
 (P2.9), the GBA grid and frame (P4.7), WIDE + AI and its one-time question (P4.8), the Minish Paths
 corridor centred (P4.6, its borders black), the title's logo and sword following VIEW/STYLE, and the 3D of
 P5.1 (sun rays, leaves of the Minish Paths, the title, the file select, the logos, the boot splash, the
@@ -46,10 +46,8 @@ owner decides beta or stable. Not seen on the Old 3DS: the grid on HIGH (frame r
 
 **Start here (2026-10-17, after the 3D and look session):** `release/v0.3.1` is pushed (see the first
 line of `git log`) and everything on it was checked on the New 3DS. Next, in this order:
-1. **v0.3.1**: write `docs/release-notes/v0.3.1.md` (3 to 6 lines for the player: the GBA grid and
-   frame, WIDE + AI and its question, TOP HUD AUTO, 3D on more scenes, the corridor centred), show it to
-   the owner, merge it, then tag (beta or stable: ask; the owner has twice gone straight to stable).
-   Rename the release branch to `release/v0.3.2` right after the tag (CLAUDE.md, "After tagging").
+1. **v0.3.1** is tagged as a beta (2026-10-17). Next: check the CI release and the updater's notes on a console; promote it
+   to stable by re-running the workflow on the tag only if nothing is committed after it, else tag the next version.
 2. **Old 3DS/2DS check** of what only the New 3DS has seen: the grid on HIGH (frame rate), WIDE + AI,
    the file select and title without 3D, TOP HUD AUTO. The 2DS is `192.168.1.139` (its FTP answered
    `530 Login incorrect` on 2026-10-17: ask the owner what that console runs).
