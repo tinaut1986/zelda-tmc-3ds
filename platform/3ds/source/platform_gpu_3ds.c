@@ -1003,7 +1003,13 @@ static void DrawFpsOverlay(void) {
     }
     enum { LINES = 4, PITCH = 10, MARGIN = 2 };
     const float w = (float)(chars * 6 + 3), h = (float)(LINES * PITCH + 2);
-    const float boxX = (float)MARGIN, boxY = 240.0f - MARGIN - h;
+    /* In 3D the box is in front with the HUD (BG0 at priority 0): the same move per eye, in whole pixels. */
+    float depthX = 0.0f;
+    if (Stereo3DS_Active()) {
+        const float shift = Stereo3DS_LayerShift(PPU_GPU3DS_BG0, 0, sRightEye ? STEREO3DS_RIGHT : STEREO3DS_LEFT);
+        depthX = (float)(int)(shift < 0.0f ? shift - 0.5f : shift + 0.5f);
+    }
+    const float boxX = (float)MARGIN + depthX, boxY = 240.0f - MARGIN - h;
     C2D_DrawRectSolid(boxX, boxY, 0.7f, w, h, C2D_Color32(0, 0, 0, 150));
     const uint32_t light = C2D_Color32(230, 232, 240, 255);
     const uint32_t colors[LINES] = {

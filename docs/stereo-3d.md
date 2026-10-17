@@ -26,6 +26,8 @@ Written to the SD log as `stereo: scenes N` when it changes.
 | 1 | the title's light rays | BG0, priority 2 |
 | 2 | sun rays of the Minish Woods and the barrel house (`LightRayManager`) | BG3, priority 0 |
 | 4 | the leaves of the Minish Paths corridors (area 0x11) | BG1, priority 1 |
+| 8 | the file select (cave BG3 at priority 3): its sprites (banner, slots, texts, preview, name entry buttons) and BG1 at priority 1 (hearts, the languages, the name's letters) at 4 px, the preview's panel (BG2, priority 2) at 2 | OBJ, BG1, BG2 |
+| 16 | the Nintendo and Capcom logos (mode 0, BG2 on, no BG1/BG3) | BG2, priority 2, 4 px |
 
 ## How it works
 

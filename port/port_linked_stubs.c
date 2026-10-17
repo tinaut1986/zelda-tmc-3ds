@@ -1522,6 +1522,10 @@ int Port_Stereo_Scenes(void) {
         const unsigned bg1 = gIoMem[REG_OFFSET_BG1CNT] | (gIoMem[REG_OFFSET_BG1CNT + 1] << 8);
         if ((io & DISPCNT_BG0_ON) && (io & DISPCNT_BG1_ON) && bg1 == (BGCNT_SCREENBASE(30) | BGCNT_PRIORITY(3)))
             scenes |= PORT_STEREO_SCENE_TITLE_RAYS;
+        /* The Nintendo and Capcom logos (HandleNintendoCapcomLogos): mode 0 with only BG2 (and the empty
+         * BG0) on. */
+        else if ((io & 7) == 0 && (io & DISPCNT_BG2_ON) && !(io & (DISPCNT_BG1_ON | DISPCNT_BG3_ON)))
+            scenes |= PORT_STEREO_SCENE_LOGOS;
     }
     /* The sun rays of the Minish Woods and the barrel house (LightRayManager): BG3 at priority 0,
      * alpha-blended (the steam overlay shares the control word but not the blend's). */
@@ -1531,6 +1535,15 @@ int Port_Stereo_Scenes(void) {
      * BG3 and the ground of BG2), vertical (0x1e49) and horizontal (0x1e09). */
     if (gRoomControls.area == 0x11 && (dispcnt & DISPCNT_BG1_ON) && (gScreen.bg1.control & 0x1f03) == 0x1e01)
         scenes |= PORT_STEREO_SCENE_PATH_LEAVES;
+    /* The file select (src/fileselect.c): its cave is BG3 at screen base 30, character base 2, priority 3;
+     * the banner, the slots and their texts are its sprites, the preview's panel BG2 at priority 2. */
+    if (gMain.task == TASK_FILE_SELECT) {
+        const unsigned io = gIoMem[REG_OFFSET_DISPCNT] | (gIoMem[REG_OFFSET_DISPCNT + 1] << 8);
+        const unsigned bg3 = gIoMem[REG_OFFSET_BG3CNT] | (gIoMem[REG_OFFSET_BG3CNT + 1] << 8);
+        if (!(io & DISPCNT_FORCED_BLANK) && (io & DISPCNT_BG3_ON) &&
+            (bg3 & 0xdf0f) == (BGCNT_SCREENBASE(30) | BGCNT_CHARBASE(2) | BGCNT_PRIORITY(3)))
+            scenes |= PORT_STEREO_SCENE_FILE_SELECT;
+    }
     return scenes;
 #else
     return 0;
