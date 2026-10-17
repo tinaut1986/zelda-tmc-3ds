@@ -2126,11 +2126,14 @@ void PpuGpu3DS_RingSetStorage(PpuGpu3DSCache* cache, unsigned index, uint16_t* p
     ring->pixels = pixels;
 }
 
-bool PpuGpu3DS_RingTakeDirty(PpuGpu3DSCache* cache, unsigned index, size_t* offset, size_t* bytes) {
+bool PpuGpu3DS_RingTakeDirty(PpuGpu3DSCache* cache, unsigned index, size_t* offset, size_t* bytes,
+                             uint32_t* cells) {
     if (!cache || index >= PPU_GPU3DS_RING_COUNT || !cache->ring[index].dirty) return false;
     PpuGpu3DSRing* ring = &cache->ring[index];
     *offset = (size_t)ring->dirtyFirst * 64u * sizeof(uint16_t);
     *bytes = ((size_t)ring->dirtyLast - ring->dirtyFirst + 1u) * 64u * sizeof(uint16_t);
+    if (cells) memcpy(cells, ring->dirtyCells, sizeof(ring->dirtyCells));
+    memset(ring->dirtyCells, 0, sizeof(ring->dirtyCells));
     ring->dirty = false;
     return true;
 }
@@ -2150,6 +2153,7 @@ static uint32_t ring_chunk_digest(PpuGpu3DSCache* cache, const uint8_t* vram, un
 }
 
 static void ring_mark_dirty(PpuGpu3DSRing* ring, unsigned cell) {
+    ring->dirtyCells[cell >> 5u] |= 1u << (cell & 31u);
     if (!ring->dirty) {
         ring->dirty = true;
         ring->dirtyFirst = ring->dirtyLast = cell;

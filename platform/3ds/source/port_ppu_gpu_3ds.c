@@ -52,6 +52,25 @@ enum {
 
 static PpuGpu3DSCache* sCache;
 static uint32_t sDirtyBitmap[PPU_GPU3DS_SLOT_COUNT / 32];
+/* The frame is built while the GPU still draws the previous one (docs/gpu-build-ahead.md):
+ * into the vertex buffer the GPU is not reading, and into copies of the atlas and the rings
+ * that PortPpuGpu3DS_Commit moves to the textures once the GPU is done with them.
+ * sVertices is the buffer being built. */
+static PpuGpu3DSVertex* sVertexBuffers[2];
+static C3D_BufInfo sBufferInfo[2];
+static unsigned sBuildBuffer, sDrawnBuffer = 1;
+/* Generation of each background's map slice, and the one each buffer holds (0: none). */
+static uint32_t sSliceGeneration[4], sBufferSliceGeneration[2][4];
+static uint16_t* sAtlasShadow;
+static uint16_t* sRingShadow[PPU_GPU3DS_RING_COUNT];
+static uint32_t sRingCells[PPU_GPU3DS_RING_CELLS / 32];
+static bool sCommitPending;
+/* The second vertex buffer and the copies could be allocated: without them the build writes
+ * the textures directly and the frame is claimed before it, as it always was. */
+static bool sCanBuildAhead;
+/* Debug: poke 1 to claim the GPU frame before building, as before the build ran ahead
+ * (tmc-link.py poke gPpuGpu3DSSerialBuild 01), for timing one against the other. */
+volatile uint8_t gPpuGpu3DSSerialBuild;
 static PpuGpu3DSVertex* sVertices;
 static uint16_t* sIndices;
 static PpuGpu3DSBatch* sBatches;
@@ -94,7 +113,6 @@ static shaderProgram_s sProgram;
 static int sOffsetUniform = -1;
 static float sLastOffsetX, sLastOffsetY;
 static C3D_AttrInfo sAttributes;
-static C3D_BufInfo sBuffers;
 static bool sProgramInitialized;
 static bool sReady;
 static bool sDisabled;
@@ -184,7 +202,17 @@ void PortPpuGpu3DS_Shutdown(void) {
     if (sParityReadback) linearFree(sParityReadback);
     free(sBatches);
     if (sIndices) linearFree(sIndices);
-    if (sVertices) linearFree(sVertices);
+    if (sVertexBuffers[1] && sVertexBuffers[1] != sVertexBuffers[0]) linearFree(sVertexBuffers[1]);
+    if (sVertexBuffers[0]) linearFree(sVertexBuffers[0]);
+    memset(sVertexBuffers, 0, sizeof(sVertexBuffers));
+    sCanBuildAhead = false;
+    free(sAtlasShadow);
+    sAtlasShadow = NULL;
+    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring) {
+        free(sRingShadow[ring]);
+        sRingShadow[ring] = NULL;
+    }
+    sCommitPending = false;
     free(sCache);
 
     sCache = NULL;
@@ -215,7 +243,7 @@ void PortPpuGpu3DS_Shutdown(void) {
     sOutputTexture = (C3D_Tex){ 0 };
     sProgram = (shaderProgram_s){ 0 };
     sAttributes = (C3D_AttrInfo){ 0 };
-    sBuffers = (C3D_BufInfo){ 0 };
+    memset(sBufferInfo, 0, sizeof(sBufferInfo));
 }
 
 extern bool Port_Config_GetColorCorrection(void);
@@ -320,7 +348,13 @@ bool PortPpuGpu3DS_Init(void) {
 
     memset(&sStats, 0, sizeof(sStats));
     sCache = malloc(sizeof(*sCache));
-    sVertices = linearMemAlign(PPU_GPU3DS_MAX_VERTICES * sizeof(*sVertices), 0x80);
+    for (unsigned buffer = 0; buffer < 2u; ++buffer)
+        sVertexBuffers[buffer] = linearMemAlign(PPU_GPU3DS_MAX_VERTICES * sizeof(PpuGpu3DSVertex), 0x80);
+    sVertices = sVertexBuffers[0];
+    /* 512 KiB and 2 MiB of ordinary heap: the copies the build writes the tiles into. */
+    sAtlasShadow = calloc(PPU_GPU3DS_ATLAS_PIXELS, sizeof(uint16_t));
+    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring)
+        sRingShadow[ring] = calloc((size_t)PPU_GPU3DS_RING_TEX_WIDTH * PPU_GPU3DS_RING_TEX_HEIGHT, sizeof(uint16_t));
     sIndices = linearMemAlign(PPU_GPU3DS_MAX_INDICES * sizeof(*sIndices), 0x80);
     sBatches = malloc(PPU_GPU3DS_MAX_BATCHES * sizeof(*sBatches));
     sParityReference = malloc(PPU_GPU3DS_OUTPUT_WIDTH * PPU_GPU3DS_OUTPUT_HEIGHT *
@@ -328,9 +362,22 @@ bool PortPpuGpu3DS_Init(void) {
     sParityReadback = linearMemAlign(PPU_GPU3DS_OUTPUT_WIDTH * PPU_GPU3DS_OUTPUT_HEIGHT *
                                          sizeof(*sParityReadback),
                                      0x80);
-    if (!sCache || !sVertices || !sIndices || !sBatches || !sParityReference ||
-        !sParityReadback)
+    if (!sCache || !sVertexBuffers[0] || !sIndices || !sBatches || !sParityReference || !sParityReadback)
         goto fail;
+    sCanBuildAhead = sVertexBuffers[1] && sAtlasShadow;
+    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring)
+        if (!sRingShadow[ring]) sCanBuildAhead = false;
+    if (!sCanBuildAhead) {
+        if (sVertexBuffers[1]) linearFree(sVertexBuffers[1]);
+        sVertexBuffers[1] = sVertexBuffers[0];
+        free(sAtlasShadow);
+        sAtlasShadow = NULL;
+        for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring) {
+            free(sRingShadow[ring]);
+            sRingShadow[ring] = NULL;
+        }
+        Platform3DS_Debug("[tmc3ds] gpu: no memory to build ahead of the GPU\n");
+    }
     memset(sParityReference, 0,
            PPU_GPU3DS_OUTPUT_WIDTH * PPU_GPU3DS_OUTPUT_HEIGHT *
                sizeof(*sParityReference));
@@ -347,8 +394,8 @@ bool PortPpuGpu3DS_Init(void) {
     Platform3DS_CleanDataCache(sIndices, PPU_GPU3DS_MAX_INDICES * sizeof(*sIndices));
 
     /* The builder stops short of the reset quad at the end of both buffers. */
-    {
-        PpuGpu3DSVertex* quad = sVertices + PPU_GPU3DS_CLEAR_FIRST_VERTEX;
+    for (unsigned buffer = 0; buffer < 2u; ++buffer) {
+        PpuGpu3DSVertex* quad = sVertexBuffers[buffer] + PPU_GPU3DS_CLEAR_FIRST_VERTEX;
         /* The static index pattern is 0,1,2, 0,2,3 (PpuGpu3DS_FillStaticIndices), so
          * the corners go round the perimeter: top-left, top-right, bottom-right,
          * bottom-left. They used to be in z order (TL, TR, BL, BR), which covers
@@ -387,7 +434,7 @@ bool PortPpuGpu3DS_Init(void) {
         C3D_TexFlush(&sRingTex[ring]);
         C3D_TexSetFilter(&sRingTex[ring], GPU_NEAREST, GPU_NEAREST);
         C3D_TexSetWrap(&sRingTex[ring], GPU_REPEAT, GPU_REPEAT);
-        PpuGpu3DS_RingSetStorage(sCache, ring, (uint16_t*)sRingTex[ring].data);
+        PpuGpu3DS_RingSetStorage(sCache, ring, sCanBuildAhead ? sRingShadow[ring] : (uint16_t*)sRingTex[ring].data);
     }
 
     if (!C3D_TexInitVRAM(&sOutputTexture, PPU_GPU3DS_OUTPUT_WIDTH,
@@ -433,8 +480,15 @@ bool PortPpuGpu3DS_Init(void) {
     if (AttrInfo_AddLoader(&sAttributes, 0, GPU_FLOAT, 3) < 0 ||
         AttrInfo_AddLoader(&sAttributes, 1, GPU_SHORT, 2) < 0)
         goto fail;
-    BufInfo_Init(&sBuffers);
-    if (BufInfo_Add(&sBuffers, sVertices, sizeof(*sVertices), 2, 0x10) < 0) goto fail;
+    for (unsigned buffer = 0; buffer < 2u; ++buffer) {
+        BufInfo_Init(&sBufferInfo[buffer]);
+        if (BufInfo_Add(&sBufferInfo[buffer], sVertexBuffers[buffer], sizeof(PpuGpu3DSVertex), 2, 0x10) < 0)
+            goto fail;
+    }
+    sBuildBuffer = 0;
+    sDrawnBuffer = 1;
+    memset(sSliceGeneration, 0, sizeof(sSliceGeneration));
+    memset(sBufferSliceGeneration, 0, sizeof(sBufferSliceGeneration));
 
     sDisabled = false;
     sPrepared = false;
@@ -470,14 +524,58 @@ static bool FinishPreflight(bool ready, uint64_t startTick) {
     return ready;
 }
 
+bool PortPpuGpu3DS_BuildsAhead(void) {
+    return sCanBuildAhead && gPpuGpu3DSSerialBuild == 0;
+}
+
+/* The map slices the frame draws from its buffer without rebuilding them must hold what the
+ * model kept: a slice rebuilt last frame went into the other buffer, so it is copied over (a
+ * read of memory the GPU is drawing from, which is harmless). Returns the first vertex
+ * written, for the flush. */
+static size_t KeepSlicesCurrent(bool built) {
+    const unsigned buffer = sBuildBuffer, other = 1u - sBuildBuffer;
+    size_t firstWritten = SIZE_MAX;
+    if (sVertexBuffers[buffer] == sVertexBuffers[other]) return firstWritten; /* one buffer */
+    for (unsigned bg = 0; bg < 4u; ++bg) {
+        const size_t first = (size_t)bg * PPU_GPU3DS_MAP_SLICE_VERTICES;
+        if ((sCommands.mapDirtyMask & (1u << bg)) != 0) {
+            /* Rebuilt into this buffer (also by a build that failed: the model keeps it). */
+            sBufferSliceGeneration[buffer][bg] = ++sSliceGeneration[bg];
+            continue;
+        }
+        if (!built || sSliceGeneration[bg] == 0 || sBufferSliceGeneration[buffer][bg] == sSliceGeneration[bg] ||
+            sBufferSliceGeneration[other][bg] != sSliceGeneration[bg] || sCommands.dynamicFirstVertex <= first)
+            continue;
+        memcpy(sVertexBuffers[buffer] + first, sVertexBuffers[other] + first,
+               PPU_GPU3DS_MAP_SLICE_VERTICES * sizeof(PpuGpu3DSVertex));
+        sBufferSliceGeneration[buffer][bg] = sSliceGeneration[bg];
+        if (first < firstWritten) firstWritten = first;
+        ++sStats.sliceCopies;
+    }
+    return firstWritten;
+}
+
+static bool FailPreflight(uint64_t startTick) {
+    sCommands.vertexCount = 0;
+    sCommands.indexCount = 0;
+    sCommands.batchCount = 0;
+    return FinishPreflight(false, startTick);
+}
+
 bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
     const uint64_t startTick = svcGetSystemTick();
     ++sStats.attemptedFrames;
     sPrepared = false;
+    sCommitPending = false;
     if (!sReady || sDisabled || !frame || !frame->memory.bg_palette ||
         !frame->memory.obj_palette)
         return FinishPreflight(false, startTick);
 
+    /* Never the buffer the last drawn frame is in: the GPU may still be reading it. A frame
+     * built but not drawn leaves it free, and the next one is built there again. */
+    sBuildBuffer = 1u - sDrawnBuffer;
+    sVertices = sVertexBuffers[sBuildBuffer];
+    sCommands.vertices = sVertices;
     sCommands.vertexCount = 0;
     sCommands.indexCount = 0;
     sCommands.batchCount = 0;
@@ -485,8 +583,9 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
     Platform3DS_SetStage(22);
     PpuGpu3DS_CacheBeginFrame(sCache, frame->memory.bg_palette,
                               frame->memory.obj_palette, ++sFrame);
-    if (!PpuGpu3DS_BuildCommands(frame, sCache, (uint16_t*)sAtlas.data,
+    if (!PpuGpu3DS_BuildCommands(frame, sCache, sCanBuildAhead ? sAtlasShadow : (uint16_t*)sAtlas.data,
                                  &sCommands)) {
+        KeepSlicesCurrent(false);
         sStats.buildTicks += svcGetSystemTick() - buildStartTick;
         if (sCommands.failReason < PPU_GPU3DS_BUILD_REASON_COUNT)
             ++sStats.buildFailures[sCommands.failReason];
@@ -496,6 +595,7 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
             sStats.maxRequiredVertices = sCommands.requiredVertices;
         return FinishPreflight(false, startTick);
     }
+    const size_t copiedFirstVertex = KeepSlicesCurrent(true);
     sStats.lastBuildTicks = svcGetSystemTick() - buildStartTick;
     sStats.buildTicks += sStats.lastBuildTicks;
     sStats.lastBands = sCommands.bandCount;
@@ -524,10 +624,126 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
     if (sCommands.batchCount > sStats.maxBatches)
         sStats.maxBatches = (uint32_t)sCommands.batchCount;
 
+    /* The vertices are this buffer's alone, so they are flushed now. Same economics as the
+     * atlas: one call spanning the rebuilt slices and the per-band geometry beats a call per
+     * region. A slice that was kept from last frame is only re-flushed when it sits between
+     * two that were not, which costs bytes rather than calls. */
+    const uint64_t flushStartTick = svcGetSystemTick();
+    Platform3DS_SetStage(24);
+    const size_t irisFirstVertex = sCommands.vertexCount;
+    AppendIrisMask(frame);
+    size_t geometryFirstVertex = sCommands.dynamicFirstVertex;
+    if (sIrisIndexCount != 0 && irisFirstVertex < geometryFirstVertex) geometryFirstVertex = irisFirstVertex;
+    if (copiedFirstVertex < geometryFirstVertex) geometryFirstVertex = copiedFirstVertex;
+    for (unsigned bg = 0; bg < 4u; ++bg) {
+        if ((sCommands.mapDirtyMask & (1u << bg)) == 0) continue;
+        const size_t sliceVertex = (size_t)bg * PPU_GPU3DS_MAP_SLICE_VERTICES;
+        if (sliceVertex < geometryFirstVertex) geometryFirstVertex = sliceVertex;
+    }
+    if (sCommands.vertexCount > geometryFirstVertex &&
+        !Platform3DS_CleanDataCache(sVertices + geometryFirstVertex,
+                                    (sCommands.vertexCount - geometryFirstVertex) * sizeof(*sVertices)))
+        return FailPreflight(startTick);
+    sStats.flushTicks += svcGetSystemTick() - flushStartTick;
+    sCommitPending = true;
+    return FinishPreflight(true, startTick);
+}
+
+/* The atlas slots decoded since the last commit, copied from the build's copy to the texture
+ * and flushed. Only the slots decoded this frame need uploading, but each
+ * GSPGPU_FlushDataCache is a GSP round trip measured at ~330 us on an Old
+ * 3DS -- a hundred times the cost of the few kilobytes a call covers. So
+ * the dirty slots are coalesced into a handful of ranges and the extra
+ * bytes are paid gladly to avoid the calls. */
+static bool CommitAtlas(void) {
+    if (sCache->dirtyCount == 0) return true;
+    unsigned firstSlot = PPU_GPU3DS_SLOT_COUNT, lastSlot = 0;
+    uint16_t* const texels = (uint16_t*)sAtlas.data;
+    memset(sDirtyBitmap, 0, sizeof(sDirtyBitmap));
+    for (unsigned index = 0; index < sCache->dirtyCount; ++index) {
+        const unsigned slot = sCache->dirtySlots[index];
+        if (sAtlasShadow)
+            memcpy(texels + (size_t)slot * 64u, sAtlasShadow + (size_t)slot * 64u, 64u * sizeof(uint16_t));
+        sDirtyBitmap[slot / 32u] |= 1u << (slot % 32u);
+        if (slot < firstSlot) firstSlot = slot;
+        if (slot > lastSlot) lastSlot = slot;
+    }
+
+    /* Walk the bitmap into runs, merging any gap smaller than the bytes a
+     * separate call would cost. */
+    unsigned rangeFirst[PPU_GPU3DS_ATLAS_FLUSH_RANGES];
+    unsigned rangeLast[PPU_GPU3DS_ATLAS_FLUSH_RANGES];
+    unsigned rangeCount = 0;
+    for (unsigned slot = firstSlot; slot <= lastSlot; ++slot) {
+        if ((sDirtyBitmap[slot / 32u] & (1u << (slot % 32u))) == 0) continue;
+        if (rangeCount != 0 &&
+            slot - rangeLast[rangeCount - 1] <= PPU_GPU3DS_ATLAS_FLUSH_GAP) {
+            rangeLast[rangeCount - 1] = slot;
+            continue;
+        }
+        if (rangeCount == PPU_GPU3DS_ATLAS_FLUSH_RANGES) {
+            /* Out of ranges: one span covers everything left. */
+            rangeLast[rangeCount - 1] = lastSlot;
+            break;
+        }
+        rangeFirst[rangeCount] = slot;
+        rangeLast[rangeCount] = slot;
+        ++rangeCount;
+    }
+
+    bool flushed = true;
+    for (unsigned range = 0; range < rangeCount && flushed; ++range) {
+        const size_t bytes =
+                ((size_t)rangeLast[range] - rangeFirst[range] + 1u) * 64u *
+                sizeof(uint16_t);
+        flushed = Platform3DS_CleanDataCache(texels + (size_t)rangeFirst[range] * 64u, bytes);
+        if (flushed) sStats.atlasFlushBytes += bytes;
+    }
+    sStats.atlasFlushCalls += rangeCount;
+    /* A failed flush keeps the slots dirty: the next commit copies and flushes them again. */
+    if (flushed) PpuGpu3DS_CacheClearDirty(sCache);
+    return flushed;
+}
+
+/* The ring cells written since the last commit, likewise. */
+static bool CommitRings(void) {
+    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring) {
+        size_t offset, bytes;
+        if (!sRingTex[ring].data || !PpuGpu3DS_RingTakeDirty(sCache, ring, &offset, &bytes, sRingCells)) continue;
+        uint16_t* const texels = (uint16_t*)sRingTex[ring].data;
+        if (sRingShadow[ring]) {
+            const unsigned firstCell = (unsigned)(offset / (64u * sizeof(uint16_t)));
+            const unsigned lastCell = firstCell + (unsigned)(bytes / (64u * sizeof(uint16_t))) - 1u;
+            for (unsigned word = firstCell / 32u; word <= lastCell / 32u; ++word) {
+                uint32_t bits = sRingCells[word];
+                if (bits == 0xffffffffu) {
+                    memcpy(texels + (size_t)word * 32u * 64u, sRingShadow[ring] + (size_t)word * 32u * 64u,
+                           32u * 64u * sizeof(uint16_t));
+                    continue;
+                }
+                while (bits != 0) {
+                    const unsigned cell = word * 32u + (unsigned)__builtin_ctz(bits);
+                    bits &= bits - 1u;
+                    memcpy(texels + (size_t)cell * 64u, sRingShadow[ring] + (size_t)cell * 64u, 64u * sizeof(uint16_t));
+                }
+            }
+        }
+        if (!Platform3DS_CleanDataCache((uint8_t*)texels + offset, bytes)) return false;
+        sStats.atlasFlushBytes += bytes;
+        ++sStats.atlasFlushCalls;
+    }
+    return true;
+}
+
+bool PortPpuGpu3DS_Commit(const PpuGpu3DSFrameView* frame) {
+    const uint64_t startTick = svcGetSystemTick();
+    if (!sCommitPending) return false;
+    sCommitPending = false;
     /* Geometry capacity does not bound the hardware command list: every
      * window band repeats state and draw commands, including OBJ prepasses.
-     * Reject before emitting any PPU commands or flushing its atlas. The
-     * caller then renders this same frame in software and retries next frame. */
+     * Reject before emitting any PPU commands. The caller then renders this
+     * same frame in software and retries next frame; the atlas and ring copies
+     * stay dirty until a commit moves them. */
     const size_t commandWords = PpuGpu3DS_CommandWordsRequired(&sCommands);
     sStats.lastCommandWords = (uint32_t)commandWords;
     if (commandWords > sStats.maxCommandWords)
@@ -535,118 +751,14 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
     if (!PpuGpu3DS_CommandBudgetFits(commandWords, gpuCmdBuf != NULL,
                                     gpuCmdBufSize, gpuCmdBufOffset)) {
         ++sStats.commandBudgetFallbacks;
-        return FinishPreflight(false, startTick);
+        return FailPreflight(startTick);
     }
-
-    const uint64_t flushStartTick = svcGetSystemTick();
-    /* Only the slots decoded this frame need uploading, but each
-     * GSPGPU_FlushDataCache is a GSP round trip measured at ~330 us on an Old
-     * 3DS -- a hundred times the cost of the few kilobytes a call covers. So
-     * the dirty slots are coalesced into a handful of ranges and the extra
-     * bytes are paid gladly to avoid the calls. */
-    if (sCache->dirtyCount != 0) {
-        unsigned firstSlot = PPU_GPU3DS_SLOT_COUNT, lastSlot = 0;
-        memset(sDirtyBitmap, 0, sizeof(sDirtyBitmap));
-        for (unsigned index = 0; index < sCache->dirtyCount; ++index) {
-            const unsigned slot = sCache->dirtySlots[index];
-            sDirtyBitmap[slot / 32u] |= 1u << (slot % 32u);
-            if (slot < firstSlot) firstSlot = slot;
-            if (slot > lastSlot) lastSlot = slot;
-        }
-
-        /* Walk the bitmap into runs, merging any gap smaller than the bytes a
-         * separate call would cost. */
-        unsigned rangeFirst[PPU_GPU3DS_ATLAS_FLUSH_RANGES];
-        unsigned rangeLast[PPU_GPU3DS_ATLAS_FLUSH_RANGES];
-        unsigned rangeCount = 0;
-        for (unsigned slot = firstSlot; slot <= lastSlot; ++slot) {
-            if ((sDirtyBitmap[slot / 32u] & (1u << (slot % 32u))) == 0) continue;
-            if (rangeCount != 0 &&
-                slot - rangeLast[rangeCount - 1] <= PPU_GPU3DS_ATLAS_FLUSH_GAP) {
-                rangeLast[rangeCount - 1] = slot;
-                continue;
-            }
-            if (rangeCount == PPU_GPU3DS_ATLAS_FLUSH_RANGES) {
-                /* Out of ranges: one span covers everything left. */
-                rangeLast[rangeCount - 1] = lastSlot;
-                break;
-            }
-            rangeFirst[rangeCount] = slot;
-            rangeLast[rangeCount] = slot;
-            ++rangeCount;
-        }
-
-        bool flushed = true;
-        for (unsigned range = 0; range < rangeCount && flushed; ++range) {
-            const size_t bytes =
-                    ((size_t)rangeLast[range] - rangeFirst[range] + 1u) * 64u *
-                    sizeof(uint16_t);
-            uint16_t* pixels =
-                    (uint16_t*)sAtlas.data + (size_t)rangeFirst[range] * 64u;
-            flushed = Platform3DS_CleanDataCache(pixels, bytes);
-            if (flushed) sStats.atlasFlushBytes += bytes;
-        }
-        sStats.atlasFlushCalls += rangeCount;
-        if (!flushed) {
-            sCommands.vertexCount = 0;
-            sCommands.indexCount = 0;
-            sCommands.batchCount = 0;
-            return FinishPreflight(false, startTick);
-        }
-        PpuGpu3DS_CacheClearDirty(sCache);
     Platform3DS_SetStage(23);
-    }
-    if ((frame->pictureMask & 0x8u) && !RefreshIndexedPicture(frame)) {
-        sCommands.vertexCount = 0;
-        sCommands.indexCount = 0;
-        sCommands.batchCount = 0;
-        return FinishPreflight(false, startTick);
-    }
-    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring) {
-        size_t offset, bytes;
-        if (!PpuGpu3DS_RingTakeDirty(sCache, ring, &offset, &bytes)) continue;
-        if (!Platform3DS_CleanDataCache((uint8_t*)sRingTex[ring].data + offset, bytes)) {
-            sCommands.vertexCount = 0;
-            sCommands.indexCount = 0;
-            sCommands.batchCount = 0;
-            return FinishPreflight(false, startTick);
-        }
-        sStats.atlasFlushBytes += bytes;
-        ++sStats.atlasFlushCalls;
-    }
-    /* Same economics as the atlas: one call spanning the rebuilt slices and
-     * the per-band geometry beats a call per region. A slice that was kept
-     * from last frame is only re-flushed when it sits between two that were
-     * not, which costs bytes rather than calls. */
-    Platform3DS_SetStage(24);
-    const size_t irisFirstVertex = sCommands.vertexCount;
-    AppendIrisMask(frame);
-    size_t geometryFirstVertex = sCommands.dynamicFirstVertex;
-    if (sIrisIndexCount != 0 && irisFirstVertex < geometryFirstVertex) geometryFirstVertex = irisFirstVertex;
-    size_t geometryFirstIndex = sCommands.dynamicFirstIndex;
-    for (unsigned bg = 0; bg < 4u; ++bg) {
-        if ((sCommands.mapDirtyMask & (1u << bg)) == 0) continue;
-        const size_t sliceVertex = (size_t)bg * PPU_GPU3DS_MAP_SLICE_VERTICES;
-        if (sliceVertex < geometryFirstVertex) {
-            geometryFirstVertex = sliceVertex;
-            geometryFirstIndex = (size_t)bg * PPU_GPU3DS_MAP_SLICE_INDICES;
-        }
-    }
-    (void)geometryFirstIndex;  /* indices are static; only vertices stream */
-    if (sCommands.vertexCount > geometryFirstVertex) {
-        if (!Platform3DS_CleanDataCache(
-                    sVertices + geometryFirstVertex,
-                    (sCommands.vertexCount - geometryFirstVertex) *
-                            sizeof(*sVertices))) {
-            sCommands.vertexCount = 0;
-            sCommands.indexCount = 0;
-            sCommands.batchCount = 0;
-            return FinishPreflight(false, startTick);
-        }
-    }
+    if (!CommitAtlas() || !CommitRings() || ((frame->pictureMask & 0x8u) && !RefreshIndexedPicture(frame)))
+        return FailPreflight(startTick);
 
     Platform3DS_SetStage(25);
-    sStats.flushTicks += svcGetSystemTick() - flushStartTick;
+    sStats.flushTicks += svcGetSystemTick() - startTick;
     sPreparedWidth = frame->width;
     sPreparedHeight = frame->height;
     sFadeWeight = frame->fadeWeight;
@@ -994,7 +1106,7 @@ static bool DrawOutput(C3D_RenderTarget* target) {
     C3D_DepthMap(true, -1.0f, 0.0f);
     C3D_BindProgram(&sProgram);
     C3D_SetAttrInfo(&sAttributes);
-    C3D_SetBufInfo(&sBuffers);
+    C3D_SetBufInfo(&sBufferInfo[sBuildBuffer]);
     C3D_CullFace(GPU_CULL_NONE);
     /* Nothing about the previous frame's state survives here. */
     sLastOffsetX = 1.0f;
@@ -1215,6 +1327,7 @@ bool PortPpuGpu3DS_DrawPrepared(void) {
         sRightReady = DrawOutput(sOutputRightTarget);
     }
     SetEyeShifts(false, STEREO3DS_LEFT);
+    if (drawn) sDrawnBuffer = sBuildBuffer;
     return FinishDraw(drawn, startTick);
 }
 

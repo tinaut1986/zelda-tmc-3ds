@@ -41,9 +41,9 @@ tile 0 (area 0x20 room 09), the village's gap cells taking the nearest zone's gr
 also for doors into interiors, a state saved inside a subtask keeping the room's entities (Link locked after
 a map hint), the 3D depth of the map screens (hint and pause map), PLANE TINT / FORCE 3D / right-eye
 screenshots, and the bottom map in COLOURS with its hints over the unrevealed regions, swapping with Link
-every 32 game frames, and dark rooms kept in Full View (the light around Link drawn across 400x240, issue #32). v0.3.1 itself holds what the owner checked on 2026-10-17 (TOP HUD AUTO, GBA grid and
+every 32 game frames, and dark rooms kept in Full View (the light around Link drawn across 400x240, issue #32). Also the GPU frame built while the GPU draws the previous one (`docs/gpu-build-ahead.md`; checked by the owner on the New 3DS, 2026-10-18; not seen on the Old 3DS/2DS). v0.3.1 itself holds what the owner checked on 2026-10-17 (TOP HUD AUTO, GBA grid and
 frame, WIDE + AI, the Minish Paths corridor centred, the 3D of P5.1, the heart in use, the village intro's
-Minish walking in). Not seen on the Old 3DS: the grid on HIGH (frame rate), WIDE + AI.
+Minish walking in). Not seen on the Old 3DS: the GPU build ahead, the grid on HIGH (frame rate), WIDE + AI.
 
 **Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
 
@@ -1072,3 +1072,21 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   GPU renderer takes the view-wide lines as WIN0 itself (`PpuGpu3DSFrameView::win0Lines`), not as the iris's backdrop
   mask, because the dark room's window settings differ (inside: no BG3). 60 fps on the New 3DS with 3D off; with 3D
   up the shrine is under 60 in both views, a separate matter. Details in `docs/gpu-fade.md`.
+- **2026-10-18** The GPU frame is now built before `C3D_FrameBegin` waits for the previous one (`docs/gpu-build-ahead.md`).
+  Everything the build wrote that the GPU reads: the vertex buffer (now two; a frame is built into the one the last
+  drawn frame does not use, and map slices kept across frames are copied from the other buffer when it has a newer
+  build of them, tracked by a generation per slice and buffer), the atlas and the eight view rings (now built into
+  heap copies, 2.5 MiB, whose dirty slots and cells `PortPpuGpu3DS_Commit` copies into the textures after the wait;
+  the rings record each written cell so a vertical scroll copies 64 cells, not the whole span), and the file
+  select's indexed picture (refreshed in the commit). Indices are written once. Without the memory the old serial
+  order stays. New 3DS, same build and state, `poke gPpuGpu3DSSerialBuild` to switch: dark room 0x48/0x10 in 3D
+  40.1 -> 45.4 fps on `release/v0.3.2`, and **53.7 -> 59.8 fps with `perf/stereo-3d-deepwood`** (wait 11.5 -> 0.03 ms);
+  in 2D, room 0x0B in 2D/3D and area 0x00 in 3D, 60 either way, build time unchanged. GPU CHECK as without the
+  change (0 in 0x48/0x10 and 0x0B also while walking; areas 0x00 and 0x11 differ by the same 176-208 and 15126 pixels
+  in the build without it, so those are older). Both eyes clean (FORCE 3D, `shot`). Tried and dropped: handing the GPU
+  the recorded commands every K draws (`C3D_FrameSplit`): no gain (44.6-45.4 fps, the GPU is the limit), and every
+  split is an entry of citro3d's fixed-size GX queue: every 32 draws of a 3D frame filled it and libctru's
+  `svcBreak` froze the New 3DS (Luma dump: prefetch abort, IFSR 0x2, under `C3D_FrameSplit` from
+  `PlatformGpu3DS_EndBottom`); the owner had to reboot it. Issue #30's suspicion (slices rewritten while the GPU
+  reads them) cannot have happened in the old order, which waited before every write; the new order keeps that
+  rule by construction, so #30 needs another cause.
