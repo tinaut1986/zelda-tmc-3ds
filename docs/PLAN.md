@@ -33,7 +33,9 @@ the remote `feat/retroachievements` (a delete was refused in an earlier session:
 
 | Branch | State |
 |---|---|
-| `feat/gba-look` | P4.7 (GBA GRID and GBA FRAME), cut from `release/v0.3.1`. Built (`0.3.1-dev.0+7aeff29` plus the uncommitted work), **not yet seen on a console**: install it, then check the owner's list under P4.7. |
+| `feat/village-3d` | Loose test branch (owner, 2026-10-17): the Minish Village's flowers and leaf blocks in 3D plus the FPS box's depth. **Does not work yet**: the houses should go back, the hanging fruits are not found. Cut from the commit of `feat/title-rays-3d` before its title fix. Not for merging; see `docs/stereo-3d.md`. |
+
+**Merged into `release/v0.3.1` on 2026-10-17 (all checked on the New 3DS by the owner)**, not yet deleted: `fix/title-live-view`, `feat/gba-look` (P4.7), `feat/hud-auto` (P2.9), `feat/title-rays-3d` (P5.1 for the sun rays and the leaves of the Minish Paths), `feat/minish-paths-centred` (P4.6, with its black borders still waiting for generated pictures) and `feat/wide-ai-ask`. Not pushed yet. Still to see: the grid on HIGH on the Old 3DS (P4.7), and the Old 3DS with WIDE + AI.
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
