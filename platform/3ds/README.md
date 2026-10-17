@@ -84,6 +84,10 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
 - Bottom screen: a bar of icon tabs (map, items, quest, save states, achievements, options and,
   in debug builds, the bug icon for DEBUG). OPTIONS holds the display, turbo, theme, tab
   position and UPDATES channel.
+- WIDE + AI (`wide_ai`, `wide_ai_asked` in `tmc3ds.ini`), after `../mzm`: the scene extensions made with a
+  generative AI (the portal's sides, the title's forest, the file select's cave) are shown only in WIDE + AI,
+  the second stop of OPTIONS -> VIEW (WIDE, WIDE + AI, ORIGINAL). The first time WIDE is on, the bottom screen
+  asks once whether to show them (YES is WIDE + AI); the answer is kept.
 - Show FPS: a compact lower-left top-screen box of four lines, averaged over
   the last second: the game's rate (green from 59, yellow from 50, red below),
   `L` the logic's ms per tick, `G` the GPU's ms per presented frame and `S` the

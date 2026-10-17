@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 extern bool Port_Config_GetColorCorrection(void);
+extern bool Port_Config_GetWideAi(void); /* these pictures are generated art: only WIDE + AI shows them */
 
 #define TITLE_SD TMC3DS_APP_DIR "/title-forest.bin"
 #define TITLE_ROMFS "romfs:/wide-scenes/title-forest.bin"
@@ -23,6 +24,7 @@ static uint32_t* sTitleAbgr;
 static bool sAbgrCorrected;
 
 bool ScenePictures_TitleAvailable(void) {
+    if (!Port_Config_GetWideAi()) return false;
     if (sAvailable < 0) sAvailable = access(TITLE_SD, F_OK) == 0 || access(TITLE_ROMFS, F_OK) == 0;
     return sAvailable != 0;
 }
@@ -94,6 +96,7 @@ static int sCaveAvailable = -1; /* as sAvailable */
 static uint8_t* sCave;
 
 bool ScenePictures_CaveAvailable(void) {
+    if (!Port_Config_GetWideAi()) return false;
     if (sCaveAvailable < 0) sCaveAvailable = access(CAVE_SD, F_OK) == 0 || access(CAVE_ROMFS, F_OK) == 0;
     return sCaveAvailable != 0;
 }

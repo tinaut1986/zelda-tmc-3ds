@@ -270,6 +270,11 @@ typedef enum {
 int Port_Config_Get3DSAspectRatio(void);
 const char* Port_Config_Get3DSAspectRatioName(void);
 void Port_Config_Cycle3DSAspectRatio(void);
+/* WIDE + AI: the scene extensions made with a generative AI are shown (WIDE only). The bottom screen
+ * asks once whether to, the first time WIDE is on; the answer is kept (wide_ai, wide_ai_asked). */
+bool Port_Config_GetWideAi(void);
+bool Port_Config_WideAiQuestionDue(void);
+void Port_Config_AnswerWideAi(bool yes);
 int Port_Config_Get3DSDisplayStyle(void);
 const char* Port_Config_Get3DSDisplayStyleName(void);
 void Port_Config_Cycle3DSDisplayStyle(void);

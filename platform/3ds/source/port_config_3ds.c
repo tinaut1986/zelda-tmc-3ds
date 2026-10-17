@@ -32,6 +32,12 @@ static _Atomic bool sColorCorrection;
 static _Atomic bool sAutosave;
 static bool sConsoleParity;
 static _Atomic Port3DSAspectRatio sAspectRatio = CONFIG_3DS_DEFAULT_ASPECT;
+/* WIDE + AI, after ../mzm: the scenes' extensions made with a generative AI (the portal's sides, the
+ * title's forest, the file select's cave) are shown only when the player wants them. Kept apart from
+ * the aspect so every "is it WIDE" check stays as it is. `asked`: the bottom screen's one-time question
+ * about it was answered. */
+static _Atomic bool sWideAi;
+static _Atomic bool sWideAiAsked;
 static _Atomic Port3DSDisplayStyle sDisplayStyle = CONFIG_3DS_DEFAULT_DISPLAY;
 /* The desktop file-select overlay is rendered on the gameplay screen and
  * has no useful 3DS interaction path. Keep the native second-screen UI
@@ -173,6 +179,8 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("autosave=%u\n", sAutosave ? 1u : 0u);
     APPEND("widescreen=%u\n", sAspectRatio == PORT_3DS_ASPECT_WIDE ? 1u : 0u);
     APPEND("screen_aspect=%s\n", ConfigValues3DS_AspectName(sAspectRatio));
+    APPEND("wide_ai=%u\n", sWideAi ? 1u : 0u);
+    APPEND("wide_ai_asked=%u\n", sWideAiAsked ? 1u : 0u);
     APPEND("display_style=%s\n", ConfigValues3DS_DisplayName(sDisplayStyle));
     APPEND("master_volume=%.2f\n", (double)sVolume);
     APPEND("panel_backdrop=%d\n", sBackdrop);
@@ -383,6 +391,8 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "hide_top_hud") == 0) sHideHud = ParseBool(value);
             else if (strcmp(key, "hold_to_advance_text") == 0) sHoldText = ParseBool(value);
             else if (strcmp(key, "color_correction") == 0) sColorCorrection = ParseBool(value);
+            else if (strcmp(key, "wide_ai") == 0) sWideAi = ParseBool(value);
+            else if (strcmp(key, "wide_ai_asked") == 0) sWideAiAsked = ParseBool(value);
             else if (strcmp(key, "autosave") == 0) sAutosave = ParseBool(value);
             else if (strcmp(key, "widescreen") == 0 && !hasScreenAspect)
                 sAspectRatio = ParseBool(value) ? PORT_3DS_ASPECT_WIDE : PORT_3DS_ASPECT_ORIGINAL;
@@ -750,10 +760,26 @@ void Port_Config_SetTurboMultiplier(unsigned multiplier) {
 int Port_Config_Get3DSAspectRatio(void) { return (int)sAspectRatio; }
 const char* Port_Config_Get3DSAspectRatioName(void) {
     static const char* const names[PORT_3DS_ASPECT_COUNT] = { "WIDE", "ORIGINAL" };
-    return names[sAspectRatio];
+    return Port_Config_GetWideAi() ? "WIDE + AI" : names[sAspectRatio];
+}
+bool Port_Config_GetWideAi(void) { return sAspectRatio == PORT_3DS_ASPECT_WIDE && sWideAi; }
+/* WIDE is on and the player was never asked whether to show the generated art. */
+bool Port_Config_WideAiQuestionDue(void) { return sAspectRatio == PORT_3DS_ASPECT_WIDE && !sWideAiAsked; }
+void Port_Config_AnswerWideAi(bool yes) {
+    sWideAi = yes;
+    sWideAiAsked = true;
+    SaveConfig();
 }
 void Port_Config_Cycle3DSAspectRatio(void) {
-    sAspectRatio = (Port3DSAspectRatio)((sAspectRatio + 1) % PORT_3DS_ASPECT_COUNT);
+    /* WIDE comes twice: plain, then WIDE + AI (sWideAi); ORIGINAL after it. The way back into WIDE
+     * is the plain one. */
+    if (sAspectRatio == PORT_3DS_ASPECT_WIDE && !sWideAi) {
+        sWideAi = true;
+        sWideAiAsked = true; /* choosing it is an answer */
+    } else {
+        sAspectRatio = (Port3DSAspectRatio)((sAspectRatio + 1) % PORT_3DS_ASPECT_COUNT);
+        sWideAi = false;
+    }
     SaveConfig();
 }
 int Port_Config_Get3DSDisplayStyle(void) { return (int)sDisplayStyle; }

@@ -889,3 +889,9 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   como estable, confío"): the four topic branches merged after the owner's checks of the test
   builds and of the #31 repair on the 2DS; no production build was run on the consoles first.
   #30 is not a regression: room changes were worse before (owner), so it did not hold the release.
+- **2026-10-17** WIDE + AI (owner, from `../mzm`): plain WIDE shows no generated art, so players who do not
+  want it keep a Full View without it (the title, the file select and the portal fall back to their 240x160
+  screens or black sides); WIDE + AI is the aspect's second stop, and a one-time question on the bottom
+  screen asks at first launch of WIDE (existing installs get it once). The FTP install progress bar of mzm
+  (percent, install, 10 s countdown) was already here since 2026-10-14. `feat/wide-ai-ask` and `feat/gba-look`
+  both edit the settings' load chain in `port_config_3ds.c`: the second one merged resolves a small conflict.

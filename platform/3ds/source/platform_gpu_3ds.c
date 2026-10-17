@@ -90,6 +90,7 @@ extern u32 __ctru_linear_heap;
 extern u32 __ctru_linear_heap_size;
 extern bool Port_Config_GetShowFps(void);
 extern bool Port_Config_GetColorCorrection(void);
+extern bool Port_Config_GetWideAi(void);
 extern void Port_FadedBlackRGB(uint8_t* r, uint8_t* g, uint8_t* b); /* src/fade.c */
 
 /* What the bars beside a narrow view are filled with: black, or the fade's
@@ -676,6 +677,7 @@ static void LoadScenePicture(ScenePicture* picture) {
 
 /* Whether the scene's picture can be drawn this frame; frees it when the scene is not shown. */
 static bool ScenePictureReady(ScenePicture* picture, bool shown) {
+    if (!Port_Config_GetWideAi()) shown = false; /* generated art: only WIDE + AI */
     if (picture->state == 1 && (!shown || picture->corrected != Port_Config_GetColorCorrection())) {
         C3D_TexDelete(&picture->texture);
         picture->state = 0;
