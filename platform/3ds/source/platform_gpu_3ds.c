@@ -7,6 +7,7 @@
 #include "port_widescreen.h"
 #include "app_paths_3ds.h"
 #include "fade_gpu_3ds.h"
+#include "gba_look_3ds.h"
 #include "scene_pictures_3ds.h"
 #include "stereo_3ds.h"
 #include "cpu/mode1.h"
@@ -616,6 +617,9 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
         if (plan.useSharpBilinear) if (!sRightEye) ++sStats.sharpBilinearFallbacks;
     }
     DrawScenePictures(plan.drawX, plan.drawY, plan.drawWidth, plan.drawHeight, true);
+    if (GbaLook3DS_Draw(plan.drawX, plan.drawY, plan.drawWidth, plan.drawHeight,
+                        presentation->sourceWidth, presentation->sourceHeight))
+        ConfigureAbgrTextureEnv();
     if (Port_Config_GetShowFps()) DrawFpsOverlay();
     DrawRaToast(true);
 }
@@ -1289,6 +1293,11 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
     if (configureAbgr) ConfigureAbgrTextureEnv();
 
     DrawScenePictures(plan.drawX, plan.drawY, plan.drawWidth, plan.drawHeight, configureAbgr);
+    if (GbaLook3DS_Draw(plan.drawX, plan.drawY, plan.drawWidth, plan.drawHeight,
+                        presentation->sourceWidth, presentation->sourceHeight)) {
+        if (configureAbgr) ConfigureAbgrTextureEnv();
+        else ConfigureIdentityTextureEnv();
+    }
     if (Port_Config_GetShowFps()) DrawFpsOverlay();
     DrawRaToast(configureAbgr);
 }
@@ -1611,6 +1620,7 @@ void PlatformGpu3DS_Shutdown(void) {
         C3D_FrameEnd(GX_CMDLIST_FLUSH);
     }
     if (!aptShouldClose()) C3D_FrameSync();
+    GbaLook3DS_Shutdown();
     C3D_RenderTargetDelete(sBottomTarget);
     C3D_RenderTargetDelete(sTopTarget);
     if (sTopRightTarget) C3D_RenderTargetDelete(sTopRightTarget);

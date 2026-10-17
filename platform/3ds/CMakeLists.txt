@@ -181,6 +181,7 @@ add_executable(tmc-3ds
     source/port_ppu_3ds.c
     source/hud_xy_3ds.c
     source/fade_gpu_3ds.c
+    source/gba_look_3ds.c
     source/port_ppu_gpu_3ds_model.c
     source/port_ppu_gpu_3ds.c
     source/port_audio_3ds.c
@@ -291,6 +292,11 @@ foreach(scene portal-cutscene-strips title-forest fileselect-cave)
     configure_file("${CMAKE_CURRENT_LIST_DIR}/romfs/wide-scenes/${scene}.bin"
                    "${TMC_ROMFS}/wide-scenes/${scene}.bin" COPYONLY)
 endforeach()
+
+# The GBA frame of gba_look_3ds.c: the owner's artwork as ../mzm made it (512x256 GPU_RGBA8 tiled,
+# LZ4 block, 524288 bytes once unpacked). Loaded on first use, so it takes no room in the binary.
+configure_file("${CMAKE_CURRENT_LIST_DIR}/romfs/gba-look-frame.lz4"
+               "${TMC_ROMFS}/gba-look-frame.lz4" COPYONLY)
 
 set(TMC_SMDH "${CMAKE_CURRENT_BINARY_DIR}/tmc-3ds.smdh")
 ctr_generate_smdh(
