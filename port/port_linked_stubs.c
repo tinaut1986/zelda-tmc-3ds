@@ -2307,6 +2307,26 @@ int Port_Widescreen_HudTargetViewHeight(void) {
     return Port_Widescreen_ProducerViewHeight();
 }
 
+/* The tilemap entry for "nothing here" on a shadow layer. Entry 0 is tile 0, which is blank in most
+ * tilesets but not all (an interior whose BG3 has a dither tile there drew it as garbage beside the
+ * room), so use the first fully transparent tile of the layer's own character block. */
+static u16 Port_WidescreenBlankEntry(int bg_index) {
+    const u32 control = bg_index == 0 ? gScreen.bg0.control
+                        : bg_index == 1 ? gScreen.bg1.control
+                        : bg_index == 2 ? gScreen.bg2.control
+                                        : gScreen.bg3.control;
+    if ((control & 0x80u) != 0) return 0;
+    const u8* const chars = gVram + ((control >> 2) & 3u) * 0x4000u;
+    /* A tilemap entry reaches 1024 tiles, past its own 16 KB block, as long as it stays in BG memory. */
+    const u32 firstTile = ((control >> 2) & 3u) * 0x4000u / 32u;
+    for (u32 tile = 0; tile < 1024u && firstTile + tile < 2048u; ++tile) {
+        const u32* words = (const u32*)(chars + tile * 32u);
+        if ((words[0] | words[1] | words[2] | words[3] | words[4] | words[5] | words[6] | words[7]) == 0)
+            return (u16)tile;
+    }
+    return 0;
+}
+
 static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* shadow,
                                            int fullViewOutdoor) {
     /* Populate the port-side shadow tilemap the PPU reads for the reveal
@@ -2358,6 +2378,7 @@ static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* s
     virtuappu_mode1_ws_shadow_base_tile[bg_index] = first_display_tile + ((bg_x_offset & 0xff) >> 3);
 
     enum { kMapStride = 128, kMapRows = 128 };
+    const u16 blankEntry = Port_WidescreenBlankEntry(bg_index);
     /* Clamp to the ROOM rect, not just the 128-tile buffer: the buffers are
      * reused across rooms without clearing, so cells past the current room's
      * extent hold the previous room's tiles — sampling them leaked stale
@@ -2396,7 +2417,7 @@ static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* s
 #endif
         if (!scrolling && (world_row < 0 || world_row >= room_tiles_h)) {
             for (int C = 0; C < shadow_cols; C++)
-                row_dst[C] = 0;
+                row_dst[C] = blankEntry;
             continue;
         }
         for (int C = 0; C < shadow_cols; C++) {
@@ -2404,7 +2425,7 @@ static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* s
             u16 entry = scrolling ? Port_WidescreenScrollTile(mapSpecial, world_col, world_row)
                                   : ((world_col >= 0 && world_col < room_tiles_w)
                                          ? mapSpecial[world_row * kMapStride + world_col]
-                                         : (u16)0);
+                                         : blankEntry);
             row_dst[C] = entry;
 #ifdef TMC_3DS
             if (zone_dst && entry != 0) zone_dst[C] = Port_ZoneTiles_Variant(world_col, world_row);
@@ -2548,6 +2569,7 @@ static void Port_WidescreenLightRayShadow(int width) {
      * below come from the buffer. The view spans at most 31 rows, so each one
      * keeps its own slot at (row & 31), the slot the renderers read. */
     const int firstRow = (gScreen.bg3.yOffset & 0x1ff) >> 3;
+    const u16 blankEntry = Port_WidescreenBlankEntry(3);
     const ptrdiff_t inBuffer = map - gBG3Buffer;
     for (int k = 0; k < MODE1_WS_SHADOW_ROWS; ++k) {
         const int row = firstRow + k;
@@ -2559,7 +2581,7 @@ static void Port_WidescreenLightRayShadow(int width) {
         u16* dst = &sWsLightRays[(row & 31) * MODE1_WS_SHADOW_FULL_VIEW_COLS];
         for (int col = 0; col < MODE1_WS_SHADOW_FULL_VIEW_COLS; ++col) {
             const int mapCol = first + col;
-            dst[col] = src != NULL && mapCol >= 0 && mapCol < 32 ? src[mapCol] : 0;
+            dst[col] = src != NULL && mapCol >= 0 && mapCol < 32 ? src[mapCol] : blankEntry;
         }
     }
     virtuappu_mode1_ws_shadow[3] = sWsLightRays;
