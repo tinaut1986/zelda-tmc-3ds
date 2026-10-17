@@ -41,9 +41,9 @@ tile 0 (area 0x20 room 09), the village's gap cells taking the nearest zone's gr
 also for doors into interiors, a state saved inside a subtask keeping the room's entities (Link locked after
 a map hint), the 3D depth of the map screens (hint and pause map), PLANE TINT / FORCE 3D / right-eye
 screenshots, and the bottom map in COLOURS with its hints over the unrevealed regions, swapping with Link
-every 32 game frames, and dark rooms kept in Full View (the light around Link drawn across 400x240, issue #32). Also the GPU frame built while the GPU draws the previous one (`docs/gpu-build-ahead.md`; checked by the owner on the New 3DS, 2026-10-18; not seen on the Old 3DS/2DS). v0.3.1 itself holds what the owner checked on 2026-10-17 (TOP HUD AUTO, GBA grid and
+every 32 game frames, and dark rooms kept in Full View (the light around Link drawn across 400x240, issue #32). Also stereo 3D drawing the screen-plane layers once (`docs/stereo-3d.md`) and the GPU frame built while the GPU draws the previous one (`docs/gpu-build-ahead.md`; checked by the owner on the New 3DS, 2026-10-18; not seen on the Old 3DS/2DS). v0.3.1 itself holds what the owner checked on 2026-10-17 (TOP HUD AUTO, GBA grid and
 frame, WIDE + AI, the Minish Paths corridor centred, the 3D of P5.1, the heart in use, the village intro's
-Minish walking in). Not seen on the Old 3DS: the GPU build ahead, the grid on HIGH (frame rate), WIDE + AI.
+Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU build ahead, the grid on HIGH (frame rate), WIDE + AI.
 
 **Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
 
@@ -1072,6 +1072,22 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   GPU renderer takes the view-wide lines as WIN0 itself (`PpuGpu3DSFrameView::win0Lines`), not as the iris's backdrop
   mask, because the dark room's window settings differ (inside: no BG3). 60 fps on the New 3DS with 3D off; with 3D
   up the shrine is under 60 in both views, a separate matter. Details in `docs/gpu-fade.md`.
+- **2026-10-18** Stereo 3D drew the whole frame twice on the GPU, so the right eye doubled its cost. Measured on the
+  New 3DS (perf recorder, FPS overlay's G = `C3D_GetDrawingTime`, `gPpuGpu3DSEyesWhole` to switch paths on the same
+  state), Full View with #32: the dark room 0x48/0x10 takes G 9.0 ms in 2D (60 fps), 17.1 ms in 3D (40 fps); room
+  0x0B 6.0 / 11.0 (60 both); the Minish Woods with its rays 7.4 / 13.8 (58). The frame is serial: the CPU builds the
+  commands only after `C3D_FrameBegin` has waited for the previous GPU frame (the vertex, index and atlas buffers
+  are single, `port_ppu_3ds.c`), so the interval is the build (3.0 ms in the dark room, its 21 bands and 300
+  batches; ~1 ms elsewhere) plus ~3 ms of recording and presenting plus the GPU frame. Now the layers on the screen
+  plane are drawn once, the right eye copies them and each eye draws only its layers in front
+  (`DrawEyesOverBase`, docs/stereo-3d.md); a frame with nothing in front is drawn once for both. Dark room: G 12.6
+  ms, 54 fps; 0x0B 9.1; the Woods 11.6 and 60 fps. Both eyes compared pixel by pixel with the old path from the
+  same state in eight scenes (dark room, 0x0B, Minish Woods' rays, Minish Paths' leaves, areas 0x03, 0x15, 0x22,
+  0x80): identical; GPU CHECK 0 in the dark room. What the dark room still pays in 3D over 2D (~3.6 ms): the copy
+  (~0.5), BG0 at priority 0 drawn per eye although transparent (the HUD layer is a full view ring), and the
+  presenter's right eye (clear, quad, GBA grid, transfer, ~2). 60 there needs the build overlapped with the GPU
+  (double-buffered command buffers and atlas), or a lighter dark room; the overlap came the same day (next entry). The narrow
+  266x160 view (before #32) was worse: no view rings, 7.4 ms of build, 45 fps.
 - **2026-10-18** The GPU frame is now built before `C3D_FrameBegin` waits for the previous one (`docs/gpu-build-ahead.md`).
   Everything the build wrote that the GPU reads: the vertex buffer (now two; a frame is built into the one the last
   drawn frame does not use, and map slices kept across frames are copied from the other buffer when it has a newer

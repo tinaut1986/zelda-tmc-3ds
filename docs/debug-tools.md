@@ -170,6 +170,7 @@ tools/tmc-link/tmc-link.py gpucheck             # next frame by both renderers: 
 tools/tmc-link/tmc-link.py perf start / perf stop [DIR]   # the perf recorder; stop fetches the CSV
 tools/tmc-link/tmc-link.py poke gPpuGpu3DSRingDisable 0f   # bit per BG: draw it from quads again (00 = rings on)
 tools/tmc-link/tmc-link.py poke gPpuGpu3DSSerialBuild 01   # claim the GPU frame before building it, as before (docs/gpu-build-ahead.md)
+tools/tmc-link/tmc-link.py poke gPpuGpu3DSEyesWhole 01     # 3D: both eyes drawn whole, not over one base (docs/stereo-3d.md)
 tools/tmc-link/tmc-link.py log                  # flush (MARK) and fetch the newest SD log
 tools/tmc-link/tmc-link.py run tools/tmc-link/examples/walk-left.txt
 ```

@@ -36,15 +36,28 @@ Written to the SD log as `stereo: scenes N` when it changes.
   and whether any layer has a depth. `Stereo3DS_LayerShift(layer, priority, eye)` is a layer's move
   in view pixels: depth x slider, half to each eye (the left eye to the right for a positive depth,
   out of the screen).
-- The GPU renderer (`port_ppu_gpu_3ds.c`, `PortPpuGpu3DS_DrawPrepared`): with a depth, the prepared
-  frame is drawn twice, the second time on its own output (`PortPpuGpu3DS_OutputTextureRight`,
-  made on first use), each batch moved by its layer's shift through the shader's offset, in whole
-  pixels, and its scissor with it (or the region edges cut what moved). The right eye shares the
-  left's depth-stencil (a buffer of its own did not fit in the New 3DS's VRAM beside the
-  presenter's right target); both target clears run before either eye's commands, so the quad that
-  resets the stencil at the start of each draw resets the depth too. With no
-  depth it is drawn once and both eyes get it: 3D ON with the depths at 0 costs nothing in the
-  renderer.
+- The GPU renderer (`port_ppu_gpu_3ds.c`, `PortPpuGpu3DS_DrawPrepared`): each batch of a layer with a
+  depth is moved by its layer's shift through the shader's offset, in whole pixels, and its scissor
+  with it (or the region edges cut what moved). The right eye has its own output
+  (`PortPpuGpu3DS_OutputTextureRight`, made on first use) and shares the left's depth-stencil (a buffer
+  of its own did not fit in the New 3DS's VRAM beside the presenter's right target). A frame is drawn
+  one of three ways, written to the SD log as `stereo: eyes ... (N)` when it changes:
+  - **over one base** (0, the usual one, `DrawEyesOverBase`): the layers on the screen plane are drawn
+    once on the left output; the right output starts as a copy of it (one quad); then each eye draws
+    only the layers in front with its shift. The stencil's blend-target mark is kept in two bits by
+    the base (0x08 and 0x10), one per eye, so the eye drawn first does not leak into the other; the
+    sprites in front reset the depth first (they are above every base sprite anyway).
+  - **share one picture** (6): no batch of the frame is on a layer with a depth (the HUD hidden):
+    drawn once, the presenter shows it to both eyes.
+  - **drawn whole** (any other number, the reason): the whole frame twice, as before. When something
+    on the screen plane is drawn after a layer in front on the same lines (4), an OBJ window moves
+    (1, 2: the map hints), a sprite in front is semi-transparent (3: the GBA blends it with the
+    background, never with the lower sprite the base would have under it), `gpu_scissor_mode` is 0
+    (7), or the debug poke `gPpuGpu3DSEyesWhole 01` asks for it (5, to compare).
+
+  The whole frame twice doubled the GPU's work: 9.0 ms a frame in 2D, 17.1 ms in 3D in the Deepwood
+  Shrine's dark room, 12.6 ms over one base (PLAN, decisions log 2026-10-18). With no depth at all
+  (slider down) it is drawn once and both eyes get it.
 - The presenter (`platform_gpu_3ds.c`): the right eye's screen target is made on first use and
   linked to the screen, with `gfxSet3D(true)`, only while 3D is on (`UpdateStereoOutput`, between
   frames). The top is drawn the same way for each eye (`sEyeTarget`; the right eye skips the upload
@@ -55,7 +68,7 @@ Written to the SD log as `stereo: scenes N` when it changes.
 - Depths for real scenes: a table per scene (area/room, or the effect that is on) instead of the
   one table; the layers of the GBA priority above Link's sprites are the candidates.
 - Edges: a moved layer uncovers a strip at one side of the view; draw a few pixels more there.
-- The cost of the second draw on the Old 3DS (both renderers' timings with the slider up).
+- The cost of the second eye on the Old 3DS (both renderers' timings with the slider up).
 - An OPTIONS cell for players, once there is something to see.
 
 ## Boot splash
