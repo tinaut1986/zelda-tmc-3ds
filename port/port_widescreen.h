@@ -133,7 +133,8 @@ int Port_Widescreen_TitleWide(void);
 int Port_Widescreen_TitleViewLive(void);
 /* Scenes the stereoscopic 3D gives a depth to a layer in (platform/3ds/source/stereo_3ds.c). */
 enum { PORT_STEREO_SCENE_TITLE_RAYS = 1, PORT_STEREO_SCENE_LIGHT_RAYS = 2,
-       PORT_STEREO_SCENE_PATH_LEAVES = 4 };
+       PORT_STEREO_SCENE_PATH_LEAVES = 4, PORT_STEREO_SCENE_FILE_SELECT = 8,
+       PORT_STEREO_SCENE_LOGOS = 16 };
 int Port_Stereo_Scenes(void);
 /* The title's light rays extended over the 400x240 view in VRAM (platform/3ds/source/
  * title_rays_3ds.c): the screen block of BG0's 512x256 map, or 0 (BG0 as the game has it). */
