@@ -152,6 +152,8 @@ typedef struct {
      * publishing the resolved mask is what lets the ROM-only world-map
      * module place hint markers at all. */
     uint16_t mapHints;
+    /* gMain.ticks: the game's own frame count, which sub_080A6378 swaps hints and Link by (bit 5, every 32 frames). */
+    uint16_t blinkTicks;
     /* Contextual R-button prompt: the sprite frame id the game's own HUD
      * would draw beside R this frame (SPEAK / READ / LIFT / ...), resolved
      * exactly like TextUIElement does — gHUD.rActionPlayerState, else the
@@ -233,6 +235,11 @@ void Port_SecondScreenState_Read(SecondScreenSnapshot* out);
  * the inventory) on the game thread during the next Publish(); redundant
  * or invalid requests are dropped there. */
 void Port_SecondScreenState_RequestEquip(uint8_t itemId, uint8_t slot);
+
+/* The map's blink: the hints while bit 5 of the game's frame count is set, Link while it is clear (sub_080A6378). */
+static inline int SecondScreen_HintsPhase(const SecondScreenSnapshot* snap) {
+    return (snap->blinkTicks & 0x20u) != 0;
+}
 
 #ifdef __cplusplus
 }

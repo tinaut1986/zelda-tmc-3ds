@@ -1544,10 +1544,10 @@ int Port_Stereo_Scenes(void) {
             (bg3 & 0xdf0f) == (BGCNT_SCREENBASE(30) | BGCNT_CHARBASE(2) | BGCNT_PRIORITY(3)))
             scenes |= PORT_STEREO_SCENE_FILE_SELECT;
     }
-    /* The map hints (SUBTASK_MAPHINT and SUBTASK_LOCALMAPHINT) draw a picture whose fog is made of sprites at
-     * priority 0, which would hang at the HUD's depth in front of the map it covers: keep them on one plane. */
-    if (gMain.task == TASK_GAME && gMain.substate == GAMEMAIN_SUBTASK &&
-        (gUI.lastState == SUBTASK_MAPHINT || gUI.lastState == SUBTASK_LOCALMAPHINT))
+    /* The map screens (the pause menu's map, SUBTASK_MAPHINT, SUBTASK_LOCALMAPHINT): the covered parts are
+     * sprites in OBJ-window mode (sub_080A6498) and every frame that draws them also sets WINOUT to 0x3d3f;
+     * their markers and the fog are on one plane, apart from the HUD's depth that sprites at priority 0 get. */
+    if (gMain.task == TASK_GAME && gMain.substate == GAMEMAIN_SUBTASK && gScreen.controls.windowOutsideControl == 0x3d3f)
         scenes |= PORT_STEREO_SCENE_MAP_HINT;
     return scenes;
 #else

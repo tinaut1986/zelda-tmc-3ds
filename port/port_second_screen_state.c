@@ -229,6 +229,7 @@ void Port_SecondScreenState_Publish(void) {
          * applies on EU/JP. The real menu caches the same value on screen
          * entry (sub_080A6290); publishing per tick is only fresher. */
         next.mapHints = (uint16_t)(gSave.map_hints & sub_080A6F40());
+        next.blinkTicks = gMain.ticks;
 
         /* Contextual R prompt, resolved exactly like TextUIElement's
          * type2 == 9 branch (src/ui.c): the player-state action wins, else

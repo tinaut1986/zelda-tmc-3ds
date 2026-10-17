@@ -111,7 +111,7 @@ set(TMC_PORT_SOURCES
     port/port_gba_mem.c port/port_hdma.c port/port_save.c port/port_softslots.c
     port/port_dump_state.c
     port/port_second_screen_state.c port/port_text_i18n.c
-    port/port_second_screen_render.c port/port_second_screen_worldmap.c
+    port/port_second_screen_render.c port/port_second_screen_color.c port/port_second_screen_worldmap.c
     port/port_second_screen_dungeonmap.c port/port_second_screen_quest.c
     port/port_second_screen_theme.c port/port_roll_attack_macro.c
     port/port_filter.c port/port_animation.c port/port_math.c
@@ -220,6 +220,7 @@ set_source_files_properties(
     "${TMC_ROOT}/port/ppu/src/mode1.c"
     "${CMAKE_CURRENT_LIST_DIR}/source/port_second_screen_3ds.c"
     "${TMC_ROOT}/port/port_second_screen_render.c"
+    "${TMC_ROOT}/port/port_second_screen_color.c"
     "${TMC_ROOT}/port/port_second_screen_worldmap.c"
     "${TMC_ROOT}/port/port_second_screen_dungeonmap.c"
     "${TMC_ROOT}/port/port_second_screen_quest.c"
