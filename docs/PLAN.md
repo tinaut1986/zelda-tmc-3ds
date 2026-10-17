@@ -14,7 +14,7 @@ change (what goes where: the table in `CLAUDE.md`).
   audio offload, an updater, a quick memory dump (L+R+A) and an experimental New 3DS
   "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors; the 2x indoor zoom is gone, see the decisions log).
 
-## Status (2026-10-15)
+## Status (2026-10-17)
 
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
@@ -24,18 +24,23 @@ boxes below. History: `git log` and the decisions log.
 to stable without a beta at the owner's request), `v0.2.0` (2026-10-14, stable), `v0.1.2`
 (2026-10-13, beta), `v0.1.1` (2026-10-12, stable) and `v0.1.0` (2026-10-11, beta).
 
-**Branches:** none open. Every branch merged into the release line was deleted, here and on origin;
-their history is in `git log` and the decisions log (2026-10-15: `fix/sleep-bubble-stale`,
-`fix/script-ctx-null`, `feat/map-toggle-chips`, `fix/states-build-independent` and
-`docs/release-v0.3.0` too). The local `test/crash-fix-and-map-chips` (the dev.45.x test build) and
-the remote `feat/retroachievements` (a delete was refused in an earlier session:
-`git push origin --delete feat/retroachievements`) are leftovers to delete.
+**Branches:** one open, loose on purpose: `feat/village-3d` (local only, not pushed). Every other branch
+merged into the release line was deleted, here and on origin (2026-10-17: `fix/title-live-view`,
+`feat/gba-look`, `feat/hud-auto`, `feat/title-rays-3d`, `feat/minish-paths-centred`,
+`feat/wide-ai-ask`, `feat/stereo-fileselect`, `feat/splash-3d`, `docs/plan-branches-2026-10-17`; the
+remote `feat/retroachievements` is gone too and the local `test/crash-fix-and-map-chips`, `537b5fa`,
+was deleted). Their history is in `git log` and the decisions log.
 
 | Branch | State |
 |---|---|
-| `feat/village-3d` | Loose test branch (owner, 2026-10-17): the Minish Village's flowers and leaf blocks in 3D plus the FPS box's depth. **Does not work yet**: the houses should go back, the hanging fruits are not found. Cut from the commit of `feat/title-rays-3d` before its title fix. Not for merging; see `docs/stereo-3d.md`. |
+| `feat/village-3d` | Loose test branch (owner, 2026-10-17): the Minish Village's flowers and the leaf blocks they stand in, in 3D (BG1 priority 1, and the BG2 leaf cells copied to BG3 at `DispCtrlSet`). **Does not work as wanted yet**: the houses should go back, not forward, and the hanging fruits of the plants are not found. Cut from `feat/title-rays-3d` before its title fix; the FPS box's depth it carried is in the release now. Not for merging as it is: `docs/stereo-3d.md`, "Minish Village". |
 
-**Merged into `release/v0.3.1` on 2026-10-17 (all checked on the New 3DS by the owner)**, not yet deleted: `fix/title-live-view`, `feat/gba-look` (P4.7), `feat/hud-auto` (P2.9), `feat/title-rays-3d` (P5.1 for the sun rays and the leaves of the Minish Paths), `feat/minish-paths-centred` (P4.6, with its black borders still waiting for generated pictures) and `feat/wide-ai-ask`. Not pushed yet. Still to see: the grid on HIGH on the Old 3DS (P4.7), and the Old 3DS with WIDE + AI.
+**`release/v0.3.1` (2026-10-17):** holds everything the owner checked on the New 3DS today: TOP HUD AUTO
+(P2.9), the GBA grid and frame (P4.7), WIDE + AI and its one-time question (P4.8), the Minish Paths
+corridor centred (P4.6, its borders black), the title's logo and sword following VIEW/STYLE, and the 3D of
+P5.1 (sun rays, leaves of the Minish Paths, the title, the file select, the logos, the boot splash, the
+numbers box). **No tag yet**: `v0.3.1` needs `docs/release-notes/v0.3.1.md` first (CLAUDE.md), and the
+owner decides beta or stable. Not seen on the Old 3DS: the grid on HIGH (frame rate), WIDE + AI.
 
 **Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
 Link's house and the Minish Woods are untested in builds other than their writer's (run
@@ -45,34 +50,42 @@ it (issue #13). The crashes leaving a room after loading a state (Luma dumps 14 
 were stale entity-list words inherited from states of much older builds; repaired on load since
 v0.3.0 (docs/save-states.md, "Stale words are inherited").
 
-**Start here (2026-10-15, after v0.3.0):** `v0.3.0` is published as stable (CIA on the GitHub
-release, offered by the updater to STABLE and + BETAS). Nothing uncommitted. Next, in this order:
-1. **Watch v0.3.0**: the owner installs it through the updater on both consoles (a production
-   build: no DEBUG tab; `dev-ftp.txt` still allows `--install`). Crashes after loading an old
-   state: fetch the Luma dump and symbolise it against the tag's ELF (rebuild `v0.3.0`); the
-   owner's old states of other rooms (80/02, 22/11, Hyrule Field) leaving the room are untested.
-2. **#30** the right edge of the top screen breaks on room changes and while rolling (2DS). Not a
-   regression (the owner, 2026-10-15: room changes were worse before). Next: `gpucheck` loops
-   during scrolls, then a targeted SYNCDRAW on frames that rewrite slices; the scene recorder
-   (FRAMES = "sin saltos") shows clean frames, so look at the GPU stage.
-3. **RetroAchievements** works for both ROMs (`docs/retroachievements.md`, "Which ROM"): the
-   owner heard the unlock sound (it is the one from `../mzm`). Still to see: the real account
-   (the console has `tinaut1986test`), the USA ROM, more achievements as the owner plays (#28
-   "Offense"), the RA site. Asking RA to add the European hash is the owner's call.
-4. Smaller: the README's before/after GIF of the portal shrink (scene recorder, P1.6); #25 GPU
-   fade flicker; #4 relaunch (a few more installs without a loader dump, then close); #23 reset
-   from inside a game; #26 Hyrule Town in Full View; the owner's walk for screens still drawn at
-   240x160 and which layers get depth in 3D (P5.1; a 2DS has no 3D slider, so a New 3DS only).
-5. Optional hardening of the sibling updaters (`../mzm`, `../sm-3ds`): both already fixed the two
-   bugs of ours (stable with + BETAS, notes of every release in between); remaining gaps from the
-   2026-10-15 audit: they take the first release in list order, not the highest version
-   (`Updater_PickRelease`), `per_page=8`, no digest check.
+**Start here (2026-10-17, after the 3D and look session):** `release/v0.3.1` is pushed (see the first
+line of `git log`) and everything on it was checked on the New 3DS. Next, in this order:
+1. **v0.3.1**: write `docs/release-notes/v0.3.1.md` (3 to 6 lines for the player: the GBA grid and
+   frame, WIDE + AI and its question, TOP HUD AUTO, 3D on more scenes, the corridor centred), show it to
+   the owner, merge it, then tag (beta or stable: ask; the owner has twice gone straight to stable).
+   Rename the release branch to `release/v0.3.2` right after the tag (CLAUDE.md, "After tagging").
+2. **Old 3DS/2DS check** of what only the New 3DS has seen: the grid on HIGH (frame rate), WIDE + AI,
+   the file select and title without 3D, TOP HUD AUTO. The 2DS is `192.168.1.139` (its FTP answered
+   `530 Login incorrect` on 2026-10-17: ask the owner what that console runs).
+3. **`feat/village-3d`**: the houses back (BG2 with the ground, eaves in BG1: the four layers are taken,
+   see the notes in `docs/stereo-3d.md`) and the hanging fruits (ask for the room). Cut a new branch from
+   the release rather than reviving it; its BG2-to-BG3 copy is the part worth keeping.
+4. **#30** the right edge of the top screen breaks on room changes and while rolling (2DS). Not a
+   regression. Next: `gpucheck` loops during scrolls, then a targeted SYNCDRAW on frames that rewrite
+   slices; the scene recorder (FRAMES = "sin saltos") shows clean frames, so look at the GPU stage.
+5. **RetroAchievements** works for both ROMs (`docs/retroachievements.md`, "Which ROM"): still to see the
+   real account (the consoles have `tinaut1986test`), the USA ROM, #28 "Offense", the RA site.
+6. Smaller: the generated side strips for the Minish Paths corridor (P4.6); the README's before/after GIF
+   of the portal shrink (P1.6); #25 GPU fade flicker; #4 relaunch; #23 reset from inside a game; #26
+   Hyrule Town in Full View; #20 hearts; the sibling updaters' hardening (2026-10-15 audit).
 Scene pictures (portal, title, file select): procedure in `docs/wide-scene-extension.md`; the owner's material
 in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/intro-titulo/` and `~/Imágenes/elige-archivo/`
 (never in the repository).
 To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
-**On the owner's consoles now (2026-10-15):**
+**On the owner's consoles now (2026-10-17, newer than the lines below):**
+- **New 3DS, `192.168.1.133`** (the owner, 2026-10-17: "es la 133 (new3ds)"; its address changes with the
+  router: it answered on `.141` earlier the same day, and `.142` on 2026-10-14, so ping before assuming):
+  a debug build of the code of `release/v0.3.1` at `b6916ee` (built from the topic branch just before its
+  merge), WIDE + AI answered YES, VIEW wide, STYLE pixel-perfect, GBA GRID LOW, GBA FRAME off, TOP HUD AUTO,
+  FRAMES "sin saltos", SHOW FPS on, stereo on. State 1 is Claude's (a place in the Minish village before
+  an install); the owner's own states were not touched. `.3ds_ftp_ip` may hold `.141`: pass `--ip`.
+- `192.168.1.141` did not answer on 2026-10-17 afternoon (off or another address); the 2DS `.139` answers
+  `530 Login incorrect`. Their entries below are from 2026-10-15 and may be stale.
+
+**On the owner's consoles before (2026-10-15):**
 - Old 3DS/2DS, **`192.168.1.139`** (the owner calls it "the 2DS"; `.3ds_ftp_ip` holds it): the
   debug build `0.3.0-dev.47.2+c363f1f` of `fix/states-build-independent` (what v0.3.0 shipped, minus
   the map chips and the two guards), debug, Full View (`widescreen=1`, `screen_aspect=wide`,
@@ -366,7 +379,7 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   achievements) and an unlock with its notice work; not yet: the sound, the RA site, the EU ROM
   under its own hash (RA lists only the USA one). Left open: issue #28 ("Offense").
 
-- [ ] **P2.9** TOP HUD: AUTO (owner's request, 2026-10-17).
+- [x] **P2.9** TOP HUD: AUTO (owner's request, 2026-10-17; seen working on the New 3DS the same day).
   *Spec:* OPTIONS -> TOP HUD cycles SHOW / HIDE / AUTO (`hide_top_hud=0|1|2`; a config of an older
   build holds 0 or 1 and keeps its meaning). AUTO hides the top screen's HUD (hearts, charge bar,
   rupees, keys, the item buttons) exactly while the bottom screen shows the sidebar that has the same
@@ -461,7 +474,7 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   untouched). The software renderer does not have to follow (owner: everything through the GPU).
   *Done when:* the owner sees the menus slide out by the wide screen's edge on the console.
 
-- [ ] **P4.6** Full View in every room, interiors and small rooms included (owner's request, 2026-10-14).
+- [ ] **P4.6** Full View in every room, interiors and small rooms included (owner's request, 2026-10-14). *2026-10-17: the Minish Paths corridor (area 0x11) is done and seen on the New 3DS, merged: centred at view columns 10-39 with 80 black pixels each side, waiting for the owner's generated side strips (`docs/wide-scene-extension.md`).*
   *Spec:* with Full View the top screen is always 400x240. A room larger than the view scrolls; one
   smaller in either axis is centred in it with the rest black (the camera rests outside the room:
   `Port_WidescreenCameraRestXForMode`, `Scroll1`), and the HUD stays at the screen's corners. The
@@ -485,16 +498,29 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
 - [ ] **P4.7** GBA grid and GBA frame on the top screen (owner's request, 2026-10-17; from `../mzm`).
   *Spec:* two options in OPTIONS (the second row of cells): **GBA GRID** (OFF / LOW / MED / HIGH,
   `gba_grid`) darkens one screen row in every two of the game's own pixels, HIGH also the columns,
-  lined up with those pixels at any scale; **GBA FRAME** (`gba_frame`) draws the console's body in
-  the border around a picture that leaves one: the 240x160 of Pixel Perfect (whole frame) and the
-  360x240 of Scaled (two side strips). Full View (400x240) and Wide at 400 have no border, so the
-  frame never shows there; the grid does (it follows the 400x240 source 1:1). The mzm colour and
+  lined up with those pixels at any scale, and **across the whole 400x240 in WIDE, border included**
+  (the logos' white backdrop gets the lines too; the other views only the picture); **GBA FRAME**
+  (`gba_frame`) draws the console's body in the border around a picture that leaves one: the 240x160 of
+  Pixel Perfect (whole frame) and the 360x240 of Scaled (two side strips). **Only in VIEW: ORIGINAL**
+  (owner, 2026-10-17): in WIDE the cell is locked (`---`, dim, a tap says where it works) and nothing is
+  drawn whatever `gba_frame` holds (`Port_Config_GbaFrameActive`). The mzm colour and
   vignette options are left out (COLOURS is ours; the owner had no use for the vignette). Code:
   `platform/3ds/source/gba_look_3ds.c`, called from both top presenters in `platform_gpu_3ds.c`.
   The artwork is mzm's, shipped as `romfs:/gba-look-frame.lz4` (not in the binary: the read-only
   segment is pinned below `.data` at 0x630000 in `3dsx.ld` and 115 KB more overflowed it).
   *Done when:* the owner has seen both on the console in Pixel Perfect, Scaled/Original and Full View,
-  in 3D too, and the frame rate does not drop on the Old 3DS with the grid on HIGH.
+  in 3D too (**done on the New 3DS, 2026-10-17**), and the frame rate does not drop on the Old 3DS with
+  the grid on HIGH (still to see).
+
+- [x] **P4.8** WIDE + AI (owner's request, 2026-10-17; from `../mzm`).
+  *Spec:* the scene extensions made with a generative AI (the portal's sides, the title's forest, the file
+  select's cave) are shown only when the player wants them. OPTIONS -> VIEW cycles WIDE, **WIDE + AI**,
+  ORIGINAL (`wide_ai` in `tmc3ds.ini`, kept apart from the aspect so every "is it WIDE" check stays as it
+  is); plain WIDE draws none of them (the title, file select and portal fall back to their 240x160 screens).
+  The first time WIDE is on, the bottom screen asks once whether to show them (a modal like the other
+  prompts, in the five UI languages, `wide_ai_asked`; installs that predate it get the question once).
+  *Done when:* the owner sees the question, answers it and sees the setting change the scenes. **Done on
+  the New 3DS, 2026-10-17.** mzm's FTP-install progress bar was already here since 2026-10-14.
 
 ## Phase 5: stereoscopic 3D
 
@@ -506,6 +532,12 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   each eye; then depths scene by scene as the owner asks, the edges a moved layer uncovers, and an
   OPTIONS cell. *Done when:* the owner sees the layers they chose in front of the screen on their
   New 3DS, at 60 fps on both models with the slider up.
+  *Done 2026-10-17, New 3DS, in the release* (table in `docs/stereo-3d.md`): the sun rays of the Minish
+  Woods, the leaves of the Minish Paths, the title's rays (with the logo and sword in front of them), the
+  file select (sprites, hearts, languages, name letters), the Nintendo and Capcom logos, the boot splash
+  and the numbers box (SHOW FPS, at the HUD's depth). **Open:** the Minish Village (`feat/village-3d`:
+  houses back, hanging fruits), more scenes as the owner asks, the edges a moved layer uncovers, an OPTIONS
+  cell, and the cost on the Old 3DS (it has no slider, so only a New 3DS shows it).
 
 ## Baseline measurements (P0.2)
 
@@ -943,3 +975,30 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   screen asks at first launch of WIDE (existing installs get it once). The FTP install progress bar of mzm
   (percent, install, 10 s countdown) was already here since 2026-10-14. `feat/wide-ai-ask` and `feat/gba-look`
   both edit the settings' load chain in `port_config_3ds.c`: the second one merged resolves a small conflict.
+- **2026-10-17** Merging: the owner tests branches through test builds I make in a throwaway worktree
+  (`../zelda-tmc-3ds-test`, detached, the branches merged there by hand), so what runs on the console is not
+  on any branch and the owner assumed it was already in the release. Rule from now: when the owner says a
+  branch works, commit and `--no-ff` merge it into the release line at once (and push when asked), then
+  delete it; ask "which branches are you testing?" before building a combined test.
+- **2026-10-17** The GBA frame is only for VIEW: ORIGINAL and the grid covers the whole screen in WIDE (owner,
+  after seeing the CAPCOM logo's white border without lines): in WIDE the border is the game's own backdrop,
+  so the lines go on across it with the picture's step and phase (floor division, rows and columns outside
+  the picture continue the pattern); the frame has no border to fill there.
+- **2026-10-17** Stereo scenes are detected from the registers the shown frame was drawn from (`gIoMem`, as
+  `Port_Widescreen_TitleForestShown` does), not from `gScreen`: the first detection of the title's rays read
+  `gScreen` and never fired (the log's `stereo: scenes N` line, debug builds, is the check: the title must
+  give 1, the logos 16, the file select 8). On the title the logo (sprites) and the sword (BG2) go to 8 px
+  against the rays' 4, because the PPU draws them in front of the rays and a depth behind them looked wrong.
+- **2026-10-17** The leaf blocks of the Minish Village sit on BG2 with the ground and the PPU can only give a
+  depth to a whole layer, so `feat/village-3d` copies their cells (palette bank 5, plus the dark outline tiles
+  521, 526, 527, 533, 782, 783 touching them) to BG3 at priority 1 while 3D is on. The copy must be made in
+  `DispCtrlSet` (the moment the registers are latched), not at the VBlank hook: the game streams new
+  columns into BG2 after the hook and the layer lagged a tick behind (bars and hairlines while walking).
+  Palette bank 6 is the ground: including it put the whole ground over Link.
+- **2026-10-17** The boot splash is drawn straight into the gfx framebuffers: libctru's
+  `gfxScreenSwapBuffers(screen, hasStereo)` takes **hasStereo**, not "immediate"; passing false copies the
+  left image to the right eye, so a splash drawn per eye stayed flat (it cost four installs to find: the log
+  showed 3D on and distinct buffers). The logo was also off-centre (the PNG has 4 px of margin at the left,
+  24 at the right): `tools/make_splash.py` cuts it to its bounds and centres it.
+- **2026-10-17** `upstream`'s push URL was not `DISABLED` in this clone although CLAUDE.md says it is; set it
+  again (`git remote set-url --push upstream DISABLED`). The owner does not want anything pushed there.
