@@ -184,6 +184,17 @@ Reads and writes check that the memory is mapped first, so a wrong address answe
 `./build_3ds.sh --install IP && tools/tmc-link/tmc-link.py run SCRIPT` installs a build
 and plays a scenario on it with nobody at the console.
 
+### Which layer holds what (poke the display control)
+
+To see which GBA layer draws an element, hide layers one at a time on the running game and `shot` each
+(used for the 3D scenes, `docs/stereo-3d.md`): `tmc-link.py --elf <the ELF of the build on the console>
+poke gScreen <2 bytes>` writes `gScreen.lcd.displayControl` (little endian: `401f` = 0x1f40 = BG0-BG3 and
+OBJ on, `401e` no BG0, `401d` no BG1, `401b` no BG2, `4017` no BG3, `400f` no OBJ). **Put back the value the
+scene had** (read it first with `peek gScreen 0x48`: bytes 0-1 the display control, then each BG's control
+word at offsets 8, 0x14, 0x20, 0x2c: priority in its low 2 bits): the file select is 0x1f40, the title
+0x1741, the logos 0x0540; a wrong one leaves garbage layers on. Poke while nobody plays: the game rewrites
+it only on the next scene change.
+
 ## SD log
 
 `debug/tmc-log-NNNN.txt` in the data folder. Debug builds start it at boot (one

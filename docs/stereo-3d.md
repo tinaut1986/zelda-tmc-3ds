@@ -23,7 +23,7 @@ Written to the SD log as `stereo: scenes N` when it changes.
 
 | Bit | Scene | Layer |
 |---|---|---|
-| 1 | the title's light rays | BG0, priority 2 |
+| 1 | the title's light rays; its logo (sprites) and sword (BG2, priority 1) in front of them at 8 px | BG0, priority 2 (4 px) |
 | 2 | sun rays of the Minish Woods and the barrel house (`LightRayManager`) | BG3, priority 0 |
 | 4 | the leaves of the Minish Paths corridors (area 0x11) | BG1, priority 1 |
 | 8 | the file select (cave BG3 at priority 3): its sprites (banner, slots, texts, preview, name entry buttons) and BG1 at priority 1 (hearts, the languages, the name's letters) at 4 px, the preview's panel (BG2, priority 2) at 2 | OBJ, BG1, BG2 |
@@ -56,3 +56,28 @@ Written to the SD log as `stereo: scenes N` when it changes.
 - Edges: a moved layer uncovers a strip at one side of the view; draw a few pixels more there.
 - The cost of the second draw on the Old 3DS (both renderers' timings with the slider up).
 - An OPTIONS cell for players, once there is something to see.
+
+## Boot splash
+
+`Platform3DS_ShowSplash` (`platform_3ds.c`) draws the top logo into the gfx framebuffers before the game's
+presenter exists: with the slider up the left eye's picture is moved 3 px right and the right eye's 3 px
+left (the HUD's depth), and the top screen is swapped with `gfxScreenSwapBuffers(GFX_TOP, true)`.
+**The second parameter is `hasStereo`**: with false libctru copies the left image to the right eye and the
+splash stays flat whatever is drawn per eye. 3D is turned off again in `Platform3DS_BootAnimStop`, before
+the presenter links the right eye itself. `tools/make_splash.py` makes `romfs/splash.rgb565` (logo cut to its
+bounds and centred, a 14 px margin so the shift crops nothing).
+
+## Minish Village: unfinished (branch `feat/village-3d`, not merged)
+
+- The flowers and plants over everything (BG1 at priority 1 in area 1) hang in front; so do the leaf
+  blocks they stand in. Those are on BG2 with the ground, and a layer is all the PPU can move, so while 3D
+  is on `Port_WidescreenVillagePlots` copies their cells (palette bank 5, plus the dark outline tiles 521,
+  526, 527, 533, 782, 783 that touch them) to BG3 at priority 1, from `DispCtrlSet` (`src/interrupts.c`),
+  where the registers are latched; a copy at the VBlank hook lagged a tick behind BG2's streaming. Palette
+  bank 6 is the ground.
+- Still to do: the houses should go back, not forward. Their roofs and bodies are on BG2 with the ground,
+  their eaves (the orange or blue edge below) on BG1 with the leaves that are raised, and the Minish at
+  the doors are sprites. Lowering all of BG2 is quick but takes the ground with the houses; lowering only
+  the houses needs their cells split out of both layers, and the four layers are taken (BG0 HUD, BG1 front,
+  BG2 ground, BG3 the leaf blocks). The hanging fruits of the plants were not found (not in the room
+  checked): ask the owner for the room.
