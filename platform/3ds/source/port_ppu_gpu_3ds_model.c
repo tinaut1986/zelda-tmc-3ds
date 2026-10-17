@@ -392,13 +392,30 @@ static bool io_rows_equal(const uint8_t* left, const uint8_t* right) {
            memcmp(left + MODE1_IO_BLDCNT, right + MODE1_IO_BLDCNT, 6) == 0;
 }
 
+/* io_rows_equal without WIN0H and WIN0V, which PpuGpu3DSFrameView::win0Lines replaces. */
+static bool io_rows_equal_but_win0(const uint8_t* left, const uint8_t* right) {
+    return memcmp(left + MODE1_IO_BG0CNT, right + MODE1_IO_BG0CNT, 0x18) == 0 &&
+           memcmp(left + 0x20, right + 0x20, 2) == 0 &&
+           memcmp(left + 0x24, right + 0x24, 2) == 0 &&
+           memcmp(left + 0x30, right + 0x30, 2) == 0 &&
+           memcmp(left + 0x34, right + 0x34, 2) == 0 &&
+           memcmp(left + MODE1_IO_WIN1H, right + MODE1_IO_WIN1H, 2) == 0 &&
+           memcmp(left + MODE1_IO_WIN1V, right + MODE1_IO_WIN1V, 0x08) == 0 &&
+           memcmp(left + MODE1_IO_BLDCNT, right + MODE1_IO_BLDCNT, 6) == 0;
+}
+
 static bool line_states_equal(const PpuGpu3DSFrameView* frame, unsigned left,
                               unsigned right) {
     const unsigned leftRow = frame->ioUniform ? 0 : left;
     const unsigned rightRow = frame->ioUniform ? 0 : right;
+    const uint8_t* leftIo = frame->ioPerLine + leftRow * MODE1_IO_MEM_SIZE;
+    const uint8_t* rightIo = frame->ioPerLine + rightRow * MODE1_IO_MEM_SIZE;
     if (frame->dispcntPerLine[left] != frame->dispcntPerLine[right] ||
-        !io_rows_equal(frame->ioPerLine + leftRow * MODE1_IO_MEM_SIZE,
-                       frame->ioPerLine + rightRow * MODE1_IO_MEM_SIZE)) {
+        !(frame->win0Lines != NULL
+                  ? io_rows_equal_but_win0(leftIo, rightIo) &&
+                            frame->win0Lines[left * 2u] == frame->win0Lines[right * 2u] &&
+                            frame->win0Lines[left * 2u + 1u] == frame->win0Lines[right * 2u + 1u]
+                  : io_rows_equal(leftIo, rightIo))) {
         return false;
     }
     return !frame->affine ||
@@ -652,11 +669,16 @@ static bool window_vertical_active(uint16_t dispcnt, uint16_t enable,
                         : line >= top && line < bottom;
 }
 
-static unsigned window_state(const uint8_t* io, uint16_t dispcnt, unsigned line) {
-    return (window_vertical_active(dispcnt, MODE1_DISP_WIN0_ON,
-                                   read16(io, MODE1_IO_WIN0V), line)
-                    ? 1u
-                    : 0u) |
+/* WIN0 covers this line vertically: every line when win0Lines replaces WIN0V. */
+static bool win0_vertical_active(const PpuGpu3DSFrameView* frame, const uint8_t* io,
+                                 uint16_t dispcnt, unsigned line) {
+    if (frame->win0Lines != NULL) return (dispcnt & MODE1_DISP_WIN0_ON) != 0;
+    return window_vertical_active(dispcnt, MODE1_DISP_WIN0_ON, read16(io, MODE1_IO_WIN0V), line);
+}
+
+static unsigned window_state(const PpuGpu3DSFrameView* frame, const uint8_t* io, uint16_t dispcnt,
+                             unsigned line) {
+    return (win0_vertical_active(frame, io, dispcnt, line) ? 1u : 0u) |
            (window_vertical_active(dispcnt, MODE1_DISP_WIN1_ON,
                                    read16(io, MODE1_IO_WIN1V), line)
                     ? 2u
@@ -675,9 +697,9 @@ static size_t split_window_bands(const PpuGpu3DSFrameView* frame,
         unsigned first = source->firstLine;
         const unsigned end = first + source->lineCount;
         while (first < end) {
-            const unsigned state = window_state(io, dispcnt, first);
+            const unsigned state = window_state(frame, io, dispcnt, first);
             unsigned next = first + 1u;
-            while (next < end && window_state(io, dispcnt, next) == state) ++next;
+            while (next < end && window_state(frame, io, dispcnt, next) == state) ++next;
             out[count++] = (PpuGpu3DSBand){
                 .firstLine = (uint16_t)first,
                 .lineCount = (uint16_t)(next - first),
@@ -720,9 +742,7 @@ static size_t build_regions(const PpuGpu3DSFrameView* frame,
     const uint8_t* io =
             frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;
     const uint16_t dispcnt = frame->dispcntPerLine[band->firstLine];
-    const bool win0Active = window_vertical_active(
-            dispcnt, MODE1_DISP_WIN0_ON, read16(io, MODE1_IO_WIN0V),
-            band->firstLine);
+    const bool win0Active = win0_vertical_active(frame, io, dispcnt, band->firstLine);
     const bool win1Active = window_vertical_active(
             dispcnt, MODE1_DISP_WIN1_ON, read16(io, MODE1_IO_WIN1V),
             band->firstLine);
@@ -745,12 +765,15 @@ static size_t build_regions(const PpuGpu3DSFrameView* frame,
     memset(objCandidate, 0, frame->width * sizeof(*objCandidate));
     const uint16_t win0h = read16(io, MODE1_IO_WIN0H);
     const uint16_t win1h = read16(io, MODE1_IO_WIN1H);
+    /* A band's lines share their win0Lines span (line_states_equal). */
+    const unsigned win0Left = frame->win0Lines != NULL ? frame->win0Lines[band->firstLine * 2u] : win0h >> 8u;
+    const unsigned win0Right = frame->win0Lines != NULL ? frame->win0Lines[band->firstLine * 2u + 1u] : win0h & 0xffu;
     for (unsigned x = 0; x < frame->width; ++x) {
         if (win1Active &&
             in_horizontal_window(x, win1h >> 8u, win1h & 0xffu, frame->width))
             fixed[x] = PPU_GPU3DS_REGION_WIN1;
         if (win0Active &&
-            in_horizontal_window(x, win0h >> 8u, win0h & 0xffu, frame->width))
+            in_horizontal_window(x, win0Left, win0Right, frame->width))
             fixed[x] = PPU_GPU3DS_REGION_WIN0;
     }
 
@@ -3976,6 +3999,9 @@ static bool bands_share_regions(const PpuGpu3DSFrameView* frame,
     /* Object-window regions depend on which objects cross the band. */
     if ((dispcnt & (MODE1_DISP_OBJ_ON | MODE1_DISP_OBJWIN_ON)) ==
         (MODE1_DISP_OBJ_ON | MODE1_DISP_OBJWIN_ON))
+        return false;
+    /* Bands of one win0Lines circle differ in their span. */
+    if (frame->win0Lines != NULL && (dispcnt & MODE1_DISP_WIN0_ON) != 0)
         return false;
     const uint8_t* a = frame->ioPerLine + (size_t)left->ioRow * MODE1_IO_MEM_SIZE;
     const uint8_t* b = frame->ioPerLine + (size_t)right->ioRow * MODE1_IO_MEM_SIZE;

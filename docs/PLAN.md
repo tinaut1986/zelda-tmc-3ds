@@ -41,7 +41,7 @@ tile 0 (area 0x20 room 09), the village's gap cells taking the nearest zone's gr
 also for doors into interiors, a state saved inside a subtask keeping the room's entities (Link locked after
 a map hint), the 3D depth of the map screens (hint and pause map), PLANE TINT / FORCE 3D / right-eye
 screenshots, and the bottom map in COLOURS with its hints over the unrevealed regions, swapping with Link
-every 32 game frames. v0.3.1 itself holds what the owner checked on 2026-10-17 (TOP HUD AUTO, GBA grid and
+every 32 game frames, and dark rooms kept in Full View (the light around Link drawn across 400x240, issue #32). v0.3.1 itself holds what the owner checked on 2026-10-17 (TOP HUD AUTO, GBA grid and
 frame, WIDE + AI, the Minish Paths corridor centred, the 3D of P5.1, the heart in use, the village intro's
 Minish walking in). Not seen on the Old 3DS: the grid on HIGH (frame rate), WIDE + AI.
 
@@ -1067,3 +1067,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   from a dump's `map-*-special.bin`; `extract_bg.py` only finds the 32x32 window of such a room's BGs. The
   owner's outpainting material for area 0x4A is in `~/Imágenes/outpaint-area-4A/` (template with black bands,
   mask, marked exterior reference, prompt).
+- **2026-10-17** Dark rooms stay in Full View (#32): the light around Link is WIN0 from the game's 8-bit HBlank
+  table, which Full View counted as a fixed canvas and dropped to 266x160. The light manager notes its circle and the
+  GPU renderer takes the view-wide lines as WIN0 itself (`PpuGpu3DSFrameView::win0Lines`), not as the iris's backdrop
+  mask, because the dark room's window settings differ (inside: no BG3). 60 fps on the New 3DS with 3D off; with 3D
+  up the shrine is under 60 in both views, a separate matter. Details in `docs/gpu-fade.md`.
