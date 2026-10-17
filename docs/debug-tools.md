@@ -39,7 +39,7 @@ The bug icon in the tab bar (debug builds only).
 | PERF RECORDER | the frame-time recorder (below): the side button starts and stops it; while it runs the cell shows the rows held and how full the buffer is |
 | LOG MARK | writes `--- MARK n ---` into the log and flushes it: tap it when the problem shows, then find it in the file |
 | SCREEN DUMP | both screens, the memories and the frame's state as numbered `debug/tmc-dump-NNNN-*` files, written at the next frame boundary (below) |
-| SHOW FPS | the top-screen numbers box: game rate, `L` logic ms, `G` GPU ms, `S` presented rate |
+| SHOW FPS | the top-screen numbers box: game rate, `L` logic ms, `G` GPU ms, `S` presented rate; debug builds add `C`, the frames the software renderer drew in the last second (green 0 = all on the GPU, red otherwise; a fallback of the GPU preflight or a disabled GPU path) |
 | FTP SERVER | an FTP server inside the game (below): the side button starts or stops it, the cell shows the address to connect to |
 | GPU CHECK | the next frame is drawn by both renderers and compared (as in sm-3ds); the cell shows the checks done and the pixels that differed. A frame that differs is saved as `debug/tmc-check-NNNN-*` (CPU and GPU surfaces, the first differing pixels). A difference the blender cannot explain is counted and logged, it no longer retires the renderer. Old 3DS only (the only model with the GPU renderer) |
 

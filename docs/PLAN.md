@@ -24,7 +24,7 @@ boxes below. History: `git log` and the decisions log.
 to stable without a beta at the owner's request), `v0.2.0` (2026-10-14, stable), `v0.1.2`
 (2026-10-13, beta), `v0.1.1` (2026-10-12, stable) and `v0.1.0` (2026-10-11, beta).
 
-**Branches:** one open, loose on purpose: `feat/village-3d` (local only, not pushed). Every other branch
+**Branches:** `feat/village-3d` is parked (local only, not pushed). Every other branch
 merged into the release line was deleted, here and on origin (2026-10-17: `fix/title-live-view`,
 `feat/gba-look`, `feat/hud-auto`, `feat/title-rays-3d`, `feat/minish-paths-centred`,
 `feat/wide-ai-ask`, `feat/stereo-fileselect`, `feat/splash-3d`, `docs/plan-branches-2026-10-17`; the
@@ -33,7 +33,7 @@ was deleted). Their history is in `git log` and the decisions log.
 
 | Branch | State |
 |---|---|
-| `feat/village-3d` | Loose test branch (owner, 2026-10-17): the Minish Village's flowers and the leaf blocks they stand in, in 3D (BG1 priority 1, and the BG2 leaf cells copied to BG3 at `DispCtrlSet`). **Does not work as wanted yet**: the houses should go back, not forward, and the hanging fruits of the plants are not found. Cut from `feat/title-rays-3d` before its title fix; the FPS box's depth it carried is in the release now. Not for merging as it is: `docs/stereo-3d.md`, "Minish Village". |
+| `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **`release/v0.3.1` (2026-10-17):** holds everything the owner checked on the New 3DS today: TOP HUD AUTO
 (P2.9), the GBA grid and frame (P4.7), WIDE + AI and its one-time question (P4.8), the Minish Paths
@@ -42,13 +42,7 @@ P5.1 (sun rays, leaves of the Minish Paths, the title, the file select, the logo
 numbers box). **No tag yet**: `v0.3.1` needs `docs/release-notes/v0.3.1.md` first (CLAUDE.md), and the
 owner decides beta or stable. Not seen on the Old 3DS: the grid on HIGH (frame rate), WIDE + AI.
 
-**Save states across builds (still open, 2026-10-13):** states of other scenes than Hyrule Field,
-Link's house and the Minish Woods are untested in builds other than their writer's (run
-`tools/state-census` on a state of each; a holder nobody listed crashes on load into a different
-build, as the house door did: issue #14). A state saved inside the pause menu breaks on closing
-it (issue #13). The crashes leaving a room after loading a state (Luma dumps 14 to 19, issue #31)
-were stale entity-list words inherited from states of much older builds; repaired on load since
-v0.3.0 (docs/save-states.md, "Stale words are inherited").
+**Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
 
 **Start here (2026-10-17, after the 3D and look session):** `release/v0.3.1` is pushed (see the first
 line of `git log`) and everything on it was checked on the New 3DS. Next, in this order:
@@ -59,17 +53,19 @@ line of `git log`) and everything on it was checked on the New 3DS. Next, in thi
 2. **Old 3DS/2DS check** of what only the New 3DS has seen: the grid on HIGH (frame rate), WIDE + AI,
    the file select and title without 3D, TOP HUD AUTO. The 2DS is `192.168.1.139` (its FTP answered
    `530 Login incorrect` on 2026-10-17: ask the owner what that console runs).
-3. **`feat/village-3d`**: the houses back (BG2 with the ground, eaves in BG1: the four layers are taken,
-   see the notes in `docs/stereo-3d.md`) and the hanging fruits (ask for the room). Cut a new branch from
-   the release rather than reviving it; its BG2-to-BG3 copy is the part worth keeping.
-4. **#30** the right edge of the top screen breaks on room changes and while rolling (2DS). Not a
-   regression. Next: `gpucheck` loops during scrolls, then a targeted SYNCDRAW on frames that rewrite
-   slices; the scene recorder (FRAMES = "sin saltos") shows clean frames, so look at the GPU stage.
-5. **RetroAchievements** works for both ROMs (`docs/retroachievements.md`, "Which ROM"): still to see the
-   real account (the consoles have `tinaut1986test`), the USA ROM, #28 "Offense", the RA site.
-6. Smaller: the generated side strips for the Minish Paths corridor (P4.6); the README's before/after GIF
-   of the portal shrink (P1.6); #25 GPU fade flicker; #4 relaunch; #23 reset from inside a game; #26
-   Hyrule Town in Full View; #20 hearts; the sibling updaters' hardening (2026-10-15 audit).
+3. **`feat/village-3d`** is parked (owner, 2026-10-17): none of it goes into a release; kept only to see
+   whether it can be retaken one day (the houses back, the hanging fruits). Do not work on it unasked.
+4. **#30** the right edge of the top screen breaks on room changes and while rolling (2DS only: the owner
+   sees nothing on the New 3DS, so a CPU-speed race is the lead: the retained map slices rewritten while
+   the GPU still reads them is far likelier to show on the slower Old 3DS CPU). Not a regression. Next:
+   `gpucheck` loops during scrolls, then a targeted SYNCDRAW on frames that rewrite slices; the scene
+   recorder (FRAMES = "sin saltos") shows clean frames, so look at the GPU stage.
+5. Smaller: the generated side strips for the Minish Paths corridor (P4.6); the README's before/after GIF
+   of the portal shrink (P1.6).
+Closed by the owner (2026-10-17), do not re-propose: RetroAchievements (the achievements he looked at
+work; he will report any that should fire and does not), the save states across builds, issue #5
+(the dissolve works), the sibling updaters' hardening (done), #25, #4, #23 and #26 (all four closed on
+GitHub already).
 Scene pictures (portal, title, file select): procedure in `docs/wide-scene-extension.md`; the owner's material
 in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/intro-titulo/` and `~/Imágenes/elige-archivo/`
 (never in the repository).
@@ -121,7 +117,7 @@ interiors and map edges) and other areas (Deepwood, Mt. Crenel) on the 2DS; per-
 there: the rings 3 ms (character-data digest 1.3 ms, cell compare 1.5 ms), OBJ/other quads
 ~0.5 ms; VRAM write tracking in the PPU model would drop the digest.
 
-**Owner's request, 2026-10-12 (P3.4): everything through the GPU.** The message shift (dialogues
+**Owner's request, 2026-10-12 (P3.4): everything through the GPU.** (2026-10-12 notes; the GPU model has had the message shift since, check the C line before trusting them.) The message shift (dialogues
 and the location-name banner, `virtuappu_mode1_ws_msg_*`), the HUD right-anchor and Wide BGs
 with mosaic still go through the per-pixel path (the banner runs at ~52 fps, G 6.2 ms, on the
 New 3DS). Teach the GPU renderer `ws_msg_shift` first: it is what dialogues and every first
@@ -419,6 +415,10 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   Full View layout (400x240 outdoors; indoors run the 1x Wide path), command-budget overflows,
   build failures (`PpuGpu3DSBuildReason`). The perf recorder's `gpu` column and the SD log's
   `fallback` count show how many are left.
+  Since 2026-10-17 the numbers box (SHOW FPS, debug builds) has a fifth line, `C<n>`: frames the
+  software renderer drew in the last second (green 0, red otherwise), so dialogues and area entries
+  can be watched live. The GPU model already has the message shift (`ringMsgPiece`), so the old
+  claim that dialogues go per pixel needs this measurement before anything is rebuilt.
   *Done when:* a long session on each model records `gpu` = 1 on every gameplay frame.
 - [ ] **P3.3** Old 3DS/2DS at a locked 60 with Wide + Pixel Perfect (Full View) in every
   P0.2 spot (owner, 2026-10-11: the target is the same as the New 3DS; no 30 fps fallback).
@@ -1002,3 +1002,15 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   24 at the right): `tools/make_splash.py` cuts it to its bounds and centres it.
 - **2026-10-17** `upstream`'s push URL was not `DISABLED` in this clone although CLAUDE.md says it is; set it
   again (`git remote set-url --push upstream DISABLED`). The owner does not want anything pushed there.
+- **2026-10-17** The village intro's five Minish (`ForestMinish` `type2` 39 to 43, script_ForestMinish5..9) spawn
+  just outside the GBA's 240x160 view around Link, which a wider view shows, so they popped in. In a wider view
+  (`Port_Widescreen_HudTargetViewWidth() > 240` or height > 160: the view is only 266 wide when they spawn and
+  becomes 400x240 later, so the real width cannot be read) they start 96 px further out and walk the extra
+  distance; the script waits for them by sync flags. The one from the shoe house's door comes down the path on
+  the right instead (x 0x278), and `ScriptCommand_MoveTo` sends him back up it. Non-wide play is untouched.
+  The entities load with the room, so a save state made mid-scene keeps the old positions: to test, clear the
+  local flag (gSave.flags bit 0x28d, `poke 0x6e9a09 00` with this ELF), leave the room and come back.
+- **2026-10-17** #20 done: the heart in use is drawn as the game's 16x16 face of sprite 322 (`DrawHeartInUse`),
+  in both sidebars (`bottom_compact_3ds.inc` is the one on the console). The numbers box has a fifth line in
+  debug builds, `C<n>`: frames the software renderer drew in the last second (`tmc3ds_build_config.h` must be
+  included for `TMC3DS_DEBUG_TOOLS` to be seen); dialogues showed C0, so P3.4's old claim needs rechecking.
