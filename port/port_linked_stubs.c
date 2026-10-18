@@ -1563,6 +1563,9 @@ int Port_Stereo_Scenes(void) {
      * their markers and the fog are on one plane, apart from the HUD's depth that sprites at priority 0 get. */
     if (gMain.task == TASK_GAME && gMain.substate == GAMEMAIN_SUBTASK && gScreen.controls.windowOutsideControl == 0x3d3f)
         scenes |= PORT_STEREO_SCENE_MAP_HINT;
+    /* The game over screen (src/gameOverTask.c): the stone panel and its choices are BGs, the GAME OVER
+     * letters are sprites. */
+    if (gMain.task == TASK_GAMEOVER) scenes |= PORT_STEREO_SCENE_GAME_OVER;
     return scenes;
 #else
     return 0;

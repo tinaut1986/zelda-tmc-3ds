@@ -11,7 +11,7 @@
 
 extern bool Port_Config_Stereo3D(void);
 extern int Port_Stereo_Scenes(void); /* PORT_STEREO_SCENE_* of port_widescreen.h */
-enum { SCENE_TITLE_RAYS = 1, SCENE_LIGHT_RAYS = 2, SCENE_PATH_LEAVES = 4, SCENE_FILE_SELECT = 8, SCENE_LOGOS = 16, SCENE_MAP_HINT = 32 };
+enum { SCENE_TITLE_RAYS = 1, SCENE_LIGHT_RAYS = 2, SCENE_PATH_LEAVES = 4, SCENE_FILE_SELECT = 8, SCENE_LOGOS = 16, SCENE_MAP_HINT = 32, SCENE_GAME_OVER = 64 };
 
 /* Pixels at the full slider, by layer (BG0..BG3, OBJ) and priority (docs/stereo-3d.md). In front of
  * the screen: BG0 at priority 0, the HUD and the text boxes, and the sprites at priority 0, the HUD's
@@ -24,6 +24,9 @@ static const signed char kDepth[5][4] = {
  * (owner, 2026-10-17): the title's (BG0 at priority 2) and the Minish Woods' and the barrel
  * house's (BG3 at priority 0, LightRayManager). */
 /* The leaves of the Minish Paths (BG1 at priority 1) hang the same way. */
+/* The game over screen: the letters of GAME OVER stand out furthest, the panel's choices (BG0 at priority 0, kDepth's 6)
+ * and the stone panel behind them. */
+enum { GAME_OVER_TEXT_DEPTH = 10, GAME_OVER_CHOICES_DEPTH = 6, GAME_OVER_PANEL_DEPTH = 3 };
 enum { MAP_HINT_BACK_DEPTH = 0, MAP_HINT_MAP_DEPTH = 2, MAP_HINT_MARKER_DEPTH = 5 };
 enum { RAYS_DEPTH = 4, LEAVES_DEPTH = 4, TITLE_FRONT_DEPTH = 8, FILE_SELECT_OBJ_DEPTH = 4, FILE_SELECT_PANEL_DEPTH = 2 };
 
@@ -93,6 +96,11 @@ static int DepthFor(int scenes, unsigned layer, unsigned priority) {
         if (layer == PPU_GPU3DS_BG2) depth = MAP_HINT_BACK_DEPTH;
         else if (layer == PPU_GPU3DS_BG1) depth = MAP_HINT_MAP_DEPTH;
         else if (layer == PPU_GPU3DS_OBJ) depth = MAP_HINT_MARKER_DEPTH;
+    }
+    if (scenes & SCENE_GAME_OVER) {
+        if (layer == PPU_GPU3DS_OBJ) depth = GAME_OVER_TEXT_DEPTH;
+        else if (layer == PPU_GPU3DS_BG0) depth = GAME_OVER_CHOICES_DEPTH;
+        else if (layer == PPU_GPU3DS_BG1 || layer == PPU_GPU3DS_BG2) depth = GAME_OVER_PANEL_DEPTH;
     }
     return depth;
 }
