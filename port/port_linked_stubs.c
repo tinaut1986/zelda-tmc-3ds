@@ -1445,6 +1445,9 @@ static int sWsExperimentalCameraSnapArmed = 1;
 static u32 sWsGameplayRoomKey = 0xffffffffu;
 static int sWsRoomLoadTicks; /* UpdateShadows ticks since a door changed the room key, counting down */
 static int sWsRoomLoadGraceTicks; /* past sWsRoomLoadTicks: the hold may go on while Full View is still latching */
+/* A door's arrival with the camera still frozen (no camera_target): Link coming out of the stairs. Cleared when the
+ * game gives the camera a target, or the room changes again. */
+static int sWsArrivalFrozenCamera;
 static int sWsFadeRecent;    /* ticks left since a fade was last on: a door, not a border scroll */
 static int sWsChangeRoomTicks; /* UpdateShadows ticks spent in GAMEMAIN_CHANGEROOM so far */
 static Port3DSFullViewMode sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
@@ -1825,6 +1828,11 @@ static int Port_WidescreenCameraRestYForMode(int target_y, Port3DSFullViewMode m
  * Without a target there is nothing to centre a new 400 view on, so it is never
  * entered that way. */
 static int Port_WidescreenFrozenCameraKeepsFullView(void) {
+    /* Through a door the game can freeze the camera while Link walks in (out of the stairs, PL_SPAWN_STEP_IN): the
+     * room is entered in Full View from the start, the camera snapped around Link
+     * (Port_WidescreenSnapGameplayCamera), instead of waiting ~110 frames at 266x160 for the target. */
+    if (Port_WidescreenGameplayMode() == PORT_3DS_FULL_VIEW_FALLBACK)
+        return sWsArrivalFrozenCamera && gPlayerEntity.base.kind == PLAYER;
     if (Port_WidescreenGameplayMode() != PORT_3DS_FULL_VIEW_OUTDOOR_1X) return 0;
     return Port_WidescreenCameraRestXForMode(gRoomControls.scroll_x + 200, PORT_3DS_FULL_VIEW_OUTDOOR_1X) ==
                gRoomControls.scroll_x &&
@@ -2223,7 +2231,8 @@ static void Port_WidescreenSnapGameplayCamera(Port3DSFullViewMode mode) {
          * moving it out of the room's 400x240 range): centre the narrower view on
          * Link, as the GBA camera was before it froze, not on the 400 view's
          * top-left corner. Effects aimed at Link's screen position then land in it. */
-        if (previous == PORT_3DS_FULL_VIEW_OUTDOOR_1X && mode == PORT_3DS_FULL_VIEW_FALLBACK) {
+        if ((previous == PORT_3DS_FULL_VIEW_OUTDOOR_1X && mode == PORT_3DS_FULL_VIEW_FALLBACK) ||
+            (previous == PORT_3DS_FULL_VIEW_FALLBACK && mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X && sWsArrivalFrozenCamera)) {
             const int cx = gPlayerEntity.base.kind == PLAYER ? gPlayerEntity.base.x.HALF.HI : gRoomControls.scroll_x + 200;
             const int cy = gPlayerEntity.base.kind == PLAYER ? gPlayerEntity.base.y.HALF.HI : gRoomControls.scroll_y + 120;
             gRoomControls.scroll_x = (s16)Port_WidescreenCameraRestXForMode(cx, mode);
@@ -2670,6 +2679,7 @@ void Port_Widescreen_UpdateShadows(void) {
     else if (sWsChangeRoomTicks < 255) ++sWsChangeRoomTicks;
     if (sWsRoomLoadTicks > 0) --sWsRoomLoadTicks;
     if (sWsRoomLoadGraceTicks > 0) --sWsRoomLoadGraceTicks;
+    if (gRoomControls.camera_target != NULL) sWsArrivalFrozenCamera = 0;
     if (gFadeControl.active != 0) sWsFadeRecent = 90;
     else if (sWsFadeRecent > 0) --sWsFadeRecent;
     /* Out of the game (a soft reset to the intro and title, the file select) the gameplay
@@ -2680,6 +2690,7 @@ void Port_Widescreen_UpdateShadows(void) {
         const int carry = Port_WidescreenScrollCarriesFullView();
         sWsRoomLoadTicks = sWsFadeRecent > 0 ? 16 : 0;
         sWsRoomLoadGraceTicks = sWsFadeRecent > 0 ? 16 + 24 : 0;
+        sWsArrivalFrozenCamera = sWsFadeRecent > 0;
         sWsGameplayRoomKey = roomKey;
         sWsGameplayMode = carry ? PORT_3DS_FULL_VIEW_OUTDOOR_1X : PORT_3DS_FULL_VIEW_FALLBACK;
         sWsProducerPendingRoomKey = 0xffffffffu;
