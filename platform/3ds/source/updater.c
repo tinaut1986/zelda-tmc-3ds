@@ -51,10 +51,10 @@ static void progress(unsigned percent) {
   LightLock_Unlock(&lock);
 }
 bool Updater_Busy(void) { return __atomic_load_n(&busy, __ATOMIC_ACQUIRE); }
-bool Updater_ShouldClose(void) { UpdateStatus s; Updater_GetStatus(&s); return s.state == UPDATE_DONE; }
-// A CIA update is installed over the running title, so the game starts again into it; a 3DSX one
-// leaves the game to the Homebrew Launcher, which launches whatever the player picks.
-bool Updater_RelaunchAfterClose(void) { return !homebrew; }
+// A 3DSX update leaves the game to the Homebrew Launcher at once. A CIA one is installed over the running
+// title: the game starts again into it 10 s later (Platform3DS_RequestRelaunch, as after SITE INSTALL), so
+// the state DONE does not close it.
+bool Updater_ShouldClose(void) { UpdateStatus s; Updater_GetStatus(&s); return s.state == UPDATE_DONE && homebrew; }
 void Updater_Cancel(void) { __atomic_store_n(&cancel, true, __ATOMIC_RELEASE); }
 
 typedef struct Transfer { char *data; size_t size, capacity; FILE *file; uint32_t expected; size_t pending; unsigned writes; bool io_error; } Transfer;
@@ -278,6 +278,7 @@ static void run_job(void *arg) {
     ok = homebrew ? install_3dsx() : install_cia();
     aptSetSleepAllowed(sleep_allowed); aptSetHomeAllowed(home_allowed);
     publish(ok ? UPDATE_DONE : UPDATE_ERROR, ok ? "UPDATE INSTALLED" : "INSTALLATION FAILED");
+    if (ok && !homebrew) Platform3DS_RequestRelaunch();
   }
 done:
   if (t.file) fclose(t.file);

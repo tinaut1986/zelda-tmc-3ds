@@ -35,7 +35,7 @@ was deleted). Their history is in `git log` and the decisions log.
 
 | Branch | State |
 |---|---|
-| `fix/updater-relaunch` | Cut from `release/v0.3.3`, not merged, built but not tried on a console: after the in-game updater installs a CIA the game starts again into it (`aptSetChainloaderToSelf`, as after an FTP install) instead of dropping to HOME; a 3DSX update is unchanged. Waits for the owner to update from OPTIONS -> UPDATES and see it come back. |
+| `fix/updater-relaunch` | Cut from `release/v0.3.3`, not merged, built but not tried on a console: after the in-game updater installs a CIA the game starts again into it 10 s later (`Platform3DS_RequestRelaunch`, the FTP install's mechanism: `aptSetChainloaderToSelf` at once made the loader fault, issue #4) instead of dropping to HOME; a 3DSX update is unchanged. Waits for the owner to update from OPTIONS -> UPDATES and see it come back. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank

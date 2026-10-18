@@ -21,7 +21,6 @@ void Updater_Cancel(void);
 void Updater_GetStatus(UpdateStatus *out);
 bool Updater_Busy(void);
 bool Updater_ShouldClose(void);
-bool Updater_RelaunchAfterClose(void);
 void Updater_Shutdown(void);
 
 unsigned Updater_GetNotes(char *out, unsigned capacity);
