@@ -571,6 +571,10 @@ int main(int argc, char** argv) {
     PpuGpu3DS_FillStaticIndices(indices, indexCapacity);
     PpuGpu3DS_SetMapSpaceEnabled(getenv("PPU_BENCH_NO_MAPSPACE") == NULL);
     PpuGpu3DS_CacheInit(cache);
+    /* The rings the console's textures back; PPU_BENCH_NO_RINGS leaves them out, as before. */
+    if (getenv("PPU_BENCH_NO_RINGS") == NULL)
+        for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring)
+            PpuGpu3DS_RingSetStorage(cache, ring, calloc((size_t)PPU_GPU3DS_RING_TEX_WIDTH * PPU_GPU3DS_RING_TEX_HEIGHT, 2));
     memset(atlas, 0, (size_t)PPU_GPU3DS_ATLAS_PIXELS * sizeof(*atlas));
 
     PpuGpu3DSBand bands[MODE1_GBA_HEIGHT];
@@ -875,7 +879,7 @@ int main(int argc, char** argv) {
     printf("  wanted %u vertices, fail reason %u\n", command.requiredVertices,
            command.failReason);
     if (getenv("PPU_BENCH_BATCHES")) {
-        for (size_t i = 0; i < command.batchCount && i < 8u; ++i) {
+        for (size_t i = 0; i < command.batchCount && i < (getenv("PPU_BENCH_BATCHES")[0]=='a' ? 100000u : 8u); ++i) {
             const PpuGpu3DSBatch* b = &command.batches[i];
             printf("    batch %zu layer=%u pri=%u first=%u count=%u line=%u+%u off=(%.4f,%.4f)\n",
                    i, b->layer, b->priority, b->firstIndex, b->indexCount,

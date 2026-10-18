@@ -414,6 +414,17 @@ typedef struct PpuGpu3DSCommandBuffer {
         uint32_t firstIndex, indexCount;
         uint8_t texture; /* 0 the atlas (a quad a tile), else 1 + the ring it was decoded into */
     } affineShare;
+    /* Vertices this frame's affine bands spent on one-quad-a-texel geometry (see build_affine_bg). */
+    size_t affineTexelVertices;
+    /* A 512x512 wrapping affine BG2 (the Minish Shrine's barrel) is drawn from two rings, one a half
+     * of the map's rows each (rings AFFINE_RING and AFFINE_RING + 1), a quad a band and half: the
+     * half and screen lines of the segment being built, and which rings are already up to date
+     * this frame (with the BG2 control they were decoded for). */
+    uint8_t affineRingHalf, affineRingDone;
+    uint16_t affineRingBgcnt[2];
+    uint16_t affineSegFirst, affineSegEnd;
+    /* The batches the last segment appended, so the next one can extend them (see build_affine_bg). */
+    size_t affineRunStart, affineRunCount;
     /* What the frame asked for, which on overflow exceeds the capacities. */
     uint32_t requiredVertices, requiredBatches;
 } PpuGpu3DSCommandBuffer;

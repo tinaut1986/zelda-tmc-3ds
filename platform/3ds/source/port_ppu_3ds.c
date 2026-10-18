@@ -745,6 +745,15 @@ void Port_PPU_3DS_WriteScreenDump(void) {
                 (unsigned long long)ppuGpuStats.parityFailures,
                 (unsigned long long)ppuGpuStats.differingPixels,
                 (unsigned long long)ppuGpuStats.structuralPixels);
+        fprintf(info, "PICA200 build failures (args/unsupported/capacity/atlas/geometry): %llu/%llu/%llu/%llu/%llu, max required vertices %lu\n",
+                (unsigned long long)ppuGpuStats.buildFailures[PPU_GPU3DS_BUILD_ARGUMENTS],
+                (unsigned long long)ppuGpuStats.buildFailures[PPU_GPU3DS_BUILD_UNSUPPORTED],
+                (unsigned long long)ppuGpuStats.buildFailures[PPU_GPU3DS_BUILD_CAPACITY],
+                (unsigned long long)ppuGpuStats.buildFailures[PPU_GPU3DS_BUILD_ATLAS_FULL],
+                (unsigned long long)ppuGpuStats.buildFailures[PPU_GPU3DS_BUILD_GEOMETRY],
+                (unsigned long)ppuGpuStats.maxRequiredVertices);
+        fprintf(info, "PICA200 frames skipped by build backoff: %llu\n",
+                (unsigned long long)ppuGpuStats.backoffFrames);
         fprintf(info, "PICA200 command budget fallbacks/last/max words: %llu/%lu/%lu\n",
                 (unsigned long long)ppuGpuStats.commandBudgetFallbacks,
                 (unsigned long)ppuGpuStats.lastCommandWords,

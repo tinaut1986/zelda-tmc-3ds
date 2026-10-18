@@ -1,3 +1,4 @@
+#include <math.h>
 #include "port_ppu_gpu_3ds_model.h"
 #include "port_zone_tiles.h"
 
@@ -1615,11 +1616,68 @@ static bool affine_scaled_from_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCa
                                     int32_t refX, int32_t refY0, bool emit, size_t* vertexCursor,
                                     size_t* indexCursor) {
     const unsigned size = (bgcnt >> 14u) & 3u;
-    PpuGpu3DSRing* const ring = &cache->ring[PPU_GPU3DS_AFFINE_RING];
-    if (size > 1u || (bgcnt & (1u << 13u)) != 0 || !ring->pixels || (gPpuGpu3DSRingDisable & (1u << 2u)) != 0)
-        return false;
+    const bool wrap = (bgcnt & (1u << 13u)) != 0;
+    const bool halves = size == 2u && wrap;
+    PpuGpu3DSRing* const ring = &cache->ring[PPU_GPU3DS_AFFINE_RING + (halves ? cmd->affineRingHalf : 0u)];
+    if ((size > 1u || wrap) && !halves) return false;
+    if (!ring->pixels || (gPpuGpu3DSRingDisable & (1u << 2u)) != 0) return false;
     const int mapSize = 128 << size;
     ring_init_tables();
+    if (halves) {
+        /* The ring is 64 tiles wide (all of the map's columns, repeated by the texture's wrap) and
+         * 32 rows tall: ring AFFINE_RING holds the map's rows 0-31, the next one rows 32-63. */
+        const unsigned half = cmd->affineRingHalf;
+        if ((cmd->affineRingDone & (1u << half)) == 0 || cmd->affineRingBgcnt[half] != bgcnt) {
+            if (!ring_update(frame, cache, ring, 2u, false, false, 0, 0, PPU_GPU3DS_RING_COLS - 1u,
+                             half * PPU_GPU3DS_RING_ROWS, half * PPU_GPU3DS_RING_ROWS + PPU_GPU3DS_RING_ROWS - 1u,
+                             bgcnt, 64u))
+                return false;
+            cmd->affineRingDone |= (uint8_t)(1u << half);
+            cmd->affineRingBgcnt[half] = bgcnt;
+        }
+        /* One quad over the segment's lines and the whole width: the texture's repeat wraps the
+         * columns, and the segment never leaves its half of the rows. Sampled where the GBA
+         * samples: at the pixel's top-left, not its centre, so the source is shifted back by half
+         * a step, and nudged up by a sixteenth of a texel so a source that lands exactly on a
+         * texel's edge does not read the texel before it (UVs are packed to 1/8 texel). */
+        const int32_t firstLine = cmd->affineSegFirst, endLine = cmd->affineSegEnd;
+        const int64_t k = (int64_t)half * 256;
+        const float bias = 1.0f / 16.0f;
+        const float my0 = ((float)((int64_t)refY0 + (int64_t)pd * firstLine) - (float)pd * 0.5f) / 256.0f -
+                          (float)k + bias;
+        const float my1 = ((float)((int64_t)refY0 + (int64_t)pd * endLine) - (float)pd * 0.5f) / 256.0f -
+                          (float)k + bias;
+        /* UVs are packed in 16 bits (+-8 textures), so a wide span of source columns -- a matrix that
+         * zooms far out, as the barrel's does when the room is left -- is cut into quads of at most two
+         * textures each, every one with its own origin; more than 16 of them is left to the other paths. */
+        const int width = (int)frame->width;
+        const int chunkStep = (int)((1024ll * 256) / pa) < 1 ? 1 : (int)((1024ll * 256) / pa);
+        if ((width + chunkStep - 1) / chunkStep > 16) return false;
+        const int16_t u0 = PpuGpu3DS_PackUV(my0 / PPU_GPU3DS_RING_TEX_WIDTH);
+        const int16_t u1 = PpuGpu3DS_PackUV(my1 / PPU_GPU3DS_RING_TEX_WIDTH);
+        if (fabsf(my1 - my0) > 4.0f * PPU_GPU3DS_RING_TEX_WIDTH) return false;
+        const float invWidth = 2.0f / (float)frame->width, invHeight = 2.0f / (float)frame->height;
+        const float sy0 = 1.0f - (float)firstLine * invHeight, sy1 = 1.0f - (float)endLine * invHeight;
+        for (int xa = 0; xa < width; xa += chunkStep) {
+            const int xb = xa + chunkStep < width ? xa + chunkStep : width;
+            float mxa = ((float)refX - (float)pa * 0.5f + (float)pa * (float)xa) / 256.0f + bias;
+            mxa -= floorf(mxa / 512.0f) * 512.0f;
+            const float mxb = mxa + (float)pa * (float)(xb - xa) / 256.0f;
+            if (quad_room(cmd, vertexCursor, indexCursor) && emit) {
+                const int16_t v0 = PpuGpu3DS_PackUV(1.0f - mxa / PPU_GPU3DS_RING_TEX_HEIGHT);
+                const int16_t v1 = PpuGpu3DS_PackUV(1.0f - mxb / PPU_GPU3DS_RING_TEX_HEIGHT);
+                const float sx0 = (float)xa * invWidth - 1.0f, sx1 = (float)xb * invWidth - 1.0f;
+                PpuGpu3DSVertex* const vertices = cmd->vertices + *vertexCursor;
+                vertices[0] = (PpuGpu3DSVertex){ sx0, sy0, 0.0f, u0, v0 };
+                vertices[1] = (PpuGpu3DSVertex){ sx1, sy0, 0.0f, u0, v1 };
+                vertices[2] = (PpuGpu3DSVertex){ sx1, sy1, 0.0f, u1, v1 };
+                vertices[3] = (PpuGpu3DSVertex){ sx0, sy1, 0.0f, u1, v0 };
+            }
+            *vertexCursor += 4;
+            *indexCursor += 6;
+        }
+        return true;
+    }
     if (!ring_update(frame, cache, ring, 2u, false, false, 0, 0, PPU_GPU3DS_RING_COLS - 1u, 0,
                      PPU_GPU3DS_RING_ROWS - 1u, bgcnt, (unsigned)mapSize / 8u))
         return false;
@@ -1706,6 +1764,19 @@ static bool build_affine_scaled_bg(const PpuGpu3DSFrameView* frame,
      * redraw the layer; the geometry is the same for all of them, so it is
      * emitted once for the whole screen and the band's scissor keeps its lines. */
     const int32_t refY0 = refY - pd * (int32_t)first;
+    const bool halves = ((bgcnt >> 14u) & 3u) == 2u && (bgcnt & (1u << 13u)) != 0;
+    if (halves) {
+        /* Its geometry is the segment's own, so it is never shared between bands. */
+        const size_t segFirstIndex = *indexCursor;
+        if (affine_scaled_from_ring(frame, cache, cmd, bgcnt, pa, pd, refX, refY0, emit, vertexCursor, indexCursor)) {
+            *firstIndexOut = (uint32_t)segFirstIndex;
+            *indexCountOut = (uint32_t)(*indexCursor - segFirstIndex);
+            cmd->affineShare.valid = false;
+            cmd->affineShare.texture = (uint8_t)(1u + PPU_GPU3DS_AFFINE_RING + cmd->affineRingHalf);
+            *handled = true;
+        }
+        return true;
+    }
     if (cmd->affineShare.valid && cmd->affineShare.bgcnt == bgcnt &&
         cmd->affineShare.pa == pa && cmd->affineShare.pd == pd &&
         cmd->affineShare.refX == refX && cmd->affineShare.refY0 == refY0) {
@@ -1737,8 +1808,10 @@ static bool build_affine_scaled_bg(const PpuGpu3DSFrameView* frame,
     /* Tiles the band can show (floor division for negative references). */
     const int32_t sx0 = PpuGpu3DS_AffineSample(refX, (int16_t)pa, 0);
     const int32_t sx1 = PpuGpu3DS_AffineSample(refX, (int16_t)pa, (int)frame->width - 1);
-    const int32_t sy0 = PpuGpu3DS_AffineSample(refY0, (int16_t)pd, 0);
-    const int32_t sy1 = PpuGpu3DS_AffineSample(refY0, (int16_t)pd, (int)frame->height - 1);
+    /* Only the band's own lines: a band is drawn through its scissor, so the rows of the map that
+     * other lines show are wasted quads (a scene that changes PA every line has a band a line). */
+    const int32_t sy0 = PpuGpu3DS_AffineSample(refY0, (int16_t)pd, (int)band->firstLine);
+    const int32_t sy1 = PpuGpu3DS_AffineSample(refY0, (int16_t)pd, (int)(band->firstLine + band->lineCount) - 1);
     int32_t tx0 = sx0 >> 3, tx1 = sx1 >> 3, ty0 = sy0 >> 3, ty1 = sy1 >> 3;
     if (!wrap) {
         if (tx0 < 0) tx0 = 0;
@@ -1754,7 +1827,14 @@ static bool build_affine_scaled_bg(const PpuGpu3DSFrameView* frame,
     }
     if ((int64_t)(tx1 - tx0 + 1) * (ty1 - ty0 + 1) > 4096) return true;
     const int64_t texels = (int64_t)(sx1 - sx0 + 1) * (sy1 - sy0 + 1);
-    const bool perTexel = texels <= 4096;
+    /* One quad a texel is exact but costs 4 vertices each, and a scene that changes PA every line
+     * (the Minish Shrine's barrel: 139 bands, each a few hundred texels wide) repeats it for every
+     * band, 51000 vertices against the 49152-65536 the buffers hold. A frame may spend a fixed
+     * share of the buffer on it; past that the bands are drawn a quad a tile. */
+    enum { AFFINE_TEXEL_VERTEX_BUDGET = 8192 };
+    const bool perTexel = texels <= 4096 &&
+                          cmd->affineTexelVertices + (size_t)texels * 4u <= AFFINE_TEXEL_VERTEX_BUDGET;
+    if (perTexel) cmd->affineTexelVertices += (size_t)texels * 4u;
 
     /* First screen coordinate whose source reaches `target` (8.8 fixed point). */
 #define FIRST_REACHING(target, ref, step) \
@@ -1844,7 +1924,7 @@ static bool build_affine_scaled_bg(const PpuGpu3DSFrameView* frame,
     return true;
 }
 
-static bool build_affine_bg(const PpuGpu3DSFrameView* frame,
+static bool build_affine_bg_band(const PpuGpu3DSFrameView* frame,
                             PpuGpu3DSCache* cache, uint16_t* atlas,
                             PpuGpu3DSCommandBuffer* cmd,
                             const PpuGpu3DSBand* band,
@@ -2001,6 +2081,94 @@ static bool build_affine_bg(const PpuGpu3DSFrameView* frame,
     append_layer_batches(cmd, &base, regions, regionCount, bldcnt,
                          read16(io, MODE1_IO_BLDALPHA),
                          read16(io, MODE1_IO_BLDY), emit, batchCursor);
+    return true;
+}
+
+/* Two batches that draw the same way and sit one after the other in the lines and in the indices:
+ * the second can be folded into the first. */
+static bool batches_extend(const PpuGpu3DSBatch* a, const PpuGpu3DSBatch* b) {
+    return a->firstLine + a->lineCount == b->firstLine && a->firstIndex + a->indexCount == b->firstIndex &&
+           a->scissorLeft == b->scissorLeft && a->scissorRight == b->scissorRight && a->layer == b->layer &&
+           a->priority == b->priority && a->windowControl == b->windowControl && a->target2 == b->target2 &&
+           a->effect == b->effect && a->eva == b->eva && a->evb == b->evb && a->evy == b->evy &&
+           a->objectIndex == b->objectIndex && a->color == b->color && a->objWindow == b->objWindow &&
+           a->semiTransparent == b->semiTransparent && a->texture == b->texture && a->offsetX == b->offsetX &&
+           a->offsetY == b->offsetY;
+}
+
+/* A 512x512 wrapping affine BG2 whose matrix only scales (PB = PC = 0): each band is cut where its
+ * source rows cross a multiple of 256 -- the boundary between the two rings that hold the map -- and
+ * every piece is built as a band of its own, so it is a single quad from a single ring. */
+static bool build_affine_bg(const PpuGpu3DSFrameView* frame,
+                            PpuGpu3DSCache* cache, uint16_t* atlas,
+                            PpuGpu3DSCommandBuffer* cmd,
+                            const PpuGpu3DSBand* band,
+                            const PpuGpu3DSBgMap* map,
+                            const PpuGpu3DSRegion* regions,
+                            size_t regionCount, bool emit,
+                            size_t* vertexCursor, size_t* indexCursor,
+                            size_t* batchCursor) {
+    const uint8_t* io = frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;
+    const uint16_t bgcnt = read16(io, MODE1_IO_BG2CNT);
+    const int32_t pa = (int16_t)read16(io, 0x20), pb = (int16_t)read16(io, 0x22);
+    const int32_t pc = (int16_t)read16(io, 0x24), pd = (int16_t)read16(io, 0x26);
+    const unsigned first = band->firstLine, end = first + band->lineCount;
+    bool split = ((bgcnt >> 14u) & 3u) == 2u && (bgcnt & (1u << 13u)) != 0 && pb == 0 && pc == 0 &&
+                 pa > 0 && pd > 0 && (bgcnt & (1u << 6u)) == 0 && band->lineCount != 0 &&
+                 cache->ring[PPU_GPU3DS_AFFINE_RING].pixels && cache->ring[PPU_GPU3DS_AFFINE_RING + 1u].pixels &&
+                 (gPpuGpu3DSRingDisable & (1u << 2u)) == 0 &&
+                 !(map && map->valid && (map->bgcnt & ~3u) == (bgcnt & ~3u));
+    /* Where the reference does not advance by PD a line (the barrel moves it by its own amount), the
+     * band is cut into single lines, each of which is trivially a scaled band. */
+    bool slope = true;
+    const int32_t refX = frame->affineRefX[first], refY = frame->affineRefY[first];
+    for (unsigned line = first + 1u; split && slope && line < end; ++line)
+        if (frame->affineRefX[line] != refX || frame->affineRefY[line] != refY + pd * (int32_t)(line - first))
+            slope = false;
+    if (!split)
+        return build_affine_bg_band(frame, cache, atlas, cmd, band, map, regions, regionCount, emit,
+                                    vertexCursor, indexCursor, batchCursor);
+    const int64_t refY0 = (int64_t)refY - (int64_t)pd * (int64_t)first;
+    for (unsigned line = first; line < end;) {
+        const int64_t my = slope ? refY0 + (int64_t)pd * line : (int64_t)frame->affineRefY[line];
+        /* floor(my / 65536): the 256-row half of the map the line starts in. */
+        const int64_t k = my >= 0 ? my / 65536 : -((-my + 65535) / 65536);
+        const int64_t boundary = (k + 1) * 65536;
+        /* First line whose source reaches the next half. */
+        int64_t stop = slope ? (boundary - refY0 + pd - 1) / pd : (int64_t)line + 1;
+        if (stop <= (int64_t)line) stop = (int64_t)line + 1;
+        if (stop > (int64_t)end) stop = end;
+        PpuGpu3DSBand segment = *band;
+        segment.firstLine = (uint16_t)line;
+        segment.lineCount = (uint16_t)(stop - (int64_t)line);
+        cmd->affineRingHalf = (uint8_t)(k & 1);
+        cmd->affineSegFirst = (uint16_t)line;
+        cmd->affineSegEnd = (uint16_t)stop;
+        const size_t batchesBefore = *batchCursor;
+        if (!build_affine_bg_band(frame, cache, atlas, cmd, &segment, map, regions, regionCount, emit,
+                                  vertexCursor, indexCursor, batchCursor))
+            return false;
+        line = (unsigned)stop;
+        /* A scene that changes the matrix every line makes a segment a line, and each is a batch
+         * (two with alpha blending): 250 draws a frame, of which the GPU spent more time on the
+         * state changes than on the pixels. Segments that draw alike and follow one another extend
+         * the batches of the one before: their quads are consecutive and lie in their own lines. */
+        const size_t appended = *batchCursor - batchesBefore;
+        if (!emit || appended == 0 || batchesBefore + appended > cmd->batchCapacity) continue;
+        bool merged = cmd->affineRunCount == appended && cmd->affineRunStart + appended == batchesBefore;
+        for (size_t j = 0; merged && j < appended; ++j)
+            merged = batches_extend(&cmd->batches[cmd->affineRunStart + j], &cmd->batches[batchesBefore + j]);
+        if (merged) {
+            for (size_t j = 0; j < appended; ++j) {
+                cmd->batches[cmd->affineRunStart + j].lineCount += cmd->batches[batchesBefore + j].lineCount;
+                cmd->batches[cmd->affineRunStart + j].indexCount += cmd->batches[batchesBefore + j].indexCount;
+            }
+            *batchCursor = batchesBefore;
+        } else {
+            cmd->affineRunStart = batchesBefore;
+            cmd->affineRunCount = appended;
+        }
+    }
     return true;
 }
 
@@ -4436,6 +4604,42 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     return true;
 }
 
+/* A background or sprite layer that is both a first and a second blend target (BG2 and the sprites of the
+ * Minish Shrine's barrel: BLDCNT 0x3456) and lies under a background that blends over it (BG1, opaque on
+ * every pixel): the GBA
+ * blends only the top pixel with the one below, so the lower layer is seen raw through BG1 and never meets the backdrop.
+ * The GPU draws layer after layer, each blending with what is already in the frame, so BG2's own blend with
+ * the backdrop would be in the frame when BG1 blends with it (a light haze over the whole picture). Such a
+ * background is drawn plainly -- still marked as a second target -- where a later background batch that
+ * blends over it covers its lines and columns. Where that background has holes BG2 should have blended with
+ * the backdrop and is drawn raw instead. */
+static void fold_covered_alpha_layers(PpuGpu3DSCommandBuffer* cmd) {
+    for (size_t i = 1; i + 1 < cmd->batchCount; ++i) {
+        PpuGpu3DSBatch* const alpha = &cmd->batches[i];
+        PpuGpu3DSBatch* const plain = &cmd->batches[i + 1];
+        if (alpha->effect != PPU_GPU3DS_EFFECT_ALPHA || !alpha->target2 || alpha->layer > PPU_GPU3DS_OBJ ||
+            alpha->objWindow || (plain->color & PPU_GPU3DS_ALPHA_COMPLEMENT) == 0 ||
+            plain->firstIndex != alpha->firstIndex || plain->indexCount != alpha->indexCount ||
+            plain->firstLine != alpha->firstLine || plain->lineCount != alpha->lineCount)
+            continue;
+        for (size_t j = i + 2; j < cmd->batchCount; ++j) {
+            const PpuGpu3DSBatch* const over = &cmd->batches[j];
+            if (over->effect != PPU_GPU3DS_EFFECT_ALPHA || over->layer > PPU_GPU3DS_BG3 || over->objWindow ||
+                over->firstLine > alpha->firstLine ||
+                over->firstLine + over->lineCount < alpha->firstLine + alpha->lineCount ||
+                over->scissorLeft > alpha->scissorLeft || over->scissorRight < alpha->scissorRight)
+                continue;
+            /* One plain batch where the pair was: the complement's way of drawing, without its blend. */
+            plain->color = (uint16_t)(plain->color & ~PPU_GPU3DS_ALPHA_COMPLEMENT);
+            plain->effect = PPU_GPU3DS_EFFECT_NONE;
+            *alpha = *plain;
+            plain->indexCount = 0;
+            break;
+        }
+        ++i;
+    }
+}
+
 bool PpuGpu3DS_BuildCommands(const PpuGpu3DSFrameView* frame,
                              PpuGpu3DSCache* cache, uint16_t* atlas,
                              PpuGpu3DSCommandBuffer* cmd) {
@@ -4493,6 +4697,9 @@ bool PpuGpu3DS_BuildCommands(const PpuGpu3DSFrameView* frame,
     memset(cmd->mapReject, 0, sizeof(cmd->mapReject));
     memset(cmd->mapRebuild, 0, sizeof(cmd->mapRebuild));
     cmd->affineShare.valid = false;
+    cmd->affineTexelVertices = 0;
+    cmd->affineRingDone = 0;
+    cmd->affineRunCount = 0;
     cmd->mapRefresh = 0;
     if (startBatch >= cmd->batchCapacity || startVertex > (size_t)UINT16_MAX) {
         cmd->failReason = PPU_GPU3DS_BUILD_CAPACITY;
@@ -4538,5 +4745,6 @@ bool PpuGpu3DS_BuildCommands(const PpuGpu3DSFrameView* frame,
     cmd->vertexCount = vertexCursor;
     cmd->indexCount = indexCursor;
     cmd->batchCount = batchCursor;
+    fold_covered_alpha_layers(cmd);
     return true;
 }
