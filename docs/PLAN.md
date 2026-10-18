@@ -35,8 +35,9 @@ was deleted). Their history is in `git log` and the decisions log.
 
 | Branch | State |
 |---|---|
-| `feat/auto-update` | Cut from `release/v0.3.3`, not merged: OPTIONS -> UPDATES gains AUTO UPDATE (on by default); with it on, the check at boot raises a LATER / INSTALL window (with WHAT'S NEW: the changelog) over every tab. Preview checked, host-built, not yet tried on a console. It carries `fix/updater-relaunch` merged in (the prompt counts the 10 s wait before the relaunch), so those two merge into the release together. |
+| `feat/auto-update` | Cut from `release/v0.3.3`, not merged: OPTIONS -> UPDATES gains AUTO UPDATE (on by default); with it on, the check at boot raises a LATER / INSTALL window (with WHAT'S NEW: the changelog) over every tab. Preview checked, host-built, not yet tried on a console. It carries `fix/updater-relaunch` merged in (the prompt counts the 10 s wait before the relaunch), and `fix/updater-stable-notes-include-betas` too, so all three merge into the release together. |
 | `fix/updater-relaunch` | Cut from `release/v0.3.3`, not merged, built but not tried on a console: after the in-game updater installs a CIA the game starts again into it 10 s later (`Platform3DS_RequestRelaunch`, the FTP install's mechanism: `aptSetChainloaderToSelf` at once made the loader fault, issue #4) instead of dropping to HOME; a 3DSX update is unchanged. Waits for the owner to update from OPTIONS -> UPDATES and see it come back. |
+| `fix/updater-stable-notes-include-betas` | Cut from `release/v0.3.3`, not merged: waits for the owner to see on a console that a STABLE-channel update shows the notes of the betas on the way. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -53,10 +54,11 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 **Start here (2026-10-18, after the other sessions' merges and the owner's cleanup):** `release/v0.3.3` is pushed and
 clean (nothing after the `v0.3.2` tag but this docs change), no branch or worktree is open but the parked `feat/village-3d`. Next, in this order:
 1. **v0.3.2 stable** is published: check, with a console, that OPTIONS -> UPDATES offers it (from `v0.3.0` on
-   STABLE, and from the `v0.3.1` beta) and shows its notes (not done). Port `../sm-3ds` commit `10aa48d` (the
-   stable channel's notes also include the betas on the way to the newest stable) to
-   `Update_ParseReleases` in `platform/3ds/source/update_manifest.c`, with a test in `platform/3ds/tests`:
-   until it ships, a stable's notes must keep covering its betas by hand.
+   STABLE, and from the `v0.3.1` beta) and shows its notes (not done). `../sm-3ds` commit `10aa48d` (the
+   stable channel's notes also include the betas on the way to the newest stable) is ported in
+   `fix/updater-stable-notes-include-betas` (`Update_ParseReleases`, test in `update_manifest_test.c`; host test
+   passes, not yet tried on a console): until it ships and is installed, a stable's notes must keep covering
+   its betas by hand.
 2. **Old 3DS/2DS check** of what only the New 3DS has seen: the grid on HIGH (frame rate), WIDE + AI,
    the file select and title without 3D, TOP HUD AUTO. The 2DS is `192.168.1.139` (its FTP answered
    `530 Login incorrect` on 2026-10-17: ask the owner what that console runs).
