@@ -29,7 +29,7 @@ bool CiaInstall_File(const char* sdPath, char* error, unsigned errorCap) {
         return false;
     }
     Handle input = 0, output = 0;
-    bool started = false, ok = false;
+    bool started = false, ok = false, downgraded = false;
     u64 size = 0, required = 0;
     AM_TitleInfo info;
     unsigned char* data = malloc(CIA_IO_SIZE);
@@ -45,7 +45,7 @@ bool CiaInstall_File(const char* sdPath, char* error, unsigned errorCap) {
     rc = AM_GetCiaRequiredSpace(&required, MEDIATYPE_SD, input);
     snprintf(error, errorCap, "not enough SD space");
     if (R_FAILED(rc) || !EnoughSpace(required + 4 * 1024 * 1024ull)) goto done;
-    /* Overwrite through AM; never delete the installed title first. */
+    /* Overwrite through AM; the installed title is only removed if AM refuses a lower version (below). */
     rc = AM_StartCiaInstallOverwrite(&output, MEDIATYPE_SD);
     snprintf(error, errorCap, "install start failed (%08lx)", (unsigned long)rc);
     if (R_FAILED(rc)) goto done;
@@ -57,6 +57,24 @@ bool CiaInstall_File(const char* sdPath, char* error, unsigned errorCap) {
         snprintf(error, errorCap, "SD read failed (%08lx)", (unsigned long)rc);
         if (R_FAILED(rc) || read != want) goto done;
         rc = FSFILE_Write(output, &wrote, offset, data, read, 0);
+        if (R_FAILED(rc) && offset == 0 && !downgraded) {
+            /* AM refuses a CIA whose title version is lower than the installed one (0xd8e08027) at the
+             * first write. This is the developer path (FTP SITE INSTALL), so remove the installed title
+             * and install this one instead: any version can be installed, downgrades included. Saves
+             * and settings live under sdmc:/3ds/, not in the title, so they stay. */
+            DebugLog_Printf("cia install: write refused (%08lx), reinstalling over a removed title", (unsigned long)rc);
+            AM_CancelCIAInstall(output);
+            started = false;
+            downgraded = true;
+            rc = AM_DeleteTitle(MEDIATYPE_SD, TMC3DS_TITLE_ID);
+            snprintf(error, errorCap, "removing the installed title failed (%08lx)", (unsigned long)rc);
+            if (R_FAILED(rc)) goto done;
+            rc = AM_StartCiaInstall(MEDIATYPE_SD, &output);
+            snprintf(error, errorCap, "install restart failed (%08lx)", (unsigned long)rc);
+            if (R_FAILED(rc)) goto done;
+            started = true;
+            continue;
+        }
         snprintf(error, errorCap, "install write failed (%08lx)", (unsigned long)rc);
         if (R_FAILED(rc) || wrote != read) goto done;
         offset += read;
