@@ -66,6 +66,13 @@ int Port_SecondScreenDungeonMap_Draw(uint32_t* pixels, int32_t bufW, int32_t buf
 int Port_SecondScreenDungeonMap_DrawFrame(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x,
                                           int32_t y, int32_t scale, uint32_t frameIndex, uint8_t saveLanguage);
 
+/* The pause map's dungeon item icon (DrawDungeonMapActually, src/menu/pauseMenu.c): item `itemId`'s frame of
+ * gSpriteAnimations_322, from sheet 0x144 (EU 0x143), not the item menu's sheet; the OAM command's palette row
+ * `cmdPalRow` (gOamCmd._8 >> 12). Returns 1 when it drew any pixel. */
+int Port_SecondScreenDungeonMap_DrawDungeonItem(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                                int32_t x, int32_t y, int32_t scale, uint32_t itemId,
+                                                uint32_t cmdPalRow, uint8_t saveLanguage);
+
 /* Pixel bounds of that frame around its anchor at scale 1 ([x0, x1) x
  * [y0, y1)). Returns 0 when the frame is not available. */
 int Port_SecondScreenDungeonMap_FrameBounds(uint32_t frameIndex, int32_t* x0, int32_t* y0, int32_t* x1, int32_t* y1);

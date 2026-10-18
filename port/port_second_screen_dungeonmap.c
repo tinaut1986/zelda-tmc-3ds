@@ -261,10 +261,14 @@ static void SinkPlot(FrameSink* sink, int32_t ax, int32_t ay, int32_t dx, int32_
  * minus the OAM size-table anchor — RenderSpritePieces in
  * port/port_draw.c, for the flags the map screen uses: no affine, no flip
  * from the command, extra/palette override 0). */
-static void WalkDirectFrame(FrameSink* sink, int32_t ax, int32_t ay, uint32_t frameIndex, uint32_t saveLanguage) {
+/* cmdTileBase: the tile number gOamCmd._8 adds to every piece's (its low 10 bits); cmdPalRow: the palette row it
+ * adds (its top 4 bits). The map screen's DrawDirect frames use none; the dungeon items use 0x380 (palette 4 for
+ * the map and big key, 0 for the compass). */
+static void WalkSheetFrame(FrameSink* sink, int32_t ax, int32_t ay, uint32_t spriteIndex, uint32_t frameIndex,
+                           uint32_t cmdPalRow, uint32_t cmdTileBase, uint32_t saveLanguage) {
     const uint8_t* sizeTab = Port_GetSpriteSizeTable();
     u32 maxPieces = 0;
-    const uint8_t* fd = Port_GetDirectSpriteFrame(DIRECT_SPRITE_INDEX, frameIndex, &maxPieces);
+    const uint8_t* fd = Port_GetDirectSpriteFrame(spriteIndex, frameIndex, &maxPieces);
     uint32_t count;
     uint32_t i;
 
@@ -284,7 +288,8 @@ static void WalkDirectFrame(FrameSink* sink, int32_t ax, int32_t ay, uint32_t fr
          * frame data bakes the palette in (command extra is 0 here). */
         uint32_t attr2 = (uint32_t)fd[3] | ((uint32_t)fd[4] << 8);
         uint32_t tileNo = attr2 & 0x3FFu;
-        uint32_t palRow = attr2 >> 12;
+        /* The command's palette row adds to the piece's, unless the piece sets bit 0 (RenderSpritePieces). */
+        uint32_t palRow = (((shapeInfo & 1u) ? 0u : cmdPalRow) + (attr2 >> 12)) & 15u;
         /* Size/anchor entry: sub-table 0 (no flip flags on the command),
          * indexed by shape (bits 7-6) and size (bits 5-4). */
         const uint8_t* se = &sizeTab[(shapeInfo & 0xF0u) >> 2];
@@ -306,7 +311,8 @@ static void WalkDirectFrame(FrameSink* sink, int32_t ax, int32_t ay, uint32_t fr
             for (tx = 0; tx < tilesW; tx++) {
                 /* OBJ 1D mapping (displayControl bit 0x40 is set on every
                  * pause-menu screen): consecutive tiles, row-major. */
-                const uint8_t* tile = MapScreenObjTile(tileNo + (uint32_t)(ty * tilesW + tx), saveLanguage);
+                const uint8_t* tile =
+                    MapScreenObjTile(((tileNo + cmdTileBase) & 0x3FFu) + (uint32_t)(ty * tilesW + tx), saveLanguage);
                 if (tile == NULL) {
                     continue;
                 }
@@ -329,6 +335,10 @@ static void WalkDirectFrame(FrameSink* sink, int32_t ax, int32_t ay, uint32_t fr
     }
 }
 
+static void WalkDirectFrame(FrameSink* sink, int32_t ax, int32_t ay, uint32_t frameIndex, uint32_t saveLanguage) {
+    WalkSheetFrame(sink, ax, ay, DIRECT_SPRITE_INDEX, frameIndex, 0, 0, saveLanguage);
+}
+
 /* A marker on the map canvas, at map-pixel scale. */
 static void DrawMarkerFrame(int32_t mapX, int32_t mapY, uint32_t frameIndex, uint32_t saveLanguage) {
     FrameSink sink;
@@ -349,6 +359,32 @@ int Port_SecondScreenDungeonMap_DrawFrame(uint32_t* pixels, int32_t bufW, int32_
     sink.stride = stride;
     sink.scale = scale < 1 ? 1 : scale;
     WalkDirectFrame(&sink, x, y, frameIndex, saveLanguage);
+    return sink.plotted != 0;
+}
+
+extern Frame* gSpriteAnimations_322[];
+
+int Port_SecondScreenDungeonMap_DrawDungeonItem(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                                int32_t x, int32_t y, int32_t scale, uint32_t itemId,
+                                                uint32_t cmdPalRow, uint8_t saveLanguage) {
+    FrameSink sink;
+    const Frame* animation;
+    if (pixels == NULL || itemId >= 128u) {
+        return 0;
+    }
+    /* GetSpriteAnimation322Index: the item's frame of its animation, drawn from sheet SUB_080A5D1C_SPRITE_INDEX. */
+    animation = (const Frame*)port_resolve_addr((uintptr_t)gSpriteAnimations_322[itemId]);
+    if (animation == NULL) {
+        return 0;
+    }
+    memset(&sink, 0, sizeof(sink));
+    sink.pixels = pixels;
+    sink.bufW = bufW;
+    sink.bufH = bufH;
+    sink.stride = stride;
+    sink.scale = scale < 1 ? 1 : scale;
+    /* gOamCmd._8 = 0x4380 / 0x380 there: tile base 0x380 (the map screen's sheet of dungeon items). */
+    WalkSheetFrame(&sink, x, y, REGION_IS_EU ? 0x143u : 0x144u, animation->index, cmdPalRow, 0x380u, saveLanguage);
     return sink.plotted != 0;
 }
 
