@@ -2583,9 +2583,9 @@ static void PaintAutoUpdatePrompt(const SSurf* s, TargetList* tl, UpdatePrompt p
     for (char* c = message; *c; ++c) *c = (char)toupper((unsigned char)*c);
     char head[64];
     if (prompt == UPDATE_PROMPT_ASK) {
-        snprintf(head, sizeof(head), "VERSION %s IS READY.", version);
+        snprintf(head, sizeof(head), "%s %s", Port_Text_Tr("NEW VERSION:"), version); /* already translated */
         /* Three empty rows host the WHAT'S NEW button (the modal's geometry is Compact_PaintModal's). */
-        const char* const lines[] = { head, "INSTALL IT NOW?", "UNSAVED PROGRESS IS LOST.",
+        const char* const lines[] = { head, "INSTALL IT NOW?", "UNSAVED PROGRESS IS LOST",
                                       "(OPTIONS -> UPDATES: AUTO UPDATE)", "", "", "" };
         Compact_PaintModal(s, tl, "UPDATE AVAILABLE", lines, 7, "LATER", SS_ACT_AUTOUPD_NO, "INSTALL", SS_ACT_AUTOUPD_YES);
         const int32_t top = (s->h - (30 + 7 * 10 + 36)) / 2;
