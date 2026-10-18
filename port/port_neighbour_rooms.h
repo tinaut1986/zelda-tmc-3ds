@@ -13,6 +13,11 @@ void Port_NeighbourRooms_Update(void);
 /* The 8x8 entry of a layer (topLayer 0 = the bottom map, 1 = the top one) at the current room's tile
  * (column, row from its origin) when that lies outside the room: the neighbour's, or `blank`. */
 uint16_t Port_NeighbourRooms_Tile(int topLayer, int column, int row, uint16_t blank);
+/* Where a view of `view` pixels along an axis (0 = x, 1 = y) should start, in world pixels, for room `room` of
+ * the current area when the room is smaller than the view on that axis: of the positions that keep the whole
+ * room in view (8-pixel steps), the one whose margin beside the room is most covered by rooms that can be drawn
+ * there (same tile set), the centred one on a tie. Without such rooms that is the centred position, as before. */
+int Port_NeighbourRooms_Rest(unsigned room, int axis, int view);
 /* For the probe's log and the debug overlay: what the last build found. */
 typedef struct PortNeighbourStats {
     unsigned neighbours;     /* bordering rooms drawn */

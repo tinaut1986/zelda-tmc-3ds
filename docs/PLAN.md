@@ -1191,6 +1191,13 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   (`3dsx.ld`, with `port_zone_tiles`): a state saved by a build with another window size restored it as
   garbage and kept the stale room key, so nothing rebuilt it. Seen frame by frame (`rec`): no black but where
   the area has no room (right of 0x12 and 0x15).
+  **Camera off centre where neighbours fill the view** (owner's idea, room 0x07 right into 0x09, 272x208: the
+  scroll first lined the camera up 16 px lower to centre the short room, leaving a black row below where there
+  is no room, while the room above, 0x08, could fill the top): a room smaller than the view on an axis now rests
+  at the position, among those that keep it whole in view, whose margin is most covered by drawable
+  neighbours (`Port_NeighbourRooms_Rest`, by the rooms' rectangles and tile sets, cached per room); centred on a
+  tie or with none, as before. Used at rest (`Port_WidescreenCameraRest*ForMode`), for the scroll's line-up and
+  for its end. Recorded: 0x07 -> 0x09 scrolls straight across with no black.
   **What fails, from the ROM's room tables (`tools/neighbour-survey/survey.py`):** 402 pairs of rooms share an
   edge in the whole game, 379 with the same `tileSet_id` (the 23 others stay black: the Beanstalks 8, the Fortress of
   Winds 8, Hyrule Field 4, and one each in the Minish Village, area 0x47 and the Deepwood Shrine). Counted over the margin

@@ -1229,6 +1229,17 @@ static int Port_WidescreenScrollAlign(int camera, int view, int oldOrigin, int o
 
 static Port3DSFullViewMode Port_WidescreenGameplayMode(void);
 
+/* Where a Full View rests on a room smaller than it along one axis (0 = x, 1 = y): centred, or off centre where
+ * the neighbours drawn beside it (P4.9) fill more of the view. */
+static int Port_WidescreenCentredRest(unsigned room, int axis, int view) {
+#ifdef TMC_3DS
+    return Port_NeighbourRooms_Rest(room, axis, view);
+#else
+    const RoomResInfo* r = &gArea.roomResInfos[room];
+    return axis ? (int)r->map_y - (view - (int)r->pixel_height) / 2 : (int)r->map_x - (view - (int)r->pixel_width) / 2;
+#endif
+}
+
 void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
     sWsScroll.valid = 0;
     const int width = Port_Widescreen_GameplayViewWidth();
@@ -1267,7 +1278,7 @@ void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
         if (direction == 0 || direction == 2) {
             /* A room narrower than the view is centred, the rest black: line up on that. */
             sWsScroll.alignX = next->pixel_width < 400
-                                   ? (int)next->map_x - (400 - (int)next->pixel_width) / 2
+                                   ? Port_WidescreenCentredRest(room, 0, 400)
                                    : Port_WidescreenScrollAlign(gRoomControls.scroll_x, 400, gRoomControls.origin_x,
                                                                 gRoomControls.width, next->map_x, next->pixel_width);
             shift = sWsScroll.alignX - sWsScroll.startX;
@@ -1275,7 +1286,7 @@ void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
                 sWsScroll.alignX = sWsScroll.startX, shift = 0;
         } else {
             sWsScroll.alignY = next->pixel_height < 240
-                                   ? (int)next->map_y - (240 - (int)next->pixel_height) / 2
+                                   ? Port_WidescreenCentredRest(room, 1, 240)
                                    : Port_WidescreenScrollAlign(gRoomControls.scroll_y, 240, gRoomControls.origin_y,
                                                                 gRoomControls.height, next->map_y, next->pixel_height);
             shift = sWsScroll.alignY - sWsScroll.startY;
@@ -1362,9 +1373,9 @@ int Port_Widescreen_AdvanceScroll(void) {
     /* Full View: a room smaller than the view on the scrolling axis ends centred in it. */
     if (sWsScroll.fullView) {
         if ((sWsScroll.direction == 0 || sWsScroll.direction == 2) && gRoomControls.height < viewH)
-            endY = gRoomControls.origin_y - (viewH - gRoomControls.height) / 2;
+            endY = Port_WidescreenCentredRest(gRoomControls.room, 1, viewH);
         if ((sWsScroll.direction == 1 || sWsScroll.direction == 3) && gRoomControls.width < viewW)
-            endX = gRoomControls.origin_x - (viewW - gRoomControls.width) / 2;
+            endX = Port_WidescreenCentredRest(gRoomControls.room, 0, viewW);
     }
     int progress = gRoomControls.unk_18;
     if (progress > duration)
@@ -2179,6 +2190,10 @@ static int Port_WidescreenCameraRestXForMode(int target_x, Port3DSFullViewMode m
     int want = target_x - viewW / 2;
     /* Room (or its painted part) narrower than a Full View: centre it, the rest is black. */
     if (mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X && boundsW < viewW) {
+#ifdef TMC_3DS
+        /* P4.9: where neighbours fill the margin, the camera may sit off centre to show them (and no black). */
+        if (boundsW == (int)gRoomControls.width) return Port_NeighbourRooms_Rest(gRoomControls.room, 0, viewW);
+#endif
         return lo - (viewW - boundsW) / 2;
     }
     if (want > hi) {
@@ -2204,6 +2219,9 @@ static int Port_WidescreenCameraRestYForMode(int target_y, Port3DSFullViewMode m
     int hi = lo + boundsH - viewH;
     int want = target_y - viewH / 2;
     if (mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X && boundsH < viewH) {
+#ifdef TMC_3DS
+        if (boundsH == (int)gRoomControls.height) return Port_NeighbourRooms_Rest(gRoomControls.room, 1, viewH);
+#endif
         return lo - (viewH - boundsH) / 2;
     }
     if (want > hi) {

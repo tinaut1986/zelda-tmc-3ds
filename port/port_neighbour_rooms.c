@@ -134,6 +134,64 @@ uint16_t Port_NeighbourRooms_Tile(int topLayer, int column, int row, uint16_t bl
     return entry == NO_TILE ? blank : entry;
 }
 
+/* The 8x8 cells of the band beside room r along `axis` (the rows above and below it for y, the columns left and
+ * right of it for x) between `start` and `start + view`, within the room's span on the other axis, that a
+ * drawable neighbour covers. */
+static int Coverage(const RoomResInfo* r, int axis, int start, int view) {
+    const int pos = axis ? r->map_y : r->map_x, size = axis ? r->pixel_height : r->pixel_width;
+    const int across0 = axis ? r->map_x : r->map_y, across1 = across0 + (axis ? r->pixel_width : r->pixel_height);
+    int covered = 0;
+    for (int a = start; a < start + view; a += 8) {
+        if (a >= pos && a < pos + size) continue; /* the room itself */
+        for (int b = across0; b < across1; b += 8) {
+            const int x = axis ? b : a, y = axis ? a : b;
+            for (unsigned j = 0; j < MAX_ROOMS; ++j) {
+                const RoomResInfo* nb = &gArea.roomResInfos[j];
+                if (nb == r || nb->pixel_width == 0 || nb->tileSet != r->tileSet || nb->tiles != r->tiles) continue;
+                if (x >= nb->map_x && x < nb->map_x + nb->pixel_width && y >= nb->map_y &&
+                    y < nb->map_y + nb->pixel_height) {
+                    ++covered;
+                    break;
+                }
+            }
+        }
+    }
+    return covered;
+}
+
+/* The camera asks every frame: the answer is kept per area, room, axis and view size. */
+static struct { u32 key; int rest; } sRestCache[8];
+static unsigned sRestNext;
+
+static int ComputeRest(unsigned room, int axis, int view) {
+    const RoomResInfo* r = &gArea.roomResInfos[room < MAX_ROOMS ? room : 0];
+    const int pos = axis ? r->map_y : r->map_x, size = axis ? r->pixel_height : r->pixel_width;
+    const int centred = pos - (view - size) / 2;
+    if (size >= view || size == 0) return centred;
+    int best = centred, bestScore = Coverage(r, axis, centred, view);
+    for (int start = pos + size - view; start <= pos; start += 8) {
+        const int score = Coverage(r, axis, start, view);
+        const int d = start > centred ? start - centred : centred - start;
+        const int bd = best > centred ? best - centred : centred - best;
+        if (score > bestScore || (score == bestScore && d < bd)) {
+            best = start;
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
+int Port_NeighbourRooms_Rest(unsigned room, int axis, int view) {
+    const u32 key = ((u32)gRoomControls.area << 24) | ((room & 0xFFu) << 16) | ((u32)(axis & 1) << 15) | ((u32)view & 0x7FFFu);
+    for (unsigned i = 0; i < sizeof(sRestCache) / sizeof(sRestCache[0]); ++i)
+        if (sRestCache[i].key == key && key != 0) return sRestCache[i].rest;
+    const int rest = ComputeRest(room, axis, view);
+    sRestCache[sRestNext].key = key;
+    sRestCache[sRestNext].rest = rest;
+    sRestNext = (sRestNext + 1) % (sizeof(sRestCache) / sizeof(sRestCache[0]));
+    return rest;
+}
+
 PortNeighbourStats Port_NeighbourRooms_Stats(void) {
     return sStats;
 }
