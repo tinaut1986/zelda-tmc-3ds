@@ -1667,11 +1667,12 @@ static void Compact_PaintDungeonView(const SSurf* s, const SecondScreenSnapshot*
         {
             static const struct { uint8_t bit, item, pal; int16_t gx; } kDungeonItems[] = {
                 { 1, ITEMID_DUNGEON_MAP, 4, 0x18 }, { 4, ITEMID_BIG_KEY, 4, 0x2e }, { 2, ITEMID_COMPASS, 0, 0x45 } };
-            const int32_t iy = by + bh + 6;
+            const int32_t iy = by + bh + 10;
             for (int k = 0; k < 3; k++) {
                 if (!(snap->dungeonItemBits & kDungeonItems[k].bit)) continue;
-                Port_SecondScreenRender_DrawItemIconBank(s->px, s->w, s->h, s->stride, gx0 + kDungeonItems[k].gx - 8, iy, 1,
-                                                         kDungeonItems[k].item, kDungeonItems[k].pal);
+                Port_SecondScreenDungeonMap_DrawDungeonItem(s->px, s->w, s->h, s->stride, gx0 + kDungeonItems[k].gx, iy, 1,
+                                                            kDungeonItems[k].item, kDungeonItems[k].pal,
+                                                            snap->saveLanguage);
             }
         }
         const int32_t mx0c = (int32_t)rx0 + bw + 4;
