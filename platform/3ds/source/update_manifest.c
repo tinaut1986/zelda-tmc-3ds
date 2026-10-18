@@ -144,11 +144,14 @@ int Update_ParseReleases(const char *data, size_t size, bool betas, bool homebre
     static char acc[12289];
     size_t used = 0; unsigned count = 0;
     acc[0] = 0;
+    // On the stable channel `best` is the newest stable release, and what changed on the way to it
+    // includes the betas before it (a stable lists everything since the previous stable): their
+    // notes count too. One newer than `best`, or not newer than the install, does not.
     json_array_foreach(root, i, o) {
-      if (!json_is_object(o) || (!betas && json_is_true(json_object_get(o, "prerelease")))) continue;
+      if (!json_is_object(o)) continue;
       if (!candidate(o, -1, homebrew, &r)) continue;
       char cmp[64]; snprintf(cmp, sizeof(cmp), "%s%s", r.version, r.prerelease ? "-beta" : "");
-      if (!Update_IsNewer(cmp, installed)) continue;
+      if (!Update_IsNewer(cmp, installed) || (!betas && r.prerelease && Update_IsNewer(cmp, best))) continue;
       const char *block; size_t len; notes_block(r.notes, &block, &len);
       int head = snprintf(acc + used, sizeof(acc) - used, "%s## %s%s\n", count ? "\n" : "", r.version,
                           r.prerelease ? " BETA" : "");
