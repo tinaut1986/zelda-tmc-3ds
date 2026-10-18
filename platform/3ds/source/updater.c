@@ -360,8 +360,9 @@ UpdatePrompt Updater_AutoPrompt(void) {
   switch (s.state) {
     case UPDATE_AVAILABLE: return UPDATE_PROMPT_ASK;
     case UPDATE_DOWNLOADING: case UPDATE_VERIFYING: case UPDATE_INSTALLING: return UPDATE_PROMPT_WORKING;
+    case UPDATE_DONE: return homebrew ? UPDATE_PROMPT_NONE : UPDATE_PROMPT_RESTART; // a 3DSX update closes the game at once
     case UPDATE_ERROR: return UPDATE_PROMPT_ERROR;
-    default: return UPDATE_PROMPT_NONE; // done: the game is closing; anything else: a manual check took over
+    default: return UPDATE_PROMPT_NONE; // anything else: a manual check took over
   }
 }
 void Updater_AutoAnswer(bool yes) {

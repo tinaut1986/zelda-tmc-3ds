@@ -105,10 +105,11 @@ bool Updater_Busy(void) { return false; }
 void Updater_Cancel(void) {}
 void Updater_Check(void) {}
 void Updater_Download(void) {}
-/* UPDATE_PROMPT=ask|work|error: the prompt raised by the boot check, to preview its window. */
+unsigned Platform3DS_RelaunchRemainingMs(void) { return 4000; }
+/* UPDATE_PROMPT=ask|work|restart|error: the prompt raised by the boot check, to preview its window. */
 UpdatePrompt Updater_AutoPrompt(void) {
     const char* p = getenv("UPDATE_PROMPT");
-    return !p ? UPDATE_PROMPT_NONE : p[0] == 'a' ? UPDATE_PROMPT_ASK : p[0] == 'w' ? UPDATE_PROMPT_WORKING : UPDATE_PROMPT_ERROR;
+    return !p ? UPDATE_PROMPT_NONE : p[0] == 'a' ? UPDATE_PROMPT_ASK : p[0] == 'w' ? UPDATE_PROMPT_WORKING : p[0] == 'r' ? UPDATE_PROMPT_RESTART : UPDATE_PROMPT_ERROR;
 }
 void Updater_AutoAnswer(bool yes) { (void)yes; }
 static bool sAutoUpdate = true;

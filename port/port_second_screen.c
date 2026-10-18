@@ -2581,6 +2581,9 @@ static void PaintAutoUpdatePrompt(const SSurf* s, TargetList* tl, UpdatePrompt p
     snprintf(percent, sizeof(percent), "%u%%", st.progress);
     for (char* c = version; *c; ++c) *c = (char)toupper((unsigned char)*c);
     for (char* c = message; *c; ++c) *c = (char)toupper((unsigned char)*c);
+#ifdef TMC_3DS
+    extern unsigned Platform3DS_RelaunchRemainingMs(void);
+#endif
     char head[64];
     if (prompt == UPDATE_PROMPT_ASK) {
         snprintf(head, sizeof(head), "%s %s", Port_Text_Tr("NEW VERSION:"), version); /* already translated */
@@ -2590,10 +2593,26 @@ static void PaintAutoUpdatePrompt(const SSurf* s, TargetList* tl, UpdatePrompt p
         Compact_PaintModal(s, tl, "UPDATE AVAILABLE", lines, 7, "LATER", SS_ACT_AUTOUPD_NO, "INSTALL", SS_ACT_AUTOUPD_YES);
         const int32_t top = (s->h - (30 + 7 * 10 + 36)) / 2;
         CButton(s, tl, (s->w - 150) / 2, top + 24 + 4 * 10 + 3, 150, 22, "WHAT'S NEW", CC_ACCENT, SS_ACT_AUTOUPD_NEWS, 0);
-    } else if (prompt == UPDATE_PROMPT_WORKING) {
-        const char* const lines[] = { message, st.state == UPDATE_DOWNLOADING ? percent : "", "DO NOT TURN THE CONSOLE OFF." };
-        Compact_PaintModal(s, tl, "UPDATING", lines, 3, st.state == UPDATE_DOWNLOADING ? "CANCEL" : "PLEASE WAIT",
+    } else if (prompt == UPDATE_PROMPT_WORKING || prompt == UPDATE_PROMPT_RESTART) {
+        /* One bar per phase, as in ../mzm and ../sm-3ds: the download, the install, and the 10 s wait
+         * before the game starts again into the new build (its relaunch needs it, platform_3ds.c). The
+         * bar sits in the empty row between the text lines (Compact_PaintModal's geometry). */
+        unsigned pct = st.progress;
+        const char* what = message;
+        if (prompt == UPDATE_PROMPT_RESTART) {
+            pct = 100u - Platform3DS_RelaunchRemainingMs() / 100u;
+            what = "RESTARTING THE GAME";
+        }
+        if (pct > 100u) pct = 100u;
+        snprintf(percent, sizeof(percent), "%u%%", pct);
+        const char* const lines[] = { what, percent, "", "DO NOT TURN THE CONSOLE OFF." };
+        Compact_PaintModal(s, tl, "UPDATING", lines, 4,
+                           prompt == UPDATE_PROMPT_WORKING && st.state == UPDATE_DOWNLOADING ? "CANCEL" : "PLEASE WAIT",
                            SS_ACT_AUTOUPD_NO, NULL, 0);
+        const int32_t bx = (s->w - 260) / 2 + 14, bw = 260 - 28, by = (s->h - (30 + 4 * 10 + 36)) / 2 + 24 + 2 * 10 + 1;
+        FillRect(s, bx, by, bx + bw, by + 8, CC_CELL_EDGE);
+        FillRect(s, bx + 1, by + 1, bx + bw - 1, by + 7, CC_BAR);
+        FillRect(s, bx + 1, by + 1, bx + 1 + (bw - 2) * (int32_t)pct / 100, by + 7, CC_GOOD);
     } else {
         const char* const lines[] = { message, "THE GAME KEEPS RUNNING AS IT WAS." };
         Compact_PaintModal(s, tl, "UPDATE FAILED", lines, 2, "OK", SS_ACT_AUTOUPD_NO, NULL, 0);
