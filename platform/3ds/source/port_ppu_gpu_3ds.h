@@ -16,6 +16,7 @@ typedef struct PortPpuGpu3DSStats {
     /* Indexed by PpuGpu3DSBuildReason, plus the high-water marks that say how
      * close a rendered frame came to the command-buffer limits. */
     uint64_t buildFailures[PPU_GPU3DS_BUILD_REASON_COUNT];
+    uint64_t backoffFrames;
     uint32_t maxBands, maxVertices, maxBatches, maxRequiredVertices;
     uint64_t mapLayers, mapRebuilds, mapRejects[PPU_GPU3DS_MAP_REJECT_COUNT];
     uint64_t mapRebuildReason[PPU_GPU3DS_MAP_REBUILD_COUNT];

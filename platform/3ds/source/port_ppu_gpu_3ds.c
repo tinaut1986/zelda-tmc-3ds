@@ -524,6 +524,8 @@ static u32 ClearColor(uint16_t gbaColor) {
     return (packed << 16u) | packed;
 }
 
+static unsigned sBuildBackoff, sBuildBackoffLength;
+
 static bool FinishPreflight(bool ready, uint64_t startTick) {
     sStats.preflightTicks += svcGetSystemTick() - startTick;
     if (sCache) {
@@ -586,6 +588,15 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
     sBuildBuffer = 1u - sDrawnBuffer;
     sVertices = sVertexBuffers[sBuildBuffer];
     sCommands.vertices = sVertices;
+    /* A frame the builder could not express costs ~25 ms before it gives up, and the next frame of
+     * the same scene fails the same way: after a failure the GPU is not tried again for a growing
+     * number of frames (8, 16, ... 60), so a scene it cannot draw runs at the software renderer's
+     * speed with one wasted build a second instead of one every frame. */
+    if (sBuildBackoff > 0) {
+        --sBuildBackoff;
+        ++sStats.backoffFrames;
+        return FinishPreflight(false, startTick);
+    }
     sCommands.vertexCount = 0;
     sCommands.indexCount = 0;
     sCommands.batchCount = 0;
@@ -603,9 +614,12 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
             sStats.maxBands = sCommands.bandCount;
         if (sCommands.requiredVertices > sStats.maxRequiredVertices)
             sStats.maxRequiredVertices = sCommands.requiredVertices;
+        sBuildBackoffLength = sBuildBackoffLength ? (sBuildBackoffLength < 30u ? sBuildBackoffLength * 2u : 60u) : 8u;
+        sBuildBackoff = sBuildBackoffLength;
         return FinishPreflight(false, startTick);
     }
     const size_t copiedFirstVertex = KeepSlicesCurrent(true);
+    sBuildBackoffLength = 0;
     sStats.lastBuildTicks = svcGetSystemTick() - buildStartTick;
     sStats.buildTicks += sStats.lastBuildTicks;
     sStats.lastBands = sCommands.bandCount;
