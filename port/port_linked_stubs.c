@@ -41,6 +41,9 @@
 #include "port_runtime_config.h"
 #ifdef TMC_3DS
 #include "port_zone_tiles.h"
+#ifdef TMC_3DS
+#include "port_neighbour_rooms.h"
+#endif
 #endif
 #include "port_widescreen.h"
 #include "port_hdma.h"
@@ -2423,6 +2426,7 @@ static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* s
         room_tiles_h = kMapRows;
     const int scrolling = Port_WidescreenScrollActive();
 #ifdef TMC_3DS
+    const int topLayer = mapSpecial == gMapDataTopSpecial;
     /* Rooms that swap building graphics by zone (port/port_zone_tiles.h, issue #26): each entry's
      * zone, so the renderer draws it from that zone's set. */
     uint8_t* const zoneRows = !scrolling && Port_ZoneTiles_Active() ? Port_ZoneTiles_ShadowVariants(bg_index) : NULL;
@@ -2447,8 +2451,14 @@ static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* s
         if (zone_dst) memset(zone_dst, 0, (size_t)shadow_cols);
 #endif
         if (!scrolling && (world_row < 0 || world_row >= room_tiles_h)) {
-            for (int C = 0; C < shadow_cols; C++)
+            for (int C = 0; C < shadow_cols; C++) {
+#ifdef TMC_3DS
+                /* P4.9: past the room's top or bottom edge, the neighbouring room's tile. */
+                row_dst[C] = Port_NeighbourRooms_Tile(topLayer, ws_base_world_col + C, world_row, blankEntry);
+#else
                 row_dst[C] = blankEntry;
+#endif
+            }
             continue;
         }
         for (int C = 0; C < shadow_cols; C++) {
@@ -2456,7 +2466,11 @@ static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* s
             u16 entry = scrolling ? Port_WidescreenScrollTile(mapSpecial, world_col, world_row)
                                   : ((world_col >= 0 && world_col < room_tiles_w)
                                          ? mapSpecial[world_row * kMapStride + world_col]
+#ifdef TMC_3DS
+                                         : Port_NeighbourRooms_Tile(topLayer, world_col, world_row, blankEntry));
+#else
                                          : blankEntry);
+#endif
             row_dst[C] = entry;
 #ifdef TMC_3DS
             if (zone_dst && entry != 0) zone_dst[C] = Port_ZoneTiles_Variant(world_col, world_row);
@@ -2677,7 +2691,10 @@ void Port_Widescreen_UpdateShadows(void) {
 #endif
     }
 #ifdef TMC_3DS
-    if (Port_Config_3DSFullViewComboEnabled()) Port_ZoneTiles_Update();
+    if (Port_Config_3DSFullViewComboEnabled()) {
+        Port_ZoneTiles_Update();
+        Port_NeighbourRooms_Update();
+    }
 #endif
     virtuappu_mode1_ws_hud_right_anchor = 0;
     virtuappu_mode1_ws_msg_shift = 0;

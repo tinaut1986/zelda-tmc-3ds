@@ -1167,3 +1167,25 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   closes at once. (3) The notes shown after a check cover the betas on the way to the newest stable on the STABLE
   channel (`../sm-3ds` `10aa48d`), and with no update waiting the whole channel's changelog, as in `../mzm`/`../sm-3ds`.
   `tools/ui-preview` builds again and takes `UPDATE_PROMPT=ask|work|restart|error`, `NO_WIDE_ASK=1` and `UILANG=2..5`.
+- **2026-10-18** P4.9 probe (branch `feat/wide-neighbour-rooms`, owner's EU ROM, room 0x15 of the Deepwood Shrine's
+  area 0x48, Full View): the neighbouring room's tiles now fill the black beside a narrow room.
+  **How:** `RoomResInfo` gives every room of the area its world rectangle and its `tileSet`/`tiles` definitions;
+  `port/port_neighbour_rooms.c` builds, 8 and 120 ticks after a room starts, a window of 8x8 entries around the
+  room for each layer (the rooms that overlap it and share both definitions: their map chain is decompressed
+  from the ROM, `LZ77UnCompWram`, and expanded with the current layer's `subTiles`, as
+  `RenderMapLayerToSubTileMap` does), and `Port_WidescreenShadow_Populate` reads it where it used to write the
+  blank entry (outside the room's columns and rows). **Cost:** a few thousand cell lookups per room load and
+  a table read per out-of-room cell per frame; the overlay's L/G times did not move (L 0.3-0.4 ms, G 7.4-7.6 ms
+  on the New 3DS); 74 KB of static (two 128+64 x 96+40 windows plus one 8 KB map). **Seen:** the 64 px left of
+  that room show the left room's water, wall and grass, in the right place by eye; **not yet verified
+  pixel by pixel** against that room itself (Link on the lily pad could not be walked into it).
+  **What fails, from the ROM's room tables (`tools/neighbour-survey/survey.py`):** 402 pairs of rooms share an
+  edge in the whole game, 379 with the same `tileSet_id` (the 23 others stay black: Beanstalks, the village
+  and Hyrule Castle's courtyards, parts of the Deepwood Shrine, Fortress of Winds). Counted over the margin
+  of a 400x240 view around every room smaller than that, **21.5 % of the margin cells have a neighbour with
+  the same tile set, 6.2 % one with another, 72.3 % none**: outdoors (Hyrule Field 78 %, Ruins 74 %, the
+  Palace of Winds 73 %, Temple of Droplets 39 %, Hyrule Castle 41 %) it pays, the house interiors almost never
+  (0.9 % to 37 % by area, mostly 0-20 %): those need the AI side strips of P4.6, not a neighbour. Not done:
+  tiles >= 0x4000 (the game's moved or removed tiles) use their plain index; the zone-swapped rooms (Minish
+  village, Hyrule Town) do not carry their variants into the neighbour's cells; scrolls keep the outgoing
+  room's tiles; normal Wide (266) is untouched.
