@@ -172,7 +172,7 @@ enum {
     SS_ACT_WIDEAI_NO, SS_ACT_WIDEAI_YES, /* the one-time question about WIDE + AI */
     SS_ACT_UPDATE_CHANNEL, SS_ACT_UPDATE_RELEASE, SS_ACT_UPDATE_ACTION,
     SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT, SS_ACT_UPDATE_AUTO,
-    SS_ACT_AUTOUPD_NO, SS_ACT_AUTOUPD_YES, /* the prompt after the boot check found a newer build */
+    SS_ACT_AUTOUPD_NO, SS_ACT_AUTOUPD_YES, SS_ACT_AUTOUPD_NEWS, /* the prompt after the boot check found a newer build */
     SS_ACT_THEME, /* OPTIONS -> THEME (bottom_compact_3ds.inc) */
     SS_ACT_TABS,  /* OPTIONS -> TABS: tab bar on top or below */
     SS_ACT_DEBUG, /* DEBUG tab command, arg = DBG_CMD_* (bottom_compact_3ds.inc) */
@@ -2584,8 +2584,12 @@ static void PaintAutoUpdatePrompt(const SSurf* s, TargetList* tl, UpdatePrompt p
     char head[64];
     if (prompt == UPDATE_PROMPT_ASK) {
         snprintf(head, sizeof(head), "VERSION %s IS READY.", version);
-        const char* const lines[] = { head, "INSTALL IT NOW?", "UNSAVED PROGRESS IS LOST.", "(OPTIONS -> UPDATES: AUTO UPDATE)" };
-        Compact_PaintModal(s, tl, "UPDATE AVAILABLE", lines, 4, "LATER", SS_ACT_AUTOUPD_NO, "INSTALL", SS_ACT_AUTOUPD_YES);
+        /* Three empty rows host the WHAT'S NEW button (the modal's geometry is Compact_PaintModal's). */
+        const char* const lines[] = { head, "INSTALL IT NOW?", "UNSAVED PROGRESS IS LOST.",
+                                      "(OPTIONS -> UPDATES: AUTO UPDATE)", "", "", "" };
+        Compact_PaintModal(s, tl, "UPDATE AVAILABLE", lines, 7, "LATER", SS_ACT_AUTOUPD_NO, "INSTALL", SS_ACT_AUTOUPD_YES);
+        const int32_t top = (s->h - (30 + 7 * 10 + 36)) / 2;
+        CButton(s, tl, (s->w - 150) / 2, top + 24 + 4 * 10 + 3, 150, 22, "WHAT'S NEW", CC_ACCENT, SS_ACT_AUTOUPD_NEWS, 0);
     } else if (prompt == UPDATE_PROMPT_WORKING) {
         const char* const lines[] = { message, st.state == UPDATE_DOWNLOADING ? percent : "", "DO NOT TURN THE CONSOLE OFF." };
         Compact_PaintModal(s, tl, "UPDATING", lines, 3, st.state == UPDATE_DOWNLOADING ? "CANCEL" : "PLEASE WAIT",
@@ -3352,7 +3356,16 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     } else if (unavailableNoticeActive) {
         PaintUnavailableNotice(&s, &tl, u, ts);
     } else if (Updater_AutoPrompt() != UPDATE_PROMPT_NONE) {
-        PaintAutoUpdatePrompt(&s, &tl, Updater_AutoPrompt());
+        const UpdatePrompt prompt = Updater_AutoPrompt();
+        if (sAutoNotes && prompt == UPDATE_PROMPT_ASK) {
+            UpdateStatus st;
+            Updater_GetStatus(&st);
+            tl.n = 0;
+            PaintUpdateNotes(&s, &tl, &st, true);
+        } else {
+            sAutoNotes = false;
+            PaintAutoUpdatePrompt(&s, &tl, prompt);
+        }
     } else if (Port_Config_WideAiQuestionDue()) {
         PaintWideAiQuestion(&s, &tl);
     }
@@ -3440,6 +3453,14 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
     }
 
 #ifdef TMC_3DS
+    if (HandleAutoNotesTap(hit.action)) return;
+    if (hit.action == SS_ACT_AUTOUPD_NEWS) {
+        UI_LOCK();
+        sAutoNotes = true;
+        sUpdatePage = 0;
+        UI_UNLOCK();
+        return;
+    }
     if (hit.action == SS_ACT_AUTOUPD_NO || hit.action == SS_ACT_AUTOUPD_YES) {
         Updater_AutoAnswer(hit.action == SS_ACT_AUTOUPD_YES);
         return;

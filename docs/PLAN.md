@@ -35,7 +35,7 @@ was deleted). Their history is in `git log` and the decisions log.
 
 | Branch | State |
 |---|---|
-| `feat/auto-update` | Cut from `release/v0.3.3`, not merged: OPTIONS -> UPDATES gains AUTO UPDATE (on by default); with it on, the check at boot raises a LATER / INSTALL window over every tab. Preview checked, host-built, not yet tried on a console. Without `fix/updater-relaunch` merged the game closes to HOME after installing. |
+| `feat/auto-update` | Cut from `release/v0.3.3`, not merged: OPTIONS -> UPDATES gains AUTO UPDATE (on by default); with it on, the check at boot raises a LATER / INSTALL window (with WHAT'S NEW: the changelog) over every tab. Preview checked, host-built, not yet tried on a console. Without `fix/updater-relaunch` merged the game closes to HOME after installing. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
