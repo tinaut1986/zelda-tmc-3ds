@@ -547,6 +547,20 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   *Done when:* the owner sees the question, answers it and sees the setting change the scenes. **Done on
   the New 3DS, 2026-10-17.** mzm's FTP-install progress bar was already here since 2026-10-14.
 
+- [ ] **P4.9** The neighbouring room drawn beyond the room's edge in Full/Wide (owner's request, 2026-10-18).
+  *Spec:* where a room borders another (the overworld's room grid, `RoomHeader.map_x/map_y/pixel_width/
+  pixel_height` in `include/area.h`), the part of the 400x240 (or 266x160) view that lies past the room's
+  edge shows the neighbouring room's two tile layers instead of black or a repeat of the border, at rest
+  and while walking, in every area where it holds (outdoors first; interiors only where rooms really
+  abut). No entities, no collision, no logic of the neighbour: only its map. The port already keeps the
+  *outgoing* room's tiles for a border scroll (`docs/widescreen-streaming.md`, `Port_Widescreen_BeginScroll`).
+  *Open points:* a neighbour with another `tileSet_id`/palette cannot share the layer's VRAM tiles (leave it
+  as it is now); animated tiles; the Full View camera limits; the cost on the Old 3DS.
+  *Probe (branch `feat/wide-neighbour-rooms`, 2026-10-18):* one outdoor room, what it costs and which rooms
+  fail; findings in the decisions log.
+  *Done when:* the owner walks the overworld and sees the neighbour beyond every edge that has one, with no
+  pop at the scroll and no frame-rate loss.
+
 ## Phase 5: stereoscopic 3D
 
 - [ ] **P5.1** Stereoscopic 3D on chosen layers (owner's request, 2026-10-14).
