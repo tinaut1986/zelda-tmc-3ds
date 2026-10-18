@@ -32,6 +32,9 @@ static UpdateRelease release;
 static Thread worker;
 static bool initialized, homebrew, busy, cancel, download_job;
 static char launch_file[768];
+// boot_check: the check started by Updater_Init(autoCheck) has not finished. auto_active: it found a
+// newer build and the player has not answered (or dismissed) the prompt yet.
+static volatile bool boot_check, auto_active;
 
 static bool cancelled(void) { return __atomic_load_n(&cancel, __ATOMIC_ACQUIRE) || aptShouldClose(); }
 static void publish(UpdateState state, const char *message) {
@@ -256,6 +259,7 @@ static void run_job(void *arg) {
     snprintf(candidate_version, sizeof(candidate_version), "%s%s", release.version, release.prerelease ? "-beta" : "");
     bool newer = Update_IsNewer(candidate_version, installed);
     publish(newer ? UPDATE_AVAILABLE : UPDATE_CURRENT, newer ? "UPDATE AVAILABLE" : "YOU ARE UP TO DATE");
+    if (newer && boot_check) auto_active = true;
     ok = true;
   } else {
     if (!Update_AllowedDownloadUrl(release.url) || !enough_space(release.size * 2ull + 16 * 1024 * 1024)) {
@@ -277,6 +281,7 @@ static void run_job(void *arg) {
     publish(ok ? UPDATE_DONE : UPDATE_ERROR, ok ? "UPDATE INSTALLED" : "INSTALLATION FAILED");
   }
 done:
+  if (!download_job) boot_check = false; // a failed boot check raises nothing
   if (t.file) fclose(t.file);
   free(t.data);
   if (download_job) remove(UPDATE_PART);
@@ -326,7 +331,7 @@ void Updater_SetChannel(bool pre) {
   LightLock_Lock(&lock); status.prerelease = pre; status.version[0] = 0; LightLock_Unlock(&lock);
   Updater_Check();
 }
-void Updater_Init(const char *path) {
+void Updater_Init(const char *path, bool autoCheck) {
   if (initialized) return;
   LightLock_Init(&lock); initialized = true; homebrew = envIsHomebrew();
   mkdir(UPDATE_DIR, 0777);
@@ -335,7 +340,8 @@ void Updater_Init(const char *path) {
   struct stat st;
   if (stat(CHANNEL_FILE, &st) != 0) rename(CHANNEL_FILE ".bak", CHANNEL_FILE);
   FILE *f = fopen(CHANNEL_FILE, "rb"); if (f) { status.prerelease = fgetc(f) == '1'; fclose(f); }
-  Updater_Check();
+  boot_check = autoCheck;
+  if (autoCheck) Updater_Check();
 }
 void Updater_Shutdown(void) {
   if (!initialized) return;
@@ -344,6 +350,30 @@ void Updater_Shutdown(void) {
   initialized = false;
 }
 
+UpdatePrompt Updater_AutoPrompt(void) {
+  if (!initialized || !auto_active) return UPDATE_PROMPT_NONE;
+  UpdateStatus s; Updater_GetStatus(&s);
+  switch (s.state) {
+    case UPDATE_AVAILABLE: return UPDATE_PROMPT_ASK;
+    case UPDATE_DOWNLOADING: case UPDATE_VERIFYING: case UPDATE_INSTALLING: return UPDATE_PROMPT_WORKING;
+    case UPDATE_ERROR: return UPDATE_PROMPT_ERROR;
+    default: return UPDATE_PROMPT_NONE; // done: the game is closing; anything else: a manual check took over
+  }
+}
+void Updater_AutoAnswer(bool yes) {
+  switch (Updater_AutoPrompt()) {
+    case UPDATE_PROMPT_ASK:
+      if (yes) Updater_Download(); else auto_active = false;
+      break;
+    case UPDATE_PROMPT_WORKING: {
+      UpdateStatus s; Updater_GetStatus(&s);
+      if (s.state == UPDATE_DOWNLOADING) Updater_Cancel(); // later steps are not interrupted
+      break;
+    }
+    case UPDATE_PROMPT_ERROR: auto_active = false; break;
+    default: break;
+  }
+}
 unsigned Updater_GetNotes(char *out, unsigned capacity) {
   if (!initialized || !capacity) return 0;
   LightLock_Lock(&lock);

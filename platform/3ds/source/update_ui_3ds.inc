@@ -143,9 +143,12 @@ static void PaintUpdatePanel(const SSurf* s, TargetList* tl) {
     int32_t y = top + 2;
     int32_t x, cw;
     char text[96];
-    CColumn(s->w, 2, 0, 1, &x, &cw);
+    CColumn(s->w, 3, 0, 1, &x, &cw);
     CCell(s, tl, x, y, cw, CC_CELL_H, "CHANNEL", st.prerelease ? "+ BETAS" : "STABLE", CC_TEXT, SS_ACT_UPDATE_CHANNEL, 0);
-    CColumn(s->w, 2, 1, 1, &x, &cw);
+    CColumn(s->w, 3, 1, 1, &x, &cw);
+    CCell(s, tl, x, y, cw, CC_CELL_H, "AUTO UPDATE", Port_Config_GetAutoUpdate() ? "ON" : "OFF",
+          Port_Config_GetAutoUpdate() ? CC_GOOD : CC_DIM, SS_ACT_UPDATE_AUTO, 0);
+    CColumn(s->w, 3, 2, 1, &x, &cw);
     /* st.version already says BETA when the release found is a pre-release. */
     if (st.version[0]) {
         UpdateUpper(text, sizeof(text), st.version);
@@ -233,6 +236,9 @@ static bool HandleUpdateTap(int action, int arg) {
     switch (action) {
         case SS_ACT_UPDATE_CHANNEL:
             UpdateUI_Reset(); Updater_SetChannel(!st.prerelease); break;
+        case SS_ACT_UPDATE_AUTO:
+            Port_Config_ToggleAutoUpdate();
+            break;
         case SS_ACT_UPDATE_RELEASE:
             UI_LOCK();
             if (sUpdateNotes) sUpdateNotes = false;

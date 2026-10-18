@@ -171,7 +171,8 @@ enum {
 #ifdef TMC_3DS
     SS_ACT_WIDEAI_NO, SS_ACT_WIDEAI_YES, /* the one-time question about WIDE + AI */
     SS_ACT_UPDATE_CHANNEL, SS_ACT_UPDATE_RELEASE, SS_ACT_UPDATE_ACTION,
-    SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT,
+    SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT, SS_ACT_UPDATE_AUTO,
+    SS_ACT_AUTOUPD_NO, SS_ACT_AUTOUPD_YES, /* the prompt after the boot check found a newer build */
     SS_ACT_THEME, /* OPTIONS -> THEME (bottom_compact_3ds.inc) */
     SS_ACT_TABS,  /* OPTIONS -> TABS: tab bar on top or below */
     SS_ACT_DEBUG, /* DEBUG tab command, arg = DBG_CMD_* (bottom_compact_3ds.inc) */
@@ -2569,6 +2570,32 @@ static void PaintWideAiQuestion(const SSurf* s, TargetList* tl) {
     Compact_PaintModal(s, tl, "WIDE VIEW", kLines, 6, "NO", SS_ACT_WIDEAI_NO, "YES", SS_ACT_WIDEAI_YES);
 }
 
+static void PaintAutoUpdatePrompt(const SSurf* s, TargetList* tl, UpdatePrompt prompt) {
+    /* Raised by the check made when the game opens (AUTO UPDATE), over every tab; the install is the
+     * player's call (updater.h). */
+    UpdateStatus st;
+    Updater_GetStatus(&st);
+    char version[48], message[80], percent[16];
+    snprintf(version, sizeof(version), "%s", st.version);
+    snprintf(message, sizeof(message), "%s", st.message);
+    snprintf(percent, sizeof(percent), "%u%%", st.progress);
+    for (char* c = version; *c; ++c) *c = (char)toupper((unsigned char)*c);
+    for (char* c = message; *c; ++c) *c = (char)toupper((unsigned char)*c);
+    char head[64];
+    if (prompt == UPDATE_PROMPT_ASK) {
+        snprintf(head, sizeof(head), "VERSION %s IS READY.", version);
+        const char* const lines[] = { head, "INSTALL IT NOW?", "UNSAVED PROGRESS IS LOST.", "(OPTIONS -> UPDATES: AUTO UPDATE)" };
+        Compact_PaintModal(s, tl, "UPDATE AVAILABLE", lines, 4, "LATER", SS_ACT_AUTOUPD_NO, "INSTALL", SS_ACT_AUTOUPD_YES);
+    } else if (prompt == UPDATE_PROMPT_WORKING) {
+        const char* const lines[] = { message, st.state == UPDATE_DOWNLOADING ? percent : "", "DO NOT TURN THE CONSOLE OFF." };
+        Compact_PaintModal(s, tl, "UPDATING", lines, 3, st.state == UPDATE_DOWNLOADING ? "CANCEL" : "PLEASE WAIT",
+                           SS_ACT_AUTOUPD_NO, NULL, 0);
+    } else {
+        const char* const lines[] = { message, "THE GAME KEEPS RUNNING AS IT WAS." };
+        Compact_PaintModal(s, tl, "UPDATE FAILED", lines, 2, "OK", SS_ACT_AUTOUPD_NO, NULL, 0);
+    }
+}
+
 static void PaintUnavailableNotice(const SSurf* s, TargetList* tl, float u, int32_t ts) {
 #ifdef TMC_3DS
     static const char* const kLines[] = { "THIS OPTION IS NOT AVAILABLE YET." };
@@ -3324,6 +3351,8 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
         PaintLoadStateConfirmation(&s, &tl, u, ts);
     } else if (unavailableNoticeActive) {
         PaintUnavailableNotice(&s, &tl, u, ts);
+    } else if (Updater_AutoPrompt() != UPDATE_PROMPT_NONE) {
+        PaintAutoUpdatePrompt(&s, &tl, Updater_AutoPrompt());
     } else if (Port_Config_WideAiQuestionDue()) {
         PaintWideAiQuestion(&s, &tl);
     }
@@ -3411,6 +3440,10 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
     }
 
 #ifdef TMC_3DS
+    if (hit.action == SS_ACT_AUTOUPD_NO || hit.action == SS_ACT_AUTOUPD_YES) {
+        Updater_AutoAnswer(hit.action == SS_ACT_AUTOUPD_YES);
+        return;
+    }
     if (HandleUpdateTap(hit.action, hit.arg)) return;
 #endif
     switch (hit.action) {
