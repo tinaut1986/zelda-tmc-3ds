@@ -1182,6 +1182,14 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   of 64. Read with the room's width, the 64 px left of room 0x15 match room 0x14 (reached on the lily pad with
   the Gust Jar) pixel for pixel but for Link, the lily pad, the debug overlay and the shoreline animation's phase.
   The 64 px right of room 0x15 stay black: no room of the area lies there.
+  **Border scrolls** (owner's report: room 0x12 down to 0x15, blowing the lily pad with the Gust Jar): the scroll
+  drew only the outgoing room's snapshot and black elsewhere, and the incoming room's window came 8 ticks late.
+  Now the scroll's empty cells come from the incoming room's neighbours (`Port_WidescreenScrollTile`), the
+  window is built on the tick the room changes and is wide enough for a view still in the outgoing room (a
+  whole view each side: 2 x 232 x 160 entries, 148 KB). **The module's statics are left out of save states**
+  (`3dsx.ld`, with `port_zone_tiles`): a state saved by a build with another window size restored it as
+  garbage and kept the stale room key, so nothing rebuilt it. Seen frame by frame (`rec`): no black but where
+  the area has no room (right of 0x12 and 0x15).
   **What fails, from the ROM's room tables (`tools/neighbour-survey/survey.py`):** 402 pairs of rooms share an
   edge in the whole game, 379 with the same `tileSet_id` (the 23 others stay black: the Beanstalks 8, the Fortress of
   Winds 8, Hyrule Field 4, and one each in the Minish Village, area 0x47 and the Deepwood Shrine). Counted over the margin

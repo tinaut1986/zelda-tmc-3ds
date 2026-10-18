@@ -11,10 +11,10 @@
 
 extern void DebugLog_Printf(const char* fmt, ...);
 
-/* The window of tiles around the current room, in tiles from its origin: a margin each side (a 400x240
- * view centres a small room, so the black beside it is at most 25 tiles wide, 15 tall) and the room's
- * own size up to WIN_ROOM. A room larger than that in an axis never shows black in it. */
-enum { MARGIN_X = 32, MARGIN_Y = 20, WIN_COLS = 128 + 2 * MARGIN_X, WIN_ROWS = 96 + 2 * MARGIN_Y };
+/* The window of tiles around the current room, in tiles from its origin: the room (up to 128x96 tiles) and
+ * a whole 400x240 view each side, since a border scroll starts with the view still in the outgoing room
+ * (it runs with the incoming room already current) and the cells beside that one need their rooms too. */
+enum { MARGIN_X = 52, MARGIN_Y = 32, WIN_COLS = 128 + 2 * MARGIN_X, WIN_ROWS = 96 + 2 * MARGIN_Y };
 enum { NO_TILE = 0xFFFF, MAP_STRIDE = 64 };
 
 static uint16_t sWin[2][WIN_ROWS][WIN_COLS];
@@ -114,12 +114,13 @@ void Port_NeighbourRooms_Update(void) {
     if (key != sKey) {
         sKey = key;
         sTicks = 0;
-        sActive = 0;
-        return;
+    } else {
+        ++sTicks;
     }
-    ++sTicks;
-    /* The layers' tile definitions are in place a few ticks after the room starts; once again later in case. */
-    if (sTicks == 8 || sTicks == 120) {
+    /* At once, for a border scroll (the incoming room's neighbours show from its first frame; both rooms share
+     * the tile set, so the layers' definitions already fit); again once a door's new tile set is in place, and
+     * later in case. */
+    if (sTicks == 0 || sTicks == 8 || sTicks == 120) {
         Build();
         sActive = 1;
     }

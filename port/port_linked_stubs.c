@@ -1393,9 +1393,16 @@ static u16 Port_WidescreenScrollTile(const u16* map, int col, int row) {
         return map[row * 128 + col];
     const int x = col + gRoomControls.origin_x / 8 - sWsScroll.tileX;
     const int y = row + gRoomControls.origin_y / 8 - sWsScroll.tileY;
-    return x >= 0 && x < sWsScroll.cols && y >= 0 && y < sWsScroll.rows
-               ? sWsScroll.tiles[map == gMapDataTopSpecial][y][x]
-               : 0;
+    const u16 kept = x >= 0 && x < sWsScroll.cols && y >= 0 && y < sWsScroll.rows
+                         ? sWsScroll.tiles[map == gMapDataTopSpecial][y][x]
+                         : 0;
+#ifdef TMC_3DS
+    /* P4.9: what neither room holds (the outgoing room's snapshot has nothing there) comes from the rooms
+     * around the incoming one, so the scroll shows no black where a neighbour exists. */
+    if (kept == 0)
+        return Port_NeighbourRooms_Tile(map == gMapDataTopSpecial, col, row, 0);
+#endif
+    return kept;
 }
 
 static int Port_WidescreenFillScroll(u16* map, u16* buffer) {
