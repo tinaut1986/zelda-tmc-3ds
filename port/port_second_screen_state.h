@@ -90,10 +90,11 @@ typedef struct {
     uint8_t dungeonKeys;
     uint8_t dungeonItemBits;
     /* gSave.flags verbatim, copied under the same dungeon gate (zeroed
-     * elsewhere). The dungeon map's markers test it exactly like
-     * DrawDungeonMap (src/common.c): a chest marker goes once the chest's
-     * local flag is set (opened), the boss skull once global flag
-     * dungeonIdx + 1 is (boss beaten). */
+     * elsewhere). The dungeon map tests it exactly like the pause map
+     * (src/common.c): a room's lit fill once its ROOM_VISIT_MARKER flag is
+     * set (IsRoomVisited), a chest marker gone once the chest's local flag
+     * is set (opened), the boss skull once global flag dungeonIdx + 1 is
+     * (boss beaten; DrawDungeonMap). */
     uint8_t saveFlags[SECOND_SCREEN_SAVE_FLAG_BYTES];
     /* Quest state for the status strip. */
     uint8_t elements;   /* bit n set = ITEM_EARTH_ELEMENT + n owned */
