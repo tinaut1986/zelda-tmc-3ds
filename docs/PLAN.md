@@ -19,8 +19,10 @@ change (what goes where: the table in `CLAUDE.md`).
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.3.2` (on origin; renamed from `release/v0.3.1` right after the
-`v0.3.1` tag). Published: **`v0.3.1`** (2026-10-17, **beta**; the release page and its CIA exist, the CI is green), **`v0.3.0`** (2026-10-15, **stable**, merged into `main`, straight
+**Release line:** `release/v0.3.3` (on origin; renamed from `release/v0.3.2` right after the
+`v0.3.2` tag). Published: **`v0.3.2`** (2026-10-18, **stable**: first a beta, then promoted by re-running the
+workflow on the tag after `release/v0.3.2` was merged `--no-ff` into `main`, `a42d406`; its release body's notes
+were widened by hand to cover `v0.3.1` too, see the decisions log), **`v0.3.1`** (2026-10-17, **beta**), **`v0.3.0`** (2026-10-15, **stable**, merged into `main`, straight
 to stable without a beta at the owner's request), `v0.2.0` (2026-10-14, stable), `v0.1.2`
 (2026-10-13, beta), `v0.1.1` (2026-10-12, stable) and `v0.1.0` (2026-10-11, beta).
 
@@ -35,8 +37,7 @@ was deleted). Their history is in `git log` and the decisions log.
 |---|---|
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
-**In `release/v0.3.2` since the `v0.3.1` tag (2026-10-17, all seen working on the New 3DS, no tag yet; a
-`v0.3.2` needs `docs/release-notes/v0.3.2.md` first):** the garbage beside a narrow room whose BG3 has no blank
+**What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
 tile 0 (area 0x20 room 09), the village's gap cells taking the nearest zone's graphics, the top-frame HOLD
 also for doors into interiors, a state saved inside a subtask keeping the room's entities (Link locked after
 a map hint), the 3D depth of the map screens (hint and pause map), PLANE TINT / FORCE 3D / right-eye
@@ -47,12 +48,13 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 
 **Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
 
-**Start here (2026-10-18, after the other sessions' merges and the owner's cleanup):** `release/v0.3.2` is pushed and
-clean, no branch or worktree is open but the parked `feat/village-3d`. Next, in this order:
-1. **v0.3.1 beta** is published: check, with a console, that OPTIONS -> UPDATES offers it and shows its notes
-   (not done). Promoting it to stable (re-run the workflow on the tag) is only valid if nothing was committed
-   after it, which is not the case: the next stable is a `v0.3.2` (notes first, CLAUDE.md "Releases"; the
-   owner has chosen beta first this time).
+**Start here (2026-10-18, after the other sessions' merges and the owner's cleanup):** `release/v0.3.3` is pushed and
+clean (nothing after the `v0.3.2` tag but this docs change), no branch or worktree is open but the parked `feat/village-3d`. Next, in this order:
+1. **v0.3.2 stable** is published: check, with a console, that OPTIONS -> UPDATES offers it (from `v0.3.0` on
+   STABLE, and from the `v0.3.1` beta) and shows its notes (not done). Port `../sm-3ds` commit `10aa48d` (the
+   stable channel's notes also include the betas on the way to the newest stable) to
+   `Update_ParseReleases` in `platform/3ds/source/update_manifest.c`, with a test in `platform/3ds/tests`:
+   until it ships, a stable's notes must keep covering its betas by hand.
 2. **Old 3DS/2DS check** of what only the New 3DS has seen: the grid on HIGH (frame rate), WIDE + AI,
    the file select and title without 3D, TOP HUD AUTO. The 2DS is `192.168.1.139` (its FTP answered
    `530 Login incorrect` on 2026-10-17: ask the owner what that console runs).
@@ -1133,3 +1135,11 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   gives the plain fade to white. The bars beside a 240x160 view now take the same fade as the picture (the shown
   snapshot, or the GPU's weight and level, quantized to the picture's 5-bit step): they ran a frame ahead and one step
   darker on the plateau. Compared by pixels in a scene recording (`scenerec`), GPU renderer, Full View.
+- **2026-10-18** `v0.3.2` went beta first, then stable. Promotion: `main` was fast to take it (`git merge --no-ff v0.3.2`,
+  push `main`), then the release workflow was dispatched on the tag (channel Release, debug tools off, the release
+  page flips from pre-release to Latest); valid because nothing was committed after the tag. The tag's
+  `docs/release-notes/v0.3.2.md` only lists what is new since the `v0.3.1` beta, and a STABLE-channel updater skips
+  pre-release pages, so a player on `v0.3.0` would miss `v0.3.1`'s notes: the notes block of the release **body** was
+  rewritten with `gh release edit` to six lines covering `v0.3.1` + `v0.3.2` (a commit would have invalidated the
+  promotion). The file in the repo keeps the beta-only list. `../sm-3ds` fixed this in the updater itself
+  (`10aa48d`); ours still needs the port (Status, "Start here" 1).
