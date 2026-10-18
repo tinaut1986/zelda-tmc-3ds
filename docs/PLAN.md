@@ -35,6 +35,7 @@ was deleted). Their history is in `git log` and the decisions log.
 
 | Branch | State |
 |---|---|
+| `fix/fullview-stairs-arrival` | Cut from `release/v0.3.3`, not merged (issue #35): a door's arrival with the camera frozen (Link coming out of the stairs) enters Full View at once. Recorded on the New 3DS; waits for the owner's check. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
