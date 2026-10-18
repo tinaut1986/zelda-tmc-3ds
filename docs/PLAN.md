@@ -1198,6 +1198,11 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   neighbours (`Port_NeighbourRooms_Rest`, by the rooms' rectangles and tile sets, cached per room); centred on a
   tie or with none, as before. Used at rest (`Port_WidescreenCameraRest*ForMode`), for the scroll's line-up and
   for its end. Recorded: 0x07 -> 0x09 scrolls straight across with no black.
+  **Line-up order** (owner's report, room 0x00 down into 0x05): two positions tied for the incoming room (both
+  sides covered) and the centred one won, so the line-up moved the view 64 px left first, still in 0x00, where
+  nothing lies beside it. A tie now goes to where the camera already is, and the scroll's line-up
+  (`Port_NeighbourRooms_LineUp`) picks, among the incoming room's best positions, the one that leaves the least
+  black in the outgoing room's view while it lines up. Seen working by the owner.
   **What fails, from the ROM's room tables (`tools/neighbour-survey/survey.py`):** 402 pairs of rooms share an
   edge in the whole game, 379 with the same `tileSet_id` (the 23 others stay black: the Beanstalks 8, the Fortress of
   Winds 8, Hyrule Field 4, and one each in the Minish Village, area 0x47 and the Deepwood Shrine). Counted over the margin

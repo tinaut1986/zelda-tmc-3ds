@@ -159,37 +159,110 @@ static int Coverage(const RoomResInfo* r, int axis, int start, int view) {
     return covered;
 }
 
-/* The camera asks every frame: the answer is kept per area, room, axis and view size. */
-static struct { u32 key; int rest; } sRestCache[8];
+/* The camera asks every frame: each candidate's coverage is kept per area, room, axis and view size. */
+enum { REST_CANDIDATES = 64 };
+static struct {
+    u32 key;
+    int first, count, centred;
+    uint16_t score[REST_CANDIDATES];
+} sRestCache[4];
 static unsigned sRestNext;
 
-static int ComputeRest(unsigned room, int axis, int view) {
+static void ComputeRest(unsigned room, int axis, int view, int* first, int* count, int* centred, uint16_t* score) {
     const RoomResInfo* r = &gArea.roomResInfos[room < MAX_ROOMS ? room : 0];
     const int pos = axis ? r->map_y : r->map_x, size = axis ? r->pixel_height : r->pixel_width;
-    const int centred = pos - (view - size) / 2;
-    if (size >= view || size == 0) return centred;
-    int best = centred, bestScore = Coverage(r, axis, centred, view);
-    for (int start = pos + size - view; start <= pos; start += 8) {
-        const int score = Coverage(r, axis, start, view);
-        const int d = start > centred ? start - centred : centred - start;
-        const int bd = best > centred ? best - centred : centred - best;
-        if (score > bestScore || (score == bestScore && d < bd)) {
+    *centred = pos - (view - size) / 2;
+    *first = pos + size - view;
+    *count = 0;
+    if (size >= view || size == 0) return;
+    for (int start = *first; start <= pos && *count < REST_CANDIDATES; start += 8)
+        score[(*count)++] = (uint16_t)Coverage(r, axis, start, view);
+}
+
+static unsigned RestSlot(unsigned room, int axis, int view) {
+    const u32 key = ((u32)gRoomControls.area << 24) | ((room & 0xFFu) << 16) | ((u32)(axis & 1) << 15) | ((u32)view & 0x7FFFu);
+    unsigned slot = sizeof(sRestCache) / sizeof(sRestCache[0]);
+    for (unsigned i = 0; i < sizeof(sRestCache) / sizeof(sRestCache[0]); ++i)
+        if (sRestCache[i].key == key && key != 0) slot = i;
+    if (slot == sizeof(sRestCache) / sizeof(sRestCache[0])) {
+        slot = sRestNext;
+        sRestNext = (sRestNext + 1) % (sizeof(sRestCache) / sizeof(sRestCache[0]));
+        sRestCache[slot].key = key;
+        ComputeRest(room, axis, view, &sRestCache[slot].first, &sRestCache[slot].count, &sRestCache[slot].centred,
+                    sRestCache[slot].score);
+    }
+    return slot;
+}
+
+int Port_NeighbourRooms_Rest(unsigned room, int axis, int view, int prefer) {
+    const unsigned slot = RestSlot(room, axis, view);
+    const int centred = sRestCache[slot].centred;
+    if (sRestCache[slot].count == 0) return centred;
+    const int target = prefer == PORT_NEIGHBOUR_NO_PREFERENCE ? centred : prefer;
+    int best = centred, bestScore = -1, bestDistance = 0x7fffffff;
+    /* The centred position is a candidate too (it may fall between the 8-pixel steps). */
+    for (int i = -1; i < sRestCache[slot].count; ++i) {
+        const int start = i < 0 ? centred : sRestCache[slot].first + i * 8;
+        const int score = i < 0 ? -1 : sRestCache[slot].score[i];
+        const int d = start > target ? start - target : target - start;
+        if (score > bestScore || (score == bestScore && d < bestDistance)) {
             best = start;
             bestScore = score;
+            bestDistance = d;
         }
     }
+    /* No neighbour anywhere: centred, as before P4.9. */
+    if (bestScore == 0) return centred;
     return best;
 }
 
-int Port_NeighbourRooms_Rest(unsigned room, int axis, int view) {
-    const u32 key = ((u32)gRoomControls.area << 24) | ((room & 0xFFu) << 16) | ((u32)(axis & 1) << 15) | ((u32)view & 0x7FFFu);
-    for (unsigned i = 0; i < sizeof(sRestCache) / sizeof(sRestCache[0]); ++i)
-        if (sRestCache[i].key == key && key != 0) return sRestCache[i].rest;
-    const int rest = ComputeRest(room, axis, view);
-    sRestCache[sRestNext].key = key;
-    sRestCache[sRestNext].rest = rest;
-    sRestNext = (sRestNext + 1) % (sizeof(sRestCache) / sizeof(sRestCache[0]));
-    return rest;
+/* The 8x8 cells of a world rectangle that a drawable room (`ref` itself, or one with its tile set) covers. */
+static int ViewCovered(const RoomResInfo* ref, int x0, int y0, int w, int h) {
+    const RoomResInfo* rooms[MAX_ROOMS];
+    unsigned n = 0;
+    for (unsigned j = 0; j < MAX_ROOMS; ++j) {
+        const RoomResInfo* r = &gArea.roomResInfos[j];
+        if (r->pixel_width == 0 || (r != ref && (r->tileSet != ref->tileSet || r->tiles != ref->tiles))) continue;
+        if (r->map_x >= x0 + w || r->map_x + r->pixel_width <= x0 || r->map_y >= y0 + h || r->map_y + r->pixel_height <= y0)
+            continue;
+        rooms[n++] = r;
+    }
+    int covered = 0;
+    for (int y = y0; y < y0 + h; y += 8)
+        for (int x = x0; x < x0 + w; x += 8)
+            for (unsigned k = 0; k < n; ++k)
+                if (x >= rooms[k]->map_x && x < rooms[k]->map_x + rooms[k]->pixel_width && y >= rooms[k]->map_y &&
+                    y < rooms[k]->map_y + rooms[k]->pixel_height) {
+                    ++covered;
+                    break;
+                }
+    return covered;
+}
+
+int Port_NeighbourRooms_LineUp(unsigned room, int axis, int view, int prefer, unsigned fromRoom, int otherStart,
+                               int otherView) {
+    const unsigned slot = RestSlot(room, axis, view);
+    const int count = sRestCache[slot].count;
+    int maxScore = 0;
+    for (int i = 0; i < count; ++i)
+        if (sRestCache[slot].score[i] > maxScore) maxScore = sRestCache[slot].score[i];
+    /* Nothing to draw beside the incoming room: as before P4.9. */
+    if (count == 0 || maxScore == 0) return sRestCache[slot].centred;
+    const RoomResInfo* from = &gArea.roomResInfos[fromRoom < MAX_ROOMS ? fromRoom : 0];
+    int best = sRestCache[slot].centred, bestCovered = -1, bestDistance = 0x7fffffff;
+    for (int i = 0; i < count; ++i) {
+        if (sRestCache[slot].score[i] != maxScore) continue;
+        const int start = sRestCache[slot].first + i * 8;
+        const int covered = axis ? ViewCovered(from, otherStart, start, otherView, view)
+                                 : ViewCovered(from, start, otherStart, view, otherView);
+        const int d = start > prefer ? start - prefer : prefer - start;
+        if (covered > bestCovered || (covered == bestCovered && d < bestDistance)) {
+            best = start;
+            bestCovered = covered;
+            bestDistance = d;
+        }
+    }
+    return best;
 }
 
 PortNeighbourStats Port_NeighbourRooms_Stats(void) {

@@ -1229,14 +1229,30 @@ static int Port_WidescreenScrollAlign(int camera, int view, int oldOrigin, int o
 
 static Port3DSFullViewMode Port_WidescreenGameplayMode(void);
 
+#ifndef PORT_NEIGHBOUR_NO_PREFERENCE
+#define PORT_NEIGHBOUR_NO_PREFERENCE (-0x7fffffff)
+#endif
 /* Where a Full View rests on a room smaller than it along one axis (0 = x, 1 = y): centred, or off centre where
  * the neighbours drawn beside it (P4.9) fill more of the view. */
-static int Port_WidescreenCentredRest(unsigned room, int axis, int view) {
+static int Port_WidescreenCentredRest(unsigned room, int axis, int view, int prefer) {
 #ifdef TMC_3DS
-    return Port_NeighbourRooms_Rest(room, axis, view);
+    return Port_NeighbourRooms_Rest(room, axis, view, prefer);
 #else
     const RoomResInfo* r = &gArea.roomResInfos[room];
+    (void)prefer;
     return axis ? (int)r->map_y - (view - (int)r->pixel_height) / 2 : (int)r->map_x - (view - (int)r->pixel_width) / 2;
+#endif
+}
+
+/* The scroll's line-up across its axis into a room smaller than the view: where the incoming room rests best,
+ * leaving the least black while the view lines up in the outgoing room (P4.9); centred without neighbours. */
+static int Port_WidescreenLineUp(unsigned room, int axis, int view, int prefer, int otherStart, int otherView) {
+#ifdef TMC_3DS
+    return Port_NeighbourRooms_LineUp(room, axis, view, prefer, gRoomControls.room, otherStart, otherView);
+#else
+    (void)otherStart;
+    (void)otherView;
+    return Port_WidescreenCentredRest(room, axis, view, prefer);
 #endif
 }
 
@@ -1278,7 +1294,7 @@ void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
         if (direction == 0 || direction == 2) {
             /* A room narrower than the view is centred, the rest black: line up on that. */
             sWsScroll.alignX = next->pixel_width < 400
-                                   ? Port_WidescreenCentredRest(room, 0, 400)
+                                   ? Port_WidescreenLineUp(room, 0, 400, sWsScroll.startX, sWsScroll.startY, 240)
                                    : Port_WidescreenScrollAlign(gRoomControls.scroll_x, 400, gRoomControls.origin_x,
                                                                 gRoomControls.width, next->map_x, next->pixel_width);
             shift = sWsScroll.alignX - sWsScroll.startX;
@@ -1286,7 +1302,7 @@ void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
                 sWsScroll.alignX = sWsScroll.startX, shift = 0;
         } else {
             sWsScroll.alignY = next->pixel_height < 240
-                                   ? Port_WidescreenCentredRest(room, 1, 240)
+                                   ? Port_WidescreenLineUp(room, 1, 240, sWsScroll.startY, sWsScroll.startX, 400)
                                    : Port_WidescreenScrollAlign(gRoomControls.scroll_y, 240, gRoomControls.origin_y,
                                                                 gRoomControls.height, next->map_y, next->pixel_height);
             shift = sWsScroll.alignY - sWsScroll.startY;
@@ -1373,9 +1389,9 @@ int Port_Widescreen_AdvanceScroll(void) {
     /* Full View: a room smaller than the view on the scrolling axis ends centred in it. */
     if (sWsScroll.fullView) {
         if ((sWsScroll.direction == 0 || sWsScroll.direction == 2) && gRoomControls.height < viewH)
-            endY = Port_WidescreenCentredRest(gRoomControls.room, 1, viewH);
+            endY = Port_WidescreenCentredRest(gRoomControls.room, 1, viewH, PORT_NEIGHBOUR_NO_PREFERENCE);
         if ((sWsScroll.direction == 1 || sWsScroll.direction == 3) && gRoomControls.width < viewW)
-            endX = Port_WidescreenCentredRest(gRoomControls.room, 0, viewW);
+            endX = Port_WidescreenCentredRest(gRoomControls.room, 0, viewW, PORT_NEIGHBOUR_NO_PREFERENCE);
     }
     int progress = gRoomControls.unk_18;
     if (progress > duration)
@@ -2192,7 +2208,8 @@ static int Port_WidescreenCameraRestXForMode(int target_x, Port3DSFullViewMode m
     if (mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X && boundsW < viewW) {
 #ifdef TMC_3DS
         /* P4.9: where neighbours fill the margin, the camera may sit off centre to show them (and no black). */
-        if (boundsW == (int)gRoomControls.width) return Port_NeighbourRooms_Rest(gRoomControls.room, 0, viewW);
+        if (boundsW == (int)gRoomControls.width)
+            return Port_NeighbourRooms_Rest(gRoomControls.room, 0, viewW, gRoomControls.scroll_x);
 #endif
         return lo - (viewW - boundsW) / 2;
     }
@@ -2220,7 +2237,8 @@ static int Port_WidescreenCameraRestYForMode(int target_y, Port3DSFullViewMode m
     int want = target_y - viewH / 2;
     if (mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X && boundsH < viewH) {
 #ifdef TMC_3DS
-        if (boundsH == (int)gRoomControls.height) return Port_NeighbourRooms_Rest(gRoomControls.room, 1, viewH);
+        if (boundsH == (int)gRoomControls.height)
+            return Port_NeighbourRooms_Rest(gRoomControls.room, 1, viewH, gRoomControls.scroll_y);
 #endif
         return lo - (viewH - boundsH) / 2;
     }

@@ -16,8 +16,17 @@ uint16_t Port_NeighbourRooms_Tile(int topLayer, int column, int row, uint16_t bl
 /* Where a view of `view` pixels along an axis (0 = x, 1 = y) should start, in world pixels, for room `room` of
  * the current area when the room is smaller than the view on that axis: of the positions that keep the whole
  * room in view (8-pixel steps), the one whose margin beside the room is most covered by rooms that can be drawn
- * there (same tile set), the centred one on a tie. Without such rooms that is the centred position, as before. */
-int Port_NeighbourRooms_Rest(unsigned room, int axis, int view);
+ * there (same tile set); on a tie the one nearest `prefer` (where the camera already is: it then does not move for
+ * nothing), or the centred one when `prefer` is PORT_NEIGHBOUR_NO_PREFERENCE. Without such rooms it is the centred
+ * position, as before. */
+#define PORT_NEIGHBOUR_NO_PREFERENCE (-0x7fffffff)
+int Port_NeighbourRooms_Rest(unsigned room, int axis, int view, int prefer);
+/* The line-up of a border scroll into `room` on `axis` (Port_Widescreen_BeginScroll): of the positions
+ * Port_NeighbourRooms_Rest would score best for the incoming room, the one that leaves the least black in the
+ * view while it lines up, still in the outgoing room `fromRoom` (the view there spans `otherStart` to
+ * `otherStart + otherView` on the other axis); on a tie the one nearest `prefer`. */
+int Port_NeighbourRooms_LineUp(unsigned room, int axis, int view, int prefer, unsigned fromRoom, int otherStart,
+                               int otherView);
 /* For the probe's log and the debug overlay: what the last build found. */
 typedef struct PortNeighbourStats {
     unsigned neighbours;     /* bordering rooms drawn */
