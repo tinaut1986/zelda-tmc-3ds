@@ -19,6 +19,10 @@ bool FadeGpu3DS_FadeShown(const uint16_t* src, uint16_t* dst, size_t count);
  * from: the snapshot of the last frame boundary. */
 const uint16_t* FadeGpu3DS_ShownPalettes(void);
 
+/* Black as the shown frame's fade makes it (8-bit RGB), for the bars beside a narrow view: the same
+ * snapshot as the picture, not the game's next fade step. False: no fade. */
+bool FadeGpu3DS_ShownBlack(uint8_t* r8, uint8_t* g8, uint8_t* b8);
+
 bool FadeGpu3DS_State(const uint16_t* palRamBg, const uint16_t* palRamObj, const uint16_t** bgPalette,
                       const uint16_t** objPalette, uint8_t* weight, uint8_t* level);
 

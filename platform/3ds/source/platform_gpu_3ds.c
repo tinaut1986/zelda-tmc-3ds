@@ -99,8 +99,21 @@ extern void Port_FadedBlackRGB(uint8_t* r, uint8_t* g, uint8_t* b); /* src/fade.
  * colour while the game fades (a door's white fade takes the whole screen). */
 static u32 TopClearColor(void) {
     uint8_t r, g, b;
-    Port_FadedBlackRGB(&r, &g, &b);
-    return C2D_Color32(r, g, b, 255);
+    /* The bars take the fade the picture beside them shows: the GPU's blend toward grey when the frame
+     * used it (black becomes level * weight / 255), else the shown frame's palette fade. Port_FadedBlackRGB
+     * is the game's next step, a frame ahead of the picture, which made the bars fade on their own. */
+    const unsigned weight = PortPpuGpu3DS_FadeWeight();
+    if (weight != 0) {
+        r = g = b = (uint8_t)((PortPpuGpu3DS_FadeLevel() * weight + 127u) / 255u);
+    } else if (!FadeGpu3DS_ShownBlack(&r, &g, &b)) {
+        Port_FadedBlackRGB(&r, &g, &b);
+    }
+    /* The picture's target keeps 5 bits a channel by dropping the low three; the screen's 5-bit
+     * conversion of an 8-bit clear colour rounds the other way, so a fade's plateau (a grey of 200) was
+     * one step darker in the bars than in the picture. Hand it the smallest 8-bit value of the same step. */
+#define BAR_STEP(v) ((uint8_t)((((unsigned)(v) >> 3u) * 255u + 30u) / 31u))
+    return C2D_Color32(BAR_STEP(r), BAR_STEP(g), BAR_STEP(b), 255);
+#undef BAR_STEP
 }
 extern int Port_Config_Get3DSAspectRatio(void);
 extern int Port_Config_Get3DSDisplayStyle(void);

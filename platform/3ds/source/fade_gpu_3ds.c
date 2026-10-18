@@ -134,6 +134,17 @@ bool FadeGpu3DS_Shown(uint8_t* weight, uint8_t* level) {
     return true;
 }
 
+bool FadeGpu3DS_ShownBlack(uint8_t* r8, uint8_t* g8, uint8_t* b8) {
+    const FadeSnapshot* snapshot = &sSnapshot[sCurrent ^ 1u];
+    if (snapshot->intensity == 0 || snapshot->intensity > 256 || gRomData == NULL) return false;
+    uint16_t in[16] = { 0 }, out[16];
+    FadePalette(in, out, snapshot->intensity, snapshot->color);
+    *r8 = (uint8_t)((out[0] & 31u) * 255u / 31u);
+    *g8 = (uint8_t)(((out[0] >> 5) & 31u) * 255u / 31u);
+    *b8 = (uint8_t)(((out[0] >> 10) & 31u) * 255u / 31u);
+    return true;
+}
+
 bool FadeGpu3DS_State(const uint16_t* palRamBg, const uint16_t* palRamObj, const uint16_t** bgPalette,
                       const uint16_t** objPalette, uint8_t* weight, uint8_t* level) {
     /* The game steps the fade and animates palettes in its logic, and only the
