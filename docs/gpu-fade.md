@@ -81,6 +81,21 @@ for the whole effect. Now:
    line through the window path cost the Old 3DS 40 ms of building, and a scissored
    full-screen quad per run 99 ms of GPU time.
 
+### A dark room's light
+
+A dark room (`src/manager/lightManager.c`) draws the light around Link with the same
+circle routine (`sub_0801E160`), but under its own window settings: inside WIN0 everything
+but BG3 (the darkness), outside everything. Full View used to drop to 266x160 the moment
+such a room was entered (the Deepwood Shrine's room 0x10). The light manager now notes its
+circle (`Port_Widescreen_NoteLightCircle`): centre in view pixels, radius in pixels, drawn
+unscaled. `Port_Widescreen_Win0Lines` returns `PORT_WS_WIN0_WINDOW` for it instead of
+`PORT_WS_WIN0_MASK`, and the GPU renderer then takes the lines as WIN0 itself
+(`PpuGpu3DSFrameView::win0Lines`: they replace WIN0H/WIN0V in the bands and regions,
+WININ/WINOUT apply as usual) rather than as a backdrop mask. Full View stays only on the
+New 3DS, where the circle's per-line bands are affordable: 60 fps on the console in that
+room with 3D off (2026-10-17). A dark room that also uses OBJWIN (`src/playerUtils.c`)
+still falls back.
+
 ## Switches and diagnostics
 
 - `tmc3ds.ini`: `gpu_fade=0` keeps fades on the CPU.

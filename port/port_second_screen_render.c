@@ -1,3 +1,4 @@
+#include "port_second_screen_color.h"
 #include "port_second_screen_render.h"
 
 #include "port_gba_mem.h"
@@ -61,10 +62,7 @@ static const u8 kObjW[3][4] = { { 8, 16, 32, 64 }, { 16, 32, 32, 64 }, { 8, 8, 1
 static const u8 kObjH[3][4] = { { 8, 16, 32, 64 }, { 8, 8, 16, 32 }, { 16, 32, 32, 64 } };
 
 static uint32_t Rgb555ToRgba8888(uint16_t c) {
-    uint8_t r = (uint8_t)((c & 0x1Fu) << 3);
-    uint8_t g = (uint8_t)(((c >> 5) & 0x1Fu) << 3);
-    uint8_t b = (uint8_t)(((c >> 10) & 0x1Fu) << 3);
-    return 0xFF000000u | ((uint32_t)b << 16) | ((uint32_t)g << 8) | (uint32_t)r;
+    return Port_SecondScreen_Rgb555(c); /* COLOURS, like the top screen */
 }
 
 /* Draws one OBJ piece (1D-mapped consecutive tiles, like the game's

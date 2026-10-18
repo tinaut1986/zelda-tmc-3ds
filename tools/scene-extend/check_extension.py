@@ -26,16 +26,29 @@ def main():
     ap.add_argument('picture')
     ap.add_argument('--left', type=int, default=80)
     ap.add_argument('--top', type=int, default=0)
+    ap.add_argument('--width', type=int)
+    ap.add_argument('--height', type=int)
     args = ap.parse_args()
     ext = Image.open(args.extended).convert('RGB')
     pic = Image.open(args.picture).convert('RGB')
-    l, t, w, h = args.left, args.top, pic.width, pic.height
+    l, t = args.left, args.top
+    if args.width is not None:
+        w = args.width
+    elif ext.width == 400 and pic.width == 256 and l == 80:
+        # 240-wide corridor centred in 400: original tilemap is 256, but columns 240..255 are offscreen empty tiles
+        right_16 = pic.crop((240, 0, 256, pic.height))
+        non_zero = sum(1 for p in pixels(right_16) if p != (0, 0, 0))
+        w = 240 if non_zero < 500 else 256
+    else:
+        w = pic.width
+    h = args.height if args.height is not None else pic.height
     print('extended %dx%d, picture %dx%d at %d,%d' % (ext.width, ext.height, w, h, l, t))
     if ext.height < t + h or ext.width < l + w:
         print('FAIL: the extension must hold the picture at %d,%d' % (l, t))
         sys.exit(1)
     centre = ext.crop((l, t, l + w, t + h))
-    changed = sum(1 for a, b in zip(pixels(centre), pixels(pic)) if a != b)
+    pic_centre = pic.crop((0, 0, w, h))
+    changed = sum(1 for a, b in zip(pixels(centre), pixels(pic_centre)) if a != b)
     palette = set(pixels(pic))
     everything = pixels(ext)
     inside = {(x, y) for y in range(t, t + h) for x in range(l, l + w)}

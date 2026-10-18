@@ -2510,6 +2510,32 @@ int32_t Port_SecondScreenTheme_DrawActionLabel(uint32_t* pixels, int32_t bufW, i
     }
 }
 
+int32_t Port_SecondScreenTheme_DrawHeartInUse(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                              int32_t cx, int32_t cy, int32_t scale, uint8_t frameId) {
+    int32_t ink[4];
+    int32_t sx, sy;
+    if (pixels == NULL || scale < 1 || !DecodeActionLabel(frameId, ink)) {
+        return 0;
+    }
+    {
+        const int32_t sw = ink[2] - ink[0] + 1, sh = ink[3] - ink[1] + 1;
+        const int32_t left = cx - (sw * scale) / 2, top = cy - (sh * scale) / 2;
+        for (sy = 0; sy < sh * scale; sy++) {
+            const int32_t py = top + sy;
+            if (py < 0 || py >= bufH) continue;
+            for (sx = 0; sx < sw * scale; sx++) {
+                const int32_t px = left + sx;
+                const uint32_t c =
+                    sActionScratch[(size_t)(ink[1] + sy / scale) * ACTION_LABEL_MAX_W + (size_t)(ink[0] + sx / scale)];
+                if ((c >> 24) != 0 && px >= 0 && px < bufW) {
+                    pixels[(size_t)py * (size_t)stride + px] = c;
+                }
+            }
+        }
+    }
+    return 1;
+}
+
 int Port_SecondScreenTheme_RButtonBounds(uint8_t frameId, int32_t box[4]) {
     const SecondScreenThemeSprite* r = Port_SecondScreenTheme_Get(SST_BUTTON_R);
     int32_t ox, oy, ink[4];

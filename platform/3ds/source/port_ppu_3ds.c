@@ -149,8 +149,10 @@ static bool sGpuSnapshotValid;
 static uint64_t sTopDrawTicks;
 static uint64_t sTopBlitTicks;
 static uint16_t sGpuDispcntPerLine[MODE1_GBA_HEIGHT];
-/* The iris fade's WIN0 in view pixels (virtuappu_mode1_ws_win0_lines). */
+/* The iris fade's WIN0 in view pixels (virtuappu_mode1_ws_win0_lines), or a
+ * dark room's light (sWin0LinesWindow: the GPU draws it as WIN0, not as a mask). */
 static uint16_t sWin0Lines[MODE1_GBA_HEIGHT * 2];
+static bool sWin0LinesWindow;
 static int32_t sGpuAffRefX[MODE1_GBA_HEIGHT];
 static int32_t sGpuAffRefY[MODE1_GBA_HEIGHT];
 static uint16_t
@@ -298,7 +300,8 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     view->wsFullView = virtuappu_mode1_ws_full_view != 0;
     /* The software PPU's rule (mode1_bg3_native_bounds_active). */
     view->bg3HofsBase = virtuappu_mode1_bg3_hofs_base;
-    view->irisLines = virtuappu_mode1_ws_win0_lines;
+    view->irisLines = sWin0LinesWindow ? NULL : virtuappu_mode1_ws_win0_lines;
+    view->win0Lines = sWin0LinesWindow ? virtuappu_mode1_ws_win0_lines : NULL;
     view->bg3NativeBounds = virtuappu_mode1_ws_full_view != 0 && virtuappu_mode1_bg3_hdma_native_bounds &&
                             (view->width > MODE1_GBA_BG_CLIP_X ||
                              (unsigned)virtuappu_mode1_frame_height() > MODE1_GBA_NATIVE_HEIGHT);
@@ -742,6 +745,15 @@ void Port_PPU_3DS_WriteScreenDump(void) {
                 (unsigned long long)ppuGpuStats.parityFailures,
                 (unsigned long long)ppuGpuStats.differingPixels,
                 (unsigned long long)ppuGpuStats.structuralPixels);
+        fprintf(info, "PICA200 build failures (args/unsupported/capacity/atlas/geometry): %llu/%llu/%llu/%llu/%llu, max required vertices %lu\n",
+                (unsigned long long)ppuGpuStats.buildFailures[PPU_GPU3DS_BUILD_ARGUMENTS],
+                (unsigned long long)ppuGpuStats.buildFailures[PPU_GPU3DS_BUILD_UNSUPPORTED],
+                (unsigned long long)ppuGpuStats.buildFailures[PPU_GPU3DS_BUILD_CAPACITY],
+                (unsigned long long)ppuGpuStats.buildFailures[PPU_GPU3DS_BUILD_ATLAS_FULL],
+                (unsigned long long)ppuGpuStats.buildFailures[PPU_GPU3DS_BUILD_GEOMETRY],
+                (unsigned long)ppuGpuStats.maxRequiredVertices);
+        fprintf(info, "PICA200 frames skipped by build backoff: %llu\n",
+                (unsigned long long)ppuGpuStats.backoffFrames);
         fprintf(info, "PICA200 command budget fallbacks/last/max words: %llu/%lu/%lu\n",
                 (unsigned long long)ppuGpuStats.commandBudgetFallbacks,
                 (unsigned long)ppuGpuStats.lastCommandWords,
@@ -1303,10 +1315,13 @@ static void PresentFrame(void) {
         DeepFindEntityByID(MANAGER, VAATI_APPARATE_MANAGER) != NULL;
     /* BG3HOFS before any HBlank DMA step of this frame. */
     virtuappu_mode1_bg3_hofs_base = (int)((gIoMem[MODE1_IO_BG3HOFS] | (gIoMem[MODE1_IO_BG3HOFS + 1] << 8)) & 0x1ff);
-    /* The game's iris (WIN0 from an HBlank table: 8-bit, 160 lines) redrawn
-     * for the whole view; both renderers take WIN0 from here then. */
-    virtuappu_mode1_ws_win0_lines =
-        Port_Widescreen_Win0Lines(sTopPresentWidth, sTopPresentHeight, sWin0Lines) ? sWin0Lines : NULL;
+    /* The game's iris or a dark room's light (WIN0 from an HBlank table: 8-bit,
+     * 160 lines) redrawn for the whole view; both renderers take WIN0 from here then. */
+    {
+        const int win0Kind = Port_Widescreen_Win0Lines(sTopPresentWidth, sTopPresentHeight, sWin0Lines);
+        virtuappu_mode1_ws_win0_lines = win0Kind != PORT_WS_WIN0_NONE ? sWin0Lines : NULL;
+        sWin0LinesWindow = win0Kind == PORT_WS_WIN0_WINDOW;
+    }
 
     Platform3DS_Heartbeat();
     Platform3DS_SetStage(1);
@@ -1345,34 +1360,37 @@ static void PresentFrame(void) {
             frameView.frameDispcnt &= (uint16_t)~MODE1_DISP_WIN0_ON;
         }
         sGpuSnapshotValid = true;
-        /* Claim the GPU frame first: preflight writes the vertex, index and
-         * atlas buffers the previous frame may still be drawing from, so this
-         * wait is a correctness barrier, not incidental ordering. It cannot be
-         * moved later or dropped to shorten the block -- doing so overwrites
-         * geometry still being drawn, which an emulator hides because its GPU
-         * completes instantly. Removing the block properly means double
-         * buffering those buffers so preflight can write B while the GPU reads A.
+        /* The frame is built while the GPU still draws the previous one: preflight writes only
+         * the vertex buffer the GPU is not reading and copies of the atlas and rings, and
+         * commit moves the new tiles into the textures once C3D_FrameBegin has waited for that
+         * frame (docs/gpu-build-ahead.md). Before, the wait came first and this frame's build
+         * was serial with the last one's GPU work: a dark room in 3D stopped at 54 fps on a
+         * New 3DS with a 12.6 ms GPU frame. An emulator, whose GPU completes instantly, cannot
+         * show a mistake here: anything the GPU reads must not be written before the wait.
          *
-         * Stage 2 covered both the frame-begin wait and the whole of preflight.
          * C3D_FrameBegin waits on the GX queue with no timeout, so a command
-         * list the GPU never retires stops the main thread here forever. Split
-         * them so the watchdog names which. */
-        /* The PPU-render span is 4.249 ms average, of which preflight is 3.024
-         * and the builder 2.906 -- so on AVERAGE this is CPU builder work, not
-         * the GPU wait. But 89 of 1681 frames exceed 16 ms in this span and an
-         * average cannot say which half spikes. Split them: if the wait spikes
-         * it is GSP starvation (attack with app_cpu_limit / core placement); if
-         * preflight spikes it is the builder, most likely `maps` at 2.31 ms
-         * with atlas decode bursts on area change (111 decodes/frame average
-         * over 199496). The two fixes have nothing in common, so guessing here
-         * would waste a run. */
-        Platform3DS_SetStage(20);
-        const uint64_t beginStart = Platform3DS_SystemTick();
-        const bool frameBegun = PlatformGpu3DS_BeginCustomTop();
-        const uint64_t beginTicks = Platform3DS_SystemTick() - beginStart;
+         * list the GPU never retires stops the main thread there forever; the
+         * stages tell the watchdog which of the wait and the build it was. */
+        const bool buildAhead = PortPpuGpu3DS_BuildsAhead();
+        uint64_t beginTicks = 0;
+        bool frameBegun = true;
+        const uint64_t preflightStart = Platform3DS_SystemTick();
+        if (!buildAhead) {
+            Platform3DS_SetStage(20);
+            frameBegun = PlatformGpu3DS_BeginCustomTop();
+            beginTicks = Platform3DS_SystemTick() - preflightStart;
+        }
         Platform3DS_SetStage(21);
         gpuReady = frameBegun && PortPpuGpu3DS_Preflight(&frameView);
-        const uint64_t preflightTicks = Platform3DS_SystemTick() - beginStart - beginTicks;
+        if (buildAhead && gpuReady) {
+            Platform3DS_SetStage(20);
+            const uint64_t beginStart = Platform3DS_SystemTick();
+            gpuReady = PlatformGpu3DS_BeginCustomTop();
+            beginTicks = Platform3DS_SystemTick() - beginStart;
+            Platform3DS_SetStage(21);
+        }
+        gpuReady = gpuReady && PortPpuGpu3DS_Commit(&frameView);
+        const uint64_t preflightTicks = Platform3DS_SystemTick() - preflightStart - beginTicks;
         Platform3DS_SetStage(3);
         perfBeginTicks = beginTicks;
         perfPreflightTicks = preflightTicks;

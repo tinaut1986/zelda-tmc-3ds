@@ -111,7 +111,7 @@ set(TMC_PORT_SOURCES
     port/port_gba_mem.c port/port_hdma.c port/port_save.c port/port_softslots.c
     port/port_dump_state.c
     port/port_second_screen_state.c port/port_text_i18n.c
-    port/port_second_screen_render.c port/port_second_screen_worldmap.c
+    port/port_second_screen_render.c port/port_second_screen_color.c port/port_second_screen_worldmap.c
     port/port_second_screen_dungeonmap.c port/port_second_screen_quest.c
     port/port_second_screen_theme.c port/port_roll_attack_macro.c
     port/port_filter.c port/port_animation.c port/port_math.c
@@ -181,6 +181,7 @@ add_executable(tmc-3ds
     source/port_ppu_3ds.c
     source/hud_xy_3ds.c
     source/fade_gpu_3ds.c
+    source/gba_look_3ds.c
     source/port_ppu_gpu_3ds_model.c
     source/port_ppu_gpu_3ds.c
     source/port_audio_3ds.c
@@ -219,6 +220,7 @@ set_source_files_properties(
     "${TMC_ROOT}/port/ppu/src/mode1.c"
     "${CMAKE_CURRENT_LIST_DIR}/source/port_second_screen_3ds.c"
     "${TMC_ROOT}/port/port_second_screen_render.c"
+    "${TMC_ROOT}/port/port_second_screen_color.c"
     "${TMC_ROOT}/port/port_second_screen_worldmap.c"
     "${TMC_ROOT}/port/port_second_screen_dungeonmap.c"
     "${TMC_ROOT}/port/port_second_screen_quest.c"
@@ -291,6 +293,11 @@ foreach(scene portal-cutscene-strips title-forest fileselect-cave)
     configure_file("${CMAKE_CURRENT_LIST_DIR}/romfs/wide-scenes/${scene}.bin"
                    "${TMC_ROMFS}/wide-scenes/${scene}.bin" COPYONLY)
 endforeach()
+
+# The GBA frame of gba_look_3ds.c: the owner's artwork as ../mzm made it (512x256 GPU_RGBA8 tiled,
+# LZ4 block, 524288 bytes once unpacked). Loaded on first use, so it takes no room in the binary.
+configure_file("${CMAKE_CURRENT_LIST_DIR}/romfs/gba-look-frame.lz4"
+               "${TMC_ROMFS}/gba-look-frame.lz4" COPYONLY)
 
 set(TMC_SMDH "${CMAKE_CURRENT_BINARY_DIR}/tmc-3ds.smdh")
 ctr_generate_smdh(

@@ -270,9 +270,25 @@ typedef enum {
 int Port_Config_Get3DSAspectRatio(void);
 const char* Port_Config_Get3DSAspectRatioName(void);
 void Port_Config_Cycle3DSAspectRatio(void);
+/* WIDE + AI: the scene extensions made with a generative AI are shown (WIDE only). The bottom screen
+ * asks once whether to, the first time WIDE is on; the answer is kept (wide_ai, wide_ai_asked). */
+bool Port_Config_GetWideAi(void);
+bool Port_Config_WideAiQuestionDue(void);
+void Port_Config_AnswerWideAi(bool yes);
 int Port_Config_Get3DSDisplayStyle(void);
 const char* Port_Config_Get3DSDisplayStyleName(void);
 void Port_Config_Cycle3DSDisplayStyle(void);
+/* GBA look on the top screen (platform/3ds/source/gba_look_3ds.h), as in ../mzm: the pixel-grid
+ * lines (OFF / LOW / MED / HIGH, 0..3) and the console's frame around a 240x160 or 360x240 picture. */
+int Port_Config_GetGbaGrid(void);
+const char* Port_Config_GetGbaGridName(void);
+void Port_Config_CycleGbaGrid(void);
+bool Port_Config_GetGbaFrame(void);
+void Port_Config_SetGbaFrame(bool on);
+/* The frame is for VIEW: ORIGINAL only (WIDE fills the border with world): locked and off otherwise,
+ * whatever gba_frame says; Active is what the presenter draws. */
+bool Port_Config_GbaFrameAvailable(void);
+bool Port_Config_GbaFrameActive(void);
 /* Experimental presentation gate only. It does not add a persisted enum or
  * INI key: New 3DS + the existing Wide + Pixel Perfect selections opt in. */
 bool Port_Config_3DSFullViewComboEnabled(void);
@@ -287,6 +303,12 @@ void Port_Config_SetTurboMultiplier(unsigned multiplier);
  * only — menus keep their UI. Default off. */
 bool Port_Config_GetHideTopHud(void);
 void Port_Config_SetHideTopHud(bool on);
+#ifdef TMC_3DS
+/* The setting itself: 0 SHOW, 1 HIDE, 2 AUTO. Port_Config_GetHideTopHud answers for the moment: AUTO is
+ * hidden while the bottom screen's sidebar (hearts, buttons, rupees, keys) is on it. */
+int Port_Config_GetTopHudMode(void);
+void Port_Config_CycleTopHudMode(void);
+#endif
 
 /* Speedrun practice mode (port_practice.c). Overlay toggles + slow-mo factor
  * (0.05..1.0; 1.0 = normal speed). All persisted to config.json. */

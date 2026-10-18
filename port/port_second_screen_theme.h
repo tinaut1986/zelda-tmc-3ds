@@ -303,6 +303,12 @@ int32_t Port_SecondScreenTheme_DrawActionLabel(uint32_t* pixels, int32_t bufW, i
                                                int32_t stride, int32_t x, int32_t y, int32_t scale2,
                                                uint8_t frameId);
 
+/* The in-game "heart in use" mark: the 16x16 face of sprite 322 (frameId 0x71 + quarters, 0x75 for a
+ * full heart; HeartUIElement) centred on (cx, cy), `scale` pixels per art pixel. 0 when the sprite is
+ * not loaded. */
+int32_t Port_SecondScreenTheme_DrawHeartInUse(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                              int32_t cx, int32_t cy, int32_t scale, uint8_t frameId);
+
 /* The R button and its label laid out as the top screen's HUD has them: both
  * at one element position (x, y), each by its own sprite frame's piece offsets.
  * Bounds gives the box both cover relative to that position (left, top, right,

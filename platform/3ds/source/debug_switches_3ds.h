@@ -15,6 +15,8 @@ enum {
     DEBUG_SW_COMPACT_UPLOAD,/* compact_upload (Old 3DS): taken at the start of the next frame */
     DEBUG_SW_CPU_LIMIT,     /* app_cpu_limit: APT takes it at once */
     DEBUG_SW_STEREO_3D,     /* stereo_3d_on: OFF / ON, from the next frame (stereo_3ds.h) */
+    DEBUG_SW_PLANE_TINT,    /* OFF / LAYERS / DEPTH, not saved (PortPpuGpu3DS_SetTintMode) */
+    DEBUG_SW_FORCE_3D,      /* the 3D slider reads fully up, not saved (Stereo3DS_SetForce) */
     DEBUG_SW_COUNT
 };
 

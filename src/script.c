@@ -1571,6 +1571,16 @@ void ScriptCommand_0807ED24(Entity* entity, ScriptExecutionContext* context) {
 void ScriptCommand_MoveTo(Entity* entity, ScriptExecutionContext* context) {
     if (!context->unk_18) {
         context->unk_18 = 1;
+#ifdef PC_PORT
+        if (entity->kind == NPC && entity->id == FOREST_MINISH && entity->type2 == 39 &&
+            context->scriptInstructionPointer[1] == 0x208 && context->scriptInstructionPointer[2] == 0x2b0 &&
+            (Port_Widescreen_HudTargetViewWidth() > 240 || Port_Widescreen_HudTargetViewHeight() > 160)) {
+            /* The village intro's first Minish leaves up through the shoe house's door; in a wider view that
+             * shows him crossing the house. He goes up the path on the right, as he came (forestMinish.c). */
+            LookAt(entity, context, 0x278 + gRoomControls.origin_x, 0x2b0 + gRoomControls.origin_y);
+            gActiveScriptInfo.flags |= 1;
+        } else
+#endif
         ScriptCommand_LookAt(entity, context);
     }
     ScriptCommand_MoveTowardsTarget(entity, context);

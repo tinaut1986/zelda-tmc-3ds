@@ -39,7 +39,7 @@ The bug icon in the tab bar (debug builds only).
 | PERF RECORDER | the frame-time recorder (below): the side button starts and stops it; while it runs the cell shows the rows held and how full the buffer is |
 | LOG MARK | writes `--- MARK n ---` into the log and flushes it: tap it when the problem shows, then find it in the file |
 | SCREEN DUMP | both screens, the memories and the frame's state as numbered `debug/tmc-dump-NNNN-*` files, written at the next frame boundary (below) |
-| SHOW FPS | the top-screen numbers box: game rate, `L` logic ms, `G` GPU ms, `S` presented rate |
+| SHOW FPS | the top-screen numbers box: game rate, `L` logic ms, `G` GPU ms, `S` presented rate; debug builds add `C`, the frames the software renderer drew in the last second (green 0 = all on the GPU, red otherwise; a fallback of the GPU preflight or a disabled GPU path) |
 | FTP SERVER | an FTP server inside the game (below): the side button starts or stops it, the cell shows the address to connect to |
 | GPU CHECK | the next frame is drawn by both renderers and compared (as in sm-3ds); the cell shows the checks done and the pixels that differed. A frame that differs is saved as `debug/tmc-check-NNNN-*` (CPU and GPU surfaces, the first differing pixels). A difference the blender cannot explain is counted and logged, it no longer retires the renderer. Old 3DS only (the only model with the GPU renderer) |
 
@@ -65,6 +65,8 @@ blue: changed). None needs a restart.
 | COMPACT UP | `compact_upload` | ON / OFF | smaller upload surfaces, Old 3DS only; taken at the start of the next frame |
 | CPU LIMIT | `app_cpu_limit` | AUTO / 80 / 70 / 50 / 30 % | the app's share of core 1 (the rest goes to GSP and the sysmodules); the cell shows the share granted |
 | STEREO 3D | `stereo_3d_on` | OFF / ON | stereoscopic 3D on the top screen while the slider is up; ON by default (`docs/stereo-3d.md`) |
+| PLANE TINT | not saved (OFF at boot) | OFF / LAYERS / DEPTH | GPU renderer only: every quad painted in one flat colour, keeping its silhouette. LAYERS: BG0 magenta, BG1 cyan, BG2 orange, BG3 green, sprites white, darker the further back the priority. DEPTH: the depth `stereo_3ds.c` gives each layer (`Stereo3DS_LayerDepth`), blue, dark behind the screen and bright in front of it; it works with the slider down. The backdrop and OBJ windows are left as they are. After `../mzm` and `../sm-3ds`. `tmc-link.py switch "PLANE TINT"` cycles it. |
+| FORCE 3D | not saved (OFF at boot) | OFF / ON | the 3D slider reads fully up whatever it is (`Stereo3DS_SetForce`): the right eye is drawn and `tmc-link.py shot` writes it as `top-right.png`, so a 3D scene can be checked from the PC; a 2DS shows the depth in PLANE TINT's DEPTH view too |
 
 `bottom_rgb565` is not offered: upstream's own note says it turns the bottom
 screen red. Upstream's comments on each are in `platform/3ds/source/port_config_3ds.c`.
@@ -110,7 +112,11 @@ wget -r -nH --cut-dirs=3 ftp://<3ds-ip>:5000/3ds/Minish%20Cap%203DS/debug/   # t
 `SITE INSTALL <path>` installs a CIA of this game that is already on the SD card
 over the running game and relaunches into the new build 10 s later, through libctru's chainloader
 (jumping at once made the system loader crash out of memory, issue #4); the FTP server comes back
-on with it.
+on with it. A CIA whose title version is lower than the installed one (a downgrade, or a build made
+from a branch `version.sh` numbers lower) is accepted too: AM refuses it at the first write
+(`0xd8e08027`), so the game removes its installed title and installs the CIA instead
+(`cia_install_3ds.c`); saves and settings live under `sdmc:/3ds/`, not in the title. Keep a CIA in
+`/cias/` for the case where the removal succeeds and the install fails.
 `./build_3ds.sh --install IP` builds, uploads to
 `/3ds/Minish Cap 3DS/update/dev.cia` and installs in one go; the interactive menu
 offers it as "Install into the running game". Any unsaved progress is lost. While a
@@ -167,6 +173,8 @@ tools/tmc-link/tmc-link.py switch "FRAME SYNC"
 tools/tmc-link/tmc-link.py gpucheck             # next frame by both renderers: differing=N structural=N
 tools/tmc-link/tmc-link.py perf start / perf stop [DIR]   # the perf recorder; stop fetches the CSV
 tools/tmc-link/tmc-link.py poke gPpuGpu3DSRingDisable 0f   # bit per BG: draw it from quads again (00 = rings on)
+tools/tmc-link/tmc-link.py poke gPpuGpu3DSSerialBuild 01   # claim the GPU frame before building it, as before (docs/gpu-build-ahead.md)
+tools/tmc-link/tmc-link.py poke gPpuGpu3DSEyesWhole 01     # 3D: both eyes drawn whole, not over one base (docs/stereo-3d.md)
 tools/tmc-link/tmc-link.py log                  # flush (MARK) and fetch the newest SD log
 tools/tmc-link/tmc-link.py run tools/tmc-link/examples/walk-left.txt
 ```
@@ -183,6 +191,17 @@ Reads and writes check that the memory is mapped first, so a wrong address answe
 `550` instead of crashing. Together with the FTP server coming back after a relaunch,
 `./build_3ds.sh --install IP && tools/tmc-link/tmc-link.py run SCRIPT` installs a build
 and plays a scenario on it with nobody at the console.
+
+### Which layer holds what (poke the display control)
+
+To see which GBA layer draws an element, hide layers one at a time on the running game and `shot` each
+(used for the 3D scenes, `docs/stereo-3d.md`): `tmc-link.py --elf <the ELF of the build on the console>
+poke gScreen <2 bytes>` writes `gScreen.lcd.displayControl` (little endian: `401f` = 0x1f40 = BG0-BG3 and
+OBJ on, `401e` no BG0, `401d` no BG1, `401b` no BG2, `4017` no BG3, `400f` no OBJ). **Put back the value the
+scene had** (read it first with `peek gScreen 0x48`: bytes 0-1 the display control, then each BG's control
+word at offsets 8, 0x14, 0x20, 0x2c: priority in its low 2 bits): the file select is 0x1f40, the title
+0x1741, the logos 0x0540; a wrong one leaves garbage layers on. Poke while nobody plays: the game rewrites
+it only on the next scene change.
 
 ## SD log
 

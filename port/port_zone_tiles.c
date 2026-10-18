@@ -74,6 +74,26 @@ static unsigned RegionGroup(const u16* regions, u32 x, u32 y) {
     return 0xff;
 }
 
+/* The group of the region nearest to the room point (x, y) within `radius` pixels (Chebyshev distance
+ * to the region's rectangle); 0xff for none. The village's tables leave gaps: the game only swaps
+ * graphics for the regions on screen, and in its 240x160 view a gap cell next to a zone is never seen
+ * before that zone's set is loaded. A wider view shows it, so it takes the neighbour's set. */
+static unsigned NearestRegionGroup(const u16* regions, u32 x, u32 y, u32 radius) {
+    unsigned best = 0xff;
+    u32 bestDistance = radius + 1;
+    for (; regions != NULL && *regions != 0xff; regions += 5) {
+        const u32 right = (u32)regions[1] + regions[3] - 1u, bottom = (u32)regions[2] + regions[4] - 1u;
+        const u32 dx = x < regions[1] ? regions[1] - x : x > right ? x - right : 0u;
+        const u32 dy = y < regions[2] ? regions[2] - y : y > bottom ? y - bottom : 0u;
+        const u32 distance = dx > dy ? dx : dy;
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = regions[0];
+        }
+    }
+    return best;
+}
+
 /* The variant of a cell whose slots take these sets (0xff: VRAM's), added when new. */
 static uint8_t VariantFor(const unsigned* setOfSlot) {
     for (unsigned v = 1; v < sZones.variantCount; ++v) {
@@ -97,7 +117,7 @@ static uint8_t VariantFor(const unsigned* setOfSlot) {
     return (uint8_t)sZones.variantCount++;
 }
 
-static void MapCells(const u16* const* slotRegions) {
+static void MapCells(const u16* const* slotRegions, u32 gapRadius) {
     const int columns = gRoomControls.width / 8 < MAP_TILES ? gRoomControls.width / 8 : MAP_TILES;
     const int rows = gRoomControls.height / 8 < MAP_TILES ? gRoomControls.height / 8 : MAP_TILES;
     for (int row = 0; row < rows; ++row) {
@@ -106,6 +126,9 @@ static void MapCells(const u16* const* slotRegions) {
             bool any = false;
             for (unsigned slot = 0; slot < sZones.slotCount; ++slot) {
                 sets[slot] = RegionGroup(slotRegions[slot], (u32)column * 8u + 4u, (u32)row * 8u + 4u);
+                if (sets[slot] == 0xff && gapRadius != 0)
+                    sets[slot] = NearestRegionGroup(slotRegions[slot], (u32)column * 8u + 4u, (u32)row * 8u + 4u,
+                                                    gapRadius);
                 any |= sets[slot] != 0xff;
             }
             sCellVariant[row * MAP_TILES + column] = any ? VariantFor(sets) : 0;
@@ -129,7 +152,7 @@ static bool BuildMinishVillage(void) {
                                                                      sSetPalettes[set]);
     }
     const u16* regions[PORT_ZONE_SLOTS] = { Port_MinishVillageZoneRegions() };
-    MapCells(regions);
+    MapCells(regions, 128);
     return true;
 }
 
@@ -152,7 +175,7 @@ static bool BuildHyruleTown(void) {
     }
     const u16* regions[PORT_ZONE_SLOTS] = { Port_HyruleTownZoneRegions(0), Port_HyruleTownZoneRegions(1),
                                             Port_HyruleTownZoneRegions(2) };
-    MapCells(regions);
+    MapCells(regions, 0);
     return true;
 }
 

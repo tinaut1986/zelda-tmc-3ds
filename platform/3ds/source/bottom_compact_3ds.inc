@@ -513,6 +513,8 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
     CSettingCell(s, tl, 1, 3, 1, "HOLD TEXT", SS_SET_HOLD_ADVANCE);
     /* Colours (the map's switches, MAP FOLLOW, CREST PINS and FLOOR BACK, are chips on the map) */
     CSettingCell(s, tl, 2, 0, 1, "COLOURS", SS_SET_COLOR_CORRECTION);
+    CSettingCell(s, tl, 2, 1, 1, "GBA GRID", SS_SET_GBA_GRID);
+    CSettingCell(s, tl, 2, 2, 1, "GBA FRAME", SS_SET_GBA_FRAME);
     /* Look and system */
     {
         int32_t x, w;
@@ -1164,6 +1166,8 @@ static void Compact_PaintDebugSwitches(const SSurf* s, TargetList* tl) {
     }
     int32_t y = y0 + ((DEBUG_SW_COUNT + 3) / 4) * (CC_CELL_H + CC_GAP) + 2;
     CText(s, CC_MARGIN + 1, y, CC_FAINT, "WHITE: DEFAULT  BLUE: CHANGED  (TMC3DS.INI)");
+    CText(s, CC_MARGIN + 1, y + 10, CC_FAINT, "PLANE TINT LAYERS: BG0 PINK BG1 CYAN BG2 ORANGE BG3 GREEN");
+    CText(s, CC_MARGIN + 1, y + 20, CC_FAINT, "SPRITES WHITE, DARKER AT THE BACK. DEPTH: BLUE, BRIGHT IN FRONT");
 }
 
 static void Compact_PaintDebug(const SSurf* s, TargetList* tl, const SecondScreenSnapshot* snap, uint32_t tick,
@@ -1365,6 +1369,13 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
         const SecondScreenThemeSprite* hs = Port_SecondScreenTheme_Get(state);
         if (edgeInk && i % cols == 0) BlitSprite(s, edge, hx - 8, cy + (i / cols) * 8, 1);
         if (hs) BlitSprite(s, hs, hx + (i % cols) * 8, cy + (i / cols) * 8, 1);
+    }
+    if (quarters > 0 && quarters <= maxHearts * 4) {
+        /* HeartUIElement: the last heart with life wears a 16x16 face over its 8x8 tile. */
+        const int cur = (quarters + 3) / 4 - 1;
+        Port_SecondScreenTheme_DrawHeartInUse(s->px, s->w, s->h, s->stride, hx + (cur % cols) * 8 + 4,
+                                              cy + (cur / cols) * 8 + 4, 1,
+                                              (uint8_t)(0x71 + ((quarters & 3) == 0 ? 4 : (quarters & 3))));
     }
     cy += ((maxHearts + cols - 1) / cols) * 8 + 4;
 

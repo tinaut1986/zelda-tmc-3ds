@@ -45,6 +45,9 @@
  * behind a map and a vitals column.
  */
 
+#ifdef TMC_3DS
+#include <stdatomic.h>
+#endif
 #include "port_second_screen.h"
 #include "port_softslots.h"
 #include "port_second_screen_camera.h"
@@ -166,6 +169,7 @@ enum {
     SS_ACT_LOAD_CONFIRM,
     SS_ACT_NOTICE_CLOSE,
 #ifdef TMC_3DS
+    SS_ACT_WIDEAI_NO, SS_ACT_WIDEAI_YES, /* the one-time question about WIDE + AI */
     SS_ACT_UPDATE_CHANNEL, SS_ACT_UPDATE_RELEASE, SS_ACT_UPDATE_ACTION,
     SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT,
     SS_ACT_THEME, /* OPTIONS -> THEME (bottom_compact_3ds.inc) */
@@ -212,6 +216,8 @@ enum {
     SS_SET_ASPECT_RATIO,
     SS_SET_DISPLAY_STYLE,
     SS_SET_FRAMES,        /* frame_pacing: AUTO / LOCK 30 / NO SKIP */
+    SS_SET_GBA_GRID,      /* gba_grid: OFF / LOW / MED / HIGH (gba_look_3ds.h) */
+    SS_SET_GBA_FRAME,     /* gba_frame: the console's body around a 240x160 / 360x240 picture */
 #endif
     SS_SET_COUNT
 };
@@ -1150,6 +1156,12 @@ static float WholeMapCenterX(float width, float scale) {
  * and from the whole view a tap on a map tile brackets it and zooms into
  * that region; windcrest warp points draw as small pins. While Link is
  * indoors the marker holds the doorway fix. */
+/* The blink phase the last map paint drew, for the repaint predicate (Port_SecondScreen_MapPhaseChanged). */
+static volatile int sPaintedHintsPhase;
+int Port_SecondScreen_MapPhaseChanged(const SecondScreenSnapshot* snap) {
+    return SecondScreen_HintsPhase(snap) != sPaintedHintsPhase;
+}
+
 static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
                            float ry0, float rx1, float ry1, float u, uint32_t tick, int wholeMap,
                            int followCfg, int crestCfg, uint32_t tickForPulse) {
@@ -1255,6 +1267,18 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
     BlitMapRegion(s, img, imgW, imgH, ox, oy, sCam.scale, (int32_t)rx0, (int32_t)ry0, (int32_t)rx1,
                   (int32_t)ry1);
 
+    /* The native pause map stamps one opaque gray DrawDirect frame over every region whose discovery bit is
+     * still clear (sub_080A6498: OBJ-window sprites that hide BG1, the terrain). Sprites stay on in that window
+     * (WINOUT 0x3d3f), so the hints, the crest pins and Link are drawn over it, as on the game's own screen. */
+    Port_SecondScreenWorldMap_DrawUnrevealedRegions(
+        s->px, s->w, s->h, s->stride, snap->windcrests, ox, oy, sCam.scale, (int32_t)rx0,
+        (int32_t)ry0, (int32_t)rx1, (int32_t)ry1);
+
+    /* sub_080A6378 counts frames and, every 32, swaps what it draws: the map hints while bit 5 of the count is
+     * set, Link while it is clear. */
+    const int hintsPhase = SecondScreen_HintsPhase(snap);
+    sPaintedHintsPhase = hintsPhase;
+
     /* Map hints — the red checks and errand glyphs the game's own world map
      * shows — right above the map art, below the crest pins and the player
      * marker. Kinstone fusions deliberately do NOT belong here: the game
@@ -1263,7 +1287,7 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
      * and a marker simply skips that frame. */
     {
         SecondScreenMapMarker hints[16];
-        int32_t nHints = Port_SecondScreenWorldMap_GetMapHints(snap->mapHints, hints, 16);
+        int32_t nHints = hintsPhase ? Port_SecondScreenWorldMap_GetMapHints(snap->mapHints, hints, 16) : 0;
         /* Stamp size is pinned to the FITTED map scale, never the live camera
          * scale. Sized off sCam.scale the glyphs inflated along with the
          * terrain, so the follow view — the one that exists to show detail —
@@ -1311,7 +1335,7 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
 
     /* Player marker: a pulsing gold diamond (live it also blinks white,
      * like the game's own map dot; the frozen doorway fix holds steady). */
-    if (sLastFix.valid) {
+    if (sLastFix.valid && !hintsPhase) {
         float px = ox + (sLastFix.mapX + 0.5f) * sCam.scale;
         float py = oy + (sLastFix.mapY + 0.5f) * sCam.scale;
         int32_t base =
@@ -1334,14 +1358,6 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
 #endif
         DrawMapMarker(s, (int32_t)px, (int32_t)py, base, c);
     }
-
-    /* The native pause map stamps one opaque gray DrawDirect frame over
-     * every region whose discovery bit is still clear. Draw these last,
-     * exactly like sub_080A6498, so hidden terrain and its markers cannot
-     * leak through the bottom screen. */
-    Port_SecondScreenWorldMap_DrawUnrevealedRegions(
-        s->px, s->w, s->h, s->stride, snap->windcrests, ox, oy, sCam.scale, (int32_t)rx0,
-        (int32_t)ry0, (int32_t)rx1, (int32_t)ry1);
 
     /* Zoom-grid availability, asked once per frame at the view center: the
      * map screen's own tile grid answering means a tap can zoom, which is
@@ -1985,6 +2001,14 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
 /*  Settings panel                                                     */
 /* ------------------------------------------------------------------ */
 
+#ifdef TMC_3DS
+/* Whether the bottom screen shows the sidebar (hearts, charge, buttons, rupees, keys) as of its last
+ * paint: set by the paint thread, read by the game's thread through Port_Config_GetHideTopHud when
+ * TOP HUD is AUTO. */
+static _Atomic int sSidebarShown;
+int Port_SecondScreen_TopHudCovered(void) { return sSidebarShown; }
+#endif
+
 static const char* const kSettingLabels[SS_SET_COUNT] = {
     "TOP HUD",          "WIDESCREEN",        "FOLLOW CAM",       "WINDCREST PINS",
     "FLOOR AUTO RETURN", "TURBO SPEED",       "MASTER VOLUME",    "AUTOSAVE",
@@ -1992,6 +2016,7 @@ static const char* const kSettingLabels[SS_SET_COUNT] = {
     "RANDOMIZER",       "PANEL BACKDROP",     "SWAP SCREENS",
 #ifdef TMC_3DS
     "ASPECT RATIO",     "DISPLAY STYLE",    "FRAMES",
+    "GBA GRID",         "GBA FRAME",
 #endif
 };
 
@@ -2019,6 +2044,7 @@ static const char* SettingValueMinWord(int setting) {
 #ifdef TMC_3DS
         case SS_SET_ASPECT_RATIO: return "ORIGINAL";
         case SS_SET_DISPLAY_STYLE: return "PIXEL PERFECT";
+        case SS_SET_GBA_GRID: return "HIGH";
 #endif
         default: return "OFF";
     }
@@ -2040,6 +2066,8 @@ static int SettingsPageRows(int page, uint8_t* out) {
 #ifdef TMC_3DS
         out[n++] = SS_SET_ASPECT_RATIO;
         out[n++] = SS_SET_DISPLAY_STYLE;
+        out[n++] = SS_SET_GBA_GRID;
+        out[n++] = SS_SET_GBA_FRAME;
         out[n++] = SS_SET_TOP_HUD;
         out[n++] = SS_SET_COLOR_CORRECTION;
         out[n++] = SS_SET_BACKDROP;
@@ -2227,8 +2255,17 @@ static int GetSettingState(int row, char* out, int outCap) {
         case SS_SET_TOP_HUD:
             /* The row states what the top screen DOES: SHOW is the (red)
              * default, HIDE hands vitals duty to this panel. */
+#ifdef TMC_3DS
+            /* SHOW, HIDE, or AUTO: hidden while the sidebar below has the same things. */
+            {
+                const int mode = Port_Config_GetTopHudMode();
+                on = mode != 1;
+                txt = mode == 0 ? "SHOW" : (mode == 1 ? "HIDE" : "AUTO");
+            }
+#else
             on = !Port_Config_GetHideTopHud();
             txt = on ? "SHOW" : "HIDE";
+#endif
             break;
         case SS_SET_WIDESCREEN: on = Port_Config_WidescreenEnabled(); break;
         case SS_SET_FOLLOW: on = Port_Config_GetSecondScreenFollowCam(); break;
@@ -2280,6 +2317,16 @@ static int GetSettingState(int row, char* out, int outCap) {
         case SS_SET_DISPLAY_STYLE:
             snprintf(out, (size_t)outCap, "%s", Port_Config_Get3DSDisplayStyleName());
             return Port_Config_Get3DSDisplayStyle() != PORT_3DS_DISPLAY_BILINEAR;
+        case SS_SET_GBA_GRID:
+            snprintf(out, (size_t)outCap, "%s", Port_Config_GetGbaGridName());
+            return Port_Config_GetGbaGrid() != 0;
+        case SS_SET_GBA_FRAME:
+            if (!Port_Config_GbaFrameAvailable()) { /* locked: only VIEW ORIGINAL has a border to fill */
+                snprintf(out, (size_t)outCap, "---");
+                return 0;
+            }
+            on = Port_Config_GetGbaFrame();
+            break;
         case SS_SET_FRAMES: {
             static const char* const kPacing[PORT_3DS_PACING_COUNT] = { "AUTO", "LOCK 30", "NO SKIP" };
             int pacing = Port_Config_GetFramePacing();
@@ -2510,6 +2557,16 @@ static void PaintLoadStateConfirmation(const SSurf* s, TargetList* tl, float u, 
               layout.buttonBottom, SS_ACT_LOAD_CANCEL, 0);
     AddTarget(tl, layout.buttonMiddleRight, layout.buttonTop, layout.buttonRight,
               layout.buttonBottom, SS_ACT_LOAD_CONFIRM, 0);
+}
+
+static void PaintWideAiQuestion(const SSurf* s, TargetList* tl) {
+    /* Asked once, the first time WIDE is on (Port_Config_WideAiQuestionDue): some scenes have nothing
+     * past the GBA's screen, and their edges were made with a generative AI. YES is WIDE + AI. */
+    static const char* const kLines[] = {
+        "SOME SCENES HAVE NOTHING PAST THE", "EDGES OF THE GBA SCREEN. NEW EDGES", "WERE MADE FOR THEM WITH A GENERATIVE",
+        "AI TO FILL THE WIDE SCREEN.", "SHOW THESE EDGES?", "(YOU CAN CHANGE IT IN VIEW)",
+    };
+    Compact_PaintModal(s, tl, "WIDE VIEW", kLines, 6, "NO", SS_ACT_WIDEAI_NO, "YES", SS_ACT_WIDEAI_YES);
 }
 
 static void PaintUnavailableNotice(const SSurf* s, TargetList* tl, float u, int32_t ts) {
@@ -2867,6 +2924,15 @@ static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, Targe
             FillRect(s, hx + hk, hyy + hk, hx + 7 * hk, hyy + 7 * hk, c);
         }
     }
+    if (quarters > 0 && quarters <= maxHearts * 4) {
+        /* HeartUIElement: the last heart with life wears a 16x16 face over its 8x8 tile, twice the row's
+         * size, so the eye finds where the life stops. */
+        const int cur = (quarters + 3) / 4 - 1;
+        const uint8_t frame = (uint8_t)(0x71 + ((quarters & 3) == 0 ? 4 : (quarters & 3)));
+        Port_SecondScreenTheme_DrawHeartInUse(s->px, s->w, s->h, s->stride,
+                                              (int32_t)(hx0 + (cur % cols) * 8 * hk + 4 * hk),
+                                              (int32_t)(hy + (cur / cols) * 8 * hk + 4 * hk), hk, frame);
+    }
     float vitalsBottom = hy + rows * 8 * hk + 4 * u;
 
     /* The charge cue occupies the top of the R-prompt reservation. The
@@ -3164,6 +3230,9 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
 
 #ifdef TMC_3DS
     const int noGamePanel = sCompactNoGame && tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && tab != SS_TAB_STATES && tab != SS_TAB_RETRO;
+    /* TOP HUD = AUTO: the top screen's HUD goes while the sidebar that has the same things is shown. */
+    sSidebarShown = tab != SS_TAB_SETTINGS && tab != SS_TAB_DEBUG && tab != SS_TAB_STATES && tab != SS_TAB_RETRO &&
+                    !noGamePanel;
     if (noGamePanel) {
         Compact_PaintNoGame(&s);
     } else
@@ -3255,6 +3324,8 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
         PaintLoadStateConfirmation(&s, &tl, u, ts);
     } else if (unavailableNoticeActive) {
         PaintUnavailableNotice(&s, &tl, u, ts);
+    } else if (Port_Config_WideAiQuestionDue()) {
+        PaintWideAiQuestion(&s, &tl);
     }
     Compact_PaintBusy(&s, &tl);
 #endif
@@ -3429,6 +3500,14 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             sUi.unavailableNoticeActive = 0;
             UI_UNLOCK();
             break;
+#ifdef TMC_3DS
+        case SS_ACT_WIDEAI_NO:
+            Port_Config_AnswerWideAi(false);
+            break;
+        case SS_ACT_WIDEAI_YES:
+            Port_Config_AnswerWideAi(true);
+            break;
+#endif
         case SS_ACT_QUESTVIEW:
             UI_LOCK();
             sUi.questView = hit.arg;
@@ -3488,7 +3567,11 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
                 case SS_SET_TOP_HUD:
                     /* Just the flag — the engine-side DrawUIElements gate
                      * reads it each frame. */
+#ifdef TMC_3DS
+                    Port_Config_CycleTopHudMode();
+#else
                     Port_Config_SetHideTopHud(!Port_Config_GetHideTopHud());
+#endif
                     break;
                 case SS_SET_WIDESCREEN:
                     /* Just the flag: the PPU's view width and the engine's
@@ -3502,6 +3585,13 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
                     break;
                 case SS_SET_DISPLAY_STYLE:
                     Port_Config_Cycle3DSDisplayStyle();
+                    break;
+                case SS_SET_GBA_GRID:
+                    Port_Config_CycleGbaGrid();
+                    break;
+                case SS_SET_GBA_FRAME:
+                    if (Port_Config_GbaFrameAvailable()) Port_Config_SetGbaFrame(!Port_Config_GetGbaFrame());
+                    else Compact_Toast("%s", Port_Text_Tr("ONLY IN VIEW: ORIGINAL"));
                     break;
                 case SS_SET_FRAMES: {
                     int next = (Port_Config_GetFramePacing() + 1) % PORT_3DS_PACING_COUNT;

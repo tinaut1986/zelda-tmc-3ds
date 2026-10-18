@@ -268,6 +268,12 @@ void Platform3DS_SetTurboMultiplier(unsigned multiplier) {
     sTurboMultiplier = multiplier < 2 ? 2 : (multiplier > 5 ? 5 : multiplier);
 }
 
+/* The splash is in 3D while the console's slider is up: the logo hangs in front of the screen like the
+ * game's HUD does (stereo_3ds.c: depth 6, half to each eye), the picture shifted the other way in each
+ * eye. Turned off again when the boot animation stops, before the game's own presenter takes the top
+ * screen over (it links the right eye itself, only while 3D is on). */
+static bool sSplash3D;
+
 void Platform3DS_ShowSplash(void) {
     FILE* file = fopen("romfs:/splash.rgb565", "rb");
     uint16_t* pixels = NULL;
@@ -281,21 +287,31 @@ void Platform3DS_ShowSplash(void) {
     }
     if (!pixels) return;
 
+    const float slider = osGet3DSliderState();
+    const int shift = (int)(3.0f * slider + 0.5f); /* pixels, the left eye to the right */
+    sSplash3D = shift > 0;
+    if (sSplash3D) gfxSet3D(true);
+
     uint16_t width = 0;
     uint16_t height = 0;
     /* Into both buffers of the swap chain, so no later swap shows a black one. */
     for (int pass = 0; pass < 2; ++pass) {
-        uint16_t* top = (uint16_t*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &width, &height);
-        if (!top) break;
-        for (int y = 0; y < 240; ++y) {
-            for (int x = 0; x < 400; ++x) {
-                top[(239 - y) + x * 240] = pixels[y * 400 + x];
+        for (int eye = 0; eye < (sSplash3D ? 2 : 1); ++eye) {
+            uint16_t* top = (uint16_t*)gfxGetFramebuffer(GFX_TOP, eye == 0 ? GFX_LEFT : GFX_RIGHT, &width, &height);
+            if (!top) goto done;
+            const int dx = eye == 0 ? shift : -shift;
+            for (int y = 0; y < 240; ++y) {
+                for (int x = 0; x < 400; ++x) {
+                    const int sx = x - dx;
+                    top[(239 - y) + x * 240] = sx >= 0 && sx < 400 ? pixels[y * 400 + sx] : 0;
+                }
             }
         }
         gfxFlushBuffers();
-        gfxScreenSwapBuffers(GFX_TOP, false);
+        gfxScreenSwapBuffers(GFX_TOP, sSplash3D); /* hasStereo: an image for each eye */
         gspWaitForVBlank();
     }
+done:
     free(pixels);
 }
 
@@ -365,6 +381,10 @@ void Platform3DS_BootAnimStart(void) {
 }
 
 void Platform3DS_BootAnimStop(void) {
+    if (sSplash3D) {
+        gfxSet3D(false);
+        sSplash3D = false;
+    }
     if (!sBootAnimThread) return;
     sBootAnimStop = true;
     threadJoin(sBootAnimThread, U64_MAX);
@@ -1260,6 +1280,17 @@ bool Platform3DS_SaveDisplayedScreensDetailed(const char* topPath, const char* b
     const bool topRawOk = SaveCapturedFramebufferRaw(topRawPath, top, 400);
     const bool bottomRawOk = SaveCapturedFramebufferRaw(bottomRawPath, bottom, 320);
     return topOk && bottomOk && topRawOk && bottomRawOk;
+}
+
+/* The top screen's right eye as shown, when the system has a second framebuffer for it (3D on): false otherwise. */
+bool Platform3DS_SaveTopRightEye(const char* path) {
+    GSPGPU_CaptureInfo capture;
+    memset(&capture, 0, sizeof(capture));
+    if (R_FAILED(GSPGPU_ImportDisplayCaptureInfo(&capture))) return false;
+    GSPGPU_CaptureInfoEntry top = capture.screencapture[GSP_SCREEN_TOP];
+    if (!top.framebuf1_vaddr || top.framebuf1_vaddr == top.framebuf0_vaddr) return false;
+    top.framebuf0_vaddr = top.framebuf1_vaddr;
+    return SaveCapturedFramebufferBmp(path, &top, 400, 240);
 }
 
 bool Platform3DS_SaveDisplayedScreens(const char* topPath, const char* bottomPath) {

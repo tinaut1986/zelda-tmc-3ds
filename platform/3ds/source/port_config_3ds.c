@@ -26,12 +26,23 @@ static _Atomic int sFramePacing;
 static _Atomic bool sFollow = true;
 static _Atomic bool sCrests = true;
 static _Atomic bool sFloorReturn = true;
-static _Atomic bool sHideHud;
+/* OPTIONS -> TOP HUD: 0 SHOW, 1 HIDE, 2 AUTO (hidden while the bottom screen shows its sidebar). */
+enum { TOP_HUD_SHOW = 0, TOP_HUD_HIDE, TOP_HUD_AUTO, TOP_HUD_COUNT };
+static _Atomic int sTopHud;
+extern int Port_SecondScreen_TopHudCovered(void);
 static _Atomic bool sHoldText;
 static _Atomic bool sColorCorrection;
+static _Atomic int sGbaGrid; /* 0 OFF .. 3 HIGH */
+static _Atomic bool sGbaFrame;
 static _Atomic bool sAutosave;
 static bool sConsoleParity;
 static _Atomic Port3DSAspectRatio sAspectRatio = CONFIG_3DS_DEFAULT_ASPECT;
+/* WIDE + AI, after ../mzm: the scenes' extensions made with a generative AI (the portal's sides, the
+ * title's forest, the file select's cave) are shown only when the player wants them. Kept apart from
+ * the aspect so every "is it WIDE" check stays as it is. `asked`: the bottom screen's one-time question
+ * about it was answered. */
+static _Atomic bool sWideAi;
+static _Atomic bool sWideAiAsked;
 static _Atomic Port3DSDisplayStyle sDisplayStyle = CONFIG_3DS_DEFAULT_DISPLAY;
 /* The desktop file-select overlay is rendered on the gameplay screen and
  * has no useful 3DS interaction path. Keep the native second-screen UI
@@ -167,12 +178,16 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("follow_cam=%u\n", sFollow ? 1u : 0u);
     APPEND("windcrest_pins=%u\n", sCrests ? 1u : 0u);
     APPEND("floor_auto_return=%u\n", sFloorReturn ? 1u : 0u);
-    APPEND("hide_top_hud=%u\n", sHideHud ? 1u : 0u);
+    APPEND("hide_top_hud=%d\n", (int)sTopHud);
     APPEND("hold_to_advance_text=%u\n", sHoldText ? 1u : 0u);
     APPEND("color_correction=%u\n", sColorCorrection ? 1u : 0u);
+    APPEND("gba_grid=%d\n", (int)sGbaGrid);
+    APPEND("gba_frame=%u\n", sGbaFrame ? 1u : 0u);
     APPEND("autosave=%u\n", sAutosave ? 1u : 0u);
     APPEND("widescreen=%u\n", sAspectRatio == PORT_3DS_ASPECT_WIDE ? 1u : 0u);
     APPEND("screen_aspect=%s\n", ConfigValues3DS_AspectName(sAspectRatio));
+    APPEND("wide_ai=%u\n", sWideAi ? 1u : 0u);
+    APPEND("wide_ai_asked=%u\n", sWideAiAsked ? 1u : 0u);
     APPEND("display_style=%s\n", ConfigValues3DS_DisplayName(sDisplayStyle));
     APPEND("master_volume=%.2f\n", (double)sVolume);
     APPEND("panel_backdrop=%d\n", sBackdrop);
@@ -380,9 +395,18 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "follow_cam") == 0) sFollow = ParseBool(value);
             else if (strcmp(key, "windcrest_pins") == 0) sCrests = ParseBool(value);
             else if (strcmp(key, "floor_auto_return") == 0) sFloorReturn = ParseBool(value);
-            else if (strcmp(key, "hide_top_hud") == 0) sHideHud = ParseBool(value);
+            else if (strcmp(key, "hide_top_hud") == 0) {
+                /* 0/1 as older builds wrote them (the flag), 2 AUTO; true/false/yes also read. */
+                sTopHud = value[0] == '2' ? TOP_HUD_AUTO : (ParseBool(value) ? TOP_HUD_HIDE : TOP_HUD_SHOW);
+            }
             else if (strcmp(key, "hold_to_advance_text") == 0) sHoldText = ParseBool(value);
             else if (strcmp(key, "color_correction") == 0) sColorCorrection = ParseBool(value);
+            else if (strcmp(key, "gba_grid") == 0) {
+                const int level = atoi(value);
+                sGbaGrid = level >= 0 && level <= 3 ? level : 0;
+            } else if (strcmp(key, "gba_frame") == 0) sGbaFrame = ParseBool(value);
+            else if (strcmp(key, "wide_ai") == 0) sWideAi = ParseBool(value);
+            else if (strcmp(key, "wide_ai_asked") == 0) sWideAiAsked = ParseBool(value);
             else if (strcmp(key, "autosave") == 0) sAutosave = ParseBool(value);
             else if (strcmp(key, "widescreen") == 0 && !hasScreenAspect)
                 sAspectRatio = ParseBool(value) ? PORT_3DS_ASPECT_WIDE : PORT_3DS_ASPECT_ORIGINAL;
@@ -461,6 +485,10 @@ bool Port_Config_AudioDspPcm(void) {
  * change is saved like any other setting. `bottom_rgb565` is left out: per
  * its own note above it turns the bottom screen red. */
 #include "debug_switches_3ds.h"
+extern void PortPpuGpu3DS_SetTintMode(int mode);
+extern int PortPpuGpu3DS_TintMode(void);
+extern void Stereo3DS_SetForce(bool on);
+extern bool Stereo3DS_Forced(void);
 
 #if TMC3DS_DEBUG_TOOLS
 bool Port_Config_DebugLogOn(void) { return sDebugLogOn; }
@@ -497,6 +525,8 @@ static int SwitchValue(int id) {
         case DEBUG_SW_COMPACT_UPLOAD: return sCompactUpload;
         case DEBUG_SW_CPU_LIMIT: return sAppCpuLimit;
         case DEBUG_SW_STEREO_3D: return sStereo3D ? 1 : 0;
+        case DEBUG_SW_PLANE_TINT: return PortPpuGpu3DS_TintMode();
+        case DEBUG_SW_FORCE_3D: return Stereo3DS_Forced() ? 1 : 0;
         default: return 0;
     }
 }
@@ -504,13 +534,13 @@ static int SwitchValue(int id) {
 const char* DebugSwitch_Name(int id) {
     static const char* const kNames[DEBUG_SW_COUNT] = {
         "RENDERER", "FRAME SYNC", "VBLANK LOCK", "STATIC QUAD", "MAP SKIP",
-        "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT", "STEREO 3D",
+        "BOTTOM CORE", "AUDIO CORE", "COMPACT UP", "CPU LIMIT", "STEREO 3D", "PLANE TINT", "FORCE 3D",
     };
     return id >= 0 && id < DEBUG_SW_COUNT ? kNames[id] : "?";
 }
 
 bool DebugSwitch_IsDefault(int id) {
-    static const int kDefaults[DEBUG_SW_COUNT] = { 1, 0, 0, 0, 1, -1, -1, 0, 0, 0 };
+    static const int kDefaults[DEBUG_SW_COUNT] = { 1, 0, 0, 0, 1, -1, -1, 0, 0, 0, 0, 0 };
     return id >= 0 && id < DEBUG_SW_COUNT && SwitchValue(id) == kDefaults[id];
 }
 
@@ -519,6 +549,9 @@ void DebugSwitch_Value(int id, char* out, unsigned cap) {
     switch (id) {
         case DEBUG_SW_RENDERER:
             snprintf(out, cap, "%s", v ? "GPU" : "CPU (TEST)");
+            return;
+        case DEBUG_SW_PLANE_TINT:
+            snprintf(out, cap, "%s", v == 1 ? "LAYERS" : (v == 2 ? "DEPTH" : "OFF"));
             return;
         case DEBUG_SW_BOTTOM_CORE:
             snprintf(out, cap, "%s", v < 0 ? (Platform3DS_IsNew3DS() ? "AUTO 0" : "AUTO 1") : (v ? "CORE 1" : "CORE 0"));
@@ -546,6 +579,8 @@ void DebugSwitch_Cycle(int id) {
         case DEBUG_SW_VBLANK_LOCK: sVblankPhaseLock = !sVblankPhaseLock; break;
         case DEBUG_SW_STATIC_QUAD: sGpuStaticQuad = !sGpuStaticQuad; break;
         case DEBUG_SW_STEREO_3D: sStereo3D = !sStereo3D; break;
+        case DEBUG_SW_PLANE_TINT: PortPpuGpu3DS_SetTintMode((PortPpuGpu3DS_TintMode() + 1) % 3); return; /* not saved */
+        case DEBUG_SW_FORCE_3D: Stereo3DS_SetForce(!Stereo3DS_Forced()); return; /* not saved */
         case DEBUG_SW_MAP_SKIP: sBottomMapSkip = !sBottomMapSkip; break;
         case DEBUG_SW_BOTTOM_CORE:
             sBottomCore = sBottomCore < 0 ? 0 : (sBottomCore == 0 ? 1 : -1);
@@ -674,8 +709,18 @@ int Port_Config_GetSecondScreenBackdrop(void) { return sBackdrop; }
 void Port_Config_SetSecondScreenBackdrop(int style) { sBackdrop = style; SaveConfig(); }
 bool Port_Config_GetSecondScreenSwap(void) { return false; }
 void Port_Config_SetSecondScreenSwap(bool on) { (void)on; }
-bool Port_Config_GetHideTopHud(void) { return sHideHud; }
-void Port_Config_SetHideTopHud(bool on) { sHideHud = on; SaveConfig(); }
+/* What the game asks: is the top HUD hidden right now. AUTO hides it exactly while the bottom
+ * screen shows the sidebar that has the same things (hearts, buttons, rupees, keys). */
+bool Port_Config_GetHideTopHud(void) {
+    const int mode = sTopHud;
+    return mode == TOP_HUD_HIDE || (mode == TOP_HUD_AUTO && Port_SecondScreen_TopHudCovered());
+}
+void Port_Config_SetHideTopHud(bool on) { sTopHud = on ? TOP_HUD_HIDE : TOP_HUD_SHOW; SaveConfig(); }
+int Port_Config_GetTopHudMode(void) { return (int)sTopHud; }
+void Port_Config_CycleTopHudMode(void) {
+    sTopHud = (sTopHud + 1) % TOP_HUD_COUNT;
+    SaveConfig();
+}
 float Port_Config_GetPracticeSlowmo(void) { return 1.0f; }
 void Port_Config_SetPracticeSlowmo(float v) { (void)v; }
 bool Port_Config_GetVSync(void) { return sVsync; }
@@ -750,10 +795,26 @@ void Port_Config_SetTurboMultiplier(unsigned multiplier) {
 int Port_Config_Get3DSAspectRatio(void) { return (int)sAspectRatio; }
 const char* Port_Config_Get3DSAspectRatioName(void) {
     static const char* const names[PORT_3DS_ASPECT_COUNT] = { "WIDE", "ORIGINAL" };
-    return names[sAspectRatio];
+    return Port_Config_GetWideAi() ? "WIDE + AI" : names[sAspectRatio];
+}
+bool Port_Config_GetWideAi(void) { return sAspectRatio == PORT_3DS_ASPECT_WIDE && sWideAi; }
+/* WIDE is on and the player was never asked whether to show the generated art. */
+bool Port_Config_WideAiQuestionDue(void) { return sAspectRatio == PORT_3DS_ASPECT_WIDE && !sWideAiAsked; }
+void Port_Config_AnswerWideAi(bool yes) {
+    sWideAi = yes;
+    sWideAiAsked = true;
+    SaveConfig();
 }
 void Port_Config_Cycle3DSAspectRatio(void) {
-    sAspectRatio = (Port3DSAspectRatio)((sAspectRatio + 1) % PORT_3DS_ASPECT_COUNT);
+    /* WIDE comes twice: plain, then WIDE + AI (sWideAi); ORIGINAL after it. The way back into WIDE
+     * is the plain one. */
+    if (sAspectRatio == PORT_3DS_ASPECT_WIDE && !sWideAi) {
+        sWideAi = true;
+        sWideAiAsked = true; /* choosing it is an answer */
+    } else {
+        sAspectRatio = (Port3DSAspectRatio)((sAspectRatio + 1) % PORT_3DS_ASPECT_COUNT);
+        sWideAi = false;
+    }
     SaveConfig();
 }
 int Port_Config_Get3DSDisplayStyle(void) { return (int)sDisplayStyle; }
@@ -764,6 +825,19 @@ void Port_Config_Cycle3DSDisplayStyle(void) {
     sDisplayStyle = (Port3DSDisplayStyle)((sDisplayStyle + 1) % PORT_3DS_DISPLAY_COUNT);
     SaveConfig();
 }
+int Port_Config_GetGbaGrid(void) { return (int)sGbaGrid; }
+const char* Port_Config_GetGbaGridName(void) {
+    static const char* const names[4] = { "OFF", "LOW", "MED", "HIGH" };
+    return names[sGbaGrid & 3];
+}
+void Port_Config_CycleGbaGrid(void) {
+    sGbaGrid = (sGbaGrid + 1) & 3;
+    SaveConfig();
+}
+bool Port_Config_GetGbaFrame(void) { return sGbaFrame; }
+bool Port_Config_GbaFrameAvailable(void) { return sAspectRatio == PORT_3DS_ASPECT_ORIGINAL; }
+bool Port_Config_GbaFrameActive(void) { return sGbaFrame && Port_Config_GbaFrameAvailable(); }
+void Port_Config_SetGbaFrame(bool on) { sGbaFrame = on; SaveConfig(); }
 bool Port_Config_3DSFullViewComboEnabled(void) {
     /* Load each atomic once so a bottom-screen option tap can only select one
      * complete policy on this call. A mixed/transient value fails closed on

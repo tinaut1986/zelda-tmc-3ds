@@ -98,10 +98,16 @@ int Port_Message_DrawnWindow(int* x, int* y, int* width, int* height);
 /* The iris fade's WIN0 table (src/fade.c): SetVBlankDMA forgets the table it is
  * handed, the fade notes its circle after building one. Win0Lines fills
  * {left, right} per line (out: height * 2) for a view past 240x160 when the
- * HBlank DMA feeding WIN0 this frame is a noted iris; 0 otherwise. */
+ * HBlank DMA feeding WIN0 this frame is a noted circle, and says which kind:
+ * MASK (the iris and the portal: everything inside, the backdrop outside) or
+ * WINDOW (a dark room's light: the game's WININ/WINOUT apply). */
+enum { PORT_WS_WIN0_NONE = 0, PORT_WS_WIN0_MASK = 1, PORT_WS_WIN0_WINDOW = 2 };
 void Port_Widescreen_ForgetIris(const void* table);
 void Port_Widescreen_NoteIris(void);
 void Port_Widescreen_NoteWindowCircle(int x, int y, int radius);
+/* A dark room's light around Link (src/manager/lightManager.c): centre in view
+ * pixels, radius in pixels, drawn unscaled. */
+void Port_Widescreen_NoteLightCircle(int x, int y, int radius);
 /* The Minish portal's falling cutscene drawn at 400x240 (port_linked_stubs.c). Wide: the game
  * produces it this tick; ViewLive: the published frame is it; Strips: the picture's top-left
  * on screen, for the presenter's side strips. */
@@ -131,6 +137,12 @@ void Port_Draw_WideGroupEnd(int group);
  * ViewLive, the published frame is it. */
 int Port_Widescreen_TitleWide(void);
 int Port_Widescreen_TitleViewLive(void);
+/* Scenes the stereoscopic 3D gives a depth to a layer in (platform/3ds/source/stereo_3ds.c). */
+enum { PORT_STEREO_SCENE_TITLE_RAYS = 1, PORT_STEREO_SCENE_LIGHT_RAYS = 2,
+       PORT_STEREO_SCENE_PATH_LEAVES = 4, PORT_STEREO_SCENE_FILE_SELECT = 8,
+       PORT_STEREO_SCENE_LOGOS = 16, PORT_STEREO_SCENE_MAP_HINT = 32,
+       PORT_STEREO_SCENE_GAME_OVER = 64 };
+int Port_Stereo_Scenes(void);
 /* The title's light rays extended over the 400x240 view in VRAM (platform/3ds/source/
  * title_rays_3ds.c): the screen block of BG0's 512x256 map, or 0 (BG0 as the game has it). */
 int Port_Widescreen_TitleRays(void);

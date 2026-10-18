@@ -3,6 +3,10 @@
 #include "stereo_3ds.h"
 
 #include "platform_gpu_3ds.h"
+#include "tmc3ds_build_config.h"
+#if TMC3DS_DEBUG_TOOLS
+#include "debug_log_3ds.h"
+#endif
 #include "ppu_gpu_3ds_budget.h"
 
 #include "ppu_gpu_3ds_shader_shbin.h"
@@ -34,8 +38,11 @@ enum {
      * See ClearStencilPlane. */
     PPU_GPU3DS_CLEAR_FIRST_VERTEX = PPU_GPU3DS_MAX_VERTICES - 4,
     PPU_GPU3DS_CLEAR_FIRST_INDEX = PPU_GPU3DS_MAX_INDICES - 6,
-    PPU_GPU3DS_BUILD_VERTICES = PPU_GPU3DS_CLEAR_FIRST_VERTEX,
-    PPU_GPU3DS_BUILD_INDICES = PPU_GPU3DS_CLEAR_FIRST_INDEX,
+    /* And the quad before it, which copies the left eye's picture to the right (CopyLeftOutput). */
+    PPU_GPU3DS_COPY_FIRST_VERTEX = PPU_GPU3DS_CLEAR_FIRST_VERTEX - 4,
+    PPU_GPU3DS_COPY_FIRST_INDEX = PPU_GPU3DS_CLEAR_FIRST_INDEX - 6,
+    PPU_GPU3DS_BUILD_VERTICES = PPU_GPU3DS_COPY_FIRST_VERTEX,
+    PPU_GPU3DS_BUILD_INDICES = PPU_GPU3DS_COPY_FIRST_INDEX,
     PPU_GPU3DS_MAX_BATCHES = 4096,
     PPU_GPU3DS_OUTPUT_WIDTH = 512,
     PPU_GPU3DS_OUTPUT_HEIGHT = 256,
@@ -52,6 +59,25 @@ enum {
 
 static PpuGpu3DSCache* sCache;
 static uint32_t sDirtyBitmap[PPU_GPU3DS_SLOT_COUNT / 32];
+/* The frame is built while the GPU still draws the previous one (docs/gpu-build-ahead.md):
+ * into the vertex buffer the GPU is not reading, and into copies of the atlas and the rings
+ * that PortPpuGpu3DS_Commit moves to the textures once the GPU is done with them.
+ * sVertices is the buffer being built. */
+static PpuGpu3DSVertex* sVertexBuffers[2];
+static C3D_BufInfo sBufferInfo[2];
+static unsigned sBuildBuffer, sDrawnBuffer = 1;
+/* Generation of each background's map slice, and the one each buffer holds (0: none). */
+static uint32_t sSliceGeneration[4], sBufferSliceGeneration[2][4];
+static uint16_t* sAtlasShadow;
+static uint16_t* sRingShadow[PPU_GPU3DS_RING_COUNT];
+static uint32_t sRingCells[PPU_GPU3DS_RING_CELLS / 32];
+static bool sCommitPending;
+/* The second vertex buffer and the copies could be allocated: without them the build writes
+ * the textures directly and the frame is claimed before it, as it always was. */
+static bool sCanBuildAhead;
+/* Debug: poke 1 to claim the GPU frame before building, as before the build ran ahead
+ * (tmc-link.py poke gPpuGpu3DSSerialBuild 01), for timing one against the other. */
+volatile uint8_t gPpuGpu3DSSerialBuild;
 static PpuGpu3DSVertex* sVertices;
 static uint16_t* sIndices;
 static PpuGpu3DSBatch* sBatches;
@@ -85,12 +111,15 @@ static float sEyeShiftNdc[PPU_GPU3DS_OBJ + 1][4];
 /* The same in whole pixels, for the batch's scissor: a layer's regions move with it, or their
  * edges cut what moved (the R button split in two, a heart cut by the next). */
 static int sEyeShiftPx[PPU_GPU3DS_OBJ + 1][4];
+/* The OBJ-window masks' own shift when they follow a layer (Stereo3DS_ObjWindowFollows). */
+static bool sEyeWindowFollows;
+static int sEyeWindowPx;
+static float sEyeWindowNdc;
 static DVLB_s* sShader;
 static shaderProgram_s sProgram;
 static int sOffsetUniform = -1;
 static float sLastOffsetX, sLastOffsetY;
 static C3D_AttrInfo sAttributes;
-static C3D_BufInfo sBuffers;
 static bool sProgramInitialized;
 static bool sReady;
 static bool sDisabled;
@@ -152,6 +181,9 @@ static void AppendIrisMask(const PpuGpu3DSFrameView* frame) {
 /* Debug: poke 1 to skip the fade's full-screen quad (the picture then shows the
  * unfaded palettes), to time it (tmc-link.py poke gPpuGpu3DSFadeQuadDisable 01). */
 volatile uint8_t gPpuGpu3DSFadeQuadDisable;
+/* Debug: 1 draws both eyes whole again instead of over one base (DrawEyesOverBase), to compare the two
+ * (tmc-link.py poke gPpuGpu3DSEyesWhole 01). */
+volatile uint8_t gPpuGpu3DSEyesWhole;
 static PortPpuGpu3DSStats sStats;
 
 void PortPpuGpu3DS_Shutdown(void) {
@@ -180,7 +212,17 @@ void PortPpuGpu3DS_Shutdown(void) {
     if (sParityReadback) linearFree(sParityReadback);
     free(sBatches);
     if (sIndices) linearFree(sIndices);
-    if (sVertices) linearFree(sVertices);
+    if (sVertexBuffers[1] && sVertexBuffers[1] != sVertexBuffers[0]) linearFree(sVertexBuffers[1]);
+    if (sVertexBuffers[0]) linearFree(sVertexBuffers[0]);
+    memset(sVertexBuffers, 0, sizeof(sVertexBuffers));
+    sCanBuildAhead = false;
+    free(sAtlasShadow);
+    sAtlasShadow = NULL;
+    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring) {
+        free(sRingShadow[ring]);
+        sRingShadow[ring] = NULL;
+    }
+    sCommitPending = false;
     free(sCache);
 
     sCache = NULL;
@@ -211,7 +253,7 @@ void PortPpuGpu3DS_Shutdown(void) {
     sOutputTexture = (C3D_Tex){ 0 };
     sProgram = (shaderProgram_s){ 0 };
     sAttributes = (C3D_AttrInfo){ 0 };
-    sBuffers = (C3D_BufInfo){ 0 };
+    memset(sBufferInfo, 0, sizeof(sBufferInfo));
 }
 
 extern bool Port_Config_GetColorCorrection(void);
@@ -316,7 +358,13 @@ bool PortPpuGpu3DS_Init(void) {
 
     memset(&sStats, 0, sizeof(sStats));
     sCache = malloc(sizeof(*sCache));
-    sVertices = linearMemAlign(PPU_GPU3DS_MAX_VERTICES * sizeof(*sVertices), 0x80);
+    for (unsigned buffer = 0; buffer < 2u; ++buffer)
+        sVertexBuffers[buffer] = linearMemAlign(PPU_GPU3DS_MAX_VERTICES * sizeof(PpuGpu3DSVertex), 0x80);
+    sVertices = sVertexBuffers[0];
+    /* 512 KiB and 2 MiB of ordinary heap: the copies the build writes the tiles into. */
+    sAtlasShadow = calloc(PPU_GPU3DS_ATLAS_PIXELS, sizeof(uint16_t));
+    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring)
+        sRingShadow[ring] = calloc((size_t)PPU_GPU3DS_RING_TEX_WIDTH * PPU_GPU3DS_RING_TEX_HEIGHT, sizeof(uint16_t));
     sIndices = linearMemAlign(PPU_GPU3DS_MAX_INDICES * sizeof(*sIndices), 0x80);
     sBatches = malloc(PPU_GPU3DS_MAX_BATCHES * sizeof(*sBatches));
     sParityReference = malloc(PPU_GPU3DS_OUTPUT_WIDTH * PPU_GPU3DS_OUTPUT_HEIGHT *
@@ -324,9 +372,22 @@ bool PortPpuGpu3DS_Init(void) {
     sParityReadback = linearMemAlign(PPU_GPU3DS_OUTPUT_WIDTH * PPU_GPU3DS_OUTPUT_HEIGHT *
                                          sizeof(*sParityReadback),
                                      0x80);
-    if (!sCache || !sVertices || !sIndices || !sBatches || !sParityReference ||
-        !sParityReadback)
+    if (!sCache || !sVertexBuffers[0] || !sIndices || !sBatches || !sParityReference || !sParityReadback)
         goto fail;
+    sCanBuildAhead = sVertexBuffers[1] && sAtlasShadow;
+    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring)
+        if (!sRingShadow[ring]) sCanBuildAhead = false;
+    if (!sCanBuildAhead) {
+        if (sVertexBuffers[1]) linearFree(sVertexBuffers[1]);
+        sVertexBuffers[1] = sVertexBuffers[0];
+        free(sAtlasShadow);
+        sAtlasShadow = NULL;
+        for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring) {
+            free(sRingShadow[ring]);
+            sRingShadow[ring] = NULL;
+        }
+        Platform3DS_Debug("[tmc3ds] gpu: no memory to build ahead of the GPU\n");
+    }
     memset(sParityReference, 0,
            PPU_GPU3DS_OUTPUT_WIDTH * PPU_GPU3DS_OUTPUT_HEIGHT *
                sizeof(*sParityReference));
@@ -343,8 +404,8 @@ bool PortPpuGpu3DS_Init(void) {
     Platform3DS_CleanDataCache(sIndices, PPU_GPU3DS_MAX_INDICES * sizeof(*sIndices));
 
     /* The builder stops short of the reset quad at the end of both buffers. */
-    {
-        PpuGpu3DSVertex* quad = sVertices + PPU_GPU3DS_CLEAR_FIRST_VERTEX;
+    for (unsigned buffer = 0; buffer < 2u; ++buffer) {
+        PpuGpu3DSVertex* quad = sVertexBuffers[buffer] + PPU_GPU3DS_CLEAR_FIRST_VERTEX;
         /* The static index pattern is 0,1,2, 0,2,3 (PpuGpu3DS_FillStaticIndices), so
          * the corners go round the perimeter: top-left, top-right, bottom-right,
          * bottom-left. They used to be in z order (TL, TR, BL, BR), which covers
@@ -383,7 +444,7 @@ bool PortPpuGpu3DS_Init(void) {
         C3D_TexFlush(&sRingTex[ring]);
         C3D_TexSetFilter(&sRingTex[ring], GPU_NEAREST, GPU_NEAREST);
         C3D_TexSetWrap(&sRingTex[ring], GPU_REPEAT, GPU_REPEAT);
-        PpuGpu3DS_RingSetStorage(sCache, ring, (uint16_t*)sRingTex[ring].data);
+        PpuGpu3DS_RingSetStorage(sCache, ring, sCanBuildAhead ? sRingShadow[ring] : (uint16_t*)sRingTex[ring].data);
     }
 
     if (!C3D_TexInitVRAM(&sOutputTexture, PPU_GPU3DS_OUTPUT_WIDTH,
@@ -429,8 +490,15 @@ bool PortPpuGpu3DS_Init(void) {
     if (AttrInfo_AddLoader(&sAttributes, 0, GPU_FLOAT, 3) < 0 ||
         AttrInfo_AddLoader(&sAttributes, 1, GPU_SHORT, 2) < 0)
         goto fail;
-    BufInfo_Init(&sBuffers);
-    if (BufInfo_Add(&sBuffers, sVertices, sizeof(*sVertices), 2, 0x10) < 0) goto fail;
+    for (unsigned buffer = 0; buffer < 2u; ++buffer) {
+        BufInfo_Init(&sBufferInfo[buffer]);
+        if (BufInfo_Add(&sBufferInfo[buffer], sVertexBuffers[buffer], sizeof(PpuGpu3DSVertex), 2, 0x10) < 0)
+            goto fail;
+    }
+    sBuildBuffer = 0;
+    sDrawnBuffer = 1;
+    memset(sSliceGeneration, 0, sizeof(sSliceGeneration));
+    memset(sBufferSliceGeneration, 0, sizeof(sBufferSliceGeneration));
 
     sDisabled = false;
     sPrepared = false;
@@ -456,6 +524,8 @@ static u32 ClearColor(uint16_t gbaColor) {
     return (packed << 16u) | packed;
 }
 
+static unsigned sBuildBackoff, sBuildBackoffLength;
+
 static bool FinishPreflight(bool ready, uint64_t startTick) {
     sStats.preflightTicks += svcGetSystemTick() - startTick;
     if (sCache) {
@@ -466,14 +536,67 @@ static bool FinishPreflight(bool ready, uint64_t startTick) {
     return ready;
 }
 
+bool PortPpuGpu3DS_BuildsAhead(void) {
+    return sCanBuildAhead && gPpuGpu3DSSerialBuild == 0;
+}
+
+/* The map slices the frame draws from its buffer without rebuilding them must hold what the
+ * model kept: a slice rebuilt last frame went into the other buffer, so it is copied over (a
+ * read of memory the GPU is drawing from, which is harmless). Returns the first vertex
+ * written, for the flush. */
+static size_t KeepSlicesCurrent(bool built) {
+    const unsigned buffer = sBuildBuffer, other = 1u - sBuildBuffer;
+    size_t firstWritten = SIZE_MAX;
+    if (sVertexBuffers[buffer] == sVertexBuffers[other]) return firstWritten; /* one buffer */
+    for (unsigned bg = 0; bg < 4u; ++bg) {
+        const size_t first = (size_t)bg * PPU_GPU3DS_MAP_SLICE_VERTICES;
+        if ((sCommands.mapDirtyMask & (1u << bg)) != 0) {
+            /* Rebuilt into this buffer (also by a build that failed: the model keeps it). */
+            sBufferSliceGeneration[buffer][bg] = ++sSliceGeneration[bg];
+            continue;
+        }
+        if (!built || sSliceGeneration[bg] == 0 || sBufferSliceGeneration[buffer][bg] == sSliceGeneration[bg] ||
+            sBufferSliceGeneration[other][bg] != sSliceGeneration[bg] || sCommands.dynamicFirstVertex <= first)
+            continue;
+        memcpy(sVertexBuffers[buffer] + first, sVertexBuffers[other] + first,
+               PPU_GPU3DS_MAP_SLICE_VERTICES * sizeof(PpuGpu3DSVertex));
+        sBufferSliceGeneration[buffer][bg] = sSliceGeneration[bg];
+        if (first < firstWritten) firstWritten = first;
+        ++sStats.sliceCopies;
+    }
+    return firstWritten;
+}
+
+static bool FailPreflight(uint64_t startTick) {
+    sCommands.vertexCount = 0;
+    sCommands.indexCount = 0;
+    sCommands.batchCount = 0;
+    return FinishPreflight(false, startTick);
+}
+
 bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
     const uint64_t startTick = svcGetSystemTick();
     ++sStats.attemptedFrames;
     sPrepared = false;
+    sCommitPending = false;
     if (!sReady || sDisabled || !frame || !frame->memory.bg_palette ||
         !frame->memory.obj_palette)
         return FinishPreflight(false, startTick);
 
+    /* Never the buffer the last drawn frame is in: the GPU may still be reading it. A frame
+     * built but not drawn leaves it free, and the next one is built there again. */
+    sBuildBuffer = 1u - sDrawnBuffer;
+    sVertices = sVertexBuffers[sBuildBuffer];
+    sCommands.vertices = sVertices;
+    /* A frame the builder could not express costs ~25 ms before it gives up, and the next frame of
+     * the same scene fails the same way: after a failure the GPU is not tried again for a growing
+     * number of frames (8, 16, ... 60), so a scene it cannot draw runs at the software renderer's
+     * speed with one wasted build a second instead of one every frame. */
+    if (sBuildBackoff > 0) {
+        --sBuildBackoff;
+        ++sStats.backoffFrames;
+        return FinishPreflight(false, startTick);
+    }
     sCommands.vertexCount = 0;
     sCommands.indexCount = 0;
     sCommands.batchCount = 0;
@@ -481,8 +604,9 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
     Platform3DS_SetStage(22);
     PpuGpu3DS_CacheBeginFrame(sCache, frame->memory.bg_palette,
                               frame->memory.obj_palette, ++sFrame);
-    if (!PpuGpu3DS_BuildCommands(frame, sCache, (uint16_t*)sAtlas.data,
+    if (!PpuGpu3DS_BuildCommands(frame, sCache, sCanBuildAhead ? sAtlasShadow : (uint16_t*)sAtlas.data,
                                  &sCommands)) {
+        KeepSlicesCurrent(false);
         sStats.buildTicks += svcGetSystemTick() - buildStartTick;
         if (sCommands.failReason < PPU_GPU3DS_BUILD_REASON_COUNT)
             ++sStats.buildFailures[sCommands.failReason];
@@ -490,8 +614,12 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
             sStats.maxBands = sCommands.bandCount;
         if (sCommands.requiredVertices > sStats.maxRequiredVertices)
             sStats.maxRequiredVertices = sCommands.requiredVertices;
+        sBuildBackoffLength = sBuildBackoffLength ? (sBuildBackoffLength < 30u ? sBuildBackoffLength * 2u : 60u) : 8u;
+        sBuildBackoff = sBuildBackoffLength;
         return FinishPreflight(false, startTick);
     }
+    const size_t copiedFirstVertex = KeepSlicesCurrent(true);
+    sBuildBackoffLength = 0;
     sStats.lastBuildTicks = svcGetSystemTick() - buildStartTick;
     sStats.buildTicks += sStats.lastBuildTicks;
     sStats.lastBands = sCommands.bandCount;
@@ -520,10 +648,126 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
     if (sCommands.batchCount > sStats.maxBatches)
         sStats.maxBatches = (uint32_t)sCommands.batchCount;
 
+    /* The vertices are this buffer's alone, so they are flushed now. Same economics as the
+     * atlas: one call spanning the rebuilt slices and the per-band geometry beats a call per
+     * region. A slice that was kept from last frame is only re-flushed when it sits between
+     * two that were not, which costs bytes rather than calls. */
+    const uint64_t flushStartTick = svcGetSystemTick();
+    Platform3DS_SetStage(24);
+    const size_t irisFirstVertex = sCommands.vertexCount;
+    AppendIrisMask(frame);
+    size_t geometryFirstVertex = sCommands.dynamicFirstVertex;
+    if (sIrisIndexCount != 0 && irisFirstVertex < geometryFirstVertex) geometryFirstVertex = irisFirstVertex;
+    if (copiedFirstVertex < geometryFirstVertex) geometryFirstVertex = copiedFirstVertex;
+    for (unsigned bg = 0; bg < 4u; ++bg) {
+        if ((sCommands.mapDirtyMask & (1u << bg)) == 0) continue;
+        const size_t sliceVertex = (size_t)bg * PPU_GPU3DS_MAP_SLICE_VERTICES;
+        if (sliceVertex < geometryFirstVertex) geometryFirstVertex = sliceVertex;
+    }
+    if (sCommands.vertexCount > geometryFirstVertex &&
+        !Platform3DS_CleanDataCache(sVertices + geometryFirstVertex,
+                                    (sCommands.vertexCount - geometryFirstVertex) * sizeof(*sVertices)))
+        return FailPreflight(startTick);
+    sStats.flushTicks += svcGetSystemTick() - flushStartTick;
+    sCommitPending = true;
+    return FinishPreflight(true, startTick);
+}
+
+/* The atlas slots decoded since the last commit, copied from the build's copy to the texture
+ * and flushed. Only the slots decoded this frame need uploading, but each
+ * GSPGPU_FlushDataCache is a GSP round trip measured at ~330 us on an Old
+ * 3DS -- a hundred times the cost of the few kilobytes a call covers. So
+ * the dirty slots are coalesced into a handful of ranges and the extra
+ * bytes are paid gladly to avoid the calls. */
+static bool CommitAtlas(void) {
+    if (sCache->dirtyCount == 0) return true;
+    unsigned firstSlot = PPU_GPU3DS_SLOT_COUNT, lastSlot = 0;
+    uint16_t* const texels = (uint16_t*)sAtlas.data;
+    memset(sDirtyBitmap, 0, sizeof(sDirtyBitmap));
+    for (unsigned index = 0; index < sCache->dirtyCount; ++index) {
+        const unsigned slot = sCache->dirtySlots[index];
+        if (sAtlasShadow)
+            memcpy(texels + (size_t)slot * 64u, sAtlasShadow + (size_t)slot * 64u, 64u * sizeof(uint16_t));
+        sDirtyBitmap[slot / 32u] |= 1u << (slot % 32u);
+        if (slot < firstSlot) firstSlot = slot;
+        if (slot > lastSlot) lastSlot = slot;
+    }
+
+    /* Walk the bitmap into runs, merging any gap smaller than the bytes a
+     * separate call would cost. */
+    unsigned rangeFirst[PPU_GPU3DS_ATLAS_FLUSH_RANGES];
+    unsigned rangeLast[PPU_GPU3DS_ATLAS_FLUSH_RANGES];
+    unsigned rangeCount = 0;
+    for (unsigned slot = firstSlot; slot <= lastSlot; ++slot) {
+        if ((sDirtyBitmap[slot / 32u] & (1u << (slot % 32u))) == 0) continue;
+        if (rangeCount != 0 &&
+            slot - rangeLast[rangeCount - 1] <= PPU_GPU3DS_ATLAS_FLUSH_GAP) {
+            rangeLast[rangeCount - 1] = slot;
+            continue;
+        }
+        if (rangeCount == PPU_GPU3DS_ATLAS_FLUSH_RANGES) {
+            /* Out of ranges: one span covers everything left. */
+            rangeLast[rangeCount - 1] = lastSlot;
+            break;
+        }
+        rangeFirst[rangeCount] = slot;
+        rangeLast[rangeCount] = slot;
+        ++rangeCount;
+    }
+
+    bool flushed = true;
+    for (unsigned range = 0; range < rangeCount && flushed; ++range) {
+        const size_t bytes =
+                ((size_t)rangeLast[range] - rangeFirst[range] + 1u) * 64u *
+                sizeof(uint16_t);
+        flushed = Platform3DS_CleanDataCache(texels + (size_t)rangeFirst[range] * 64u, bytes);
+        if (flushed) sStats.atlasFlushBytes += bytes;
+    }
+    sStats.atlasFlushCalls += rangeCount;
+    /* A failed flush keeps the slots dirty: the next commit copies and flushes them again. */
+    if (flushed) PpuGpu3DS_CacheClearDirty(sCache);
+    return flushed;
+}
+
+/* The ring cells written since the last commit, likewise. */
+static bool CommitRings(void) {
+    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring) {
+        size_t offset, bytes;
+        if (!sRingTex[ring].data || !PpuGpu3DS_RingTakeDirty(sCache, ring, &offset, &bytes, sRingCells)) continue;
+        uint16_t* const texels = (uint16_t*)sRingTex[ring].data;
+        if (sRingShadow[ring]) {
+            const unsigned firstCell = (unsigned)(offset / (64u * sizeof(uint16_t)));
+            const unsigned lastCell = firstCell + (unsigned)(bytes / (64u * sizeof(uint16_t))) - 1u;
+            for (unsigned word = firstCell / 32u; word <= lastCell / 32u; ++word) {
+                uint32_t bits = sRingCells[word];
+                if (bits == 0xffffffffu) {
+                    memcpy(texels + (size_t)word * 32u * 64u, sRingShadow[ring] + (size_t)word * 32u * 64u,
+                           32u * 64u * sizeof(uint16_t));
+                    continue;
+                }
+                while (bits != 0) {
+                    const unsigned cell = word * 32u + (unsigned)__builtin_ctz(bits);
+                    bits &= bits - 1u;
+                    memcpy(texels + (size_t)cell * 64u, sRingShadow[ring] + (size_t)cell * 64u, 64u * sizeof(uint16_t));
+                }
+            }
+        }
+        if (!Platform3DS_CleanDataCache((uint8_t*)texels + offset, bytes)) return false;
+        sStats.atlasFlushBytes += bytes;
+        ++sStats.atlasFlushCalls;
+    }
+    return true;
+}
+
+bool PortPpuGpu3DS_Commit(const PpuGpu3DSFrameView* frame) {
+    const uint64_t startTick = svcGetSystemTick();
+    if (!sCommitPending) return false;
+    sCommitPending = false;
     /* Geometry capacity does not bound the hardware command list: every
      * window band repeats state and draw commands, including OBJ prepasses.
-     * Reject before emitting any PPU commands or flushing its atlas. The
-     * caller then renders this same frame in software and retries next frame. */
+     * Reject before emitting any PPU commands. The caller then renders this
+     * same frame in software and retries next frame; the atlas and ring copies
+     * stay dirty until a commit moves them. */
     const size_t commandWords = PpuGpu3DS_CommandWordsRequired(&sCommands);
     sStats.lastCommandWords = (uint32_t)commandWords;
     if (commandWords > sStats.maxCommandWords)
@@ -531,118 +775,14 @@ bool PortPpuGpu3DS_Preflight(const PpuGpu3DSFrameView* frame) {
     if (!PpuGpu3DS_CommandBudgetFits(commandWords, gpuCmdBuf != NULL,
                                     gpuCmdBufSize, gpuCmdBufOffset)) {
         ++sStats.commandBudgetFallbacks;
-        return FinishPreflight(false, startTick);
+        return FailPreflight(startTick);
     }
-
-    const uint64_t flushStartTick = svcGetSystemTick();
-    /* Only the slots decoded this frame need uploading, but each
-     * GSPGPU_FlushDataCache is a GSP round trip measured at ~330 us on an Old
-     * 3DS -- a hundred times the cost of the few kilobytes a call covers. So
-     * the dirty slots are coalesced into a handful of ranges and the extra
-     * bytes are paid gladly to avoid the calls. */
-    if (sCache->dirtyCount != 0) {
-        unsigned firstSlot = PPU_GPU3DS_SLOT_COUNT, lastSlot = 0;
-        memset(sDirtyBitmap, 0, sizeof(sDirtyBitmap));
-        for (unsigned index = 0; index < sCache->dirtyCount; ++index) {
-            const unsigned slot = sCache->dirtySlots[index];
-            sDirtyBitmap[slot / 32u] |= 1u << (slot % 32u);
-            if (slot < firstSlot) firstSlot = slot;
-            if (slot > lastSlot) lastSlot = slot;
-        }
-
-        /* Walk the bitmap into runs, merging any gap smaller than the bytes a
-         * separate call would cost. */
-        unsigned rangeFirst[PPU_GPU3DS_ATLAS_FLUSH_RANGES];
-        unsigned rangeLast[PPU_GPU3DS_ATLAS_FLUSH_RANGES];
-        unsigned rangeCount = 0;
-        for (unsigned slot = firstSlot; slot <= lastSlot; ++slot) {
-            if ((sDirtyBitmap[slot / 32u] & (1u << (slot % 32u))) == 0) continue;
-            if (rangeCount != 0 &&
-                slot - rangeLast[rangeCount - 1] <= PPU_GPU3DS_ATLAS_FLUSH_GAP) {
-                rangeLast[rangeCount - 1] = slot;
-                continue;
-            }
-            if (rangeCount == PPU_GPU3DS_ATLAS_FLUSH_RANGES) {
-                /* Out of ranges: one span covers everything left. */
-                rangeLast[rangeCount - 1] = lastSlot;
-                break;
-            }
-            rangeFirst[rangeCount] = slot;
-            rangeLast[rangeCount] = slot;
-            ++rangeCount;
-        }
-
-        bool flushed = true;
-        for (unsigned range = 0; range < rangeCount && flushed; ++range) {
-            const size_t bytes =
-                    ((size_t)rangeLast[range] - rangeFirst[range] + 1u) * 64u *
-                    sizeof(uint16_t);
-            uint16_t* pixels =
-                    (uint16_t*)sAtlas.data + (size_t)rangeFirst[range] * 64u;
-            flushed = Platform3DS_CleanDataCache(pixels, bytes);
-            if (flushed) sStats.atlasFlushBytes += bytes;
-        }
-        sStats.atlasFlushCalls += rangeCount;
-        if (!flushed) {
-            sCommands.vertexCount = 0;
-            sCommands.indexCount = 0;
-            sCommands.batchCount = 0;
-            return FinishPreflight(false, startTick);
-        }
-        PpuGpu3DS_CacheClearDirty(sCache);
     Platform3DS_SetStage(23);
-    }
-    if ((frame->pictureMask & 0x8u) && !RefreshIndexedPicture(frame)) {
-        sCommands.vertexCount = 0;
-        sCommands.indexCount = 0;
-        sCommands.batchCount = 0;
-        return FinishPreflight(false, startTick);
-    }
-    for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring) {
-        size_t offset, bytes;
-        if (!PpuGpu3DS_RingTakeDirty(sCache, ring, &offset, &bytes)) continue;
-        if (!Platform3DS_CleanDataCache((uint8_t*)sRingTex[ring].data + offset, bytes)) {
-            sCommands.vertexCount = 0;
-            sCommands.indexCount = 0;
-            sCommands.batchCount = 0;
-            return FinishPreflight(false, startTick);
-        }
-        sStats.atlasFlushBytes += bytes;
-        ++sStats.atlasFlushCalls;
-    }
-    /* Same economics as the atlas: one call spanning the rebuilt slices and
-     * the per-band geometry beats a call per region. A slice that was kept
-     * from last frame is only re-flushed when it sits between two that were
-     * not, which costs bytes rather than calls. */
-    Platform3DS_SetStage(24);
-    const size_t irisFirstVertex = sCommands.vertexCount;
-    AppendIrisMask(frame);
-    size_t geometryFirstVertex = sCommands.dynamicFirstVertex;
-    if (sIrisIndexCount != 0 && irisFirstVertex < geometryFirstVertex) geometryFirstVertex = irisFirstVertex;
-    size_t geometryFirstIndex = sCommands.dynamicFirstIndex;
-    for (unsigned bg = 0; bg < 4u; ++bg) {
-        if ((sCommands.mapDirtyMask & (1u << bg)) == 0) continue;
-        const size_t sliceVertex = (size_t)bg * PPU_GPU3DS_MAP_SLICE_VERTICES;
-        if (sliceVertex < geometryFirstVertex) {
-            geometryFirstVertex = sliceVertex;
-            geometryFirstIndex = (size_t)bg * PPU_GPU3DS_MAP_SLICE_INDICES;
-        }
-    }
-    (void)geometryFirstIndex;  /* indices are static; only vertices stream */
-    if (sCommands.vertexCount > geometryFirstVertex) {
-        if (!Platform3DS_CleanDataCache(
-                    sVertices + geometryFirstVertex,
-                    (sCommands.vertexCount - geometryFirstVertex) *
-                            sizeof(*sVertices))) {
-            sCommands.vertexCount = 0;
-            sCommands.indexCount = 0;
-            sCommands.batchCount = 0;
-            return FinishPreflight(false, startTick);
-        }
-    }
+    if (!CommitAtlas() || !CommitRings() || ((frame->pictureMask & 0x8u) && !RefreshIndexedPicture(frame)))
+        return FailPreflight(startTick);
 
     Platform3DS_SetStage(25);
-    sStats.flushTicks += svcGetSystemTick() - flushStartTick;
+    sStats.flushTicks += svcGetSystemTick() - startTick;
     sPreparedWidth = frame->width;
     sPreparedHeight = frame->height;
     sFadeWeight = frame->fadeWeight;
@@ -698,6 +838,32 @@ static void SetScissorCached(u32 left, u32 bottom, u32 right, u32 top) {
     C3D_SetScissor(GPU_SCISSOR_NORMAL, left, bottom, right, top);
 }
 
+static int sTintMode;
+void PortPpuGpu3DS_SetTintMode(int mode) { sTintMode = mode < 0 || mode > 2 ? 0 : mode; }
+int PortPpuGpu3DS_TintMode(void) { return sTintMode; }
+
+/* The flat colour (0xBBGGRR, with a bit 24 mark) a batch is painted in under the tint view; 0: not tinted. */
+static uint32_t TintOf(const PpuGpu3DSBatch* batch) {
+    if (sTintMode == 0 || batch->objWindow || batch->layer > PPU_GPU3DS_OBJ) return 0;
+    const unsigned priority = batch->priority & 3u;
+    unsigned r, g, b;
+    if (sTintMode == 1) {
+        static const unsigned kRgb[5][3] = { { 255, 0, 255 }, { 0, 255, 255 }, { 255, 150, 0 }, { 0, 220, 0 }, { 255, 255, 255 } };
+        static const unsigned kScale[4] = { 256, 192, 140, 96 };
+        r = kRgb[batch->layer][0] * kScale[priority] / 256u;
+        g = kRgb[batch->layer][1] * kScale[priority] / 256u;
+        b = kRgb[batch->layer][2] * kScale[priority] / 256u;
+    } else {
+        int depth = Stereo3DS_LayerDepth(batch->layer, priority);
+        depth = depth < -4 ? -4 : depth > 8 ? 8 : depth;
+        const unsigned t = (unsigned)(depth + 4); /* 0..12 */
+        r = t * 5u;
+        g = t * 10u;
+        b = 40u + t * 17u;
+    }
+    return 0x1000000u | r | (g << 8u) | (b << 16u);
+}
+
 static uint32_t TevKey(const PpuGpu3DSBatch* batch) {
     return (uint32_t)batch->effect | ((uint32_t)batch->evy << 8u);
 }
@@ -707,16 +873,27 @@ static uint32_t BlendKey(const PpuGpu3DSBatch* batch) {
            ((uint32_t)batch->evb << 16u);
 }
 
+static uint32_t sTintKey;
+
 static void ResetTev(const PpuGpu3DSBatch* batch) {
     const uint32_t key = TevKey(batch);
-    if (key == sTevKey) return;
+    const uint32_t tint = TintOf(batch);
+    if (key == sTevKey && tint == sTintKey) return;
     sTevKey = key;
+    sTintKey = tint;
     for (int stage = 0; stage < 3; ++stage)
         C3D_TexEnvInit(C3D_GetTexEnv(stage));
     C3D_TexEnv* texture = C3D_GetTexEnv(0);
     C3D_TexEnvSrc(texture, C3D_Both, GPU_TEXTURE0, GPU_TEXTURE0,
                   GPU_TEXTURE0);
     C3D_TexEnvFunc(texture, C3D_Both, GPU_REPLACE);
+    if (tint != 0) {
+        /* The picture's alpha as it is, its colour one flat tone: brightening, darkening and blending would hide
+         * the difference between a dark picture and a far plane. */
+        C3D_TexEnvColor(texture, 0xff000000u | (tint & 0xffffffu));
+        C3D_TexEnvSrc(texture, C3D_RGB, GPU_CONSTANT, GPU_CONSTANT, GPU_CONSTANT);
+        return;
+    }
     if (batch->effect != PPU_GPU3DS_EFFECT_BRIGHTEN &&
         batch->effect != PPU_GPU3DS_EFFECT_DARKEN)
         return;
@@ -737,10 +914,10 @@ static void ResetTev(const PpuGpu3DSBatch* batch) {
 }
 
 static void ResetBlend(const PpuGpu3DSBatch* batch) {
-    const uint32_t key = BlendKey(batch);
+    const uint32_t key = BlendKey(batch) | (TintOf(batch) != 0 ? 0x80000000u : 0u);
     if (key == sBlendKey) return;
     sBlendKey = key;
-    if (batch->effect == PPU_GPU3DS_EFFECT_ALPHA) {
+    if (batch->effect == PPU_GPU3DS_EFFECT_ALPHA && TintOf(batch) == 0) {
         const u32 eva = Coefficient8(batch->eva);
         const u32 evb = Coefficient8(batch->evb);
         C3D_BlendingColor(eva | (eva << 8u) | (eva << 16u) | (evb << 24u));
@@ -769,6 +946,12 @@ static void SetWindowStencil(const PpuGpu3DSBatch* batch) {
         C3D_StencilTest(false, GPU_ALWAYS, 0, 0xff, 0);
 }
 
+/* Stencil bit 0x08 marks a pixel whose top layer so far is a second blend target. With the eyes
+ * drawn over one shared picture (DrawEyesOverBase) the base keeps the mark in 0x10 as well, and
+ * each eye's layers in front read and write only their own copy: the eyes share one depth-stencil
+ * buffer, so what the first eye wrote would otherwise reach the second. */
+static unsigned sTarget2Bit = 0x08u, sTarget2WriteMask = 0x08u;
+
 /* Every path that relies on the stencil keeps the depth test enabled with
  * GPU_ALWAYS rather than disabling it. The two are equivalent as tests, but on
  * PICA200 the stencil belongs to the depth-stencil stage, and a console draws
@@ -789,18 +972,18 @@ static void SetColorStencil(const PpuGpu3DSBatch* batch) {
     unsigned mask = region < 2u ? 0x04u : 0;
     unsigned ref = region == 1u ? 0x04u : 0;
     if (alphaBranch) {
-        mask |= 0x08u;
-        if (oldTarget) ref |= 0x08u;
+        mask |= sTarget2Bit;
+        if (oldTarget) ref |= sTarget2Bit;
         C3D_StencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP,
                       oldTarget == (batch->target2 != 0)
                               ? GPU_STENCIL_KEEP
                               : GPU_STENCIL_INVERT);
     } else {
-        if (batch->target2) ref |= 0x08u;
+        if (batch->target2) ref |= sTarget2WriteMask;
         C3D_StencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP,
                       GPU_STENCIL_REPLACE);
     }
-    C3D_StencilTest(true, mask ? GPU_EQUAL : GPU_ALWAYS, ref, mask, 0x08);
+    C3D_StencilTest(true, mask ? GPU_EQUAL : GPU_ALWAYS, ref, mask, sTarget2WriteMask);
 }
 
 /* The vertex shader adds this to every position; only map-space background
@@ -836,7 +1019,9 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
                                                                       : &sRingTex[batch->texture - 1u]);
     }
     SetBatchOffset(batch->offsetX + (sEyeShifting && batch->layer <= PPU_GPU3DS_OBJ
-                                             ? sEyeShiftNdc[batch->layer][batch->priority & 3u]
+                                             ? (batch->objWindow && sEyeWindowFollows
+                                                        ? sEyeWindowNdc
+                                                        : sEyeShiftNdc[batch->layer][batch->priority & 3u])
                                              : 0.0f),
                    batch->offsetY);
     const u32 yOffset = sViewportOffset;
@@ -866,7 +1051,8 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
     }
     u32 left = batch->scissorLeft, right = batch->scissorRight;
     if (sEyeShifting && batch->layer <= PPU_GPU3DS_OBJ) {
-        const int shift = sEyeShiftPx[batch->layer][batch->priority & 3u];
+        const int shift = batch->objWindow && sEyeWindowFollows ? sEyeWindowPx
+                                                                 : sEyeShiftPx[batch->layer][batch->priority & 3u];
         const int movedLeft = (int)left + shift, movedRight = (int)right + shift;
         left = movedLeft < 0 ? 0u : (u32)movedLeft;
         right = movedRight > (int)sPreparedWidth ? sPreparedWidth : (movedRight < 0 ? 0u : (u32)movedRight);
@@ -929,15 +1115,90 @@ static void ClearStencilPlane(void) {
                      sIndices + PPU_GPU3DS_CLEAR_FIRST_INDEX);
 }
 
+/* What a DrawOutput call draws. ALL: the whole frame. BASE: only the layers on the screen plane,
+ * without the iris and fade; FRONT_LEFT / FRONT_RIGHT: over it, only the layers with a depth, then
+ * the iris and fade (DrawEyesOverBase). */
+typedef enum OutputPass { PASS_ALL, PASS_BASE, PASS_FRONT_LEFT, PASS_FRONT_RIGHT } OutputPass;
+
+/* The layers off the screen plane this frame: their shift is not zero (SetEyeShifts). */
+static bool sFrontLayer[PPU_GPU3DS_OBJ + 1][4];
+/* Whether a sprite is among them: only then does each eye reset the depth (ClearDepthPlane). */
+static bool sFrontHasObj;
+
+static bool IsFrontBatch(const PpuGpu3DSBatch* batch) {
+    return batch->layer <= PPU_GPU3DS_OBJ && sFrontLayer[batch->layer][batch->priority & 3u];
+}
+
+static bool PassDraws(OutputPass pass, const PpuGpu3DSBatch* batch) {
+    return pass == PASS_ALL || (pass == PASS_BASE) != IsFrontBatch(batch);
+}
+
+/* The right eye starts as a copy of the left's base picture: one quad sampling the left output, colour only, so
+ * the shared depth-stencil keeps the base's marks. Commands run in order, so it reads the base before the left
+ * eye's own layers are drawn over it. */
+static void CopyLeftOutput(void) {
+    PpuGpu3DSVertex* quad = sVertices + PPU_GPU3DS_COPY_FIRST_VERTEX;
+    /* Same corners as the reset quad (top-left, top-right, bottom-right, bottom-left), each sampling the output
+     * texel under it: the viewport's bottom edge is target row sViewportOffset. */
+    const float u1 = (float)sPreparedWidth / (float)PPU_GPU3DS_OUTPUT_WIDTH;
+    const float v0 = (float)sViewportOffset / (float)PPU_GPU3DS_OUTPUT_HEIGHT;
+    const float v1 = (float)(sViewportOffset + sPreparedHeight) / (float)PPU_GPU3DS_OUTPUT_HEIGHT;
+    static const float kX[4] = { -1.0f, 1.0f, 1.0f, -1.0f };
+    static const float kY[4] = { 1.0f, 1.0f, -1.0f, -1.0f };
+    for (unsigned corner = 0; corner < 4u; ++corner) {
+        quad[corner].x = kX[corner];
+        quad[corner].y = kY[corner];
+        quad[corner].z = 0.0f;
+        quad[corner].u = PpuGpu3DS_PackUV(kX[corner] < 0.0f ? 0.0f : u1);
+        quad[corner].v = PpuGpu3DS_PackUV(kY[corner] < 0.0f ? v0 : v1);
+    }
+    Platform3DS_CleanDataCache(quad, 4u * sizeof(*quad));
+    for (int stage = 0; stage < 3; ++stage)
+        C3D_TexEnvInit(C3D_GetTexEnv(stage));
+    C3D_TexEnv* env = C3D_GetTexEnv(0);
+    C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, GPU_TEXTURE0, GPU_TEXTURE0);
+    C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+    sTevKey = 0xffffffffu;
+    sTintKey = 0xffffffffu;
+    C3D_TexSetFilter(&sOutputTexture, GPU_NEAREST, GPU_NEAREST);
+    C3D_TexBind(0, &sOutputTexture);
+    sBoundTexture = UINT8_MAX;
+    C3D_BlendingColor(0);
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+    sBlendKey = 0xffffffffu;
+    C3D_AlphaTest(false, GPU_ALWAYS, 0);
+    C3D_StencilTest(false, GPU_ALWAYS, 0, 0xff, 0);
+    C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_COLOR);
+    SetBatchOffset(0.0f, 0.0f);
+    SetScissorCached(0, sViewportOffset, sPreparedWidth, sViewportOffset + sPreparedHeight);
+    C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, sIndices + PPU_GPU3DS_COPY_FIRST_INDEX);
+}
+
+/* Depth back to the clear value, stencil kept: the sprites in front pick their order among themselves again
+ * (they are in front of every base sprite whatever the depth holds), so neither eye sees the other's. */
+static void ClearDepthPlane(void) {
+    SetBatchOffset(0.0f, 0.0f);
+    SetScissorCached(0, sViewportOffset, sPreparedWidth, sViewportOffset + sPreparedHeight);
+    C3D_AlphaTest(false, GPU_ALWAYS, 0);
+    C3D_StencilTest(false, GPU_ALWAYS, 0, 0xff, 0);
+    C3D_StencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_KEEP);
+    C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_DEPTH);
+    C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, sIndices + PPU_GPU3DS_CLEAR_FIRST_INDEX);
+}
+
 /* The prepared frame drawn on one output target, each layer moved by its eye's shift
- * (sEyeShiftNdc, none for a single picture). */
-static bool DrawOutput(C3D_RenderTarget* target) {
+ * (sEyeShiftNdc, none for a single picture); `pass` says which part of it (OutputPass). */
+static bool DrawOutput(C3D_RenderTarget* target, OutputPass pass) {
+    const bool front = pass == PASS_FRONT_LEFT || pass == PASS_FRONT_RIGHT;
     /* citro2d programs the scissor for its own draws between our frames, so
      * the cache cannot survive across a frame boundary. */
     sScissorKeyLow = 0xffffffffu;
     sScissorKeyHigh = 0xffffffffu;
-    C3D_RenderTargetClear(target, C3D_CLEAR_ALL,
-                          ClearColor(sCommands.batches[0].color), 0);
+    /* The layers in front go over the base already drawn; the right eye's picture is all copied from the
+     * left, so only its colour is cleared (outside the view) and the shared depth-stencil is left alone. */
+    if (pass != PASS_FRONT_LEFT)
+        C3D_RenderTargetClear(target, pass == PASS_FRONT_RIGHT ? C3D_CLEAR_COLOR : C3D_CLEAR_ALL,
+                              ClearColor(sCommands.batches[0].color), 0);
     if (!C3D_FrameDrawOn(target)) return false;
     /* Scanline 0 has to land in target row 0, where the presenter samples it,
      * so the viewport sits at the top of the 512x256 surface; the scissor is
@@ -950,7 +1211,7 @@ static bool DrawOutput(C3D_RenderTarget* target) {
     C3D_DepthMap(true, -1.0f, 0.0f);
     C3D_BindProgram(&sProgram);
     C3D_SetAttrInfo(&sAttributes);
-    C3D_SetBufInfo(&sBuffers);
+    C3D_SetBufInfo(&sBufferInfo[sBuildBuffer]);
     C3D_CullFace(GPU_CULL_NONE);
     /* Nothing about the previous frame's state survives here. */
     sLastOffsetX = 1.0f;
@@ -958,26 +1219,34 @@ static bool DrawOutput(C3D_RenderTarget* target) {
     SetBatchOffset(0.0f, 0.0f);
     sTevKey = 0xffffffffu;
     sBlendKey = 0xffffffffu;
+    sTintKey = 0xffffffffu;
     for (int stage = 0; stage < 6; ++stage)
         C3D_TexEnvInit(C3D_GetTexEnv(stage));
     C3D_TexSetFilter(&sAtlas, GPU_NEAREST, GPU_NEAREST);
     C3D_TexSetWrap(&sAtlas, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     C3D_TexBind(0, &sAtlas);
     sBoundTexture = 0;
-    LogBatchList();
-
+    if (pass == PASS_ALL || pass == PASS_BASE) LogBatchList();
+    /* The base keeps the blend-target mark in both bits; each eye in front uses its own. */
+    sTarget2Bit = pass == PASS_FRONT_RIGHT ? 0x10u : 0x08u;
+    sTarget2WriteMask = pass == PASS_BASE ? 0x18u : sTarget2Bit;
     /* Windows and blending read the stencil as though it starts at zero every
      * frame. citro3d's target clear is the only thing that guarantees that,
      * and it skips the depth/stencil fill entirely when the attachment is
      * missing while still clearing colour -- which reads on screen as a frame
      * that is uniformly clear-coloured (every gated batch rejected) or
      * uniformly blended (only the alpha half passing). Resetting the plane
-     * with a draw costs one quad and depends on nothing. */
-    ClearStencilPlane();
+     * with a draw costs one quad and depends on nothing. The layers in front
+     * read the marks the base left (DrawEyesOverBase), so they keep them. */
+    if (!front) ClearStencilPlane();
+    else {
+        if (pass == PASS_FRONT_RIGHT) CopyLeftOutput();
+        if (sFrontHasObj) ClearDepthPlane();
+    }
 
     for (size_t i = 1; i < sCommands.batchCount; ++i) {
         const PpuGpu3DSBatch* batch = &sCommands.batches[i];
-        if (!batch->objWindow) continue;
+        if (!batch->objWindow || front) continue; /* DrawEyesOverBase: the OBJ windows are all in the base */
         ResetTev(batch);
         ResetBlend(batch);
         C3D_AlphaTest(true, GPU_GREATER, 0);
@@ -990,7 +1259,7 @@ static bool DrawOutput(C3D_RenderTarget* target) {
 
     for (size_t i = 1; i < sCommands.batchCount; ++i) {
         const PpuGpu3DSBatch* batch = &sCommands.batches[i];
-        if (batch->layer != PPU_GPU3DS_OBJ || batch->objWindow) continue;
+        if (batch->layer != PPU_GPU3DS_OBJ || batch->objWindow || !PassDraws(pass, batch)) continue;
         ResetTev(batch);
         ResetBlend(batch);
         C3D_AlphaTest(true, GPU_GREATER, 0);
@@ -1001,13 +1270,13 @@ static bool DrawOutput(C3D_RenderTarget* target) {
 
     for (size_t i = 1; i < sCommands.batchCount; ++i) {
         const PpuGpu3DSBatch* batch = &sCommands.batches[i];
-        if (batch->objWindow) continue;
+        if (batch->objWindow || !PassDraws(pass, batch)) continue;
         if (batch->layer == PPU_GPU3DS_BACKDROP) {
             ResetTev(batch);
             ResetBlend(batch);
             C3D_AlphaTest(false, GPU_ALWAYS, 0);
             C3D_DepthTest(true, GPU_ALWAYS, (GPU_WRITEMASK)0);
-            C3D_StencilTest(true, GPU_ALWAYS, 0x08, 0, 0x08);
+            C3D_StencilTest(true, GPU_ALWAYS, sTarget2WriteMask, 0, sTarget2WriteMask);
             C3D_StencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP,
                           GPU_STENCIL_REPLACE);
             DrawBatch(batch);
@@ -1026,7 +1295,7 @@ static bool DrawOutput(C3D_RenderTarget* target) {
 
     /* The iris (PpuGpu3DSFrameView::irisLines): the backdrop outside the circle,
      * before the fade quad so a fade darkens it as PAL_RAM's backdrop was. */
-    if (sIrisIndexCount != 0) {
+    if (sIrisIndexCount != 0 && pass != PASS_BASE) {
         for (int stage = 0; stage < 3; ++stage)
             C3D_TexEnvInit(C3D_GetTexEnv(stage));
         C3D_TexEnv* env = C3D_GetTexEnv(0);
@@ -1050,7 +1319,7 @@ static bool DrawOutput(C3D_RenderTarget* target) {
      * opaque as its weight, over the finished frame is the game's fade. Blending
      * is linear, so it commutes with the alpha blends and the fades the frame
      * already did; the target's 5-bit channels quantise it as PAL_RAM did. */
-    if (sFadeWeight != 0 && gPpuGpu3DSFadeQuadDisable == 0) {
+    if (sFadeWeight != 0 && gPpuGpu3DSFadeQuadDisable == 0 && pass != PASS_BASE) {
         for (int stage = 0; stage < 3; ++stage)
             C3D_TexEnvInit(C3D_GetTexEnv(stage));
         C3D_TexEnv* env = C3D_GetTexEnv(0);
@@ -1139,6 +1408,84 @@ static void SetEyeShifts(bool shifted, Stereo3DSEye eye) {
             sEyeShiftPx[layer][priority] = pixels;
             sEyeShiftNdc[layer][priority] = (float)pixels * toNdc;
         }
+    unsigned followLayer, followPriority;
+    sEyeWindowFollows = Stereo3DS_ObjWindowFollows(&followLayer, &followPriority);
+    if (sEyeWindowFollows) {
+        sEyeWindowPx = sEyeShiftPx[followLayer][followPriority & 3u];
+        sEyeWindowNdc = sEyeShiftNdc[followLayer][followPriority & 3u];
+    }
+}
+
+/* Why the eyes cannot be drawn over one base picture this frame (0: they can). */
+enum { SPLIT_OK, SPLIT_WINDOW_FOLLOWS, SPLIT_FRONT_WINDOW, SPLIT_FRONT_BLENDED_OBJ, SPLIT_BASE_OVER_FRONT, SPLIT_FORCED_WHOLE,
+       SPLIT_NOTHING_IN_FRONT, SPLIT_LINES_UNCLIPPED };
+
+/* With the left eye's shifts set (SetEyeShifts): marks the layers in front (sFrontLayer) and says whether the
+ * frame can be drawn as one base picture with them over it, each eye moving only those (DrawEyesOverBase), or,
+ * SPLIT_NOTHING_IN_FRONT, needs one picture for both eyes (no batch is on a layer in front: the HUD hidden).
+ * It can when nothing on the screen plane is drawn after a layer in front on the same lines, no OBJ window
+ * moves, and no sprite in front is semi-transparent: the GBA blends a sprite with the background under it,
+ * never with a lower sprite, which the base would have drawn there. The lines are a batch's only while the scissor
+ * cuts them (gpu_scissor_mode 0 lets a band's tile rows overhang). */
+static int EyesOverBaseRefusal(void) {
+    for (unsigned layer = 0; layer <= PPU_GPU3DS_OBJ; ++layer)
+        for (unsigned priority = 0; priority < 4; ++priority)
+            sFrontLayer[layer][priority] = sEyeShiftPx[layer][priority] != 0;
+    if (sEyeWindowFollows) return SPLIT_WINDOW_FOLLOWS;
+    if (Port_Config_GpuScissorMode() == 0) return SPLIT_LINES_UNCLIPPED;
+    sFrontHasObj = false;
+    uint32_t frontLines[(PPU_GPU3DS_OUTPUT_HEIGHT + 31) / 32] = { 0 };
+    bool anyFront = false;
+    for (size_t i = 1; i < sCommands.batchCount; ++i) {
+        const PpuGpu3DSBatch* batch = &sCommands.batches[i];
+        const unsigned first = batch->firstLine;
+        unsigned end = first + batch->lineCount;
+        if (end > PPU_GPU3DS_OUTPUT_HEIGHT) end = PPU_GPU3DS_OUTPUT_HEIGHT;
+        if (IsFrontBatch(batch)) {
+            if (batch->objWindow) return SPLIT_FRONT_WINDOW;
+            if (batch->layer == PPU_GPU3DS_OBJ &&
+                (batch->effect == PPU_GPU3DS_EFFECT_ALPHA || batch->semiTransparent ||
+                 (batch->color & PPU_GPU3DS_ALPHA_COMPLEMENT) != 0))
+                return SPLIT_FRONT_BLENDED_OBJ;
+            for (unsigned line = first; line < end; ++line)
+                frontLines[line / 32u] |= 1u << (line % 32u);
+            anyFront = true;
+            if (batch->layer == PPU_GPU3DS_OBJ) sFrontHasObj = true;
+        } else if (anyFront && !batch->objWindow) {
+            for (unsigned line = first; line < end; ++line)
+                if (frontLines[line / 32u] & (1u << (line % 32u))) return SPLIT_BASE_OVER_FRONT;
+        }
+    }
+    return anyFront ? SPLIT_OK : SPLIT_NOTHING_IN_FRONT;
+}
+
+/* The layers on the screen plane are drawn once, on the left output; the right eye's output copies that picture,
+ * and only the layers in front are drawn for each eye with its shift. Drawing the whole frame twice doubled the
+ * GPU's work: in the Deepwood Shrine's dark room (area 0x48 room 0x10, New 3DS) 9.0 ms a frame in 2D, 17.1 with
+ * both eyes whole (40 fps), 12.6 this way (54 fps; docs/PLAN.md, decisions log 2026-10-18). */
+static bool DrawEyesOverBase(void) {
+    SetEyeShifts(false, STEREO3DS_LEFT);
+    if (!DrawOutput(sOutputTarget, PASS_BASE)) return false;
+    if (EnsureRightOutput()) {
+        SetEyeShifts(true, STEREO3DS_RIGHT);
+        sRightReady = DrawOutput(sOutputRightTarget, PASS_FRONT_RIGHT);
+    }
+    SetEyeShifts(true, STEREO3DS_LEFT);
+    return DrawOutput(sOutputTarget, PASS_FRONT_LEFT);
+}
+
+static void NoteEyesPath(int refusal) {
+#if TMC3DS_DEBUG_TOOLS
+    static int last = -1;
+    if (refusal != last)
+        DebugLog_Printf("stereo: eyes %s (%d)", refusal == SPLIT_OK                 ? "over one base"
+                                                : refusal == SPLIT_NOTHING_IN_FRONT ? "share one picture"
+                                                                                    : "drawn whole",
+                        refusal);
+    last = refusal;
+#else
+    (void)refusal;
+#endif
 }
 
 bool PortPpuGpu3DS_DrawPrepared(void) {
@@ -1158,12 +1505,24 @@ bool PortPpuGpu3DS_DrawPrepared(void) {
      * shows this one to both. */
     const bool stereo = Stereo3DS_HasDepth();
     SetEyeShifts(stereo, STEREO3DS_LEFT);
-    bool drawn = DrawOutput(sOutputTarget);
-    if (drawn && stereo && EnsureRightOutput()) {
-        SetEyeShifts(true, STEREO3DS_RIGHT);
-        sRightReady = DrawOutput(sOutputRightTarget);
+    bool drawn;
+    const int refusal = !stereo ? SPLIT_OK : gPpuGpu3DSEyesWhole ? SPLIT_FORCED_WHOLE : EyesOverBaseRefusal();
+    if (stereo) NoteEyesPath(refusal);
+    if (stereo && refusal == SPLIT_OK) {
+        drawn = DrawEyesOverBase();
+    } else if (stereo && refusal == SPLIT_NOTHING_IN_FRONT) {
+        /* No batch moves: one picture, which the presenter shows to both eyes. */
+        SetEyeShifts(false, STEREO3DS_LEFT);
+        drawn = DrawOutput(sOutputTarget, PASS_ALL);
+    } else {
+        drawn = DrawOutput(sOutputTarget, PASS_ALL);
+        if (drawn && stereo && EnsureRightOutput()) {
+            SetEyeShifts(true, STEREO3DS_RIGHT);
+            sRightReady = DrawOutput(sOutputRightTarget, PASS_ALL);
+        }
     }
     SetEyeShifts(false, STEREO3DS_LEFT);
+    if (drawn) sDrawnBuffer = sBuildBuffer;
     return FinishDraw(drawn, startTick);
 }
 

@@ -139,8 +139,11 @@ typedef struct PpuGpu3DSRing {
      * only they are watched for change. */
     unsigned chunkEnd;
     bool bpp8, contextValid;
-    /* Cells written since the platform last flushed them. */
+    /* Cells written since the platform last flushed them: the span, and each
+     * cell, so a platform building into a copy of the texture can move just
+     * those (a vertical scroll's row spans the whole texture but is 64 cells). */
     uint32_t dirtyFirst, dirtyLast;
+    uint32_t dirtyCells[PPU_GPU3DS_RING_CELLS / 32];
     bool dirty;
 } PpuGpu3DSRing;
 
@@ -274,6 +277,11 @@ typedef struct PpuGpu3DSFrameView {
      * what the iris's window settings (inside everything, outside nothing)
      * show; splitting the frame into a band per line cost the Old 3DS 40 ms. */
     const uint16_t* irisLines;
+    /* A circle the game draws with WIN0 under its own window settings (a dark
+     * room's light around Link) in a wide view: {left, right} per line, which
+     * replace WIN0H and WIN0V (the game's 8-bit table stops at x=255, y=159);
+     * WININ/WINOUT apply as usual. NULL: the registers. */
+    const uint16_t* win0Lines;
 } PpuGpu3DSFrameView;
 
 typedef struct PpuGpu3DSInterval {
@@ -406,6 +414,17 @@ typedef struct PpuGpu3DSCommandBuffer {
         uint32_t firstIndex, indexCount;
         uint8_t texture; /* 0 the atlas (a quad a tile), else 1 + the ring it was decoded into */
     } affineShare;
+    /* Vertices this frame's affine bands spent on one-quad-a-texel geometry (see build_affine_bg). */
+    size_t affineTexelVertices;
+    /* A 512x512 wrapping affine BG2 (the Minish Shrine's barrel) is drawn from two rings, one a half
+     * of the map's rows each (rings AFFINE_RING and AFFINE_RING + 1), a quad a band and half: the
+     * half and screen lines of the segment being built, and which rings are already up to date
+     * this frame (with the BG2 control they were decoded for). */
+    uint8_t affineRingHalf, affineRingDone;
+    uint16_t affineRingBgcnt[2];
+    uint16_t affineSegFirst, affineSegEnd;
+    /* The batches the last segment appended, so the next one can extend them (see build_affine_bg). */
+    size_t affineRunStart, affineRunCount;
     /* What the frame asked for, which on overflow exceeds the capacities. */
     uint32_t requiredVertices, requiredBatches;
 } PpuGpu3DSCommandBuffer;
@@ -453,8 +472,10 @@ void PpuGpu3DS_SetMapSpaceEnabled(bool enabled);
 /* Gives view ring `index` (bg * 2 + variant) its storage in `pixels` (256 x 512 RGBA5551, 256 KiB); NULL takes it away. */
 void PpuGpu3DS_RingSetStorage(PpuGpu3DSCache* cache, unsigned index, uint16_t* pixels);
 /* The byte range of the ring's pixels written since the last call, for the
- * platform to flush; false when nothing was. */
-bool PpuGpu3DS_RingTakeDirty(PpuGpu3DSCache* cache, unsigned index, size_t* offset, size_t* bytes);
+ * platform to flush; false when nothing was. `cells` (PPU_GPU3DS_RING_CELLS
+ * bits, may be NULL) receives which cells of it were written. */
+bool PpuGpu3DS_RingTakeDirty(PpuGpu3DSCache* cache, unsigned index, size_t* offset, size_t* bytes,
+                             uint32_t* cells);
 enum { PPU_GPU3DS_RING_COUNT = MODE1_GBA_BG_COUNT * 2 };
 /* BG2's native ring: an affine BG2 has no text ring, so a scaled one is decoded there. */
 enum { PPU_GPU3DS_AFFINE_RING = 2 * 2 };

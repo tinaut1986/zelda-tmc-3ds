@@ -1016,6 +1016,9 @@ typedef struct {
  * not a field: these statics sit among the game's globals, and growing them moves
  * every global after them, which breaks loading states saved by other builds. */
 #define WS_CIRCLE_RADIUS_PX 0x80000000u
+/* With WS_CIRCLE_RADIUS_PX: a dark room's light (Port_Widescreen_NoteLightCircle), drawn
+ * at its own radius under the game's window settings. */
+#define WS_CIRCLE_LIGHT 0x40000000u
 static PortWsIris sWsIris[2];
 /* The circle of the last frame drawn with one: the game tears the HBlank DMA
  * down in the tick that ends the iris (sub_0801E104), but the frame presented
@@ -1063,6 +1066,13 @@ void Port_Widescreen_NoteWindowCircle(int x, int y, int radius) {
     Port_WidescreenNoteCircle(x, y, (u32)radius | WS_CIRCLE_RADIUS_PX);
 }
 
+/* A dark room's light (src/manager/lightManager.c) is a circle of `radius` pixels
+ * around Link with the game's own window settings: inside WIN0 no darkness (BG3),
+ * outside it all. Drawn across a wide view as it is, not scaled to the view. */
+void Port_Widescreen_NoteLightCircle(int x, int y, int radius) {
+    Port_WidescreenNoteCircle(x, y, (u32)radius | WS_CIRCLE_RADIUS_PX | WS_CIRCLE_LIGHT);
+}
+
 /* The window the game drives now is a noted iris. */
 static int Port_WidescreenIrisLive(void) {
     return sWsIrisLatest && (gScreen.lcd.displayControl & (DISPCNT_WIN0_ON | DISPCNT_WIN1_ON | DISPCNT_OBJWIN_ON)) ==
@@ -1094,12 +1104,8 @@ int Port_Widescreen_Win0Lines(int width, int height, u16* out) {
     if ((width <= 240 && height <= 160) || height > 240 ||
         (dispcnt & (DISPCNT_WIN0_ON | DISPCNT_WIN1_ON | DISPCNT_OBJWIN_ON)) != DISPCNT_WIN0_ON) {
         sWsIrisDrawn.table = NULL;
-        return 0;
+        return PORT_WS_WIN0_NONE;
     }
-    /* The iris's settings (SetFadeIris): everything inside, the backdrop alone
-     * outside. The GPU renderer draws it as that mask. */
-    if ((gIoMem[REG_OFFSET_WINOUT] & 0x3f) != 0)
-        return 0;
     table = port_hdma_source_for_dest(&gIoMem[REG_OFFSET_WIN0H]);
     for (i = 0; i < 2 && table != NULL; i++) {
         if (sWsIris[i].table == table)
@@ -1109,12 +1115,18 @@ int Port_Widescreen_Win0Lines(int width, int height, u16* out) {
         iris = &sWsIrisDrawn;
     if (iris == NULL) {
         sWsIrisDrawn.table = NULL;
-        return 0;
+        return PORT_WS_WIN0_NONE;
     }
-    /* The portal's circle hides BG3 inside as well: the software PPU honours that
-     * (WININ), the GPU renderer's mask shows BG3 inside. */
-    if ((gIoMem[REG_OFFSET_WININ] & 0x3f) != 0x3f && !(iris->size & WS_CIRCLE_RADIUS_PX))
-        return 0;
+    if (!(iris->size & WS_CIRCLE_LIGHT)) {
+        /* The iris's settings (SetFadeIris): everything inside, the backdrop alone
+         * outside. The GPU renderer draws it as that mask. */
+        if ((gIoMem[REG_OFFSET_WINOUT] & 0x3f) != 0)
+            return PORT_WS_WIN0_NONE;
+        /* The portal's circle hides BG3 inside as well: the software PPU honours that
+         * (WININ), the GPU renderer's mask shows BG3 inside. */
+        if ((gIoMem[REG_OFFSET_WININ] & 0x3f) != 0x3f && !(iris->size & WS_CIRCLE_RADIUS_PX))
+            return PORT_WS_WIN0_NONE;
+    }
     sWsIrisDrawn = *iris;
     /* The game opens the iris up to 150 and then drops the window: on 240x160
      * around the middle that clears the corners. Scale 150 to this view's
@@ -1124,7 +1136,9 @@ int Port_Widescreen_Win0Lines(int width, int height, u16* out) {
         const s32 dx = iris->x > width / 2 ? iris->x : width - iris->x;
         const s32 dy = iris->y > height / 2 ? iris->y : height - iris->y;
         const u32 farthest = Port_WidescreenIsqrt((u32)(dx * dx + dy * dy));
-        if (iris->size & WS_CIRCLE_RADIUS_PX) {
+        if (iris->size & WS_CIRCLE_LIGHT) {
+            radius = iris->size & ~(WS_CIRCLE_RADIUS_PX | WS_CIRCLE_LIGHT);
+        } else if (iris->size & WS_CIRCLE_RADIUS_PX) {
             /* The portal's circle starts at 128 px (MinishPortalCloseup_Init) and
              * closes 2 px a frame. Its start is scaled to this view's farthest
              * corner, so the first frame with the window still shows the whole
@@ -1154,7 +1168,7 @@ int Port_Widescreen_Win0Lines(int width, int height, u16* out) {
         out[line * 2] = (u16)left;
         out[line * 2 + 1] = (u16)right;
     }
-    return 1;
+    return (iris->size & WS_CIRCLE_LIGHT) ? PORT_WS_WIN0_WINDOW : PORT_WS_WIN0_MASK;
 }
 
 #if defined(MODE1_GBA_WIDTH) && (MODE1_GBA_WIDTH > 240)
@@ -1508,6 +1522,56 @@ int Port_Widescreen_TitleRays(void) {
 #endif
 }
 
+/* Which scenes the stereoscopic 3D gives a layer a depth in (platform/3ds/source/stereo_3ds.c):
+ * a bit each of the PORT_STEREO_SCENE_* of port_widescreen.h, from the layers the game has on. */
+int Port_Stereo_Scenes(void) {
+#ifdef TMC_3DS
+    int scenes = 0;
+    const unsigned dispcnt = gScreen.lcd.displayControl;
+    /* The title (its forest on BG1 at screen base 30): BG0 is the light rays, in any view. Read from the
+     * registers the shown frame was drawn from, as Port_Widescreen_TitleForestShown does, not from
+     * gScreen: the game sets those up in state 0 and the view code rewrites BG0 for the rays. */
+    if (gMain.task == TASK_TITLE) {
+        const unsigned io = gIoMem[REG_OFFSET_DISPCNT] | (gIoMem[REG_OFFSET_DISPCNT + 1] << 8);
+        const unsigned bg1 = gIoMem[REG_OFFSET_BG1CNT] | (gIoMem[REG_OFFSET_BG1CNT + 1] << 8);
+        if ((io & DISPCNT_BG0_ON) && (io & DISPCNT_BG1_ON) && bg1 == (BGCNT_SCREENBASE(30) | BGCNT_PRIORITY(3)))
+            scenes |= PORT_STEREO_SCENE_TITLE_RAYS;
+        /* The Nintendo and Capcom logos (HandleNintendoCapcomLogos): mode 0 with only BG2 (and the empty
+         * BG0) on. */
+        else if ((io & 7) == 0 && (io & DISPCNT_BG2_ON) && !(io & (DISPCNT_BG1_ON | DISPCNT_BG3_ON)))
+            scenes |= PORT_STEREO_SCENE_LOGOS;
+    }
+    /* The sun rays of the Minish Woods and the barrel house (LightRayManager): BG3 at priority 0,
+     * alpha-blended (the steam overlay shares the control word but not the blend's). */
+    if ((dispcnt & DISPCNT_BG3_ON) && gScreen.bg3.control == 0x1e04 && gScreen.controls.layerFXControl == 0x3648)
+        scenes |= PORT_STEREO_SCENE_LIGHT_RAYS;
+    /* The leaves of the Minish Paths corridors (area 0x11, BG1 at priority 1 over the shadows of
+     * BG3 and the ground of BG2), vertical (0x1e49) and horizontal (0x1e09). */
+    if (gRoomControls.area == 0x11 && (dispcnt & DISPCNT_BG1_ON) && (gScreen.bg1.control & 0x1f03) == 0x1e01)
+        scenes |= PORT_STEREO_SCENE_PATH_LEAVES;
+    /* The file select (src/fileselect.c): its cave is BG3 at screen base 30, character base 2, priority 3;
+     * the banner, the slots and their texts are its sprites, the preview's panel BG2 at priority 2. */
+    if (gMain.task == TASK_FILE_SELECT) {
+        const unsigned io = gIoMem[REG_OFFSET_DISPCNT] | (gIoMem[REG_OFFSET_DISPCNT + 1] << 8);
+        const unsigned bg3 = gIoMem[REG_OFFSET_BG3CNT] | (gIoMem[REG_OFFSET_BG3CNT + 1] << 8);
+        if (!(io & DISPCNT_FORCED_BLANK) && (io & DISPCNT_BG3_ON) &&
+            (bg3 & 0xdf0f) == (BGCNT_SCREENBASE(30) | BGCNT_CHARBASE(2) | BGCNT_PRIORITY(3)))
+            scenes |= PORT_STEREO_SCENE_FILE_SELECT;
+    }
+    /* The map screens (the pause menu's map, SUBTASK_MAPHINT, SUBTASK_LOCALMAPHINT): the covered parts are
+     * sprites in OBJ-window mode (sub_080A6498) and every frame that draws them also sets WINOUT to 0x3d3f;
+     * their markers and the fog are on one plane, apart from the HUD's depth that sprites at priority 0 get. */
+    if (gMain.task == TASK_GAME && gMain.substate == GAMEMAIN_SUBTASK && gScreen.controls.windowOutsideControl == 0x3d3f)
+        scenes |= PORT_STEREO_SCENE_MAP_HINT;
+    /* The game over screen (src/gameOverTask.c): the stone panel and its choices are BGs, the GAME OVER
+     * letters are sprites. */
+    if (gMain.task == TASK_GAMEOVER) scenes |= PORT_STEREO_SCENE_GAME_OVER;
+    return scenes;
+#else
+    return 0;
+#endif
+}
+
 int Port_Widescreen_PortalCutsceneWide(void) {
 #ifdef TMC_3DS
     return Port_Config_3DSFullViewComboEnabled() && gMain.task == TASK_GAME &&
@@ -1682,6 +1746,15 @@ static int Port_WidescreenFixedCanvasSubtask(void) {
     if (gMain.substate == GAMEMAIN_BARRELUPDATE) {
         return 1;
     }
+    /* ... and its way out: RollingBarrelManager's room-exit callback runs when the door fade starts, so the
+     * substate has already left BARRELUPDATE while the barrel's affine picture (mode 1, still the room's
+     * HBlank DMA) fades out. Drawn as a normal wide room, the maps the game is clearing at that point came
+     * out as noise over the whole 400x240; as the fixed canvas it is the plain fade to white of the
+     * original aspect. */
+    if (gRoomControls.area == AREA_DEEPWOOD_SHRINE && (gScreen.lcd.displayControl & 7u) == 1u &&
+        gFadeControl.active != 0) {
+        return 1;
+    }
     if (gMain.substate != GAMEMAIN_SUBTASK) {
         return 0;
     }
@@ -1703,7 +1776,8 @@ static int Port_WidescreenFullViewUiOverlayActive(void) {
      * Port_Widescreen_UpdateShadows centres with ws_msg_shift at any view width. Counting it
      * as an overlay dropped Full View to E2 for the whole banner (about four seconds) and the
      * camera then snapped to the 400-wide rest position when it ended. */
-    /* The iris fade is drawn across the whole view (Port_Widescreen_Win0Lines). */
+    /* The iris fade and a dark room's light are drawn across the whole view
+     * (Port_Widescreen_Win0Lines). */
     if (Port_WidescreenIrisLive())
         return 0;
     return Port3DSFullViewPolicy_NativeWindowActive(gScreen.lcd.displayControl);
@@ -1951,10 +2025,9 @@ int Port_Widescreen_3DSHoldTop(void) {
             return 0;
     }
     if (!Port_Config_3DSFullViewComboEnabled() || Port_WidescreenFixedCanvasSubtask()) return 0;
-    if (gRoomControls.area > AREA_98 ||
-        !Port3DSFullViewPolicy_AreaIsExterior(gRoomControls.area, gRoomControls.room,
-                                              gAreaMetadata[gRoomControls.area].flags))
-        return 0;
+    /* Every room is a Full View candidate now (interiors included, P4.6), so a door into a house holds
+     * the faded frame as well, instead of showing its first frames at 240/266 before the 400x240 latch. */
+    if (gRoomControls.area > AREA_98) return 0;
     Port3DSFullViewMode published = PORT_3DS_FULL_VIEW_FALLBACK;
     (void)Port_WidescreenRead3DSView(NULL, &published);
     return published == PORT_3DS_FULL_VIEW_FALLBACK;
@@ -2265,6 +2338,26 @@ int Port_Widescreen_HudTargetViewHeight(void) {
     return Port_Widescreen_ProducerViewHeight();
 }
 
+/* The tilemap entry for "nothing here" on a shadow layer. Entry 0 is tile 0, which is blank in most
+ * tilesets but not all (an interior whose BG3 has a dither tile there drew it as garbage beside the
+ * room), so use the first fully transparent tile of the layer's own character block. */
+static u16 Port_WidescreenBlankEntry(int bg_index) {
+    const u32 control = bg_index == 0 ? gScreen.bg0.control
+                        : bg_index == 1 ? gScreen.bg1.control
+                        : bg_index == 2 ? gScreen.bg2.control
+                                        : gScreen.bg3.control;
+    if ((control & 0x80u) != 0) return 0;
+    const u8* const chars = gVram + ((control >> 2) & 3u) * 0x4000u;
+    /* A tilemap entry reaches 1024 tiles, past its own 16 KB block, as long as it stays in BG memory. */
+    const u32 firstTile = ((control >> 2) & 3u) * 0x4000u / 32u;
+    for (u32 tile = 0; tile < 1024u && firstTile + tile < 2048u; ++tile) {
+        const u32* words = (const u32*)(chars + tile * 32u);
+        if ((words[0] | words[1] | words[2] | words[3] | words[4] | words[5] | words[6] | words[7]) == 0)
+            return (u16)tile;
+    }
+    return 0;
+}
+
 static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* shadow,
                                            int fullViewOutdoor) {
     /* Populate the port-side shadow tilemap the PPU reads for the reveal
@@ -2316,6 +2409,7 @@ static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* s
     virtuappu_mode1_ws_shadow_base_tile[bg_index] = first_display_tile + ((bg_x_offset & 0xff) >> 3);
 
     enum { kMapStride = 128, kMapRows = 128 };
+    const u16 blankEntry = Port_WidescreenBlankEntry(bg_index);
     /* Clamp to the ROOM rect, not just the 128-tile buffer: the buffers are
      * reused across rooms without clearing, so cells past the current room's
      * extent hold the previous room's tiles — sampling them leaked stale
@@ -2354,7 +2448,7 @@ static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* s
 #endif
         if (!scrolling && (world_row < 0 || world_row >= room_tiles_h)) {
             for (int C = 0; C < shadow_cols; C++)
-                row_dst[C] = 0;
+                row_dst[C] = blankEntry;
             continue;
         }
         for (int C = 0; C < shadow_cols; C++) {
@@ -2362,7 +2456,7 @@ static void Port_WidescreenShadow_Populate(int bg_index, u16* mapSpecial, u16* s
             u16 entry = scrolling ? Port_WidescreenScrollTile(mapSpecial, world_col, world_row)
                                   : ((world_col >= 0 && world_col < room_tiles_w)
                                          ? mapSpecial[world_row * kMapStride + world_col]
-                                         : (u16)0);
+                                         : blankEntry);
             row_dst[C] = entry;
 #ifdef TMC_3DS
             if (zone_dst && entry != 0) zone_dst[C] = Port_ZoneTiles_Variant(world_col, world_row);
@@ -2414,8 +2508,12 @@ static int Port_WidescreenMapShadowsCanPrepare(void) {
 
 /* Minish paths own two parallax tilemaps instead of gMapTop. Their reveal
  * must use each manager's actual source/page and scroll, not the ground map. */
-static u16 sWsParallax[2][MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_WIDE_COLS];
-static void Port_WidescreenParallaxShadows(void) {
+static u16 sWsParallax[2][MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_COLS];
+static void Port_WidescreenParallaxShadows(int fullView) {
+    /* Full View draws the whole 400 columns from the shadow (the first one is the view's left
+     * edge); the 240/266 path only the columns past the native 240. */
+    const int shadowCols = fullView ? MODE1_WS_SHADOW_FULL_VIEW_COLS : MODE1_WS_SHADOW_WIDE_COLS;
+    const int firstTile = fullView ? 0 : 30;
     if (gMapTop.bgSettings != NULL || (gScreen.bg3.control & ~0x43) != 0x1d08 ||
         (gScreen.bg1.control & ~0x43) != 0x1e08)
         return;
@@ -2436,19 +2534,47 @@ static void Port_WidescreenParallaxShadows(void) {
             if (off > 0x7800 || (off & 1))
                 continue;
         }
-        const int base = 30 + ((settings->xOffset & 0xff) >> 3);
+        const int base = firstTile + ((settings->xOffset & 0xff) >> 3);
+        /* A room narrower than the Full View is centred in it with black on both sides (where
+         * the owner's border pictures go): the room's own picture, the 240 columns the game
+         * shows at its native scroll, is placed at view columns shift..shift+roomCols-1 and
+         * the parallax layers draw nothing outside it. The game's scroll is left as it is. */
+        /* The vertical corridors point the layer at a window of 32 rows of a taller map and
+         * scroll it by yOffset & 0x3f. The GBA's 160 lines never reach past that window; the
+         * view's 240 lines do, and the hardware would wrap to the window's first rows. Those
+         * rows belong to the map rows that follow the window, so the slots above the first
+         * displayed one are read from there (the displayed rows are fewer than 32, so no slot
+         * serves both ends). */
+        int wrapRows = 0, srcLimit = 0;
+        if (cols == 32) {
+            wrapRows = (settings->yOffset & 0xff) >> 3;
+            srcLimit = (layer ? 0x2000 : 0x1000) - (int)(((uintptr_t)src - (uintptr_t)gMapDataTopSpecial) >> 1);
+        }
+        int shift = 0, firstCol = 0, endCol = shadowCols;
+        if (fullView && (int)gRoomControls.width < 400) {
+            shift = (400 - (int)gRoomControls.width) / 16;
+            firstCol = shift;
+            endCol = shift + (int)gRoomControls.width / 8;
+        }
         for (int row = 0; row < 32; ++row) {
-            for (int col = 0; col < MODE1_WS_SHADOW_WIDE_COLS; ++col) {
-                int x = start + base + col;
+            for (int col = 0; col < shadowCols; ++col) {
+                if (col < firstCol || col >= endCol) {
+                    sWsParallax[layer][row * shadowCols + col] = 0;
+                    continue;
+                }
+                int x = start + base + col - shift;
                 if (cols == 32)
                     x &= 31;
-                sWsParallax[layer][row * MODE1_WS_SHADOW_WIDE_COLS + col] = x < cols ? src[row * cols + x] : 0;
+                int srcIdx = row * cols + x;
+                if (row < wrapRows && srcIdx + 32 * cols < srcLimit)
+                    srcIdx += 32 * cols;
+                sWsParallax[layer][row * shadowCols + col] = x < cols ? src[srcIdx] : 0;
             }
         }
         virtuappu_mode1_ws_shadow[bg] = sWsParallax[layer];
         virtuappu_mode1_ws_shadow_base_tile[bg] = base;
-        virtuappu_mode1_ws_shadow_cols[bg] = MODE1_WS_SHADOW_WIDE_COLS;
-        virtuappu_mode1_ws_shadow_stride[bg] = MODE1_WS_SHADOW_WIDE_COLS;
+        virtuappu_mode1_ws_shadow_cols[bg] = shadowCols;
+        virtuappu_mode1_ws_shadow_stride[bg] = shadowCols;
     }
 }
 
@@ -2474,6 +2600,7 @@ static void Port_WidescreenLightRayShadow(int width) {
      * below come from the buffer. The view spans at most 31 rows, so each one
      * keeps its own slot at (row & 31), the slot the renderers read. */
     const int firstRow = (gScreen.bg3.yOffset & 0x1ff) >> 3;
+    const u16 blankEntry = Port_WidescreenBlankEntry(3);
     const ptrdiff_t inBuffer = map - gBG3Buffer;
     for (int k = 0; k < MODE1_WS_SHADOW_ROWS; ++k) {
         const int row = firstRow + k;
@@ -2485,7 +2612,7 @@ static void Port_WidescreenLightRayShadow(int width) {
         u16* dst = &sWsLightRays[(row & 31) * MODE1_WS_SHADOW_FULL_VIEW_COLS];
         for (int col = 0; col < MODE1_WS_SHADOW_FULL_VIEW_COLS; ++col) {
             const int mapCol = first + col;
-            dst[col] = src != NULL && mapCol >= 0 && mapCol < 32 ? src[mapCol] : 0;
+            dst[col] = src != NULL && mapCol >= 0 && mapCol < 32 ? src[mapCol] : blankEntry;
         }
     }
     virtuappu_mode1_ws_shadow[3] = sWsLightRays;
@@ -2672,8 +2799,7 @@ void Port_Widescreen_UpdateShadows(void) {
         }
     }
 
-    if (producerMode == PORT_3DS_FULL_VIEW_FALLBACK)
-        Port_WidescreenParallaxShadows();
+    Port_WidescreenParallaxShadows(fullViewOutdoor);
 
     /* Publish only shadows built for this exact room/producer generation. */
 #ifdef TMC_3DS
@@ -2793,6 +2919,9 @@ int Port_Widescreen_FileSelectViewLive(void) {
     return 0;
 }
 int Port_Widescreen_TitleViewLive(void) {
+    return 0;
+}
+int Port_Stereo_Scenes(void) {
     return 0;
 }
 int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {

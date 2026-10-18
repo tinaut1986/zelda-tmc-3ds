@@ -5,6 +5,7 @@
 #include "save_state_3ds.h"
 
 #include "backgroundAnimations.h"
+#include "game.h"
 #include "main.h"
 #include "map.h"
 #include "screen.h"
@@ -713,35 +714,55 @@ static Entity* PoolEntity(int slot) {
     return (Entity*)(gUnk_02033290 + (slot - PC_MAX_ENTITY_SLOTS) * MANAGER_SLOT_SIZE);
 }
 
+/* One list walked from `list` until it comes back to `terminator` (the head of the live list the chain ends at). */
+static void WalkEntityList(LinkedList* list, Entity* terminator, bool* reached, unsigned* closed, unsigned* entities,
+                           unsigned* managers) {
+    Entity* prev = terminator;
+    Entity** link = &list->first;
+    Entity* e = *link;
+    while (e != terminator) {
+        const int slot = PoolSlot(e);
+        if (slot < 0 || reached[slot]) { /* off the pools, or a loop or a node of another list */
+            ++*closed;
+            break;
+        }
+        reached[slot] = true;
+        e->prev = prev;
+        *link = e;
+        link = &e->next;
+        prev = e;
+        if (entities != NULL) {
+            if (e->kind == MANAGER) ++*managers;
+            else ++*entities;
+        }
+        e = e->next;
+    }
+    *link = terminator;
+    list->last = prev;
+}
+
+extern LinkedList gEntityListsBackup[9]; /* port_linked_stubs.c */
+
 static void RepairEntityLists(void) {
     bool reached[PC_MAX_ENTITY_SLOTS + MANAGER_SLOTS] = { false };
     unsigned closed = 0, freed = 0, entities = 0, managers = 0;
-    for (int i = 0; i < ENTITY_LISTS; ++i) {
-        LinkedList* const list = &gEntityLists[i];
-        Entity* const head = (Entity*)list;
-        Entity* prev = head;
-        Entity* e = list->first;
-        while (e != head) {
-            const int slot = PoolSlot(e);
-            if (slot < 0 || reached[slot]) { /* off the pools, or a loop or a node of another list */
-                ++closed;
-                break;
-            }
-            reached[slot] = true;
-            e->prev = prev;
-            prev->next = e; /* for the head, this is list->first */
-            prev = e;
-            if (e->kind == MANAGER) ++managers;
-            else ++entities;
-            e = e->next;
-        }
-        prev->next = head;
-        list->last = prev;
-    }
+    /* A subtask (the pause menu, a map hint, the kinstone menu) moves the room's lists into gEntityListsBackup
+     * and runs on empty ones (Subtask_FadeIn .. Subtask_FadeOut, src/subtask.c): in a state saved there, the
+     * room's entities are reached only through the backup, and freeing them as strays took the NPC whose script
+     * would give Link his controls back. */
+    const bool backupLive = gMain.substate == GAMEMAIN_SUBTASK && gUI.nextToLoad >= 1;
+    for (int i = 0; i < ENTITY_LISTS; ++i)
+        WalkEntityList(&gEntityLists[i], (Entity*)&gEntityLists[i], reached, &closed, &entities, &managers);
+    if (backupLive)
+        for (int i = 0; i < ENTITY_LISTS; ++i)
+            WalkEntityList(&gEntityListsBackup[i], (Entity*)&gEntityLists[i], reached, &closed, NULL, NULL);
     for (int slot = 0; slot < PC_MAX_ENTITY_SLOTS + MANAGER_SLOTS; ++slot) {
         Entity* const e = PoolEntity(slot);
         if (slot == 0 || e == NULL || reached[slot] || e->next == NULL) continue; /* never the player */
         /* Alive by its own links but in no list: nothing would ever update or delete it. */
+        DebugLog_Printf("state: stray slot %d kind %u id %u type %u action %u script %p\n", slot, (unsigned)e->kind,
+                        (unsigned)e->id, (unsigned)e->type, (unsigned)e->action,
+                        slot < PC_MAX_ENTITY_SLOTS ? (void*)gEntityScriptCtxTable[slot] : NULL);
         memset(e, 0, slot < PC_MAX_ENTITY_SLOTS ? sizeof(GenericEntity) : MANAGER_SLOT_SIZE);
         if (slot < PC_MAX_ENTITY_SLOTS) gEntityScriptCtxTable[slot] = NULL;
         ++freed;
