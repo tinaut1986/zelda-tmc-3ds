@@ -36,15 +36,17 @@ int Port_SecondScreenDungeonMap_GetInfo(uint8_t dungeonIdx, uint8_t area, uint8_
 /* Draws one floor of the dungeon map into `pixels` (RGBA8888,
  * stride-pixels-per-row, bufW x bufH), fitted and centered inside the
  * destination rect. dungeonItemBits is gSave.dungeonItems[dungeonIdx]
- * (4: compass, 2: big key, 1: small key — plus whatever encodes the map
- * item). visitedMask bit n = room n entered this session. Player marker is
+ * (1: map, 2: compass, 4: big key). saveFlags is a copy of gSave.flags
+ * (SECOND_SCREEN_SAVE_FLAG_BYTES): the rooms' visited flags (lit fill)
+ * and the opened chests and beaten boss whose markers it drops; NULL
+ * means nothing visited and every marker kept. Player marker is
  * drawn only on the player's own floor; `tick` drives its blink. Returns 1
  * if authentic art was drawn, 0 for callers to fall back to the schematic
  * renderer. */
 int Port_SecondScreenDungeonMap_Draw(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
                                      int32_t dstX, int32_t dstY, int32_t dstW, int32_t dstH,
                                      uint8_t dungeonIdx, int32_t floor, uint8_t area, uint8_t room,
-                                     uint64_t visitedMask, uint8_t dungeonItemBits,
+                                     uint8_t dungeonItemBits, const uint8_t* saveFlags,
                                      int32_t playerAreaX, int32_t playerAreaY, uint32_t tick);
 
 #ifdef __cplusplus

@@ -1626,7 +1626,7 @@ static void Compact_PaintDungeonView(const SSurf* s, const SecondScreenSnapshot*
         const int32_t mx0c = (int32_t)rx0 + bw + 4;
         if (!Port_SecondScreenDungeonMap_Draw(s->px, s->w, s->h, s->stride, mx0c, top, (int32_t)rx1 - mx0c,
                                               (int32_t)ry1 - top, snap->dungeonIdx, viewFloor, snap->area,
-                                              snap->room, snap->visitedMask, snap->dungeonItemBits,
+                                              snap->room, snap->dungeonItemBits, snap->saveFlags,
                                               snap->playerX, snap->playerY, tick)) {
             PaintSchematic(s, snap, mx0c, top, (int32_t)rx1, (int32_t)ry1, tick, 1);
         }

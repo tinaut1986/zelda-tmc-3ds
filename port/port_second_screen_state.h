@@ -33,6 +33,9 @@ extern "C" {
  * button pseudo-slots. */
 #define SECOND_SCREEN_ITEM_SLOTS 16
 
+/* sizeof(gSave.flags) (include/save.h): every local and global flag bank. */
+#define SECOND_SCREEN_SAVE_FLAG_BYTES 0x200
+
 typedef struct {
     uint16_t x, y; /* room origin within the area, pixels (RoomResInfo.map_x/y) */
     uint16_t w, h; /* room size, pixels; w==0 or h==0 -> slot unused */
@@ -86,6 +89,13 @@ typedef struct {
      * (src/gameUtils.c) test. */
     uint8_t dungeonKeys;
     uint8_t dungeonItemBits;
+    /* gSave.flags verbatim, copied under the same dungeon gate (zeroed
+     * elsewhere). The dungeon map tests it exactly like the pause map
+     * (src/common.c): a room's lit fill once its ROOM_VISIT_MARKER flag is
+     * set (IsRoomVisited), a chest marker gone once the chest's local flag
+     * is set (opened), the boss skull once global flag dungeonIdx + 1 is
+     * (boss beaten; DrawDungeonMap). */
+    uint8_t saveFlags[SECOND_SCREEN_SAVE_FLAG_BYTES];
     /* Quest state for the status strip. */
     uint8_t elements;   /* bit n set = ITEM_EARTH_ELEMENT + n owned */
     uint8_t walletType; /* picks the HUD rupee icon tier */
