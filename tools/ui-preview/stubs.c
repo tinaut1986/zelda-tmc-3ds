@@ -147,6 +147,8 @@ uint32_t GetRoomProperty(void) { return 0; }
 void* Port_GetDirectSpriteFrame(void) { return NULL; }
 void* Port_GetKinstonePieceTiles(void) { return NULL; }
 void* Port_GetRawGfxSpanForVram(void) { return NULL; }
+void* Port_GetRawGfxSpanForVramLang(void) { return NULL; }
+uint32_t sub_0801DF10(void) { return 0; }
 void* Port_GetRawPaletteGroupBankData(void) { return NULL; }
 void* Port_GetRawPaletteGroupData(void) { return NULL; }
 void* Port_GetRawPaletteGroupEntryData(void) { return NULL; }

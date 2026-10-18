@@ -1610,24 +1610,73 @@ static void Compact_PaintDungeonView(const SSurf* s, const SecondScreenSnapshot*
             top += 19;
         }
         const int8_t topFloor = snap->dungeonIdx < 7 ? kDungeonTopFloor[snap->dungeonIdx] : 2;
-        const int32_t bw = 38, bh = 24;
+        /* The floor list as DrawDungeonMapActually (src/menu/pauseMenu.c) draws it, at 1x, one
+         * button per row: Link's icon on his floor (game x 0x20), the floor's own name sprite
+         * (0x34, with the blinking cursor on the floor in view), the boss icon on the boss's floor
+         * with the compass (0x46). The game's x offsets are kept; the row is centred in its button
+         * by the name sprite's bounds. Their blink follows the panel tick, at the phases
+         * BottomMapAnim_Signature already repaints for. */
+        /* 22 px buttons, shorter when the floors and the item row below them (22 px) would not fit. */
+        const int32_t bw = 64;
+        const int32_t nRows = info->floorCount < 8 ? info->floorCount : 8;
+        int32_t bh = 22;
+        if (nRows > 0 && top + nRows * (bh + 3) + 22 > (int32_t)ry1) bh = ((int32_t)ry1 - top - 22) / nRows - 3;
+        if (bh < 14) bh = 14;
+        const int linkFloor = Port_SecondScreenDungeonMap_LinkFloor(snap);
+        const int bossFloor = Port_SecondScreenDungeonMap_BossFloor(snap);
+        const uint32_t linkFrame = (tick & 8u) ? SS_DMAP_FRAME_LINK_FLOOR_A : SS_DMAP_FRAME_LINK_FLOOR_B;
+        const uint32_t bossFrame = (tick & 8u) ? SS_DMAP_FRAME_BOSS_FLOOR_A : SS_DMAP_FRAME_BOSS_FLOOR_B;
+        const uint32_t cursorFrame =
+            (((tick * 3u) >> 4) & 1u) == 0 ? SS_DMAP_FRAME_FLOOR_CURSOR_A : SS_DMAP_FRAME_FLOOR_CURSOR_B;
+        /* Game x 15 (left edge of the map icon at 0x18) maps to the button's left edge. */
+        const int32_t gx0 = (int32_t)rx0 - 15;
+        int32_t by = top;
         for (int i = 0; i < info->floorCount && i < 8; i++) {
-            const int fl = topFloor - 2 - i;
-            char label[8];
-            if (fl >= 1) snprintf(label, sizeof(label), "%dF", fl);
-            else snprintf(label, sizeof(label), "B%d", 1 - fl);
-            const int32_t by = top + i * (bh + 3);
+            by = top + i * (bh + 3);
             const bool sel = i == viewFloor;
             CBox(s, (int32_t)rx0, by, bw, bh, sel ? CC_TAB_ON : CC_CELL, sel ? CC_TAB_ON_EDGE : CC_CELL_EDGE);
-            CTextCentered(s, (int32_t)rx0 + bw / 2, by + 9, sel ? CC_TAB_ON_TEXT : CC_TEXT, label);
-            if (i == info->currentFloor) FillRect(s, (int32_t)rx0 + 3, by + 3, (int32_t)rx0 + 6, by + 6, CC_WARN);
+            const int labelFrame = Port_SecondScreenDungeonMap_FloorLabelFrame(snap->dungeonIdx, i);
+            int32_t lx0, ly0, lx1, ly1;
+            int32_t ay = by + bh / 2;
+            if (labelFrame >= 0 && Port_SecondScreenDungeonMap_FrameBounds((uint32_t)labelFrame, &lx0, &ly0, &lx1, &ly1))
+                ay = by + (bh - (ly1 - ly0)) / 2 - ly0;
+            if (sel)
+                Port_SecondScreenDungeonMap_DrawFrame(s->px, s->w, s->h, s->stride, gx0 + 0x34, ay, 1, cursorFrame,
+                                                      snap->saveLanguage);
+            if (labelFrame < 0 || !Port_SecondScreenDungeonMap_DrawFrame(s->px, s->w, s->h, s->stride, gx0 + 0x34, ay, 1,
+                                                                        (uint32_t)labelFrame, snap->saveLanguage)) {
+                /* No ROM art: the plain label. */
+                const int fl = topFloor - 2 - i;
+                char label[8];
+                if (fl >= 1) snprintf(label, sizeof(label), "%dF", fl);
+                else snprintf(label, sizeof(label), "B%d", 1 - fl);
+                CTextCentered(s, (int32_t)rx0 + bw / 2, by + (bh - kUiGlyphH) / 2, sel ? CC_TAB_ON_TEXT : CC_TEXT, label);
+            }
+            if (i == linkFloor &&
+                !Port_SecondScreenDungeonMap_DrawFrame(s->px, s->w, s->h, s->stride, gx0 + 0x20, ay, 1, linkFrame,
+                                                       snap->saveLanguage))
+                FillRect(s, (int32_t)rx0 + 3, by + 3, (int32_t)rx0 + 6, by + 6, CC_WARN);
+            if (i == bossFloor)
+                Port_SecondScreenDungeonMap_DrawFrame(s->px, s->w, s->h, s->stride, gx0 + 0x46, ay, 1, bossFrame,
+                                                      snap->saveLanguage);
             AddTarget(tl, rx0, (float)by, rx0 + bw, (float)(by + bh), SS_ACT_PLAQUE, (uint8_t)i);
+        }
+        /* The dungeon items the pause map shows under its floor list (y 0x7e), each only once
+         * owned: map (x 0x18), big key (0x2e), compass (0x45), with the OAM command's palette bank
+         * of that draw (gOamCmd._8 0x4380, 0x4380, 0x380). */
+        {
+            static const struct { uint8_t bit, item, pal; int16_t gx; } kDungeonItems[] = {
+                { 1, ITEMID_DUNGEON_MAP, 4, 0x18 }, { 4, ITEMID_BIG_KEY, 4, 0x2e }, { 2, ITEMID_COMPASS, 0, 0x45 } };
+            const int32_t iy = by + bh + 6;
+            for (int k = 0; k < 3; k++) {
+                if (!(snap->dungeonItemBits & kDungeonItems[k].bit)) continue;
+                Port_SecondScreenRender_DrawItemIconBank(s->px, s->w, s->h, s->stride, gx0 + kDungeonItems[k].gx - 8, iy, 1,
+                                                         kDungeonItems[k].item, kDungeonItems[k].pal);
+            }
         }
         const int32_t mx0c = (int32_t)rx0 + bw + 4;
         if (!Port_SecondScreenDungeonMap_Draw(s->px, s->w, s->h, s->stride, mx0c, top, (int32_t)rx1 - mx0c,
-                                              (int32_t)ry1 - top, snap->dungeonIdx, viewFloor, snap->area,
-                                              snap->room, snap->dungeonItemBits, snap->saveFlags,
-                                              snap->playerX, snap->playerY, tick)) {
+                                              (int32_t)ry1 - top, viewFloor, snap, tick)) {
             PaintSchematic(s, snap, mx0c, top, (int32_t)rx1, (int32_t)ry1, tick, 1);
         }
         /* FLOOR BACK (moved here from OPTIONS): the preview returns to Link's floor by itself. */

@@ -96,6 +96,16 @@ typedef struct {
      * is set (opened), the boss skull once global flag dungeonIdx + 1 is
      * (boss beaten; DrawDungeonMap). */
     uint8_t saveFlags[SECOND_SCREEN_SAVE_FLAG_BYTES];
+    /* gRoomTransition.player_status in the same dungeon gate, as
+     * DrawDungeonMap reads it: Link's map position (dungeon_map_x/y, whose
+     * bits 11+ of y are his floor, sub_0801DB94) and the dungeon's re-entry
+     * point (dungeon_area/room and dungeon_x/y), the arrow marker. */
+    uint16_t dungeonMapX;
+    uint16_t dungeonMapY;
+    uint8_t dungeonEntryArea;
+    uint8_t dungeonEntryRoom;
+    uint16_t dungeonEntryX;
+    uint16_t dungeonEntryY;
     /* Quest state for the status strip. */
     uint8_t elements;   /* bit n set = ITEM_EARTH_ELEMENT + n owned */
     uint8_t walletType; /* picks the HUD rupee icon tier */
@@ -182,6 +192,10 @@ typedef struct {
      * player picked in the file-select screen, for the port's own UI text.
      * Published here so the bottom-screen thread never reads EWRAM. */
     uint8_t language;
+    /* gSaveHeader->language as stored (a save slot, not the enum above):
+     * the value LoadGfxGroup tests to pick language-gated gfx, which the
+     * dungeon map's floor names come from. */
+    uint8_t saveLanguage;
     /* Pause-menu item screen contents: menuItems[menuSlot] = item id, 0 if
      * that slot is empty. Bottles report the ITEM_BOTTLE1..4 container id;
      * bottleContents[] carries what's inside for icon display. */
