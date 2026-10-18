@@ -74,7 +74,10 @@ static void Build(void) {
             ++sStats.otherTileset;
             continue;
         }
-        if (!ReadMeta(nb)) {
+        /* A first entry of 0xFFFF marks a room drawn as a picture, not a map (LoadRoomMapData's clearBottomMap). */
+        const unsigned metaCols = nb->pixel_width / 16u;
+        if (metaCols == 0 || metaCols > MAP_STRIDE || nb->pixel_height / 16u > MAP_STRIDE || !ReadMeta(nb) ||
+            sMeta[0][0] == 0xFFFF) {
             ++sStats.unreadable;
             continue;
         }
@@ -90,7 +93,9 @@ static void Build(void) {
                 for (int layer = 0; layer < 2; ++layer) {
                     uint16_t* cell = &sWin[layer][row + MARGIN_Y][col + MARGIN_X];
                     if (*cell != NO_TILE) continue; /* a nearer neighbour got it */
-                    const unsigned meta = sMeta[layer][(py >> 4) * MAP_STRIDE + (px >> 4)];
+                    /* As stored: rows of the room's own width (the game spreads them to MAP_STRIDE after
+                     * loading, sub_0807C8B0). */
+                    const unsigned meta = sMeta[layer][(py >> 4) * metaCols + (px >> 4)];
                     /* Special tiles (>= 0x4000: moved or removed by the game) keep their plain index. */
                     const unsigned index = meta & 0x3FFF;
                     *cell = layers[layer]->subTiles[index * 4 + ((py >> 3) & 1) * 2 + ((px >> 3) & 1)];

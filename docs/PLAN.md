@@ -1176,9 +1176,12 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   `RenderMapLayerToSubTileMap` does), and `Port_WidescreenShadow_Populate` reads it where it used to write the
   blank entry (outside the room's columns and rows). **Cost:** a few thousand cell lookups per room load and
   a table read per out-of-room cell per frame; the overlay's L/G times did not move (L 0.3-0.4 ms, G 7.4-7.6 ms
-  on the New 3DS); 74 KB of static (two 128+64 x 96+40 windows plus one 8 KB map). **Seen:** the 64 px left of
-  that room show the left room's water, wall and grass, in the right place by eye; **not yet verified
-  pixel by pixel** against that room itself (Link on the lily pad could not be walked into it).
+  on the New 3DS); 74 KB of static (two 128+64 x 96+40 windows plus one 8 KB map). **Checked against the room itself:** the
+  first build drew the wrong tiles with black holes (the owner caught it): a room's map is stored with rows of
+  its own width and the game spreads them to 64 after loading (`sub_0807C8B0`); the strip read them as rows
+  of 64. Read with the room's width, the 64 px left of room 0x15 match room 0x14 (reached on the lily pad with
+  the Gust Jar) pixel for pixel but for Link, the lily pad, the debug overlay and the shoreline animation's phase.
+  The 64 px right of room 0x15 stay black: no room of the area lies there.
   **What fails, from the ROM's room tables (`tools/neighbour-survey/survey.py`):** 402 pairs of rooms share an
   edge in the whole game, 379 with the same `tileSet_id` (the 23 others stay black: the Beanstalks 8, the Fortress of
   Winds 8, Hyrule Field 4, and one each in the Minish Village, area 0x47 and the Deepwood Shrine). Counted over the margin
