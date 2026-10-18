@@ -2570,6 +2570,26 @@ static void PaintWideAiQuestion(const SSurf* s, TargetList* tl) {
     Compact_PaintModal(s, tl, "WIDE VIEW", kLines, 6, "NO", SS_ACT_WIDEAI_NO, "YES", SS_ACT_WIDEAI_YES);
 }
 
+/* A label centred on a bar: light over the empty part, dark over the filled one, pixel by pixel, so the
+ * text stays readable as the bar grows under it. */
+static void CBarLabel(const SSurf* s, int32_t barX, int32_t barY, int32_t barW, int32_t barH, int32_t fillEnd,
+                      const char* str, uint32_t onEmpty, uint32_t onFill) {
+    const char* tr = Port_Text_Tr(str);
+    int32_t cx = barX + (barW - CTextWidth(tr)) / 2;
+    const int32_t y = barY + (barH - kUiGlyphH) / 2;
+    for (const char* q = tr; *q;) {
+        const unsigned char c = Port_Text_Utf8Next(&q);
+        const uint8_t* g = UiFont_Glyph(c);
+        if (g) {
+            for (int32_t gy = 0; gy < kUiGlyphH; gy++)
+                for (int32_t gx = 0; gx < kUiGlyphW; gx++)
+                    if (g[gy] & (0x10u >> gx))
+                        FillRect(s, cx + gx, y + gy, cx + gx + 1, y + gy + 1, cx + gx < fillEnd ? onFill : onEmpty);
+        }
+        cx += kUiAdvance;
+    }
+}
+
 static void PaintAutoUpdatePrompt(const SSurf* s, TargetList* tl, UpdatePrompt prompt) {
     /* Raised by the check made when the game opens (AUTO UPDATE), over every tab; the install is the
      * player's call (updater.h). */
@@ -2599,20 +2619,27 @@ static void PaintAutoUpdatePrompt(const SSurf* s, TargetList* tl, UpdatePrompt p
          * bar sits in the empty row between the text lines (Compact_PaintModal's geometry). */
         unsigned pct = st.progress;
         const char* what = message;
+        char label[24];
         if (prompt == UPDATE_PROMPT_RESTART) {
-            pct = 100u - Platform3DS_RelaunchRemainingMs() / 100u;
+            const unsigned ms = Platform3DS_RelaunchRemainingMs();
+            pct = 100u - ms / 100u;
             what = "RESTARTING THE GAME";
+            snprintf(label, sizeof(label), "%u S", (ms + 999u) / 1000u); /* seconds left, as in ../mzm */
+        } else {
+            snprintf(label, sizeof(label), "%u%%", pct > 100u ? 100u : pct);
         }
         if (pct > 100u) pct = 100u;
-        snprintf(percent, sizeof(percent), "%u%%", pct);
-        const char* const lines[] = { what, percent, "", "DO NOT TURN THE CONSOLE OFF." };
+        const char* const lines[] = { what, "", "", "DO NOT TURN THE CONSOLE OFF." };
         Compact_PaintModal(s, tl, "UPDATING", lines, 4,
                            prompt == UPDATE_PROMPT_WORKING && st.state == UPDATE_DOWNLOADING ? "CANCEL" : "PLEASE WAIT",
                            SS_ACT_AUTOUPD_NO, NULL, 0);
-        const int32_t bx = (s->w - 260) / 2 + 14, bw = 260 - 28, by = (s->h - (30 + 4 * 10 + 36)) / 2 + 24 + 2 * 10 + 1;
-        FillRect(s, bx, by, bx + bw, by + 8, CC_CELL_EDGE);
-        FillRect(s, bx + 1, by + 1, bx + bw - 1, by + 7, CC_BAR);
-        FillRect(s, bx + 1, by + 1, bx + 1 + (bw - 2) * (int32_t)pct / 100, by + 7, CC_GOOD);
+        const int32_t bx = (s->w - 260) / 2 + 14, bw = 260 - 28, bh = 14;
+        const int32_t by = (s->h - (30 + 4 * 10 + 36)) / 2 + 24 + 10 + 3;
+        const int32_t fillEnd = bx + 1 + (bw - 2) * (int32_t)pct / 100;
+        FillRect(s, bx, by, bx + bw, by + bh, CC_CELL_EDGE);
+        FillRect(s, bx + 1, by + 1, bx + bw - 1, by + bh - 1, CC_BAR);
+        FillRect(s, bx + 1, by + 1, fillEnd, by + bh - 1, CC_GOOD);
+        CBarLabel(s, bx, by, bw, bh, fillEnd, label, CC_TEXT, CC_BG);
     } else {
         const char* const lines[] = { message, "THE GAME KEEPS RUNNING AS IT WAS." };
         Compact_PaintModal(s, tl, "UPDATE FAILED", lines, 2, "OK", SS_ACT_AUTOUPD_NO, NULL, 0);
