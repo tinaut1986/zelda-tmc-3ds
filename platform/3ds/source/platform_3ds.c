@@ -656,6 +656,8 @@ static bool PumpLifecycleAndAudio(void) {
     }
     ++sAptChecks;
     const uint64_t aptStart = svcGetSystemTick();
+    /* An update the updater just installed over this title: start the new build, as after SITE INSTALL. */
+    if (sRunning && Updater_ShouldClose() && Updater_RelaunchAfterClose()) RelaunchSelf();
     const bool alive = sRunning && !Updater_ShouldClose() && aptMainLoop();
     const uint64_t aptTicks = svcGetSystemTick() - aptStart;
     sAptTicks += aptTicks;

@@ -52,6 +52,9 @@ static void progress(unsigned percent) {
 }
 bool Updater_Busy(void) { return __atomic_load_n(&busy, __ATOMIC_ACQUIRE); }
 bool Updater_ShouldClose(void) { UpdateStatus s; Updater_GetStatus(&s); return s.state == UPDATE_DONE; }
+// A CIA update is installed over the running title, so the game starts again into it; a 3DSX one
+// leaves the game to the Homebrew Launcher, which launches whatever the player picks.
+bool Updater_RelaunchAfterClose(void) { return !homebrew; }
 void Updater_Cancel(void) { __atomic_store_n(&cancel, true, __ATOMIC_RELEASE); }
 
 typedef struct Transfer { char *data; size_t size, capacity; FILE *file; uint32_t expected; size_t pending; unsigned writes; bool io_error; } Transfer;
