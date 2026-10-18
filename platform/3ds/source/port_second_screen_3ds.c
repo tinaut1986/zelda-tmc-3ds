@@ -196,6 +196,17 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
                                                int32_t height) {
     if (!snap) return 0;
 
+    /* The boot update prompt (AUTO UPDATE) shows and counts its progress over any tab: paint while it
+     * is up, and once more to take it away. */
+    {
+        static int sAutoPromptShown;
+        const int up = Updater_AutoPrompt() != UPDATE_PROMPT_NONE;
+        if (up || sAutoPromptShown) {
+            sAutoPromptShown = up;
+            return 1;
+        }
+    }
+
     /* The clock, Wi-Fi bars and battery in the tab bar. */
     if (Compact_ChromeChanged() || Compact_ToastNeedsPaint() || Compact_RaToastNeedsPaint() || Compact_BusyNeedsPaint() || Compact_DevFtpNeedsPaint())
         return 1;
