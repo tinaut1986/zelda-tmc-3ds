@@ -1180,8 +1180,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   that room show the left room's water, wall and grass, in the right place by eye; **not yet verified
   pixel by pixel** against that room itself (Link on the lily pad could not be walked into it).
   **What fails, from the ROM's room tables (`tools/neighbour-survey/survey.py`):** 402 pairs of rooms share an
-  edge in the whole game, 379 with the same `tileSet_id` (the 23 others stay black: Beanstalks, the village
-  and Hyrule Castle's courtyards, parts of the Deepwood Shrine, Fortress of Winds). Counted over the margin
+  edge in the whole game, 379 with the same `tileSet_id` (the 23 others stay black: the Beanstalks 8, the Fortress of
+  Winds 8, Hyrule Field 4, and one each in the Minish Village, area 0x47 and the Deepwood Shrine). Counted over the margin
   of a 400x240 view around every room smaller than that, **21.5 % of the margin cells have a neighbour with
   the same tile set, 6.2 % one with another, 72.3 % none**: outdoors (Hyrule Field 78 %, Ruins 74 %, the
   Palace of Winds 73 %, Temple of Droplets 39 %, Hyrule Castle 41 %) it pays, the house interiors almost never
