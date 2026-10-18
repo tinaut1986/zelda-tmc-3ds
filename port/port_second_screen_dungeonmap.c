@@ -33,7 +33,12 @@
  *   - visited rooms draw with the lit fill,
  *   - other rooms draw (dim fill) only when the dungeon MAP item is owned,
  *   - rooms flagged hidden (DungeonLayout.unk_2 & 1) never draw,
- *   - chest and boss markers draw only with the COMPASS, like the game.
+ *   - chest and boss markers draw only with the COMPASS, like the game,
+ *     and DrawDungeonMap's flag tests drop them: a chest's marker once
+ *     its local flag (TileEntity.localFlag in the room's flag bank,
+ *     sub_0801DF10) is set, i.e. the chest is open; the boss skull once
+ *     global flag dungeon_idx + 1 is set, i.e. the boss is beaten. The
+ *     flags come from the snapshot's copy of gSave.flags.
  *
  * Dungeon item bits: include/save.h's comment ("4: compass, 2: big key,
  * 1: small key") is wrong — per HasDungeonMap / HasDungeonCompass /
@@ -45,10 +50,6 @@
  * Known gaps vs the real screen, all on the "show stale, never show
  * hidden" side because the needed state isn't reachable through the
  * parameters (extend SecondScreenSnapshot if they ever matter):
- *   - chest markers stay after the chest is opened (the game clears them
- *     via per-room local flags), and the boss skull stays after the boss
- *     falls (CheckGlobalFlag(dungeon+1)) — stale info the player already
- *     had, never unearned reveals;
  *   - the dungeon-entrance marker (frame 0x7f) is skipped: its position
  *     is the save's player_status.dungeon_x/y, which isn't snapshotted;
  *   - visitedMask is the port's per-session automap for the CURRENT area,
@@ -65,17 +66,33 @@
 
 #include "area.h"
 #include "common.h"
+#include "flags.h"
 #include "region.h"
 #include "room.h"
 
 #include "port_offset_remap.h"
 #include "port_rom.h"
+#include "port_second_screen_state.h" /* SECOND_SCREEN_SAVE_FLAG_BYTES */
 
 #include <string.h>
 
 /* src/common.c (tables live at the end of that file; only
  * gDungeonFloorMetadatas has a header declaration). */
 extern const DungeonLayout* const* const gDungeonLayouts[];
+/* src/common.c: a layout entry's local flag bank (0x300 for unk_3 == 1,
+ * else the area's own bank). ROM-constant tables only. */
+extern u32 sub_0801DF10(const DungeonLayout* layout);
+
+/* ReadBit over the snapshot's gSave.flags copy, i.e. what
+ * CheckLocalFlagByBank / CheckGlobalFlag (src/playerUtils.c,
+ * src/flags.c) answer on the game thread. No copy = flag clear, which
+ * keeps every marker. */
+static int SaveFlagSet(const uint8_t* saveFlags, uint32_t bit) {
+    if (saveFlags == NULL || (bit >> 3) >= SECOND_SCREEN_SAVE_FLAG_BYTES) {
+        return 0;
+    }
+    return (saveFlags[bit >> 3] >> (bit & 7u)) & 1u;
+}
 
 
 /* Raw-data accessors: src/common.c (palette groups, gfx groups, room
@@ -350,7 +367,7 @@ int Port_SecondScreenDungeonMap_GetInfo(uint8_t dungeonIdx, uint8_t area, uint8_
 int Port_SecondScreenDungeonMap_Draw(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
                                      int32_t dstX, int32_t dstY, int32_t dstW, int32_t dstH,
                                      uint8_t dungeonIdx, int32_t floor, uint8_t area, uint8_t room,
-                                     uint64_t visitedMask, uint8_t dungeonItemBits,
+                                     uint64_t visitedMask, uint8_t dungeonItemBits, const uint8_t* saveFlags,
                                      int32_t playerAreaX, int32_t playerAreaY, uint32_t tick) {
     const DungeonLayout* list;
     const DungeonLayout* lyt;
@@ -449,7 +466,7 @@ int Port_SecondScreenDungeonMap_Draw(uint32_t* pixels, int32_t bufW, int32_t buf
         for (lyt = list; lyt->area != 0; lyt++) {
             const TileEntity* te = (const TileEntity*)GetRoomProperty(lyt->area, lyt->room, 3);
             const RoomHeader* hdr;
-            uint32_t n;
+            uint32_t n, bank;
             if (te == NULL) {
                 continue;
             }
@@ -457,21 +474,26 @@ int Port_SecondScreenDungeonMap_Draw(uint32_t* pixels, int32_t bufW, int32_t buf
             if (hdr == NULL) {
                 continue;
             }
-            if (lyt->unk_2 & 2) {
-                /* Boss room: marker at the room's center (the game also
-                 * checks CheckGlobalFlag(dungeon+1) to drop it once the
-                 * boss is beaten — not snapshotted, so it stays). */
+            if ((lyt->unk_2 & 2) && !SaveFlagSet(saveFlags, FLAG_BANK_0 + dungeonIdx + 1u)) {
+                /* Boss room, boss not beaten yet (DrawDungeonMap's
+                 * !CheckGlobalFlag(dungeon_idx + 1)): marker at the
+                 * room's center. */
                 int32_t bx = (int32_t)((((uint32_t)hdr->pixel_width / 2u + hdr->map_x) / 16u) & 0x7Fu);
                 int32_t by = (int32_t)((((uint32_t)hdr->pixel_height / 2u + hdr->map_y) / 16u) & 0x7Fu);
                 DrawMarkerFrame(bx, by, FRAME_MARKER_BOSS);
             }
+            bank = sub_0801DF10(lyt);
             for (n = 0; n < 256 && te[n].type != 0; n++) {
                 uint32_t tilePos, cx, cy;
                 if (te[n].type != SMALL_CHEST && te[n].type != BIG_CHEST) {
                     continue;
                 }
-                /* The game also drops a chest marker once its local flag
-                 * is set (chest opened) — not snapshotted, so it stays. */
+                /* Opened chests drop off the map, like DrawDungeonMap's
+                 * !CheckLocalFlagByBank(bank, localFlag): the flag is the
+                 * ROM's own (region-native) one, so no remap. */
+                if (SaveFlagSet(saveFlags, bank + te[n].localFlag)) {
+                    continue;
+                }
                 tilePos = te[n].tilePos;
                 if (te[n].type == SMALL_CHEST) {
                     cx = ((((tilePos << 4) & 0x3F0u) | 8u) + (hdr->map_x % 0x800u)) >> 4;

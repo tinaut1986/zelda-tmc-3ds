@@ -40,6 +40,9 @@ extern const u8 gUnk_080C9044[];
  * marked with it across three slots instead of placing it directly. */
 #define QUEST_CARRIED_ITEM_SLOT 1
 
+_Static_assert(sizeof(((SecondScreenSnapshot*)0)->saveFlags) == sizeof(gSave.flags),
+               "SECOND_SCREEN_SAVE_FLAG_BYTES must match gSave.flags");
+
 static SecondScreenSnapshot sSnapshot;
 static SNAPSHOT_MUTEX_TYPE sSnapshotMutex = SNAPSHOT_MUTEX_INITIALIZER;
 
@@ -136,6 +139,7 @@ void Port_SecondScreenState_Publish(void) {
         if ((next.areaFlags & SECOND_SCREEN_AR_HAS_KEYS) && next.dungeonIdx < 0x10) {
             next.dungeonKeys = gSave.dungeonKeys[next.dungeonIdx];
             next.dungeonItemBits = gSave.dungeonItems[next.dungeonIdx];
+            memcpy(next.saveFlags, gSave.flags, sizeof(next.saveFlags));
         }
 
         /* Quest state for the status strip — plain gSave field reads. */
