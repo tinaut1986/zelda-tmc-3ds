@@ -112,7 +112,11 @@ wget -r -nH --cut-dirs=3 ftp://<3ds-ip>:5000/3ds/Minish%20Cap%203DS/debug/   # t
 `SITE INSTALL <path>` installs a CIA of this game that is already on the SD card
 over the running game and relaunches into the new build 10 s later, through libctru's chainloader
 (jumping at once made the system loader crash out of memory, issue #4); the FTP server comes back
-on with it.
+on with it. A CIA whose title version is lower than the installed one (a downgrade, or a build made
+from a branch `version.sh` numbers lower) is accepted too: AM refuses it at the first write
+(`0xd8e08027`), so the game removes its installed title and installs the CIA instead
+(`cia_install_3ds.c`); saves and settings live under `sdmc:/3ds/`, not in the title. Keep a CIA in
+`/cias/` for the case where the removal succeeds and the install fails.
 `./build_3ds.sh --install IP` builds, uploads to
 `/3ds/Minish Cap 3DS/update/dev.cia` and installs in one go; the interactive menu
 offers it as "Install into the running game". Any unsaved progress is lost. While a
