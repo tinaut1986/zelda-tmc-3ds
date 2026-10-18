@@ -1112,3 +1112,24 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   `PlatformGpu3DS_EndBottom`); the owner had to reboot it. Issue #30's suspicion (slices rewritten while the GPU
   reads them) cannot have happened in the old order, which waited before every write; the new order keeps that
   rule by construction, so #30 needs another cause.
+- **2026-10-18** The Minish Shrine's rolling barrel (area 0x48, room 0x20) ran at 26 fps on the New 3DS because the GPU
+  never drew it. The barrel is a 512x512 wrapping affine BG2 whose PA and reference change every line (HDMA): 139
+  one-line bands. The affine ring took only <=256x256 without wrap, so each band emitted a quad a tile, 68980 vertices
+  against 65536, and the frame was drawn in software after 25 ms of discarded GPU work. Now: the tile path emits only
+  the rows of the band's own lines; a 512x512 wrapping BG2 scaled by PA/PD is one quad a band and half from two rings
+  (BG2's rows 0-31 and 32-63 in rings 4 and 5, the texture's repeat wrapping the columns; bands whose reference does not
+  follow PD are cut into lines, wide spans into quads of at most two textures); consecutive batches that draw alike are
+  merged (369 -> 99); and a failed build backs the GPU off for 8..60 frames (the SD log counts failures by reason).
+  Result: 26 -> 59.8 fps, every frame on the GPU. Blending needed `fold_covered_alpha_layers`: with BLDCNT 0x3456 BG2 and
+  the sprites are both first and second targets under BG1, which blends over them; the GBA blends only the top pixel, so
+  the layers underneath are drawn plain (the GPU drew layer after layer and BG1 blended with an already hazed BG2). Seen
+  as a light veil over the barrel; compared with the CPU at the same state (99.5 % of the pixels within 16/255).
+  Not fully verified: other rooms with the same blend combination, and the Old 3DS.
+- **2026-10-18** Leaving the barrel in Full View drew noise over the 400x240 view, on the CPU as well: the exit callback
+  runs when the door fade starts, so the substate has left `GAMEMAIN_BARRELUPDATE` while the barrel's affine picture
+  (mode 1, HDMA still on) fades out, and `Port_WidescreenFixedCanvasSubtask` no longer called it a fixed canvas; the
+  maps the game clears at that point were drawn as a normal wide room. The original aspect never showed it. The
+  fixed canvas now also holds in area `AREA_DEEPWOOD_SHRINE` while the display mode is 1 and a fade is active, which
+  gives the plain fade to white. The bars beside a 240x160 view now take the same fade as the picture (the shown
+  snapshot, or the GPU's weight and level, quantized to the picture's 5-bit step): they ran a frame ahead and one step
+  darker on the plateau. Compared by pixels in a scene recording (`scenerec`), GPU renderer, Full View.
