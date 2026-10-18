@@ -1662,7 +1662,7 @@ static void PaintDungeon(const SSurf* s, const SecondScreenSnapshot* snap, Targe
     if (!Port_SecondScreenDungeonMap_Draw(s->px, s->w, s->h, s->stride, (int32_t)mx0, (int32_t)my0,
                                           (int32_t)(rx1 - 12 * u - mx0), (int32_t)(ry1 - 10 * u - my0),
                                           snap->dungeonIdx, viewFloor, snap->area, snap->room,
-                                          snap->visitedMask, snap->dungeonItemBits, snap->saveFlags, snap->playerX,
+                                          snap->dungeonItemBits, snap->saveFlags, snap->playerX,
                                           snap->playerY, tick)) {
         PaintSchematic(s, snap, (int32_t)mx0, (int32_t)my0, (int32_t)(rx1 - 12 * u),
                        (int32_t)(ry1 - 10 * u), tick, ts);

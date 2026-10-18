@@ -30,8 +30,13 @@
  * Reveal rules mirror the real map screen so the bottom screen never
  * cheats (DrawDungeonFeatures's `features` logic, exactly):
  *   - the room the player stands in always draws (pulsing fill),
- *   - visited rooms draw with the lit fill,
- *   - other rooms draw (dim fill) only when the dungeon MAP item is owned,
+ *   - visited rooms draw with the lit fill (color 3): visited is the
+ *     save's own flag, IsRoomVisited (src/common.c) — the local flag of
+ *     the room's ROOM_VISIT_MARKER tile entity in its flag bank — read
+ *     from the snapshot's gSave.flags copy, so it lasts across sessions
+ *     and covers the floor's rooms of every area (boss arenas),
+ *   - other rooms draw (dim fill, color 2) only when the dungeon MAP item
+ *     is owned; a visited room keeps the lit fill with it too,
  *   - rooms flagged hidden (DungeonLayout.unk_2 & 1) never draw,
  *   - chest and boss markers draw only with the COMPASS, like the game,
  *     and DrawDungeonMap's flag tests drop them: a chest's marker once
@@ -52,10 +57,6 @@
  * parameters (extend SecondScreenSnapshot if they ever matter):
  *   - the dungeon-entrance marker (frame 0x7f) is skipped: its position
  *     is the save's player_status.dungeon_x/y, which isn't snapshotted;
- *   - visitedMask is the port's per-session automap for the CURRENT area,
- *     so rooms of a sibling area on the same floor (boss arenas) and
- *     rooms visited in previous sessions count as unvisited until the map
- *     item lights them — less than the game shows, never more.
  *
  * Threading contract matches port_second_screen_worldmap.h: ROM-constant
  * data only (gMapData, layout tables, the raw palette/gfx/frame accessors
@@ -92,6 +93,23 @@ static int SaveFlagSet(const uint8_t* saveFlags, uint32_t bit) {
         return 0;
     }
     return (saveFlags[bit >> 3] >> (bit & 7u)) & 1u;
+}
+
+/* IsRoomVisited (src/common.c) over the flags copy: the first
+ * ROOM_VISIT_MARKER tile entity's local flag; a room without one is never
+ * visited. */
+static int RoomVisited(const DungeonLayout* lyt, const uint8_t* saveFlags) {
+    const TileEntity* te = (const TileEntity*)GetRoomProperty(lyt->area, lyt->room, 3);
+    uint32_t n;
+    if (te == NULL) {
+        return 0;
+    }
+    for (n = 0; n < 256 && te[n].type != 0; n++) {
+        if (te[n].type == ROOM_VISIT_MARKER) {
+            return SaveFlagSet(saveFlags, sub_0801DF10(lyt) + te[n].localFlag);
+        }
+    }
+    return 0;
 }
 
 
@@ -367,7 +385,7 @@ int Port_SecondScreenDungeonMap_GetInfo(uint8_t dungeonIdx, uint8_t area, uint8_
 int Port_SecondScreenDungeonMap_Draw(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
                                      int32_t dstX, int32_t dstY, int32_t dstW, int32_t dstH,
                                      uint8_t dungeonIdx, int32_t floor, uint8_t area, uint8_t room,
-                                     uint64_t visitedMask, uint8_t dungeonItemBits, const uint8_t* saveFlags,
+                                     uint8_t dungeonItemBits, const uint8_t* saveFlags,
                                      int32_t playerAreaX, int32_t playerAreaY, uint32_t tick) {
     const DungeonLayout* list;
     const DungeonLayout* lyt;
@@ -439,8 +457,8 @@ int Port_SecondScreenDungeonMap_Draw(uint32_t* pixels, int32_t bufW, int32_t buf
     pulseColorIdx = 8u + (((tick * 3u) >> 3) & 7u);
 
     /* Rooms — DrawDungeonFeatures's reveal logic, verbatim: current room
-     * always (pulsing), visited rooms always (per-session mask), the rest
-     * only with the map item; hidden rooms never. */
+     * always (pulsing), visited rooms (the save's IsRoomVisited flag) lit,
+     * the rest dim and only with the map item; hidden rooms never. */
     for (lyt = list; lyt->area != 0; lyt++) {
         uint32_t features;
         if (lyt->unk_2 & 1) {
@@ -448,7 +466,7 @@ int Port_SecondScreenDungeonMap_Draw(uint32_t* pixels, int32_t bufW, int32_t buf
         }
         if (lyt->area == area && lyt->room == room) {
             features = 8;
-        } else if (lyt->area == area && ((visitedMask >> (lyt->room & 63u)) & 1u)) {
+        } else if (RoomVisited(lyt, saveFlags)) {
             features = 3;
         } else if (hasMap) {
             features = 2;
