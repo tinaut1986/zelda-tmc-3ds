@@ -1743,6 +1743,15 @@ static int Port_WidescreenFixedCanvasSubtask(void) {
     if (gMain.substate == GAMEMAIN_BARRELUPDATE) {
         return 1;
     }
+    /* ... and its way out: RollingBarrelManager's room-exit callback runs when the door fade starts, so the
+     * substate has already left BARRELUPDATE while the barrel's affine picture (mode 1, still the room's
+     * HBlank DMA) fades out. Drawn as a normal wide room, the maps the game is clearing at that point came
+     * out as noise over the whole 400x240; as the fixed canvas it is the plain fade to white of the
+     * original aspect. */
+    if (gRoomControls.area == AREA_DEEPWOOD_SHRINE && (gScreen.lcd.displayControl & 7u) == 1u &&
+        gFadeControl.active != 0) {
+        return 1;
+    }
     if (gMain.substate != GAMEMAIN_SUBTASK) {
         return 0;
     }
