@@ -140,7 +140,9 @@ int Update_ParseReleases(const char *data, size_t size, bool betas, bool homebre
     char cmp[64]; snprintf(cmp, sizeof(cmp), "%s%s", r.version, r.prerelease ? "-beta" : "");
     if (!result || Update_IsNewer(cmp, best)) { *out = r; snprintf(best, sizeof(best), "%s", cmp); result = 1; }
   }
-  if (result && installed && Update_IsNewer(best, installed)) {
+  if (result && installed) {
+    // Up to date: nothing is newer than this build, so the notes are the channel's whole changelog.
+    const char *since = Update_IsNewer(best, installed) ? installed : "0.0.0";
     static char acc[12289];
     size_t used = 0; unsigned count = 0;
     acc[0] = 0;
@@ -151,7 +153,7 @@ int Update_ParseReleases(const char *data, size_t size, bool betas, bool homebre
       if (!json_is_object(o)) continue;
       if (!candidate(o, -1, homebrew, &r)) continue;
       char cmp[64]; snprintf(cmp, sizeof(cmp), "%s%s", r.version, r.prerelease ? "-beta" : "");
-      if (!Update_IsNewer(cmp, installed) || (!betas && r.prerelease && Update_IsNewer(cmp, best))) continue;
+      if (!Update_IsNewer(cmp, since) || (!betas && r.prerelease && Update_IsNewer(cmp, best))) continue;
       const char *block; size_t len; notes_block(r.notes, &block, &len);
       int head = snprintf(acc + used, sizeof(acc) - used, "%s## %s%s\n", count ? "\n" : "", r.version,
                           r.prerelease ? " BETA" : "");
