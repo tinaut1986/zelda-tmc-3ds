@@ -173,7 +173,7 @@ int main(int argc, char** argv) {
     }
 
     Platform3DS_EnterGameplayDisplay();
-    Updater_Init(argc > 0 ? argv[0] : NULL);
+    Updater_Init(argc > 0 ? argv[0] : NULL, Port_Config_GetAutoUpdate());
     /* After the ROM (its hash) and in the data folder (retroachievements.ini). */
     RetroAch_Init();
     AgbMain();

@@ -171,7 +171,8 @@ enum {
 #ifdef TMC_3DS
     SS_ACT_WIDEAI_NO, SS_ACT_WIDEAI_YES, /* the one-time question about WIDE + AI */
     SS_ACT_UPDATE_CHANNEL, SS_ACT_UPDATE_RELEASE, SS_ACT_UPDATE_ACTION,
-    SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT,
+    SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT, SS_ACT_UPDATE_AUTO,
+    SS_ACT_AUTOUPD_NO, SS_ACT_AUTOUPD_YES, SS_ACT_AUTOUPD_NEWS, /* the prompt after the boot check found a newer build */
     SS_ACT_THEME, /* OPTIONS -> THEME (bottom_compact_3ds.inc) */
     SS_ACT_TABS,  /* OPTIONS -> TABS: tab bar on top or below */
     SS_ACT_DEBUG, /* DEBUG tab command, arg = DBG_CMD_* (bottom_compact_3ds.inc) */
@@ -2569,6 +2570,82 @@ static void PaintWideAiQuestion(const SSurf* s, TargetList* tl) {
     Compact_PaintModal(s, tl, "WIDE VIEW", kLines, 6, "NO", SS_ACT_WIDEAI_NO, "YES", SS_ACT_WIDEAI_YES);
 }
 
+/* A label centred on a bar: light over the empty part, dark over the filled one, pixel by pixel, so the
+ * text stays readable as the bar grows under it. */
+static void CBarLabel(const SSurf* s, int32_t barX, int32_t barY, int32_t barW, int32_t barH, int32_t fillEnd,
+                      const char* str, uint32_t onEmpty, uint32_t onFill) {
+    const char* tr = Port_Text_Tr(str);
+    int32_t cx = barX + (barW - CTextWidth(tr)) / 2;
+    const int32_t y = barY + (barH - kUiGlyphH) / 2;
+    for (const char* q = tr; *q;) {
+        const unsigned char c = Port_Text_Utf8Next(&q);
+        const uint8_t* g = UiFont_Glyph(c);
+        if (g) {
+            for (int32_t gy = 0; gy < kUiGlyphH; gy++)
+                for (int32_t gx = 0; gx < kUiGlyphW; gx++)
+                    if (g[gy] & (0x10u >> gx))
+                        FillRect(s, cx + gx, y + gy, cx + gx + 1, y + gy + 1, cx + gx < fillEnd ? onFill : onEmpty);
+        }
+        cx += kUiAdvance;
+    }
+}
+
+static void PaintAutoUpdatePrompt(const SSurf* s, TargetList* tl, UpdatePrompt prompt) {
+    /* Raised by the check made when the game opens (AUTO UPDATE), over every tab; the install is the
+     * player's call (updater.h). */
+    UpdateStatus st;
+    Updater_GetStatus(&st);
+    char version[48], message[80], percent[16];
+    snprintf(version, sizeof(version), "%s", st.version);
+    snprintf(message, sizeof(message), "%s", st.message);
+    snprintf(percent, sizeof(percent), "%u%%", st.progress);
+    for (char* c = version; *c; ++c) *c = (char)toupper((unsigned char)*c);
+    for (char* c = message; *c; ++c) *c = (char)toupper((unsigned char)*c);
+#ifdef TMC_3DS
+    extern unsigned Platform3DS_RelaunchRemainingMs(void);
+#endif
+    char head[64];
+    if (prompt == UPDATE_PROMPT_ASK) {
+        snprintf(head, sizeof(head), "%s %s", Port_Text_Tr("NEW VERSION:"), version); /* already translated */
+        /* Three empty rows host the WHAT'S NEW button (the modal's geometry is Compact_PaintModal's). */
+        const char* const lines[] = { head, "INSTALL IT NOW?", "UNSAVED PROGRESS IS LOST",
+                                      "(OPTIONS -> UPDATES: AUTO UPDATE)", "", "", "" };
+        Compact_PaintModal(s, tl, "UPDATE AVAILABLE", lines, 7, "LATER", SS_ACT_AUTOUPD_NO, "INSTALL", SS_ACT_AUTOUPD_YES);
+        const int32_t top = (s->h - (30 + 7 * 10 + 36)) / 2;
+        CButton(s, tl, (s->w - 150) / 2, top + 24 + 4 * 10 + 3, 150, 22, "WHAT'S NEW", CC_ACCENT, SS_ACT_AUTOUPD_NEWS, 0);
+    } else if (prompt == UPDATE_PROMPT_WORKING || prompt == UPDATE_PROMPT_RESTART) {
+        /* One bar per phase, as in ../mzm and ../sm-3ds: the download, the install, and the 10 s wait
+         * before the game starts again into the new build (its relaunch needs it, platform_3ds.c). The
+         * bar sits in the empty row between the text lines (Compact_PaintModal's geometry). */
+        unsigned pct = st.progress;
+        const char* what = message;
+        char label[24];
+        if (prompt == UPDATE_PROMPT_RESTART) {
+            const unsigned ms = Platform3DS_RelaunchRemainingMs();
+            pct = 100u - ms / 100u;
+            what = "RESTARTING THE GAME";
+            snprintf(label, sizeof(label), "%u S", (ms + 999u) / 1000u); /* seconds left, as in ../mzm */
+        } else {
+            snprintf(label, sizeof(label), "%u%%", pct > 100u ? 100u : pct);
+        }
+        if (pct > 100u) pct = 100u;
+        const char* const lines[] = { what, "", "", "DO NOT TURN THE CONSOLE OFF." };
+        Compact_PaintModal(s, tl, "UPDATING", lines, 4,
+                           prompt == UPDATE_PROMPT_WORKING && st.state == UPDATE_DOWNLOADING ? "CANCEL" : "PLEASE WAIT",
+                           SS_ACT_AUTOUPD_NO, NULL, 0);
+        const int32_t bx = (s->w - 260) / 2 + 14, bw = 260 - 28, bh = 14;
+        const int32_t by = (s->h - (30 + 4 * 10 + 36)) / 2 + 24 + 10 + 3;
+        const int32_t fillEnd = bx + 1 + (bw - 2) * (int32_t)pct / 100;
+        FillRect(s, bx, by, bx + bw, by + bh, CC_CELL_EDGE);
+        FillRect(s, bx + 1, by + 1, bx + bw - 1, by + bh - 1, CC_BAR);
+        FillRect(s, bx + 1, by + 1, fillEnd, by + bh - 1, CC_GOOD);
+        CBarLabel(s, bx, by, bw, bh, fillEnd, label, CC_TEXT, CC_BG);
+    } else {
+        const char* const lines[] = { message, "THE GAME KEEPS RUNNING AS IT WAS." };
+        Compact_PaintModal(s, tl, "UPDATE FAILED", lines, 2, "OK", SS_ACT_AUTOUPD_NO, NULL, 0);
+    }
+}
+
 static void PaintUnavailableNotice(const SSurf* s, TargetList* tl, float u, int32_t ts) {
 #ifdef TMC_3DS
     static const char* const kLines[] = { "THIS OPTION IS NOT AVAILABLE YET." };
@@ -3324,6 +3401,17 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
         PaintLoadStateConfirmation(&s, &tl, u, ts);
     } else if (unavailableNoticeActive) {
         PaintUnavailableNotice(&s, &tl, u, ts);
+    } else if (Updater_AutoPrompt() != UPDATE_PROMPT_NONE) {
+        const UpdatePrompt prompt = Updater_AutoPrompt();
+        if (sAutoNotes && prompt == UPDATE_PROMPT_ASK) {
+            UpdateStatus st;
+            Updater_GetStatus(&st);
+            tl.n = 0;
+            PaintUpdateNotes(&s, &tl, &st, true);
+        } else {
+            sAutoNotes = false;
+            PaintAutoUpdatePrompt(&s, &tl, prompt);
+        }
     } else if (Port_Config_WideAiQuestionDue()) {
         PaintWideAiQuestion(&s, &tl);
     }
@@ -3411,6 +3499,18 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
     }
 
 #ifdef TMC_3DS
+    if (HandleAutoNotesTap(hit.action)) return;
+    if (hit.action == SS_ACT_AUTOUPD_NEWS) {
+        UI_LOCK();
+        sAutoNotes = true;
+        sUpdatePage = 0;
+        UI_UNLOCK();
+        return;
+    }
+    if (hit.action == SS_ACT_AUTOUPD_NO || hit.action == SS_ACT_AUTOUPD_YES) {
+        Updater_AutoAnswer(hit.action == SS_ACT_AUTOUPD_YES);
+        return;
+    }
     if (HandleUpdateTap(hit.action, hit.arg)) return;
 #endif
     switch (hit.action) {

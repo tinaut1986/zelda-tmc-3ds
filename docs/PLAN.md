@@ -50,11 +50,9 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 
 **Start here (2026-10-18, after the other sessions' merges and the owner's cleanup):** `release/v0.3.3` is pushed and
 clean (nothing after the `v0.3.2` tag but this docs change), no branch or worktree is open but the parked `feat/village-3d`. Next, in this order:
-1. **v0.3.2 stable** is published: check, with a console, that OPTIONS -> UPDATES offers it (from `v0.3.0` on
-   STABLE, and from the `v0.3.1` beta) and shows its notes (not done). Port `../sm-3ds` commit `10aa48d` (the
-   stable channel's notes also include the betas on the way to the newest stable) to
-   `Update_ParseReleases` in `platform/3ds/source/update_manifest.c`, with a test in `platform/3ds/tests`:
-   until it ships, a stable's notes must keep covering its betas by hand.
+1. **v0.3.2 stable** is published and the updater work is in `release/v0.3.3` (AUTO UPDATE with its boot prompt,
+   the relaunch after an in-game update, the changelog of the betas on the way, see the decisions log), all
+   seen working on the New 3DS. Not seen: a console that is not the New 3DS (the updater on the Old 3DS/2DS).
 2. **Old 3DS/2DS check** of what only the New 3DS has seen: the grid on HIGH (frame rate), WIDE + AI,
    the file select and title without 3D, TOP HUD AUTO. The 2DS is `192.168.1.139` (its FTP answered
    `530 Login incorrect` on 2026-10-17: ask the owner what that console runs).
@@ -1143,3 +1141,15 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   rewritten with `gh release edit` to six lines covering `v0.3.1` + `v0.3.2` (a commit would have invalidated the
   promotion). The file in the repo keeps the beta-only list. `../sm-3ds` fixed this in the updater itself
   (`10aa48d`); ours still needs the port (Status, "Start here" 1).
+- **2026-10-18** The in-game updater, three changes checked by the owner on the New 3DS (a build of the branch with a
+  fake older version, `TMC3DS_VERSION=0.3.0-dev.99` or `0.0.0`, sent over FTP so the updater offers `v0.3.2`):
+  (1) AUTO UPDATE (`auto_update` in `tmc3ds.ini`, on by default; `../sm-3ds` has the same): the check at boot raises a
+  LATER / INSTALL window over every tab with WHAT'S NEW (the changelog); with it off nothing is checked until CHECK is
+  pressed. The window shows a bar for the download, the install and the 10 s wait, with the percentage (seconds on
+  the wait) drawn inside it and recoloured pixel by pixel as it fills. Its repaint has to be asked for
+  (`Port_SecondScreen_3DS_NeedsPeriodicRefresh`): the bottom screen skips unchanged frames, and the window sat at 0%.
+  (2) The game relaunches 10 s after a CIA update (`Platform3DS_RequestRelaunch`, the FTP install's path); it used to
+  close to HOME, inherited from upstream, and an immediate chainload faults the loader (issue #4). A 3DSX update still
+  closes at once. (3) The notes shown after a check cover the betas on the way to the newest stable on the STABLE
+  channel (`../sm-3ds` `10aa48d`), and with no update waiting the whole channel's changelog, as in `../mzm`/`../sm-3ds`.
+  `tools/ui-preview` builds again and takes `UPDATE_PROMPT=ask|work|restart|error`, `NO_WIDE_ASK=1` and `UILANG=2..5`.

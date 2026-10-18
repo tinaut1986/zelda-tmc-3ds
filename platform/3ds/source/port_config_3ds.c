@@ -43,6 +43,9 @@ static _Atomic Port3DSAspectRatio sAspectRatio = CONFIG_3DS_DEFAULT_ASPECT;
  * about it was answered. */
 static _Atomic bool sWideAi;
 static _Atomic bool sWideAiAsked;
+/* OPTIONS -> UPDATES -> AUTO UPDATE: look for a newer build when the game opens and ask whether to
+ * install it (updater.h, "Updater_AutoPrompt"). On unless the player turns it off. */
+static _Atomic bool sAutoUpdate = true;
 static _Atomic Port3DSDisplayStyle sDisplayStyle = CONFIG_3DS_DEFAULT_DISPLAY;
 /* The desktop file-select overlay is rendered on the gameplay screen and
  * has no useful 3DS interaction path. Keep the native second-screen UI
@@ -188,6 +191,7 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("screen_aspect=%s\n", ConfigValues3DS_AspectName(sAspectRatio));
     APPEND("wide_ai=%u\n", sWideAi ? 1u : 0u);
     APPEND("wide_ai_asked=%u\n", sWideAiAsked ? 1u : 0u);
+    APPEND("auto_update=%u\n", sAutoUpdate ? 1u : 0u);
     APPEND("display_style=%s\n", ConfigValues3DS_DisplayName(sDisplayStyle));
     APPEND("master_volume=%.2f\n", (double)sVolume);
     APPEND("panel_backdrop=%d\n", sBackdrop);
@@ -407,6 +411,7 @@ void Port_Config_Load(const char* path) {
             } else if (strcmp(key, "gba_frame") == 0) sGbaFrame = ParseBool(value);
             else if (strcmp(key, "wide_ai") == 0) sWideAi = ParseBool(value);
             else if (strcmp(key, "wide_ai_asked") == 0) sWideAiAsked = ParseBool(value);
+            else if (strcmp(key, "auto_update") == 0) sAutoUpdate = ParseBool(value);
             else if (strcmp(key, "autosave") == 0) sAutosave = ParseBool(value);
             else if (strcmp(key, "widescreen") == 0 && !hasScreenAspect)
                 sAspectRatio = ParseBool(value) ? PORT_3DS_ASPECT_WIDE : PORT_3DS_ASPECT_ORIGINAL;
@@ -803,6 +808,11 @@ bool Port_Config_WideAiQuestionDue(void) { return sAspectRatio == PORT_3DS_ASPEC
 void Port_Config_AnswerWideAi(bool yes) {
     sWideAi = yes;
     sWideAiAsked = true;
+    SaveConfig();
+}
+bool Port_Config_GetAutoUpdate(void) { return sAutoUpdate; }
+void Port_Config_ToggleAutoUpdate(void) {
+    sAutoUpdate = !sAutoUpdate;
     SaveConfig();
 }
 void Port_Config_Cycle3DSAspectRatio(void) {

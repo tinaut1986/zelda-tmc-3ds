@@ -275,6 +275,9 @@ void Port_Config_Cycle3DSAspectRatio(void);
 bool Port_Config_GetWideAi(void);
 bool Port_Config_WideAiQuestionDue(void);
 void Port_Config_AnswerWideAi(bool yes);
+/* AUTO UPDATE (3DS): check for a newer build when the game opens and ask whether to install it. */
+bool Port_Config_GetAutoUpdate(void);
+void Port_Config_ToggleAutoUpdate(void);
 int Port_Config_Get3DSDisplayStyle(void);
 const char* Port_Config_Get3DSDisplayStyleName(void);
 void Port_Config_Cycle3DSDisplayStyle(void);

@@ -45,7 +45,7 @@ void Port_Config_SetUiTabsBottom(bool bottom) { sTabsBottom = bottom; }
 static int sAspect = 0, sStyle = 2, sBackdrop = 0;
 static bool sWideAi = false, sWideAiAsked = false;
 bool Port_Config_GetWideAi(void) { return sWideAi; }
-bool Port_Config_WideAiQuestionDue(void) { return !sWideAiAsked; }
+bool Port_Config_WideAiQuestionDue(void) { return !sWideAiAsked && !getenv("NO_WIDE_ASK"); }
 void Port_Config_AnswerWideAi(bool yes) { sWideAi = yes; sWideAiAsked = true; }
 static bool sColor = true, sHideHud = false, sHold = true, sCrests = true, sFloor = true, sFollow = true;
 static bool sSwap = false, sFps = false, sWide = true, sAuto = true;
@@ -105,6 +105,16 @@ bool Updater_Busy(void) { return false; }
 void Updater_Cancel(void) {}
 void Updater_Check(void) {}
 void Updater_Download(void) {}
+unsigned Platform3DS_RelaunchRemainingMs(void) { return 4000; }
+/* UPDATE_PROMPT=ask|work|restart|error: the prompt raised by the boot check, to preview its window. */
+UpdatePrompt Updater_AutoPrompt(void) {
+    const char* p = getenv("UPDATE_PROMPT");
+    return !p ? UPDATE_PROMPT_NONE : p[0] == 'a' ? UPDATE_PROMPT_ASK : p[0] == 'w' ? UPDATE_PROMPT_WORKING : p[0] == 'r' ? UPDATE_PROMPT_RESTART : UPDATE_PROMPT_ERROR;
+}
+void Updater_AutoAnswer(bool yes) { (void)yes; }
+static bool sAutoUpdate = true;
+bool Port_Config_GetAutoUpdate(void) { return sAutoUpdate; }
+void Port_Config_ToggleAutoUpdate(void) { sAutoUpdate = !sAutoUpdate; }
 void Updater_SetChannel(bool prerelease) { (void)prerelease; }
 unsigned Updater_GetNotes(char* out, unsigned capacity) { if (capacity) out[0] = 0; return 0; }
 /* UPDATE_BETA=1: a beta found on the + BETAS channel, to preview the RELEASE cell. */

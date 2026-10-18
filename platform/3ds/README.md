@@ -84,6 +84,11 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
 - Bottom screen: a bar of icon tabs (map, items, quest, save states, achievements, options and,
   in debug builds, the bug icon for DEBUG). OPTIONS holds the display, turbo, theme, tab
   position and UPDATES channel.
+- AUTO UPDATE (OPTIONS -> UPDATES, `auto_update=0|1` in `tmc3ds.ini`, on by default), after `../mzm` and
+  `../sm-3ds`: the game looks for a newer build when it opens (off: no check until CHECK is pressed) and, if
+  one is found, a window over every tab asks LATER / INSTALL; nothing installs by itself, and a failed
+  check (no Wi-Fi) shows nothing. INSTALL downloads, installs and closes the game (`updater.c`,
+  `Updater_AutoPrompt`).
 - GBA look (`gba_look_3ds.c`, OPTIONS: GBA GRID and GBA FRAME; `gba_grid=0..3` and `gba_frame=0|1` in
   `tmc3ds.ini`), after `../mzm`: GRID darkens one screen row in every two of the game's pixels (HIGH
   also the columns) at any scale; FRAME draws the console's body in the border of the 240x160
