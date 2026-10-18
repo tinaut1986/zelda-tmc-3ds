@@ -35,6 +35,7 @@ was deleted). Their history is in `git log` and the decisions log.
 
 | Branch | State |
 |---|---|
+| `feat/wide-neighbour-rooms` | Cut from `release/v0.3.3`, not merged: P4.9 probe, the neighbouring room drawn beyond the edge (decisions log, 2026-10-18). Waits for the owner's look and the decision whether to go on. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
