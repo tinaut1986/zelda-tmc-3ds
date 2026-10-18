@@ -14,7 +14,7 @@ change (what goes where: the table in `CLAUDE.md`).
   audio offload, an updater, a quick memory dump (L+R+A) and an experimental New 3DS
   "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors; the 2x indoor zoom is gone, see the decisions log).
 
-## Status (2026-10-17)
+## Status (2026-10-18)
 
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
@@ -47,8 +47,8 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 
 **Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
 
-**Start here (2026-10-17, end of the long session):** `release/v0.3.2` is pushed and clean, no branch is open
-but the parked `feat/village-3d`. Next, in this order:
+**Start here (2026-10-18, after the other sessions' merges and the owner's cleanup):** `release/v0.3.2` is pushed and
+clean, no branch or worktree is open but the parked `feat/village-3d`. Next, in this order:
 1. **v0.3.1 beta** is published: check, with a console, that OPTIONS -> UPDATES offers it and shows its notes
    (not done). Promoting it to stable (re-run the workflow on the tag) is only valid if nothing was committed
    after it, which is not the case: the next stable is a `v0.3.2` (notes first, CLAUDE.md "Releases"; the
@@ -63,10 +63,15 @@ but the parked `feat/village-3d`. Next, in this order:
    room (the Minish Paths corridor has one; map rooms have only black there). Same for every other small
    interior the owner wants to fill.
 4. **#30** the right edge of the top screen breaks on room changes and while rolling (2DS only: the owner
-   sees nothing on the New 3DS, so a CPU-speed race is the lead: the retained map slices rewritten while
-   the GPU still reads them is far likelier to show on the slower Old 3DS CPU). Not a regression. Next:
-   `gpucheck` loops during scrolls, then a targeted SYNCDRAW on frames that rewrite slices; the scene
-   recorder (FRAMES = "sin saltos") shows clean frames, so look at the GPU stage.
+   sees nothing on the New 3DS). Not a regression. The CPU/GPU race on the retained map slices (hypothesis 1) is
+   out: the old order waited before every write and the build-ahead order keeps that rule by construction (decisions
+   log, 2026-10-18). What is left is hypothesis 2 of the issue (the display transfer or swap landing mid-scanout,
+   invisible to the scene recorder, which reads the framebuffer) and the CPU speed of the Old 3DS itself; look
+   with `gpucheck` loops during scrolls on the 2DS and FRAME SYNC / VBLANK LOCK combinations.
+   **#33** (opened by someone else, not the owner): "Wide+AI in Pixel Perfect" works in many areas but in some the
+   view shrinks back with black borders on all sides, like the area before the Mt. Crenel dungeon. That is the
+   Full View policy falling back (`Port_Widescreen_3DSFallbackReason`: the Mt. Crenel room 2 `unsupportedScene`,
+   fixed canvases, rooms without content bounds); find out which areas and why before answering. Not looked at yet.
 5. Smaller: the bottom screen's UI theme (hearts, buttons, sidebar chrome) is not corrected by COLOURS (only
    the game art is; `port_second_screen_color.h`); sm-3ds's DRAW ORDER tint view could join PLANE TINT; the
    light rays of the room 0x20/09 hang over its black border on the right (left as the game's rays);
@@ -89,7 +94,8 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
 **On the owner's consoles now (2026-10-17, newer than the lines below):**
 - **New 3DS, `192.168.1.133`** (the owner, 2026-10-17: "es la 133 (new3ds)"; its address changes with the
   router: it answered on `.141` earlier the same day, and `.142` on 2026-10-14, so ping before assuming):
-  a debug build of the code of `release/v0.3.2` at `aeb0c48` (`0.3.2-dev.*`), WIDE + AI answered YES, VIEW wide,
+  a debug build of the code of `release/v0.3.2` at `aeb0c48` (`0.3.2-dev.*`; the perf sessions of 2026-10-18 may have
+  installed newer builds since: read the version in `tmc3ds.log` or the options footer), WIDE + AI answered YES, VIEW wide,
   STYLE pixel-perfect, GBA GRID LOW, GBA FRAME off, TOP HUD AUTO, FRAMES "sin saltos", SHOW FPS on (debug
   builds show the fifth line `C<n>`), stereo on, COLOURS on. FORCE 3D and PLANE TINT are off (they reset at
   boot). State 1 is Claude's (the shrine yard, area 0x4A, saved before going out to take the pictures); the
