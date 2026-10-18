@@ -2552,6 +2552,64 @@ const u8* Port_GetRawGfxSpanForVram(u32 group, u32 vramAddr, u32 numBytes) {
     return found;
 }
 
+/* Same walk, but also through the language-gated entries, with
+ * LoadGfxGroup's own test against `saveLanguage` (gSaveHeader->language):
+ * what VRAM holds once the game loaded `group` in that language, e.g. the
+ * pause map's floor names. A compressed entry the game would load over the
+ * span makes the answer unknown (NULL), never stale. */
+const u8* Port_GetRawGfxSpanForVramLang(u32 group, u32 vramAddr, u32 numBytes, u32 saveLanguage) {
+    const GfxItem* gfxItem;
+    const u8* found = NULL;
+    u32 guard;
+
+    if (group >= 133) { /* GFX_GROUPS_COUNT_MAX (port_rom.c) */
+        return NULL;
+    }
+    gfxItem = gGfxGroups[group];
+    if (gfxItem == NULL) {
+        return NULL;
+    }
+    for (guard = 0; guard < 64; guard++) {
+        u32 gi = ROM_U32(gfxItem->unk0.raw);
+        u32 ctrl = (gi >> 24) & 0xF;
+        u32 dest = ROM_U32(gfxItem->dest);
+        s32 size = (s32)ROM_U32(gfxItem->unk8);
+        u32 load;
+        if (ctrl == 0xD) { /* hard list end, as in LoadGfxGroup */
+            break;
+        }
+        switch (ctrl) {
+            case 0x7:
+                load = TRUE;
+                break;
+            case 0xE:
+                load = saveLanguage != 0 && saveLanguage != 1;
+                break;
+            case 0xF:
+                load = saveLanguage != 0;
+                break;
+            default:
+                load = ctrl == saveLanguage;
+                break;
+        }
+        if (load && size > 0 && dest <= vramAddr && vramAddr + numBytes <= dest + (u32)size) {
+            found = &gGlobalGfxAndPalettes[(gi & 0xFFFFFF) + (vramAddr - dest)];
+        } else if (load && size < 0) {
+            /* LZ77 header: bits 8..31 = decompressed size. */
+            const u8* src = &gGlobalGfxAndPalettes[gi & 0xFFFFFF];
+            u32 rawSize = ((u32)src[1] | ((u32)src[2] << 8) | ((u32)src[3] << 16));
+            if (vramAddr < dest + rawSize && dest < vramAddr + numBytes) {
+                found = NULL;
+            }
+        }
+        if (((gi >> 24) & 0x80) == 0) {
+            break;
+        }
+        gfxItem++;
+    }
+    return found;
+}
+
 /* Room header (map placement + size) for (area, room), bounds- and
  * ROM-pointer-checked. Common_GetAreaRoomHeaderSafe is static — this is its
  * exported face for the port layer. */
