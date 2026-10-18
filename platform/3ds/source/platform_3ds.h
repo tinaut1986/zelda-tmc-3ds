@@ -88,6 +88,8 @@ void Platform3DS_RequestRelaunch(void);
 /* True once the jump into a freshly installed build is armed: the process is
  * about to end, so shutdown skips anything that waits on the GPU. */
 bool Platform3DS_Relaunching(void);
+/* Milliseconds until a requested relaunch (10 s after Platform3DS_RequestRelaunch), 0 when none is pending. */
+unsigned Platform3DS_RelaunchRemainingMs(void);
 uint64_t Platform3DS_EngineWorkLastTicks(void);
 uint64_t Platform3DS_EngineWorkTotalTicks(void);
 uint64_t Platform3DS_VblankWaitLastTicks(void);
