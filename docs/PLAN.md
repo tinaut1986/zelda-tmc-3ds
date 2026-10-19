@@ -14,7 +14,7 @@ change (what goes where: the table in `CLAUDE.md`).
   audio offload, an updater, a quick memory dump (L+R+A) and an experimental New 3DS
   "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors; the 2x indoor zoom is gone, see the decisions log).
 
-## Status (2026-10-18)
+## Status (2026-10-19)
 
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
@@ -31,11 +31,11 @@ merged into the release line was deleted, here and on origin (2026-10-17: `fix/t
 `feat/gba-look`, `feat/hud-auto`, `feat/title-rays-3d`, `feat/minish-paths-centred`,
 `feat/wide-ai-ask`, `feat/stereo-fileselect`, `feat/splash-3d`, `docs/plan-branches-2026-10-17`; the
 remote `feat/retroachievements` is gone too and the local `test/crash-fix-and-map-chips`, `537b5fa`,
-was deleted). Their history is in `git log` and the decisions log.
+was deleted; 2026-10-19: `feat/wide-neighbour-rooms`, P4.9 as far as the owner checked it, Deepwood Shrine and
+Link's house; P4.9 stays open for the rest). Their history is in `git log` and the decisions log.
 
 | Branch | State |
 |---|---|
-| `feat/wide-neighbour-rooms` | Cut from `release/v0.3.3`, not merged: P4.9 probe, the neighbouring room drawn beyond the edge (decisions log, 2026-10-18). Waits for the owner's look and the decision whether to go on. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
