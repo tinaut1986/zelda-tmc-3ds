@@ -19,8 +19,10 @@ change (what goes where: the table in `CLAUDE.md`).
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.3.3` (on origin; renamed from `release/v0.3.2` right after the
-`v0.3.2` tag). Published: **`v0.3.2`** (2026-10-18, **stable**: first a beta, then promoted by re-running the
+**Release line:** `release/v0.4.1` (on origin; the line was `release/v0.3.3`, renamed `release/v0.4.0` for the
+minor bump the owner chose, tagged, and renamed again right after the `v0.4.0` tag). Published: **`v0.4.0`**
+(2026-10-19, **beta**: neighbour rooms in Full View, AUTO UPDATE, the bottom map's parity with the pause map and
+fixes; `docs/release-notes/v0.4.0.md`), **`v0.3.2`** (2026-10-18, **stable**: first a beta, then promoted by re-running the
 workflow on the tag after `release/v0.3.2` was merged `--no-ff` into `main`, `a42d406`; its release body's notes
 were widened by hand to cover `v0.3.1` too, see the decisions log), **`v0.3.1`** (2026-10-17, **beta**), **`v0.3.0`** (2026-10-15, **stable**, merged into `main`, straight
 to stable without a beta at the owner's request), `v0.2.0` (2026-10-14, stable), `v0.1.2`
@@ -49,11 +51,12 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 
 **Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
 
-**Start here (2026-10-18, after the other sessions' merges and the owner's cleanup):** `release/v0.3.3` is pushed and
-clean (nothing after the `v0.3.2` tag but this docs change), no branch or worktree is open but the parked `feat/village-3d`. Next, in this order:
-1. **v0.3.2 stable** is published and the updater work is in `release/v0.3.3` (AUTO UPDATE with its boot prompt,
-   the relaunch after an in-game update, the changelog of the betas on the way, see the decisions log), all
-   seen working on the New 3DS. Not seen: a console that is not the New 3DS (the updater on the Old 3DS/2DS).
+**Start here (2026-10-19, after the `v0.4.0` beta):** `release/v0.4.1` is pushed and clean (nothing after the
+`v0.4.0` tag but this docs change), no branch or worktree is open but the parked `feat/village-3d`. Next, in this order:
+1. **v0.4.0 beta** is published: AUTO UPDATE (seen on the New 3DS) and P4.9's neighbour rooms (seen in the Deepwood
+   Shrine on the New 3DS and in Link's house and the intro's festival town on the Old 2DS). P4.9 is still open: the
+   towns, the outdoors and the zone-swapped rooms, the special tiles, the Old 3DS cost; the owner checks towns and
+   outdoors next. Not seen: the updater on the Old 3DS/2DS.
 2. **Old 3DS/2DS check** of what only the New 3DS has seen: the grid on HIGH (frame rate), WIDE + AI,
    the file select and title without 3D, TOP HUD AUTO. The 2DS is `192.168.1.139` (its FTP answered
    `530 Login incorrect` on 2026-10-17: ask the owner what that console runs).
