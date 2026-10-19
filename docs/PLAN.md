@@ -38,7 +38,6 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 
 | Branch | State |
 |---|---|
-| `feat/frame-blur` (origin only) | One commit, 273ca98 (2026-10-18), "FRAME with NO / GBA / BLUR and the blurred border (WIDE + BLUR)", not merged, made outside the sessions this file records: GBA FRAME becomes FRAME (NO / GBA / BLUR, an ambilight border) and VIEW gains WIDE + BLUR. Kept on purpose (owner, 2026-10-19: they will look at it later); do not delete or merge it unasked. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -54,7 +53,7 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 
 **Start here (2026-10-19, after the `v0.4.0` beta):** `release/v0.4.1` is pushed and clean (nothing after the
 `v0.4.0` tag but docs), no branch of this checkout is open but the parked `feat/village-3d` (see the branch table
-for `feat/frame-blur` on origin). Next, in this order:
+`feat/frame-blur` is merged, see the decisions log of 2026-10-19). Next, in this order:
 1. **v0.4.0 beta** is published: AUTO UPDATE (seen on the New 3DS) and P4.9's neighbour rooms (seen in the Deepwood
    Shrine on the New 3DS and in Link's house and the intro's festival town on the Old 2DS). P4.9 is still open: the
    towns, the outdoors and the zone-swapped rooms, the special tiles, the Old 3DS cost; the owner checks towns and
@@ -1223,3 +1222,29 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   outside the room's left edge, as on the GBA. (3) **Zelda leaving Link's house** (AuxCutscene 5, the entrance
   room 0x10 shown while the game waits in 0x11) was drawn on the fixed 240x160 canvas; it now takes Full View as
   AuxCutscene 1 does, with its neighbours and their archways. Checked by the owner on a new game.
+- **2026-10-19** Neighbour rooms, the blurred border and the Zz bubble (owner's reports on the Old 2DS, Hyrule Castle,
+  area 0x80 rooms 02 and 04). Merged into `release/v0.4.1`: `fix/neighbour-connected-cache`, `fix/gpu-split-flush` and
+  `feat/frame-blur-margins` (which holds `origin/feat/frame-blur`, 273ca98, the owner's FRAME NO / GBA / BLUR and WIDE +
+  BLUR, kept until now; its remote branch was left in place).
+  (1) **The left neighbour of room 0x80/04 was never drawn after a fresh load**: `Connected()` cached its mask by
+  (area, room), and the first build of a room runs while the area is still loading (0x0 tiles in the log), so a mask
+  made from the previous area's room table stayed for the whole room. It is now worked out again on every build.
+  (2) **WIDE + BLUR / WIDE + AI laid the blur over rooms**: the content rectangle was always centred and a side with a
+  neighbour was judged as a whole. `Port_Widescreen_ContentRect` now gives the part of the room that really shows
+  (origin minus scroll, cut by the view), the border skips the stretches of the margin a drawn neighbour fills
+  (`Port_NeighbourRooms_CoveredRuns`, so the corner beside the neighbour but past it still gets blur) and there is none
+  during a border scroll. The border is also built from the picture without its outermost 6 pixels (a bright line along
+  the edge streaked across the whole border) and its three levels are weighted by the distance from the picture (rounded
+  corners, weights adding up to 1) instead of nested rectangles; cost on the title about +0.3 ms on the Old 2DS.
+  (3) **The Zz bubble flickered (one 8x8 tile of sprite 1, GPU renderer only)**: a Claude subagent's reading of the
+  libraries' machine code: inside a frame `C3D_SyncDisplayTransfer` splits the command list with flags 0, so GSP runs the
+  PPU's draws without cleaning them from the CPU cache and a stale draw word (indices 1 MiB off, the two vertex buffers
+  alternate) loses a sprite for a frame. `SplitFlushed()` splits with `GX_CMDLIST_FLUSH` first. **Not yet confirmed
+  on the console** (the scene could not be reproduced after the install): look for the bubble with `scenerec`, and
+  `gpucheck` should stop differing. An atlas-slot change that did not help was dropped.
+  (4) **The linker pin moved**: the blur code pushed code and read-only data past `3dsx.ld`'s 0x630000; `.data` is
+  now pinned at 0x632000. Format 2 states carry their globals by name and survive; format 1 ones of the old layout no
+  longer load (`docs/save-states.md`).
+  (5) **Open: a crash on the 2DS** (Luma dump 19, `EraseAllEntities` walking an entity list whose node `next` was
+  0x101e101e, tilemap-like data) in area 0x80 room 04 after a long session; not reproduced, cause unknown; the dumps'
+  addresses came from a build with other code before the pin, so symbols need that build's ELF.

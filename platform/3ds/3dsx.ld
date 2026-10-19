@@ -100,17 +100,17 @@ SECTIONS
 
 	/* 3dsxtool wants the segments back to back, so the read-only segment is
 	 * padded up to the pinned start of the data segment (zeros in the file). */
-	ASSERT(. <= 0x00630000, "3dsx.ld: read-only data passed the pinned .data (0x630000): raise it")
+	ASSERT(. <= 0x00632000, "3dsx.ld: read-only data passed the pinned .data (0x632000): raise it")
 	__ss_pad_start = .;
 	.ss_pad :
 	{
 		BYTE(0)
-		. += 0x00630000 - __ss_pad_start - 1;
+		. += 0x00632000 - __ss_pad_start - 1;
 	} : rodata
 
 	/* =========== DATA section =========== */
 
-	. = 0x00630000;
+	. = 0x00632000;
 
 	.data :
 	{
