@@ -27,6 +27,10 @@ int Port_NeighbourRooms_Rest(unsigned room, int axis, int view, int prefer);
  * `otherStart + otherView` on the other axis); on a tie the one nearest `prefer`. */
 int Port_NeighbourRooms_LineUp(unsigned room, int axis, int view, int prefer, unsigned fromRoom, int otherStart,
                                int otherView);
+/* Which sides of the room have a drawn neighbour beside them (at least half of the cells along the edge): the
+ * blurred border (WIDE + BLUR) leaves those margins alone, the neighbour is the picture there. */
+enum { PORT_NEIGHBOUR_SIDE_LEFT = 1, PORT_NEIGHBOUR_SIDE_RIGHT = 2, PORT_NEIGHBOUR_SIDE_TOP = 4, PORT_NEIGHBOUR_SIDE_BOTTOM = 8 };
+unsigned Port_NeighbourRooms_CoveredSides(void);
 /* For the probe's log and the debug overlay: what the last build found. */
 typedef struct PortNeighbourStats {
     unsigned neighbours;     /* bordering rooms drawn */

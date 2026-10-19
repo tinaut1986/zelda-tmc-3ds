@@ -1612,7 +1612,7 @@ int Port_Stereo_Scenes(void) {
 #endif
 }
 
-int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h) {
+int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h, unsigned* coveredSides) {
 #ifdef TMC_3DS
     if (gMain.task != TASK_GAME || Port_Widescreen_3DSViewMode() != PORT_3DS_FULL_VIEW_OUTDOOR_1X) return 0;
     const int roomW = (int)gRoomControls.width, roomH = (int)gRoomControls.height;
@@ -1621,9 +1621,18 @@ int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h) {
     *h = roomH < 240 ? roomH : 240;
     *x = (400 - *w) / 2;
     *y = (240 - *h) / 2;
+    /* Where the room really lies in the view: a room with neighbours beside it rests off centre
+     * (Port_NeighbourRooms_Rest). */
+    const int roomX = (int)gRoomControls.origin_x - (int)gRoomControls.scroll_x;
+    const int roomY = (int)gRoomControls.origin_y - (int)gRoomControls.scroll_y;
+    if (roomX >= 0 && roomX + *w <= 400 && roomY >= 0 && roomY + *h <= 240) {
+        *x = roomX;
+        *y = roomY;
+    }
+    *coveredSides = Port_NeighbourRooms_CoveredSides();
     return 1;
 #else
-    (void)x; (void)y; (void)w; (void)h;
+    (void)x; (void)y; (void)w; (void)h; (void)coveredSides;
     return 0;
 #endif
 }
@@ -3015,11 +3024,12 @@ int Port_Widescreen_TitleViewLive(void) {
 int Port_Stereo_Scenes(void) {
     return 0;
 }
-int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h) {
+int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h, unsigned* coveredSides) {
     (void)x;
     (void)y;
     (void)w;
     (void)h;
+    (void)coveredSides;
     return 0;
 }
 int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {

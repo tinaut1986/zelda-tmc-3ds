@@ -146,7 +146,7 @@ int Port_Stereo_Scenes(void);
 /* The part of the 400x240 view a room that is smaller than it paints (the rest is black: the room is
  * centred in the Full View), for the presenter's blurred border: 1 and the rectangle, or 0 when the room
  * fills the view or the view is not 400x240. */
-int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h);
+int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h, unsigned* coveredSides);
 /* The title's light rays extended over the 400x240 view in VRAM (platform/3ds/source/
  * title_rays_3ds.c): the screen block of BG0's 512x256 map, or 0 (BG0 as the game has it). */
 int Port_Widescreen_TitleRays(void);

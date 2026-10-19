@@ -271,6 +271,28 @@ void Port_NeighbourRooms_Update(void) {
     UpdateArchways();
 }
 
+/* The cells of the line beside one side of the room (column or row -1 / the room's size) a neighbour fills. */
+static bool SideCovered(int count, int col0, int row0, int dCol, int dRow) {
+    int covered = 0;
+    for (int i = 0; i < count; ++i) {
+        const int c = col0 + i * dCol + MARGIN_X, r = row0 + i * dRow + MARGIN_Y;
+        if (c < 0 || c >= WIN_COLS || r < 0 || r >= WIN_ROWS) continue;
+        if (sWin[0][r][c] != NO_TILE || sWin[1][r][c] != NO_TILE) ++covered;
+    }
+    return count > 0 && covered * 2 >= count;
+}
+
+unsigned Port_NeighbourRooms_CoveredSides(void) {
+    if (!sActive) return 0;
+    const int curW = gRoomControls.width / 8, curH = gRoomControls.height / 8;
+    unsigned sides = 0;
+    if (SideCovered(curH, -1, 0, 0, 1)) sides |= PORT_NEIGHBOUR_SIDE_LEFT;
+    if (SideCovered(curH, curW, 0, 0, 1)) sides |= PORT_NEIGHBOUR_SIDE_RIGHT;
+    if (SideCovered(curW, 0, -1, 1, 0)) sides |= PORT_NEIGHBOUR_SIDE_TOP;
+    if (SideCovered(curW, 0, curH, 1, 0)) sides |= PORT_NEIGHBOUR_SIDE_BOTTOM;
+    return sides;
+}
+
 uint16_t Port_NeighbourRooms_Tile(int topLayer, int column, int row, uint16_t blank) {
     if (!sActive) return blank;
     const int c = column + MARGIN_X, r = row + MARGIN_Y;
