@@ -1612,9 +1612,9 @@ int Port_Stereo_Scenes(void) {
 #endif
 }
 
-int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h, PortBlurSkip* skip) {
+int Port_Widescreen_ContentRects(PortBlurRect* rects, int max) {
 #ifdef TMC_3DS
-    if (gMain.task != TASK_GAME || Port_Widescreen_3DSViewMode() != PORT_3DS_FULL_VIEW_OUTDOOR_1X) return 0;
+    if (max <= 0 || gMain.task != TASK_GAME || Port_Widescreen_3DSViewMode() != PORT_3DS_FULL_VIEW_OUTDOOR_1X) return 0;
     /* A border scroll draws the outgoing and the incoming room (and their neighbours) across the view: no
      * border while it runs. */
     if (Port_WidescreenScrollActive()) return 0;
@@ -1627,17 +1627,11 @@ int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h, PortBlurSkip* sk
     const int x0 = roomX > 0 ? roomX : 0, x1 = roomX + roomW < 400 ? roomX + roomW : 400;
     const int y0 = roomY > 0 ? roomY : 0, y1 = roomY + roomH < 240 ? roomY + roomH : 240;
     if (x1 <= x0 || y1 <= y0 || (x0 == 0 && x1 == 400 && y0 == 0 && y1 == 240)) return 0;
-    *x = x0;
-    *y = y0;
-    *w = x1 - x0;
-    *h = y1 - y0;
-    Port_NeighbourRooms_CoveredRuns(PORT_NEIGHBOUR_SIDE_LEFT, roomY, &skip->side[0]);
-    Port_NeighbourRooms_CoveredRuns(PORT_NEIGHBOUR_SIDE_RIGHT, roomY, &skip->side[1]);
-    Port_NeighbourRooms_CoveredRuns(PORT_NEIGHBOUR_SIDE_TOP, roomX, &skip->side[2]);
-    Port_NeighbourRooms_CoveredRuns(PORT_NEIGHBOUR_SIDE_BOTTOM, roomX, &skip->side[3]);
-    return 1;
+    rects[0] = (PortBlurRect){ x0, y0, x1 - x0, y1 - y0 };
+    return 1 + Port_NeighbourRooms_DrawnRects(rects + 1, max - 1, (int)gRoomControls.scroll_x,
+                                              (int)gRoomControls.scroll_y);
 #else
-    (void)x; (void)y; (void)w; (void)h; (void)skip;
+    (void)rects; (void)max;
     return 0;
 #endif
 }
@@ -3029,12 +3023,9 @@ int Port_Widescreen_TitleViewLive(void) {
 int Port_Stereo_Scenes(void) {
     return 0;
 }
-int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h, PortBlurSkip* skip) {
-    (void)x;
-    (void)y;
-    (void)w;
-    (void)h;
-    (void)skip;
+int Port_Widescreen_ContentRects(PortBlurRect* rects, int max) {
+    (void)rects;
+    (void)max;
     return 0;
 }
 int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {

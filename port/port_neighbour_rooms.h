@@ -27,17 +27,13 @@ int Port_NeighbourRooms_Rest(unsigned room, int axis, int view, int prefer);
  * `otherStart + otherView` on the other axis); on a tie the one nearest `prefer`. */
 int Port_NeighbourRooms_LineUp(unsigned room, int axis, int view, int prefer, unsigned fromRoom, int otherStart,
                                int otherView);
-/* The stretches of the margin beside one side of the room that a drawn neighbour fills, in view pixels along
- * that side (0 left, 1 right, 2 top, 3 bottom; `viewStart`: where the room's first cell along it lies in the
- * view): the blurred border (WIDE + BLUR) leaves them alone, the neighbour is the picture there, and fills the
- * rest of the margin. */
-enum { PORT_NEIGHBOUR_SIDE_LEFT = 0, PORT_NEIGHBOUR_SIDE_RIGHT = 1, PORT_NEIGHBOUR_SIDE_TOP = 2, PORT_NEIGHBOUR_SIDE_BOTTOM = 3,
-       PORT_NEIGHBOUR_MAX_RUNS = 16 };
-typedef struct PortNeighbourRuns {
-    int count;
-    int from[PORT_NEIGHBOUR_MAX_RUNS], to[PORT_NEIGHBOUR_MAX_RUNS];
-} PortNeighbourRuns;
-void Port_NeighbourRooms_CoveredRuns(unsigned side, int viewStart, PortNeighbourRuns* out);
+/* The rooms drawn beside the current one, each the part that shows in the 400x240 view (view pixels, given the
+ * camera's scroll), the largest first, at most `max`: the blurred border (WIDE + BLUR) grows from each of them as
+ * from the room itself, and leaves them alone. */
+typedef struct PortBlurRect {
+    int x, y, w, h;
+} PortBlurRect;
+int Port_NeighbourRooms_DrawnRects(PortBlurRect* out, int max, int scrollX, int scrollY);
 /* For the probe's log and the debug overlay: what the last build found. */
 typedef struct PortNeighbourStats {
     unsigned neighbours;     /* bordering rooms drawn */
