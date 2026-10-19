@@ -69,12 +69,13 @@ static bool SharesEdge(const RoomResInfo* a, const RoomResInfo* b) {
 
 /* The rooms reachable from `room` through shared edges. An area also packs unrelated rooms side by side with a
  * gap between them (the houses of HOUSE_INTERIORS_*), which must not show; a dungeon's or a town's rooms abut. */
+static u32 sConnectedKey = 0xffffffffu;
+
 static u64 Connected(unsigned room) {
-    static u32 key = 0xffffffffu;
     static u64 mask;
     const u32 k = ((u32)gRoomControls.area << 8) | room;
-    if (k == key) return mask;
-    key = k;
+    if (k == sConnectedKey) return mask;
+    sConnectedKey = k;
     mask = (room < MAX_ROOMS) ? (u64)1 << room : 0;
     for (bool grew = mask != 0; grew;) {
         grew = false;
@@ -97,6 +98,9 @@ static void Build(void) {
     memset(sWin, 0xFF, sizeof(sWin));
     memset(&sStats, 0, sizeof(sStats));
     sDrawn = 0;
+    /* The first build of a room runs while the area is still loading (0x0 tiles in the log): the room table can
+     * be the previous area's, and a mask worked out from it would be kept for the whole room. */
+    sConnectedKey = 0xffffffffu;
     const RoomResInfo* cur = &gArea.roomResInfos[gRoomControls.room];
     const int curW = gRoomControls.width / 8, curH = gRoomControls.height / 8;
     const int ox = gRoomControls.origin_x, oy = gRoomControls.origin_y;
@@ -150,8 +154,8 @@ static void Build(void) {
             }
         }
     }
-    DebugLog_Printf("neighbours: area %u room %u (%dx%d tiles): %u drawn, %u other tileset, %u unreadable, %u cells",
-                    gRoomControls.area, gRoomControls.room, curW, curH, sStats.neighbours, sStats.otherTileset,
+    DebugLog_Printf("neighbours: area %u room %u (%dx%d tiles): %u drawn, %u apart, %u other tileset, %u unreadable, %u cells",
+                    gRoomControls.area, gRoomControls.room, curW, curH, sStats.neighbours, sStats.apart, sStats.otherTileset,
                     sStats.unreadable, sStats.cells);
 }
 
