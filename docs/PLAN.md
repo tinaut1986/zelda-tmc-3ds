@@ -14,7 +14,7 @@ change (what goes where: the table in `CLAUDE.md`).
   audio offload, an updater, a quick memory dump (L+R+A) and an experimental New 3DS
   "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors; the 2x indoor zoom is gone, see the decisions log).
 
-## Status (2026-10-18)
+## Status (2026-10-19)
 
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
@@ -31,7 +31,8 @@ merged into the release line was deleted, here and on origin (2026-10-17: `fix/t
 `feat/gba-look`, `feat/hud-auto`, `feat/title-rays-3d`, `feat/minish-paths-centred`,
 `feat/wide-ai-ask`, `feat/stereo-fileselect`, `feat/splash-3d`, `docs/plan-branches-2026-10-17`; the
 remote `feat/retroachievements` is gone too and the local `test/crash-fix-and-map-chips`, `537b5fa`,
-was deleted). Their history is in `git log` and the decisions log.
+was deleted; 2026-10-19: `feat/wide-neighbour-rooms`, P4.9 as far as the owner checked it, Deepwood Shrine and
+Link's house; P4.9 stays open for the rest). Their history is in `git log` and the decisions log.
 
 | Branch | State |
 |---|---|
@@ -546,6 +547,21 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   prompts, in the five UI languages, `wide_ai_asked`; installs that predate it get the question once).
   *Done when:* the owner sees the question, answers it and sees the setting change the scenes. **Done on
   the New 3DS, 2026-10-17.** mzm's FTP-install progress bar was already here since 2026-10-14.
+
+- [ ] **P4.9** The neighbouring room drawn beyond the room's edge in Full/Wide (owner's request, 2026-10-18).
+  *Spec:* where a room borders another (the overworld's room grid, `RoomHeader.map_x/map_y/pixel_width/
+  pixel_height` in `include/area.h`), the part of the 400x240 (or 266x160) view that lies past the room's
+  edge shows the neighbouring room's two tile layers instead of black or a repeat of the border, at rest
+  and while walking, in every area where it holds (outdoors first; interiors only where rooms really
+  abut). No entities, no collision, no logic of the neighbour: only its map (but for its door frames, the
+  ARCHWAY objects: decisions log, 2026-10-19). The port already keeps the
+  *outgoing* room's tiles for a border scroll (`docs/widescreen-streaming.md`, `Port_Widescreen_BeginScroll`).
+  *Open points:* a neighbour with another `tileSet_id`/palette cannot share the layer's VRAM tiles (leave it
+  as it is now); animated tiles; the Full View camera limits; the cost on the Old 3DS.
+  *Probe (branch `feat/wide-neighbour-rooms`, 2026-10-18):* one outdoor room, what it costs and which rooms
+  fail; findings in the decisions log.
+  *Done when:* the owner walks the overworld and sees the neighbour beyond every edge that has one, with no
+  pop at the scroll and no frame-rate loss.
 
 ## Phase 5: stereoscopic 3D
 
@@ -1153,3 +1169,67 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   closes at once. (3) The notes shown after a check cover the betas on the way to the newest stable on the STABLE
   channel (`../sm-3ds` `10aa48d`), and with no update waiting the whole channel's changelog, as in `../mzm`/`../sm-3ds`.
   `tools/ui-preview` builds again and takes `UPDATE_PROMPT=ask|work|restart|error`, `NO_WIDE_ASK=1` and `UILANG=2..5`.
+- **2026-10-18** P4.9 probe (branch `feat/wide-neighbour-rooms`, owner's EU ROM, room 0x15 of the Deepwood Shrine's
+  area 0x48, Full View): the neighbouring room's tiles now fill the black beside a narrow room.
+  **How:** `RoomResInfo` gives every room of the area its world rectangle and its `tileSet`/`tiles` definitions;
+  `port/port_neighbour_rooms.c` builds, 8 and 120 ticks after a room starts, a window of 8x8 entries around the
+  room for each layer (the rooms that overlap it and share both definitions: their map chain is decompressed
+  from the ROM, `LZ77UnCompWram`, and expanded with the current layer's `subTiles`, as
+  `RenderMapLayerToSubTileMap` does), and `Port_WidescreenShadow_Populate` reads it where it used to write the
+  blank entry (outside the room's columns and rows). **Cost:** a few thousand cell lookups per room load and
+  a table read per out-of-room cell per frame; the overlay's L/G times did not move (L 0.3-0.4 ms, G 7.4-7.6 ms
+  on the New 3DS); 74 KB of static (two 128+64 x 96+40 windows plus one 8 KB map). **Checked against the room itself:** the
+  first build drew the wrong tiles with black holes (the owner caught it): a room's map is stored with rows of
+  its own width and the game spreads them to 64 after loading (`sub_0807C8B0`); the strip read them as rows
+  of 64. Read with the room's width, the 64 px left of room 0x15 match room 0x14 (reached on the lily pad with
+  the Gust Jar) pixel for pixel but for Link, the lily pad, the debug overlay and the shoreline animation's phase.
+  The 64 px right of room 0x15 stay black: no room of the area lies there.
+  **Border scrolls** (owner's report: room 0x12 down to 0x15, blowing the lily pad with the Gust Jar): the scroll
+  drew only the outgoing room's snapshot and black elsewhere, and the incoming room's window came 8 ticks late.
+  Now the scroll's empty cells come from the incoming room's neighbours (`Port_WidescreenScrollTile`), the
+  window is built on the tick the room changes and is wide enough for a view still in the outgoing room (a
+  whole view each side: 2 x 232 x 160 entries, 148 KB). **The module's statics are left out of save states**
+  (`3dsx.ld`, with `port_zone_tiles`): a state saved by a build with another window size restored it as
+  garbage and kept the stale room key, so nothing rebuilt it. Seen frame by frame (`rec`): no black but where
+  the area has no room (right of 0x12 and 0x15).
+  **Camera off centre where neighbours fill the view** (owner's idea, room 0x07 right into 0x09, 272x208: the
+  scroll first lined the camera up 16 px lower to centre the short room, leaving a black row below where there
+  is no room, while the room above, 0x08, could fill the top): a room smaller than the view on an axis now rests
+  at the position, among those that keep it whole in view, whose margin is most covered by drawable
+  neighbours (`Port_NeighbourRooms_Rest`, by the rooms' rectangles and tile sets, cached per room); centred on a
+  tie or with none, as before. Used at rest (`Port_WidescreenCameraRest*ForMode`), for the scroll's line-up and
+  for its end. Recorded: 0x07 -> 0x09 scrolls straight across with no black.
+  **Line-up order** (owner's report, room 0x00 down into 0x05): two positions tied for the incoming room (both
+  sides covered) and the centred one won, so the line-up moved the view 64 px left first, still in 0x00, where
+  nothing lies beside it. A tie now goes to where the camera already is, and the scroll's line-up
+  (`Port_NeighbourRooms_LineUp`) picks, among the incoming room's best positions, the one that leaves the least
+  black in the outgoing room's view while it lines up. Seen working by the owner.
+  **What fails, from the ROM's room tables (`tools/neighbour-survey/survey.py`):** 402 pairs of rooms share an
+  edge in the whole game, 379 with the same `tileSet_id` (the 23 others stay black: the Beanstalks 8, the Fortress of
+  Winds 8, Hyrule Field 4, and one each in the Minish Village, area 0x47 and the Deepwood Shrine). Counted over the margin
+  of a 400x240 view around every room smaller than that, **21.5 % of the margin cells have a neighbour with
+  the same tile set, 6.2 % one with another, 72.3 % none**: outdoors (Hyrule Field 78 %, Ruins 74 %, the
+  Palace of Winds 73 %, Temple of Droplets 39 %, Hyrule Castle 41 %) it pays, the house interiors almost never
+  (0.9 % to 37 % by area, mostly 0-20 %): those need the AI side strips of P4.6, not a neighbour. Not done:
+  tiles >= 0x4000 (the game's moved or removed tiles) use their plain index; the zone-swapped rooms (Minish
+  village, Hyrule Town) do not carry their variants into the neighbour's cells; scrolls keep the outgoing
+  room's tiles; normal Wide (266) is untouched.
+- **2026-10-19** P4.9 in Link's house (owner's report on the Old 2DS, HOUSE_INTERIORS_2 room 0x11, the Smith's room):
+  (1) **Rooms of other houses showed above** it: an interiors area packs unrelated houses side by side, 16-32 px
+  apart, and the window took every room of the area it overlapped. A neighbour is now drawn (and counted for the
+  camera's rest) only when a chain of shared edges joins it to the current room (`Connected`); a dungeon's or a
+  town's rooms abut, so nothing changes there. (2) **The door between the two rooms showed "カベ" placeholder
+  tiles** on the neighbour's side: a door's frame is an ARCHWAY object (a sprite over those tiles). Inert copies
+  of the drawn neighbours' archways (their room lists 0 and 1, at the neighbour's position) are spawned in the
+  current room, marked by bit 31 of their EntityData's `type2` (the archway reads its low byte), and compared every
+  frame in play (`GAMEMAIN_UPDATE`, or the cutscene below) with the ones the drawn neighbours call for, by world
+  position and frame: replaced only when they differ. The first version deleted them on every room key change:
+  a save state's own copies went away and the placeholders flashed until new ones drew, and after the cutscene
+  the doors stayed placeholders. An AuxCutscene sets the room's entity lists aside and restores them with
+  `gEntCount` at 0 though their entities live (the GBA's own bookkeeping); each deletion took one more off, the
+  count wrapped to 253, and the game found no free slot for anything. A deletion of copies now first raises
+  `gEntCount` to their number when it is lower. This is the one exception to P4.9's "no entities"; every other object
+  of the neighbours stays parked (issue #38). The archway also hides Zelda again where the intro leaves her, half
+  outside the room's left edge, as on the GBA. (3) **Zelda leaving Link's house** (AuxCutscene 5, the entrance
+  room 0x10 shown while the game waits in 0x11) was drawn on the fixed 240x160 canvas; it now takes Full View as
+  AuxCutscene 1 does, with its neighbours and their archways. Checked by the owner on a new game.
