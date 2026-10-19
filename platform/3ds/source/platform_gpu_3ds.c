@@ -563,20 +563,21 @@ typedef struct BlurJob {
     int x, y, w, h;
     int srcX, srcY;
     bool over; /* drawn over the frame, where it is black, not under it: the room's own black is in the frame */
-    unsigned skip; /* the border's rectangles left out (bit 0 left, 1 right, 2 top, 3 bottom): a neighbouring room is there */
+    PortBlurSkip skip; /* the stretches of the border a neighbouring room fills */
 } BlurJob;
 
 static bool TopBlurWanted(const TopView3DSPlan* plan, BlurJob* job) {
     const Port3DSFullViewPresentation* presentation = &plan->source;
     if (plan->drawWidth >= 400 && plan->drawHeight >= 240) {
         int cx, cy, cw, ch;
-        unsigned covered = 0;
+        PortBlurSkip covered;
+        memset(&covered, 0, sizeof(covered));
         if (!Port_Config_GetWideBlur() || !Port_Widescreen_ContentRect(&cx, &cy, &cw, &ch, &covered)) return false;
         *job = (BlurJob){ cx, cy, cw, ch, presentation->sourceX + cx, presentation->sourceY + cy, true, covered };
         return true;
     }
     *job = (BlurJob){ plan->drawX, plan->drawY, plan->drawWidth, plan->drawHeight, presentation->sourceX,
-                      presentation->sourceY, false, 0 };
+                      presentation->sourceY, false, { { { 0 } } } };
     if (Port_Config_GbaFrameActive() == 2) return true; /* FRAME = BLUR, VIEW ORIGINAL */
     if (!Port_Config_GetWideBlur()) return false;
     int pictureX, pictureY;
@@ -700,7 +701,7 @@ static void TopBlurBuild(C3D_Tex* source, int srcX, int srcY, int srcW, int srcH
 /* The four rectangles around the picture drawn at (x, y, w x h), each the part of the last stage that
  * lies under it when it is stretched over the whole screen. Needs the eye's scene and the standard blend;
  * leaves the env it set (`carrier`: the source was the ABGR carrier). */
-static void TopBlurDraw(int x, int y, int w, int h, bool carrier, bool over, unsigned skip) {
+static void TopBlurDraw(int x, int y, int w, int h, bool carrier, bool over, const PortBlurSkip* skip) {
     if (!sBlurValid || !sBlurOk || w <= 0 || h <= 0) return;
     C3D_Tex* texture = &sBlur[BLUR_BORDER].texture;
     if (carrier) ConfigureAbgrTextureEnv();
@@ -718,16 +719,29 @@ static void TopBlurDraw(int x, int y, int w, int h, bool carrier, bool over, uns
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE_MINUS_DST_COLOR, GPU_ONE, GPU_ZERO, GPU_ONE);
     for (int i = 0; i < 4; ++i) {
         const int rx = rects[i].x, ry = rects[i].y, rw = rects[i].w, rh = rects[i].h;
-        if (rw <= 0 || rh <= 0 || (skip & (1u << (i == 2 ? 0 : i == 3 ? 1 : i == 0 ? 2 : 3))) != 0) continue;
-        const Tex3DS_SubTexture sub = {
-            .width = (u16)rw, .height = (u16)rh,
-            .left = (float)rx / 400.0f,
-            .right = (float)(rx + rw) / 400.0f,
-            .top = 1.0f - (float)ry / 240.0f,
-            .bottom = 1.0f - (float)(ry + rh) / 240.0f,
-        };
-        const C2D_Image image = { .tex = texture, .subtex = &sub };
-        C2D_DrawImageAt(image, (float)rx, (float)ry, 0.0f, NULL, 1.0f, 1.0f);
+        if (rw <= 0 || rh <= 0) continue;
+        /* The rectangle without the stretches a neighbouring room fills: pieces along its length. */
+        const bool horizontal = i < 2; /* top and bottom run along x */
+        const PortNeighbourRuns* runs = &skip->side[i == 0 ? 2 : i == 1 ? 3 : i == 2 ? 0 : 1];
+        const int lo = horizontal ? rx : ry, hi = lo + (horizontal ? rw : rh);
+        int from = lo;
+        for (int k = 0; k <= runs->count; ++k) {
+            const int to = k < runs->count ? (runs->from[k] < lo ? lo : runs->from[k] > hi ? hi : runs->from[k]) : hi;
+            if (to > from) {
+                const int px = horizontal ? from : rx, py = horizontal ? ry : from;
+                const int pw = horizontal ? to - from : rw, ph = horizontal ? rh : to - from;
+                const Tex3DS_SubTexture sub = {
+                    .width = (u16)pw, .height = (u16)ph,
+                    .left = (float)px / 400.0f,
+                    .right = (float)(px + pw) / 400.0f,
+                    .top = 1.0f - (float)py / 240.0f,
+                    .bottom = 1.0f - (float)(py + ph) / 240.0f,
+                };
+                const C2D_Image image = { .tex = texture, .subtex = &sub };
+                C2D_DrawImageAt(image, (float)px, (float)py, 0.0f, NULL, 1.0f, 1.0f);
+            }
+            if (k < runs->count) from = runs->to[k] > from ? runs->to[k] : from;
+        }
     }
     C2D_Flush();
     if (over) ConfigureStandardAlphaBlend();
@@ -889,7 +903,7 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
          * blend state for the physical-target batch. */
         C2D_SceneBegin(sEyeTarget);
         ConfigureStandardAlphaBlend();
-        if (blurBorder && !blur.over) TopBlurDraw(blur.x, blur.y, blur.w, blur.h, true, false, blur.skip);
+        if (blurBorder && !blur.over) TopBlurDraw(blur.x, blur.y, blur.w, blur.h, true, false, &blur.skip);
         C3D_TexSetFilter(&sSharpBilinearTexture, GPU_LINEAR, GPU_LINEAR);
         C2D_DrawImage(intermediateImage, &params, NULL);
         DrawFrameEdges(&intermediateImage, &params);
@@ -901,7 +915,7 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
         C3D_TexSetFilter(&sTopTexture, filter, filter);
         C2D_SceneBegin(sEyeTarget);
         ConfigureStandardAlphaBlend();
-        if (blurBorder && !blur.over) TopBlurDraw(blur.x, blur.y, blur.w, blur.h, true, false, blur.skip);
+        if (blurBorder && !blur.over) TopBlurDraw(blur.x, blur.y, blur.w, blur.h, true, false, &blur.skip);
         C2D_DrawImage(image, &params, NULL);
         DrawFrameEdges(&image, &params);
         ConfigureAbgrTextureEnv();
@@ -909,7 +923,7 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
     }
     if (blurBorder && blur.over) {
         C2D_Flush();
-        TopBlurDraw(blur.x, blur.y, blur.w, blur.h, true, true, blur.skip);
+        TopBlurDraw(blur.x, blur.y, blur.w, blur.h, true, true, &blur.skip);
     }
     DrawScenePictures(plan.drawX, plan.drawY, plan.drawWidth, plan.drawHeight, true);
     if (GbaLook3DS_Draw(plan.drawX, plan.drawY, plan.drawWidth, plan.drawHeight,
@@ -1579,7 +1593,7 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
         };
         C2D_SceneBegin(sEyeTarget);
         ConfigureStandardAlphaBlend();
-        if (blurBorder && !blur.over) TopBlurDraw(blur.x, blur.y, blur.w, blur.h, false, false, blur.skip);
+        if (blurBorder && !blur.over) TopBlurDraw(blur.x, blur.y, blur.w, blur.h, false, false, &blur.skip);
         ConfigureIdentityTextureEnv();
         C3D_TexSetFilter(&sSharpBilinearTexture, GPU_LINEAR, GPU_LINEAR);
         C2D_DrawImage(intermediateImage, &params, NULL);
@@ -1592,7 +1606,7 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
             (plan.linearFilter || plan.useSharpBilinear) ? GPU_LINEAR : GPU_NEAREST;
         C2D_SceneBegin(sEyeTarget);
         ConfigureStandardAlphaBlend();
-        if (blurBorder && !blur.over) TopBlurDraw(blur.x, blur.y, blur.w, blur.h, false, false, blur.skip);
+        if (blurBorder && !blur.over) TopBlurDraw(blur.x, blur.y, blur.w, blur.h, false, false, &blur.skip);
         C3D_TexSetFilter(texture, filter, filter);
         if (Port_Config_GpuStaticQuad() && sPresentQuad &&
             PortPpuGpu3DS_BindPresentShader()) {
@@ -1629,7 +1643,7 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
     }
     if (blurBorder && blur.over) {
         C2D_Flush();
-        TopBlurDraw(blur.x, blur.y, blur.w, blur.h, false, true, blur.skip);
+        TopBlurDraw(blur.x, blur.y, blur.w, blur.h, false, true, &blur.skip);
     }
     if (configureAbgr) ConfigureAbgrTextureEnv();
 

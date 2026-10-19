@@ -1612,7 +1612,7 @@ int Port_Stereo_Scenes(void) {
 #endif
 }
 
-int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h, unsigned* coveredSides) {
+int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h, PortBlurSkip* skip) {
 #ifdef TMC_3DS
     if (gMain.task != TASK_GAME || Port_Widescreen_3DSViewMode() != PORT_3DS_FULL_VIEW_OUTDOOR_1X) return 0;
     /* A border scroll draws the outgoing and the incoming room (and their neighbours) across the view: no
@@ -1631,10 +1631,13 @@ int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h, unsigned* covere
     *y = y0;
     *w = x1 - x0;
     *h = y1 - y0;
-    *coveredSides = Port_NeighbourRooms_CoveredSides();
+    Port_NeighbourRooms_CoveredRuns(PORT_NEIGHBOUR_SIDE_LEFT, roomY, &skip->side[0]);
+    Port_NeighbourRooms_CoveredRuns(PORT_NEIGHBOUR_SIDE_RIGHT, roomY, &skip->side[1]);
+    Port_NeighbourRooms_CoveredRuns(PORT_NEIGHBOUR_SIDE_TOP, roomX, &skip->side[2]);
+    Port_NeighbourRooms_CoveredRuns(PORT_NEIGHBOUR_SIDE_BOTTOM, roomX, &skip->side[3]);
     return 1;
 #else
-    (void)x; (void)y; (void)w; (void)h; (void)coveredSides;
+    (void)x; (void)y; (void)w; (void)h; (void)skip;
     return 0;
 #endif
 }
@@ -3026,12 +3029,12 @@ int Port_Widescreen_TitleViewLive(void) {
 int Port_Stereo_Scenes(void) {
     return 0;
 }
-int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h, unsigned* coveredSides) {
+int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h, PortBlurSkip* skip) {
     (void)x;
     (void)y;
     (void)w;
     (void)h;
-    (void)coveredSides;
+    (void)skip;
     return 0;
 }
 int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {

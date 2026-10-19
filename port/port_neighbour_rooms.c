@@ -271,26 +271,34 @@ void Port_NeighbourRooms_Update(void) {
     UpdateArchways();
 }
 
-/* The cells of the line beside one side of the room (column or row -1 / the room's size) a neighbour fills. */
-static bool SideCovered(int count, int col0, int row0, int dCol, int dRow) {
-    int covered = 0;
-    for (int i = 0; i < count; ++i) {
-        const int c = col0 + i * dCol + MARGIN_X, r = row0 + i * dRow + MARGIN_Y;
-        if (c < 0 || c >= WIN_COLS || r < 0 || r >= WIN_ROWS) continue;
-        if (sWin[0][r][c] != NO_TILE || sWin[1][r][c] != NO_TILE) ++covered;
-    }
-    return count > 0 && covered * 2 >= count;
+/* Whether a neighbour fills the cell beside the room at `index` along one side. */
+static bool SideCell(unsigned side, int index) {
+    const int curW = gRoomControls.width / 8, curH = gRoomControls.height / 8;
+    const int col = side == PORT_NEIGHBOUR_SIDE_LEFT ? -1 : side == PORT_NEIGHBOUR_SIDE_RIGHT ? curW : index;
+    const int row = side == PORT_NEIGHBOUR_SIDE_TOP ? -1 : side == PORT_NEIGHBOUR_SIDE_BOTTOM ? curH : index;
+    const int c = col + MARGIN_X, r = row + MARGIN_Y;
+    if (c < 0 || c >= WIN_COLS || r < 0 || r >= WIN_ROWS) return false;
+    return sWin[0][r][c] != NO_TILE || sWin[1][r][c] != NO_TILE;
 }
 
-unsigned Port_NeighbourRooms_CoveredSides(void) {
-    if (!sActive) return 0;
-    const int curW = gRoomControls.width / 8, curH = gRoomControls.height / 8;
-    unsigned sides = 0;
-    if (SideCovered(curH, -1, 0, 0, 1)) sides |= PORT_NEIGHBOUR_SIDE_LEFT;
-    if (SideCovered(curH, curW, 0, 0, 1)) sides |= PORT_NEIGHBOUR_SIDE_RIGHT;
-    if (SideCovered(curW, 0, -1, 1, 0)) sides |= PORT_NEIGHBOUR_SIDE_TOP;
-    if (SideCovered(curW, 0, curH, 1, 0)) sides |= PORT_NEIGHBOUR_SIDE_BOTTOM;
-    return sides;
+void Port_NeighbourRooms_CoveredRuns(unsigned side, int viewStart, PortNeighbourRuns* out) {
+    out->count = 0;
+    if (!sActive) return;
+    const int cells = (side == PORT_NEIGHBOUR_SIDE_LEFT || side == PORT_NEIGHBOUR_SIDE_RIGHT ? gRoomControls.height
+                                                                                              : gRoomControls.width) / 8;
+    int runStart = -1;
+    for (int i = 0; i <= cells; ++i) {
+        const bool covered = i < cells && SideCell(side, i);
+        if (covered && runStart < 0) runStart = i;
+        if (!covered && runStart >= 0) {
+            if (out->count < PORT_NEIGHBOUR_MAX_RUNS) {
+                out->from[out->count] = viewStart + runStart * 8;
+                out->to[out->count] = viewStart + i * 8;
+                ++out->count;
+            }
+            runStart = -1;
+        }
+    }
 }
 
 uint16_t Port_NeighbourRooms_Tile(int topLayer, int column, int row, uint16_t blank) {
