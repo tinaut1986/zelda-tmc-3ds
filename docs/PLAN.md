@@ -542,6 +542,16 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   fail; findings in the decisions log.
   *Done when:* the owner walks the overworld and sees the neighbour beyond every edge that has one, with no
   pop at the scroll and no frame-rate loss.
+- [ ] **P4.9** Blurred border (owner's request, 2026-10-18). *Spec:* FRAME (was GBA FRAME) has three stops, NO /
+  GBA / BLUR (`gba_frame=0..2`); BLUR, in VIEW: ORIGINAL, fills the border of the 240x160 and 360x240 pictures
+  with the picture's colours blurred (an ambilight). VIEW gets WIDE + BLUR (`wide_blur`) between WIDE and
+  WIDE + AI, which does the same in WIDE for the screens the game draws at 240x160 (logos, game over...);
+  WIDE + AI blurs where it has no generated picture (not the portal's strips). In WIDE it also fills the black
+  the game leaves beside a room smaller than the 400x240 view (the Minish Paths corridor, small maps;
+  `Port_Widescreen_ContentRect`), added over the frame where it is black so the HUD keeps its colours. Code: `TopBlur*` in
+  `platform_gpu_3ds.c` (the picture shrunk through four small VRAM targets, every other frame, edge texels
+  carried outwards with a fade to black). *Done when:* the owner has seen it in both views, both presenters
+  and 3D, and the frame rate holds on the Old 3DS (not measured).
 
 ## Phase 5: stereoscopic 3D
 

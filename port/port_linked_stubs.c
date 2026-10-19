@@ -1612,6 +1612,22 @@ int Port_Stereo_Scenes(void) {
 #endif
 }
 
+int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h) {
+#ifdef TMC_3DS
+    if (gMain.task != TASK_GAME || Port_Widescreen_3DSViewMode() != PORT_3DS_FULL_VIEW_OUTDOOR_1X) return 0;
+    const int roomW = (int)gRoomControls.width, roomH = (int)gRoomControls.height;
+    if (roomW <= 0 || roomH <= 0 || (roomW >= 400 && roomH >= 240)) return 0;
+    *w = roomW < 400 ? roomW : 400;
+    *h = roomH < 240 ? roomH : 240;
+    *x = (400 - *w) / 2;
+    *y = (240 - *h) / 2;
+    return 1;
+#else
+    (void)x; (void)y; (void)w; (void)h;
+    return 0;
+#endif
+}
+
 int Port_Widescreen_PortalCutsceneWide(void) {
 #ifdef TMC_3DS
     return Port_Config_3DSFullViewComboEnabled() && gMain.task == TASK_GAME &&
@@ -2997,6 +3013,13 @@ int Port_Widescreen_TitleViewLive(void) {
     return 0;
 }
 int Port_Stereo_Scenes(void) {
+    return 0;
+}
+int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h) {
+    (void)x;
+    (void)y;
+    (void)w;
+    (void)h;
     return 0;
 }
 int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {
