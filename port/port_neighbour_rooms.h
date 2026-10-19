@@ -32,6 +32,7 @@ typedef struct PortNeighbourStats {
     unsigned neighbours;     /* bordering rooms drawn */
     unsigned otherTileset;   /* bordering rooms left out: another tile set */
     unsigned unreadable;     /* bordering rooms left out: their map could not be read */
+    unsigned apart;          /* rooms of the area left out: no chain of shared edges to the current one */
     unsigned cells;          /* cells filled from neighbours */
 } PortNeighbourStats;
 PortNeighbourStats Port_NeighbourRooms_Stats(void);

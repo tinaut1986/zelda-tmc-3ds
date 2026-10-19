@@ -553,7 +553,8 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   pixel_height` in `include/area.h`), the part of the 400x240 (or 266x160) view that lies past the room's
   edge shows the neighbouring room's two tile layers instead of black or a repeat of the border, at rest
   and while walking, in every area where it holds (outdoors first; interiors only where rooms really
-  abut). No entities, no collision, no logic of the neighbour: only its map. The port already keeps the
+  abut). No entities, no collision, no logic of the neighbour: only its map (but for its door frames, the
+  ARCHWAY objects: decisions log, 2026-10-19). The port already keeps the
   *outgoing* room's tiles for a border scroll (`docs/widescreen-streaming.md`, `Port_Widescreen_BeginScroll`).
   *Open points:* a neighbour with another `tileSet_id`/palette cannot share the layer's VRAM tiles (leave it
   as it is now); animated tiles; the Full View camera limits; the cost on the Old 3DS.
@@ -1213,3 +1214,17 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   tiles >= 0x4000 (the game's moved or removed tiles) use their plain index; the zone-swapped rooms (Minish
   village, Hyrule Town) do not carry their variants into the neighbour's cells; scrolls keep the outgoing
   room's tiles; normal Wide (266) is untouched.
+- **2026-10-19** P4.9 in Link's house (owner's report on the Old 2DS, HOUSE_INTERIORS_2 room 0x11, the Smith's room):
+  (1) **Rooms of other houses showed above** it: an interiors area packs unrelated houses side by side, 16-32 px
+  apart, and the window took every room of the area it overlapped. A neighbour is now drawn (and counted for the
+  camera's rest) only when a chain of shared edges joins it to the current room (`Connected`); a dungeon's or a
+  town's rooms abut, so nothing changes there. (2) **The door between the two rooms showed "カベ" placeholder
+  tiles** on the neighbour's side: a door's frame is an ARCHWAY object (a sprite over those tiles). Inert copies
+  of the drawn neighbours' archways (their room lists 0 and 1, at the neighbour's position) are spawned in the
+  current room, marked by bit 31 of their EntityData's `type2` (the archway reads its low byte), deleted when the
+  room changes and respawned when some went missing (a transition's cleanup, a save state); only in play
+  (`GAMEMAIN_UPDATE`) or the cutscene below. This is the one exception to P4.9's "no entities"; every other object
+  of the neighbours stays parked (issue #38). The archway also hides Zelda again where the intro leaves her, half
+  outside the room's left edge, as on the GBA. (3) **Zelda leaving Link's house** (AuxCutscene 5, the entrance
+  room 0x10 shown while the game waits in 0x11) was drawn on the fixed 240x160 canvas; it now takes Full View as
+  AuxCutscene 1 does, with its neighbours and their archways. Checked by the owner on a new game.

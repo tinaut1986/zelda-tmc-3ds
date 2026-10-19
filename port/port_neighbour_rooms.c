@@ -1,10 +1,15 @@
 #include "port_neighbour_rooms.h"
 
 #include "area.h"
+#include "entity.h"
+#include "game.h"
 #include "global.h"
 #include "main.h"
 #include "map.h"
+#include "object.h"
 #include "room.h"
+#include "subtask.h"
+#include "port_generic_entity.h"
 #include "port_rom.h"
 
 #include <string.h>
@@ -23,6 +28,7 @@ static u32 sKey = 0xffffffffu;
 static unsigned sTicks;
 static int sActive;
 static PortNeighbourStats sStats;
+static u64 sDrawn; /* the rooms the last build drew */
 
 static u32 RoomKey(void) {
     return ((u32)gRoomControls.area << 8) | gRoomControls.room;
@@ -54,18 +60,57 @@ static bool ReadMeta(const RoomResInfo* info) {
     return got[0] && got[1];
 }
 
+static bool SharesEdge(const RoomResInfo* a, const RoomResInfo* b) {
+    const int ax1 = a->map_x + a->pixel_width, ay1 = a->map_y + a->pixel_height;
+    const int bx1 = b->map_x + b->pixel_width, by1 = b->map_y + b->pixel_height;
+    const bool overlapY = a->map_y < by1 && b->map_y < ay1, overlapX = a->map_x < bx1 && b->map_x < ax1;
+    return ((ax1 == b->map_x || bx1 == a->map_x) && overlapY) || ((ay1 == b->map_y || by1 == a->map_y) && overlapX);
+}
+
+/* The rooms reachable from `room` through shared edges. An area also packs unrelated rooms side by side with a
+ * gap between them (the houses of HOUSE_INTERIORS_*), which must not show; a dungeon's or a town's rooms abut. */
+static u64 Connected(unsigned room) {
+    static u32 key = 0xffffffffu;
+    static u64 mask;
+    const u32 k = ((u32)gRoomControls.area << 8) | room;
+    if (k == key) return mask;
+    key = k;
+    mask = (room < MAX_ROOMS) ? (u64)1 << room : 0;
+    for (bool grew = mask != 0; grew;) {
+        grew = false;
+        for (unsigned j = 0; j < MAX_ROOMS; ++j) {
+            const RoomResInfo* nb = &gArea.roomResInfos[j];
+            if ((mask >> j) & 1 || nb->pixel_width == 0 || nb->pixel_height == 0) continue;
+            for (unsigned i = 0; i < MAX_ROOMS; ++i) {
+                if ((mask >> i) & 1 && SharesEdge(&gArea.roomResInfos[i], nb)) {
+                    mask |= (u64)1 << j;
+                    grew = true;
+                    break;
+                }
+            }
+        }
+    }
+    return mask;
+}
+
 static void Build(void) {
     memset(sWin, 0xFF, sizeof(sWin));
     memset(&sStats, 0, sizeof(sStats));
+    sDrawn = 0;
     const RoomResInfo* cur = &gArea.roomResInfos[gRoomControls.room];
     const int curW = gRoomControls.width / 8, curH = gRoomControls.height / 8;
     const int ox = gRoomControls.origin_x, oy = gRoomControls.origin_y;
     /* The window's rectangle in world pixels. */
     const int wx0 = ox - MARGIN_X * 8, wy0 = oy - MARGIN_Y * 8;
     const int wx1 = wx0 + WIN_COLS * 8, wy1 = wy0 + WIN_ROWS * 8;
+    const u64 connected = Connected(gRoomControls.room);
     for (unsigned j = 0; j < MAX_ROOMS; ++j) {
         const RoomResInfo* nb = &gArea.roomResInfos[j];
         if (j == gRoomControls.room || nb->pixel_width == 0 || nb->pixel_height == 0) continue;
+        if (((connected >> j) & 1) == 0) {
+            ++sStats.apart;
+            continue;
+        }
         if ((int)nb->map_x >= wx1 || (int)nb->map_x + nb->pixel_width <= wx0 || (int)nb->map_y >= wy1 ||
             (int)nb->map_y + nb->pixel_height <= wy0)
             continue;
@@ -82,6 +127,7 @@ static void Build(void) {
             continue;
         }
         ++sStats.neighbours;
+        sDrawn |= (u64)1 << j;
         MapLayer* const layers[2] = { &gMapBottom, &gMapTop };
         for (int row = -MARGIN_Y; row < WIN_ROWS - MARGIN_Y; ++row) {
             const int py = oy + row * 8 - (int)nb->map_y;
@@ -109,9 +155,78 @@ static void Build(void) {
                     sStats.unreadable, sStats.cells);
 }
 
+/* The neighbours' ARCHWAY objects. A door's frame is a sprite over placeholder tiles (drawn as "カベ", wall), so a
+ * neighbour drawn from its map alone shows those. Inert copies of its archways are spawned in the current room,
+ * marked in their EntityData's type2 (bit 31; the archway reads only its low byte), and deleted again when the
+ * room changes. Every other object of the neighbours is left out (issue #38). */
+enum { ARCHWAY_MARK = 0x80000000u, MAX_ARCHWAYS = 16 };
+extern const void* Port_ResolveRegionData(const void* data);
+
+static bool IsArchwayCopy(Entity* e) {
+    return e->kind == OBJECT && e->id == ARCHWAY && (GE_FIELD(e, field_0x7c)->WORD_U & ARCHWAY_MARK) != 0;
+}
+
+static unsigned CountOrDeleteCopies(bool remove) {
+    unsigned n = 0;
+    for (LinkedList* list = gEntityLists; list < &gEntityLists[9]; ++list) {
+        if (list->first == NULL) continue;
+        for (Entity *e = list->first, *next; e != (Entity*)list && e != NULL; e = next) {
+            next = e->next;
+            if (!IsArchwayCopy(e)) continue;
+            ++n;
+            if (remove) DeleteEntity(e);
+        }
+    }
+    return n;
+}
+
+static unsigned SpawnArchways(bool spawn) {
+    unsigned n = 0;
+    const int ox = gRoomControls.origin_x, oy = gRoomControls.origin_y;
+    for (unsigned j = 0; j < MAX_ROOMS && n < MAX_ARCHWAYS; ++j) {
+        if (((sDrawn >> j) & 1) == 0) continue;
+        const RoomResInfo* nb = &gArea.roomResInfos[j];
+        for (u32 prop = 0; prop < 2; ++prop) {
+            const EntityData* dat =
+                (const EntityData*)Port_ResolveRegionData(GetRoomProperty(gRoomControls.area, j, prop));
+            for (; dat != NULL && dat->kind != 0xFF && n < MAX_ARCHWAYS; ++dat) {
+                if ((dat->kind & 0xF) != OBJECT || dat->id != ARCHWAY || (dat->flags & 0xF0) != 0) continue;
+                ++n;
+                if (!spawn) continue;
+                EntityData copy = *dat;
+                copy.type2 |= ARCHWAY_MARK;
+                copy.xPos = (u16)(nb->map_x + dat->xPos - ox);
+                copy.yPos = (u16)(nb->map_y + dat->yPos - oy);
+                LoadRoomEntity(&copy);
+            }
+        }
+    }
+    return n;
+}
+
+static void UpdateArchways(bool roomChanged) {
+    if (roomChanged) {
+        CountOrDeleteCopies(true);
+        return;
+    }
+    /* Spawned only in plain play (or AuxCutscene 5, the wide one in a house: Zelda leaving Link's house) with no
+     * room change under way; respawned whole when the game dropped some (a transition's cleanup) or a save state
+     * brought others. */
+    const bool play = gMain.substate == GAMEMAIN_UPDATE ||
+                      (gMain.substate == GAMEMAIN_SUBTASK && gUI.lastState == SUBTASK_AUXCUTSCENE &&
+                       gUI.field_0x3 == 5 && gUI.nextToLoad == 2);
+    if (gMain.task != TASK_GAME || gMain.state != GAMETASK_MAIN || !play || gRoomControls.reload_flags != 0)
+        return;
+    const unsigned want = SpawnArchways(false), have = CountOrDeleteCopies(false);
+    if (have == want) return;
+    if (have != 0) CountOrDeleteCopies(true);
+    SpawnArchways(true);
+}
+
 void Port_NeighbourRooms_Update(void) {
     const u32 key = RoomKey();
-    if (key != sKey) {
+    const bool changed = key != sKey;
+    if (changed) {
         sKey = key;
         sTicks = 0;
     } else {
@@ -124,6 +239,7 @@ void Port_NeighbourRooms_Update(void) {
         Build();
         sActive = 1;
     }
+    UpdateArchways(changed);
 }
 
 uint16_t Port_NeighbourRooms_Tile(int topLayer, int column, int row, uint16_t blank) {
@@ -140,6 +256,7 @@ uint16_t Port_NeighbourRooms_Tile(int topLayer, int column, int row, uint16_t bl
 static int Coverage(const RoomResInfo* r, int axis, int start, int view) {
     const int pos = axis ? r->map_y : r->map_x, size = axis ? r->pixel_height : r->pixel_width;
     const int across0 = axis ? r->map_x : r->map_y, across1 = across0 + (axis ? r->pixel_width : r->pixel_height);
+    const u64 connected = Connected((unsigned)(r - gArea.roomResInfos));
     int covered = 0;
     for (int a = start; a < start + view; a += 8) {
         if (a >= pos && a < pos + size) continue; /* the room itself */
@@ -147,7 +264,9 @@ static int Coverage(const RoomResInfo* r, int axis, int start, int view) {
             const int x = axis ? b : a, y = axis ? a : b;
             for (unsigned j = 0; j < MAX_ROOMS; ++j) {
                 const RoomResInfo* nb = &gArea.roomResInfos[j];
-                if (nb == r || nb->pixel_width == 0 || nb->tileSet != r->tileSet || nb->tiles != r->tiles) continue;
+                if (nb == r || nb->pixel_width == 0 || ((connected >> j) & 1) == 0 || nb->tileSet != r->tileSet ||
+                    nb->tiles != r->tiles)
+                    continue;
                 if (x >= nb->map_x && x < nb->map_x + nb->pixel_width && y >= nb->map_y &&
                     y < nb->map_y + nb->pixel_height) {
                     ++covered;
