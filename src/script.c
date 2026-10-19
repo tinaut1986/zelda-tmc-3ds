@@ -1568,6 +1568,51 @@ void ScriptCommand_0807ED24(Entity* entity, ScriptExecutionContext* context) {
 }
 
 // player movement?
+#ifdef PC_PORT
+/* A walk off the screen: a MoveTo whose end lies just past the GBA's 240x160 view, followed at once by
+ * SetEntityPositionRelative (the next spot, elsewhere; Zelda running ahead in the intro's Hyrule Town). In a
+ * wider view that end is on screen and the entity vanished there. The walk goes on along the same line until
+ * the sprite is out of the view; it takes a few frames more, and whoever waits for its sync flag waits them. */
+static void Port_ScriptMoveOutOfWideView(Entity* entity, ScriptExecutionContext* context) {
+    /* Margins past the view's edges that hide a sprite: its position is near its feet, the body above. */
+    enum { kCmdSetPositionRelative = 105, kMargin = 16, kBelow = 40, kGbaW = 240, kGbaH = 160 };
+    const int viewW = Port_Widescreen_HudTargetViewWidth(), viewH = Port_Widescreen_HudTargetViewHeight();
+    if (viewW <= kGbaW && viewH <= kGbaH) return;
+    if ((context->scriptInstructionPointer[gActiveScriptInfo.commandSize] & 0x3FF) != kCmdSetPositionRelative)
+        return;
+    const int left = gRoomControls.scroll_x, top = gRoomControls.scroll_y;
+    const int px = entity->x.HALF.HI, py = entity->y.HALF.HI;
+    const int tx = context->x.HALF.HI, ty = context->y.HALF.HI;
+    /* Only an end the GBA did not show: outside its 240x160 camera, centred on the camera's target and kept in
+     * the room (8 px in, for a sprite already half out there). */
+    const Entity* target = gRoomControls.camera_target != NULL ? gRoomControls.camera_target : &gPlayerEntity.base;
+    int gx = target->x.HALF.HI - kGbaW / 2, gy = target->y.HALF.HI - kGbaH / 2;
+    const int maxX = gRoomControls.origin_x + gRoomControls.width - kGbaW;
+    const int maxY = gRoomControls.origin_y + gRoomControls.height - kGbaH;
+    if (gx > maxX) gx = maxX;
+    if (gx < gRoomControls.origin_x) gx = gRoomControls.origin_x;
+    if (gy > maxY) gy = maxY;
+    if (gy < gRoomControls.origin_y) gy = gRoomControls.origin_y;
+    if (tx >= gx + 8 && tx < gx + kGbaW - 8 && ty >= gy + 8 && ty < gy + kGbaH - 8) return;
+    /* ... and that this view does. */
+    if (tx < left - kMargin || tx >= left + viewW + kMargin || ty < top - kMargin ||
+        ty >= top + viewH + kBelow)
+        return;
+    const int dx = tx - px, dy = ty - py;
+    if (dx == 0 && dy == 0) return;
+    /* The smallest scale of the walk (in 1/256) that takes the end past an edge of the view, by the margin. */
+    int scale = 0x7fffffff;
+    if (dx != 0) scale = ((dx > 0 ? left + viewW + kMargin : left - kMargin) - px) * 256 / dx;
+    if (dy != 0) {
+        const int sy = ((dy > 0 ? top + viewH + kBelow : top - kMargin) - py) * 256 / dy;
+        if (sy < scale) scale = sy;
+    }
+    if (scale <= 256) return; /* the end is out of the view already */
+    context->x.HALF.HI = (s16)(px + dx * scale / 256);
+    context->y.HALF.HI = (s16)(py + dy * scale / 256);
+}
+#endif
+
 void ScriptCommand_MoveTo(Entity* entity, ScriptExecutionContext* context) {
     if (!context->unk_18) {
         context->unk_18 = 1;
@@ -1582,6 +1627,9 @@ void ScriptCommand_MoveTo(Entity* entity, ScriptExecutionContext* context) {
         } else
 #endif
         ScriptCommand_LookAt(entity, context);
+#ifdef PC_PORT
+        Port_ScriptMoveOutOfWideView(entity, context);
+#endif
     }
     ScriptCommand_MoveTowardsTarget(entity, context);
     // Repeat this command until we are at the target.
