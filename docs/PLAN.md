@@ -39,7 +39,6 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 | Branch | State |
 |---|---|
 | `feat/frame-blur` (origin only) | One commit, 273ca98 (2026-10-18), "FRAME with NO / GBA / BLUR and the blurred border (WIDE + BLUR)", not merged, made outside the sessions this file records. Ask the owner what it is before touching or deleting it. |
-| `.claude/worktrees/fix-bottom-map-chests-2deb8f` | A worktree left by the bottom-map side session (detached at 4e695ed, already merged). Can be removed with the owner's yes. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -55,7 +54,7 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 
 **Start here (2026-10-19, after the `v0.4.0` beta):** `release/v0.4.1` is pushed and clean (nothing after the
 `v0.4.0` tag but docs), no branch of this checkout is open but the parked `feat/village-3d` (see the branch table
-for `feat/frame-blur` on origin and a leftover worktree). Next, in this order:
+for `feat/frame-blur` on origin). Next, in this order:
 1. **v0.4.0 beta** is published: AUTO UPDATE (seen on the New 3DS) and P4.9's neighbour rooms (seen in the Deepwood
    Shrine on the New 3DS and in Link's house and the intro's festival town on the Old 2DS). P4.9 is still open: the
    towns, the outdoors and the zone-swapped rooms, the special tiles, the Old 3DS cost; the owner checks towns and
