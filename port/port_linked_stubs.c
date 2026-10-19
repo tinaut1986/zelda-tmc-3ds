@@ -1622,14 +1622,21 @@ int Port_Widescreen_ContentRects(PortBlurRect* rects, int max) {
     if (roomW <= 0 || roomH <= 0 || (roomW >= 400 && roomH >= 240)) return 0;
     /* Where the room really lies in the view (a room with neighbours beside it rests off centre, a room
      * wider or taller than the view is cut by it), the part of it that shows. */
-    const int roomX = (int)gRoomControls.origin_x - (int)gRoomControls.scroll_x;
-    const int roomY = (int)gRoomControls.origin_y - (int)gRoomControls.scroll_y;
+    /* The frame on screen was drawn with the background offsets of the registers, which can be a tick behind
+     * scroll_x/y while the camera moves: the room's edge is where those put it (the low four bits of the offset
+     * are the scroll's, plus 8 on y: the same split Port_WidescreenShadow_Populate reads). */
+    const int scrollX = (int)gRoomControls.scroll_x, scrollY = (int)gRoomControls.scroll_y;
+    const int seenX = (int)(gIoMem[0x18] | (gIoMem[0x19] << 8)) & 0xf;
+    const int seenY = ((int)(gIoMem[0x1A] | (gIoMem[0x1B] << 8)) - 8) & 0xf;
+    const int frameScrollX = scrollX + ((seenX - ((scrollX - (int)gRoomControls.origin_x) & 0xf) + 8) & 0xf) - 8;
+    const int frameScrollY = scrollY + ((seenY - ((scrollY - (int)gRoomControls.origin_y) & 0xf) + 8) & 0xf) - 8;
+    const int roomX = (int)gRoomControls.origin_x - frameScrollX;
+    const int roomY = (int)gRoomControls.origin_y - frameScrollY;
     const int x0 = roomX > 0 ? roomX : 0, x1 = roomX + roomW < 400 ? roomX + roomW : 400;
     const int y0 = roomY > 0 ? roomY : 0, y1 = roomY + roomH < 240 ? roomY + roomH : 240;
     if (x1 <= x0 || y1 <= y0 || (x0 == 0 && x1 == 400 && y0 == 0 && y1 == 240)) return 0;
     rects[0] = (PortBlurRect){ x0, y0, x1 - x0, y1 - y0 };
-    return 1 + Port_NeighbourRooms_DrawnRects(rects + 1, max - 1, (int)gRoomControls.scroll_x,
-                                              (int)gRoomControls.scroll_y);
+    return 1 + Port_NeighbourRooms_DrawnRects(rects + 1, max - 1, frameScrollX, frameScrollY);
 #else
     (void)rects; (void)max;
     return 0;
