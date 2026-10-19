@@ -38,7 +38,7 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 
 | Branch | State |
 |---|---|
-| `feat/frame-blur` (origin only) | One commit, 273ca98 (2026-10-18), "FRAME with NO / GBA / BLUR and the blurred border (WIDE + BLUR)", not merged, made outside the sessions this file records. Ask the owner what it is before touching or deleting it. |
+| `feat/frame-blur` (origin only) | One commit, 273ca98 (2026-10-18), "FRAME with NO / GBA / BLUR and the blurred border (WIDE + BLUR)", not merged, made outside the sessions this file records: GBA FRAME becomes FRAME (NO / GBA / BLUR, an ambilight border) and VIEW gains WIDE + BLUR. Kept on purpose (owner, 2026-10-19: they will look at it later); do not delete or merge it unasked. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
