@@ -514,7 +514,7 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
     /* Colours (the map's switches, MAP FOLLOW, CREST PINS and FLOOR BACK, are chips on the map) */
     CSettingCell(s, tl, 2, 0, 1, "COLOURS", SS_SET_COLOR_CORRECTION);
     CSettingCell(s, tl, 2, 1, 1, "GBA GRID", SS_SET_GBA_GRID);
-    CSettingCell(s, tl, 2, 2, 1, "GBA FRAME", SS_SET_GBA_FRAME);
+    CSettingCell(s, tl, 2, 2, 1, "FRAME", SS_SET_GBA_FRAME);
     /* Look and system */
     {
         int32_t x, w;

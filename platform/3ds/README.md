@@ -90,15 +90,20 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
   check (no Wi-Fi) shows nothing. INSTALL downloads, installs and closes the game (`updater.c`,
   `Updater_AutoPrompt`).
 - GBA look (`gba_look_3ds.c`, OPTIONS: GBA GRID and GBA FRAME; `gba_grid=0..3` and `gba_frame=0|1` in
+- GBA look (`gba_look_3ds.c`, OPTIONS: GBA GRID and FRAME; `gba_grid=0..3` and `gba_frame=0..2` in
   `tmc3ds.ini`), after `../mzm`: GRID darkens one screen row in every two of the game's pixels (HIGH
-  also the columns) at any scale; FRAME draws the console's body in the border of the 240x160
+  also the columns) at any scale; FRAME (NO / GBA / BLUR) draws the console's body (GBA) or a blur of the picture's own colours (BLUR, an
+  ambilight, `TopBlur*` in `platform_gpu_3ds.c`) in the border of the 240x160
   (Pixel Perfect) and 360x240 (Scaled) pictures. FRAME is for VIEW: ORIGINAL only (locked, shown as `---`,
   in WIDE, which fills the border with world); in WIDE the GRID covers the whole 400x240, border included,
   in every other view only the picture. The frame's artwork is `romfs/gba-look-frame.lz4` (mzm's, LZ4 of a 512x256 tiled RGBA8).
 - WIDE + AI (`wide_ai`, `wide_ai_asked` in `tmc3ds.ini`), after `../mzm`: the scene extensions made with a
   generative AI (the portal's sides, the title's forest, the file select's cave) are shown only in WIDE + AI,
   the second stop of OPTIONS -> VIEW (WIDE, WIDE + AI, ORIGINAL). The first time WIDE is on, the bottom screen
-  asks once whether to show them (YES is WIDE + AI); the answer is kept.
+  asks once whether to show them (YES is WIDE + AI); the answer is kept. WIDE + BLUR (`wide_blur`), the
+  stop before it, fills the border of the screens the game draws at 240x160 (logos, intro, game over...) with a
+  blur of the picture, the same ambilight as FRAME = BLUR; WIDE + AI does it too where it has no picture.
+  The VIEW stops are WIDE, WIDE + BLUR, WIDE + AI, ORIGINAL.
 - Show FPS: a compact lower-left top-screen box of four lines, averaged over
   the last second: the game's rate (green from 59, yellow from 50, red below),
   `L` the logic's ms per tick, `G` the GPU's ms per presented frame and `S` the

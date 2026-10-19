@@ -2015,7 +2015,7 @@ static const char* const kSettingLabels[SS_SET_COUNT] = {
     "RANDOMIZER",       "PANEL BACKDROP",     "SWAP SCREENS",
 #ifdef TMC_3DS
     "ASPECT RATIO",     "DISPLAY STYLE",    "FRAMES",
-    "GBA GRID",         "GBA FRAME",
+    "GBA GRID",         "FRAME",
 #endif
 };
 
@@ -2324,8 +2324,8 @@ static int GetSettingState(int row, char* out, int outCap) {
                 snprintf(out, (size_t)outCap, "---");
                 return 0;
             }
-            on = Port_Config_GetGbaFrame();
-            break;
+            snprintf(out, (size_t)outCap, "%s", Port_Config_GetGbaFrameName());
+            return Port_Config_GetGbaFrame() != 0;
         case SS_SET_FRAMES: {
             static const char* const kPacing[PORT_3DS_PACING_COUNT] = { "AUTO", "LOCK 30", "NO SKIP" };
             int pacing = Port_Config_GetFramePacing();
@@ -3688,7 +3688,7 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
                     Port_Config_CycleGbaGrid();
                     break;
                 case SS_SET_GBA_FRAME:
-                    if (Port_Config_GbaFrameAvailable()) Port_Config_SetGbaFrame(!Port_Config_GetGbaFrame());
+                    if (Port_Config_GbaFrameAvailable()) Port_Config_CycleGbaFrame();
                     else Compact_Toast("%s", Port_Text_Tr("ONLY IN VIEW: ORIGINAL"));
                     break;
                 case SS_SET_FRAMES: {
