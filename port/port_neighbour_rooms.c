@@ -271,34 +271,36 @@ void Port_NeighbourRooms_Update(void) {
     UpdateArchways();
 }
 
-/* Whether a neighbour fills the cell beside the room at `index` along one side. */
-static bool SideCell(unsigned side, int index) {
-    const int curW = gRoomControls.width / 8, curH = gRoomControls.height / 8;
-    const int col = side == PORT_NEIGHBOUR_SIDE_LEFT ? -1 : side == PORT_NEIGHBOUR_SIDE_RIGHT ? curW : index;
-    const int row = side == PORT_NEIGHBOUR_SIDE_TOP ? -1 : side == PORT_NEIGHBOUR_SIDE_BOTTOM ? curH : index;
-    const int c = col + MARGIN_X, r = row + MARGIN_Y;
-    if (c < 0 || c >= WIN_COLS || r < 0 || r >= WIN_ROWS) return false;
-    return sWin[0][r][c] != NO_TILE || sWin[1][r][c] != NO_TILE;
+bool Port_NeighbourRooms_RoomJustChanged(void) {
+    /* The room's numbers change before this module's tick runs: until it does, its list is the old room's. */
+    return RoomKey() != sKey || sTicks == 0;
 }
 
-void Port_NeighbourRooms_CoveredRuns(unsigned side, int viewStart, PortNeighbourRuns* out) {
-    out->count = 0;
-    if (!sActive) return;
-    const int cells = (side == PORT_NEIGHBOUR_SIDE_LEFT || side == PORT_NEIGHBOUR_SIDE_RIGHT ? gRoomControls.height
-                                                                                              : gRoomControls.width) / 8;
-    int runStart = -1;
-    for (int i = 0; i <= cells; ++i) {
-        const bool covered = i < cells && SideCell(side, i);
-        if (covered && runStart < 0) runStart = i;
-        if (!covered && runStart >= 0) {
-            if (out->count < PORT_NEIGHBOUR_MAX_RUNS) {
-                out->from[out->count] = viewStart + runStart * 8;
-                out->to[out->count] = viewStart + i * 8;
-                ++out->count;
-            }
-            runStart = -1;
+
+int Port_NeighbourRooms_DrawnRects(PortBlurRect* out, int max, int scrollX, int scrollY) {
+    if (!sActive || max <= 0) return 0;
+    PortBlurRect found[MAX_ROOMS];
+    int count = 0;
+    for (unsigned j = 0; j < MAX_ROOMS; ++j) {
+        if (((sDrawn >> j) & 1) == 0 || j == gRoomControls.room) continue;
+        const RoomResInfo* nb = &gArea.roomResInfos[j];
+        /* The part of the room that shows, in view pixels. */
+        const int x0 = (int)nb->map_x - scrollX, y0 = (int)nb->map_y - scrollY;
+        const int x1 = x0 + nb->pixel_width, y1 = y0 + nb->pixel_height;
+        PortBlurRect r = { x0 > 0 ? x0 : 0, y0 > 0 ? y0 : 0, 0, 0 };
+        r.w = (x1 < 400 ? x1 : 400) - r.x;
+        r.h = (y1 < 240 ? y1 : 240) - r.y;
+        if (r.w <= 0 || r.h <= 0) continue;
+        int k = count++;
+        while (k > 0 && found[k - 1].w * found[k - 1].h < r.w * r.h) { /* largest first */
+            found[k] = found[k - 1];
+            --k;
         }
+        found[k] = r;
     }
+    if (count > max) count = max;
+    for (int i = 0; i < count; ++i) out[i] = found[i];
+    return count;
 }
 
 uint16_t Port_NeighbourRooms_Tile(int topLayer, int column, int row, uint16_t blank) {

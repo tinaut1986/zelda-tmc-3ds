@@ -1243,7 +1243,7 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   on the console** (the scene could not be reproduced after the install): look for the bubble with `scenerec`, and
   `gpucheck` should stop differing. An atlas-slot change that did not help was dropped.
   (4) **The linker pin moved**: the blur code pushed code and read-only data past `3dsx.ld`'s 0x630000; `.data` is
-  now pinned at 0x632000. Format 2 states carry their globals by name and survive; format 1 ones of the old layout no
+  now pinned at 0x634000. Format 2 states carry their globals by name and survive; format 1 ones of the old layout no
   longer load (`docs/save-states.md`).
   (5) **Open: a crash on the 2DS** (Luma dump 19, `EraseAllEntities` walking an entity list whose node `next` was
   0x101e101e, tilemap-like data) in area 0x80 room 04 after a long session; not reproduced, cause unknown; the dumps'

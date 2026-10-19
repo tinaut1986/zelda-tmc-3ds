@@ -1612,32 +1612,49 @@ int Port_Stereo_Scenes(void) {
 #endif
 }
 
-int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h, PortBlurSkip* skip) {
+int Port_Widescreen_ContentRects(PortBlurRect* rects, int max) {
 #ifdef TMC_3DS
-    if (gMain.task != TASK_GAME || Port_Widescreen_3DSViewMode() != PORT_3DS_FULL_VIEW_OUTDOOR_1X) return 0;
-    /* A border scroll draws the outgoing and the incoming room (and their neighbours) across the view: no
-     * border while it runs. */
-    if (Port_WidescreenScrollActive()) return 0;
+    static PortBlurRect sLast[8];
+    static int sLastCount;
+    if (max <= 0 || gMain.task != TASK_GAME || Port_Widescreen_3DSViewMode() != PORT_3DS_FULL_VIEW_OUTDOOR_1X) {
+        sLastCount = 0;
+        return 0;
+    }
+    /* The tick a room changes, the frame still shows the old room: the border keeps what it had. */
+    if (Port_NeighbourRooms_RoomJustChanged() && sLastCount > 0) {
+        const int n = sLastCount < max ? sLastCount : max;
+        for (int i = 0; i < n; ++i) rects[i] = sLast[i];
+        return n;
+    }
+    /* During a border scroll the incoming room is the current one and the outgoing one is its neighbour: both
+     * rectangles are where the frame's registers put them, so the border follows. */
     const int roomW = (int)gRoomControls.width, roomH = (int)gRoomControls.height;
-    if (roomW <= 0 || roomH <= 0 || (roomW >= 400 && roomH >= 240)) return 0;
+    if (roomW <= 0 || roomH <= 0 || (roomW >= 400 && roomH >= 240)) {
+        sLastCount = 0;
+        return 0;
+    }
     /* Where the room really lies in the view (a room with neighbours beside it rests off centre, a room
      * wider or taller than the view is cut by it), the part of it that shows. */
-    const int roomX = (int)gRoomControls.origin_x - (int)gRoomControls.scroll_x;
-    const int roomY = (int)gRoomControls.origin_y - (int)gRoomControls.scroll_y;
+    /* The frame on screen was drawn with the background offsets of the registers, which can be a tick behind
+     * scroll_x/y while the camera moves: the room's edge is where those put it (the low four bits of the offset
+     * are the scroll's, plus 8 on y: the same split Port_WidescreenShadow_Populate reads). */
+    const int scrollX = (int)gRoomControls.scroll_x, scrollY = (int)gRoomControls.scroll_y;
+    const int seenX = (int)(gIoMem[0x18] | (gIoMem[0x19] << 8)) & 0xf;
+    const int seenY = ((int)(gIoMem[0x1A] | (gIoMem[0x1B] << 8)) - 8) & 0xf;
+    const int frameScrollX = scrollX + ((seenX - ((scrollX - (int)gRoomControls.origin_x) & 0xf) + 8) & 0xf) - 8;
+    const int frameScrollY = scrollY + ((seenY - ((scrollY - (int)gRoomControls.origin_y) & 0xf) + 8) & 0xf) - 8;
+    const int roomX = (int)gRoomControls.origin_x - frameScrollX;
+    const int roomY = (int)gRoomControls.origin_y - frameScrollY;
     const int x0 = roomX > 0 ? roomX : 0, x1 = roomX + roomW < 400 ? roomX + roomW : 400;
     const int y0 = roomY > 0 ? roomY : 0, y1 = roomY + roomH < 240 ? roomY + roomH : 240;
     if (x1 <= x0 || y1 <= y0 || (x0 == 0 && x1 == 400 && y0 == 0 && y1 == 240)) return 0;
-    *x = x0;
-    *y = y0;
-    *w = x1 - x0;
-    *h = y1 - y0;
-    Port_NeighbourRooms_CoveredRuns(PORT_NEIGHBOUR_SIDE_LEFT, roomY, &skip->side[0]);
-    Port_NeighbourRooms_CoveredRuns(PORT_NEIGHBOUR_SIDE_RIGHT, roomY, &skip->side[1]);
-    Port_NeighbourRooms_CoveredRuns(PORT_NEIGHBOUR_SIDE_TOP, roomX, &skip->side[2]);
-    Port_NeighbourRooms_CoveredRuns(PORT_NEIGHBOUR_SIDE_BOTTOM, roomX, &skip->side[3]);
-    return 1;
+    rects[0] = (PortBlurRect){ x0, y0, x1 - x0, y1 - y0 };
+    const int count = 1 + Port_NeighbourRooms_DrawnRects(rects + 1, max - 1, frameScrollX, frameScrollY);
+    sLastCount = count < 8 ? count : 8;
+    for (int i = 0; i < sLastCount; ++i) sLast[i] = rects[i];
+    return count;
 #else
-    (void)x; (void)y; (void)w; (void)h; (void)skip;
+    (void)rects; (void)max;
     return 0;
 #endif
 }
@@ -3029,12 +3046,9 @@ int Port_Widescreen_TitleViewLive(void) {
 int Port_Stereo_Scenes(void) {
     return 0;
 }
-int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h, PortBlurSkip* skip) {
-    (void)x;
-    (void)y;
-    (void)w;
-    (void)h;
-    (void)skip;
+int Port_Widescreen_ContentRects(PortBlurRect* rects, int max) {
+    (void)rects;
+    (void)max;
     return 0;
 }
 int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {
