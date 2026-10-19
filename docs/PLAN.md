@@ -38,6 +38,8 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 
 | Branch | State |
 |---|---|
+| `feat/frame-blur` (origin only) | One commit, 273ca98 (2026-10-18), "FRAME with NO / GBA / BLUR and the blurred border (WIDE + BLUR)", not merged, made outside the sessions this file records. Ask the owner what it is before touching or deleting it. |
+| `.claude/worktrees/fix-bottom-map-chests-2deb8f` | A worktree left by the bottom-map side session (detached at 4e695ed, already merged). Can be removed with the owner's yes. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -52,14 +54,19 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 **Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
 
 **Start here (2026-10-19, after the `v0.4.0` beta):** `release/v0.4.1` is pushed and clean (nothing after the
-`v0.4.0` tag but this docs change), no branch or worktree is open but the parked `feat/village-3d`. Next, in this order:
+`v0.4.0` tag but docs), no branch of this checkout is open but the parked `feat/village-3d` (see the branch table
+for `feat/frame-blur` on origin and a leftover worktree). Next, in this order:
 1. **v0.4.0 beta** is published: AUTO UPDATE (seen on the New 3DS) and P4.9's neighbour rooms (seen in the Deepwood
    Shrine on the New 3DS and in Link's house and the intro's festival town on the Old 2DS). P4.9 is still open: the
    towns, the outdoors and the zone-swapped rooms, the special tiles, the Old 3DS cost; the owner checks towns and
-   outdoors next. Not seen: the updater on the Old 3DS/2DS.
+   outdoors next. Not seen: the updater on the Old 3DS/2DS. **Waiting for the owner's word to close:** #44 (the
+   lit dark room's black line, d342f7d), #37 and #39-#42 (the bottom dungeon map; the owner said on 2026-10-18 the
+   chests and the item icons are right, the rest not confirmed). #38 (the neighbours' other objects) is parked.
+   #45 (Zelda vanishing in the intro, two fixes) is closed: if another scripted walk looks wrong in Full View, the
+   rule in `src/script.c` `Port_ScriptMoveOutOfWideView` is the first suspect.
 2. **Old 3DS/2DS check** of what only the New 3DS has seen: the grid on HIGH (frame rate), WIDE + AI,
-   the file select and title without 3D, TOP HUD AUTO. The 2DS is `192.168.1.139` (its FTP answered
-   `530 Login incorrect` on 2026-10-17: ask the owner what that console runs).
+   the file select and title without 3D, TOP HUD AUTO, and the cost of P4.9's neighbour rooms there. The 2DS is
+   `192.168.1.139` and answers the debug FTP again (2026-10-19; see the consoles below).
 3. **Side strips for narrow map rooms (P4.6).** The owner is generating, with Antigravity, the 80 px on each
    side of the shrine yard (area 0x4A room 00; material in `~/Imágenes/outpaint-area-4A/`: template with black
    bands, mask, reference and `prompt.txt`, made with `tools/scene-extend/extract_map_room.py`). When the
@@ -95,51 +102,22 @@ material in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/intro-titulo/`, 
 `tmc-link.py shot` also writes `top-right.png`; PLANE TINT (LAYERS / DEPTH) paints each layer flat. `docs/debug-tools.md`.
 To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
-**On the owner's consoles now (2026-10-17, newer than the lines below):**
-- **New 3DS, `192.168.1.133`** (the owner, 2026-10-17: "es la 133 (new3ds)"; its address changes with the
-  router: it answered on `.141` earlier the same day, and `.142` on 2026-10-14, so ping before assuming):
-  a debug build of the code of `release/v0.3.2` at `aeb0c48` (`0.3.2-dev.*`; the perf sessions of 2026-10-18 may have
-  installed newer builds since: read the version in `tmc3ds.log` or the options footer), WIDE + AI answered YES, VIEW wide,
-  STYLE pixel-perfect, GBA GRID LOW, GBA FRAME off, TOP HUD AUTO, FRAMES "sin saltos", SHOW FPS on (debug
-  builds show the fifth line `C<n>`), stereo on, COLOURS on. FORCE 3D and PLANE TINT are off (they reset at
-  boot). State 1 is Claude's (the shrine yard, area 0x4A, saved before going out to take the pictures); the
-  states made the same day before it (the Minish village, the map hint at the owner's place) are the owner's
-  or Claude's from earlier installs: never overwrite or delete any, the owner's own were not touched. The owner
-  tests while Claude drives the console and accepted several relaunches in one evening: say so before each
-  install anyway. `.3ds_ftp_ip` may hold `.141`: pass `--ip`.
-- `192.168.1.141` did not answer on 2026-10-17 afternoon (off or another address); the 2DS `.139` answers
-  `530 Login incorrect`. Their entries below are from 2026-10-15 and may be stale.
-
-**On the owner's consoles before (2026-10-15):**
-- Old 3DS/2DS, **`192.168.1.139`** (the owner calls it "the 2DS"; `.3ds_ftp_ip` holds it): the
-  debug build `0.3.0-dev.47.2+c363f1f` of `fix/states-build-independent` (what v0.3.0 shipped, minus
-  the map chips and the two guards), debug, Full View (`widescreen=1`, `screen_aspect=wide`,
-  `display_style=pixel-perfect`), theme PARCHMENT, **FRAMES = "sin saltos" (the owner set it)**,
-  STEREO 3D ON (default; no effect on a 2DS), VBLANK LOCK OFF, FRAME SYNC OFF, COLOURS as the
-  owner left it (`color_correction=1`), UPDATES channel + BETAS. **RetroAchievements is logged in
-  as the test account `tinaut1986test`** (log in with the real one before playing for real); the
-  data folder has no test ROM and `rom_md5` is the true `2af78edb...`; the owner's ROM is in the
-  upstream app's folder. **`dev-ftp.txt` is there**. Save states: about 25, numbered by recency
-  (`tmc-link.py states`); Claude saved some as "new state" before installs; **never overwrite or
-  delete the owner's**; most were made by dev.42 or older, so loading them in dev.45.x can corrupt
-  memory (#31). `tmc-link.py loadstate N` numbering did not always match the listing during the
-  session: confirm the scene with `state` and a `shot` after loading. Loading a state switches
-  the bottom screen to MAP: tap another tab after it, not before. The recorder (`rec`) must not
-  be left armed: on the Old 3DS it drops the game to ~20 fps.
-- **`192.168.1.141`** (pass `--ip`): **the 2DS** (owner, 2026-10-14; its log says Old 3DS, which a 2DS
-  is to the system: no 3D slider). The owner's console for the title and file select work: a debug
-  build of `fix/zone-tilesets` (`0.2.1-dev.0+42f5761`, the village fix only) with **STEREO 3D =
-  TEST**, Full View, SHOW FPS on, theme default. Its newest states are Claude's, the owner's places
-  in the Minish village before installs (2026-10-14).
-- **`192.168.1.142`** (pass `--ip`): **the New 3DS** (owner, 2026-10-14), a debug build of the code
-  `release/v0.2.1` has since 7a65202 (`0.2.1-dev.0.10+a0bc40c`, from a local test branch since
-  deleted), STEREO 3D used in ON and TEST, FTP server on.
-  The owner's game is in Hyrule Castle (area 0x80); its state 1 is Claude's, the owner's place before
-  the last install.
-  `debug/` holds checks up to `tmc-check-0198` and perf CSVs up to `tmc-perf-0039`.
-- The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP); 16 is
-  the newest on the 2DS (2026-10-15, #31). How to read one: `docs/debug-tools.md`, "Reading a Luma
-  crash dump".
+**On the owner's consoles now (2026-10-19):** ping first, the addresses change with the router (memory).
+- **Old 2DS, `192.168.1.139`** (pass `--ip`; the owner's test console on 2026-10-19): a debug build of
+  `release/v0.4.1`'s code before the tag (`0.3.3-dev.56+37dc082` plus what became 178725f, so the code of `f33872c`),
+  Full View on. The owner started a **new game** there (the intro: Link's house, then the festival town). Save
+  states, numbered by recency: state 1 is Claude's save of the owner's place (festival town, area 0x15, before
+  Zelda's line about the Minish); the others are the owner's or older Claude saves, many from builds before
+  2026-10-17 (#31 risk when loading those). Never overwrite or delete any. Its `debug/` was small (9 files)
+  on 2026-10-19. The in-game updater will offer it `v0.4.0`.
+- **New 3DS, `192.168.1.133`**: the debug build of `feat/wide-neighbour-rooms` at 45a90f5
+  (`0.3.3-dev.35.15+45a90f5`, installed 2026-10-19, the owner saved first), settings as on 2026-10-17 (WIDE + AI
+  YES, pixel-perfect, GBA GRID LOW, TOP HUD AUTO, FRAMES "sin saltos", SHOW FPS, stereo on, COLOURS on). The
+  owner's game is in the Deepwood Shrine (dark room, area 0x48). Its `debug/` was cleaned on 2026-10-19 with
+  the owner's yes. `.3ds_ftp_ip` may hold either console: pass `--ip`.
+- The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP). How to read one:
+  `docs/debug-tools.md`, "Reading a Luma crash dump". RetroAchievements on the 2DS was logged in as the test
+  account `tinaut1986test` on 2026-10-15 (check before the owner plays for real).
 
 **Older notes (2026-10-12), still open:** check `perf/full-view-old3ds`-era Wide (266x160,
 interiors and map edges) and other areas (Deepwood, Mt. Crenel) on the 2DS; per-frame cost left
