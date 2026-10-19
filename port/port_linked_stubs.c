@@ -1620,18 +1620,17 @@ int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h, unsigned* covere
     if (Port_WidescreenScrollActive()) return 0;
     const int roomW = (int)gRoomControls.width, roomH = (int)gRoomControls.height;
     if (roomW <= 0 || roomH <= 0 || (roomW >= 400 && roomH >= 240)) return 0;
-    *w = roomW < 400 ? roomW : 400;
-    *h = roomH < 240 ? roomH : 240;
-    *x = (400 - *w) / 2;
-    *y = (240 - *h) / 2;
-    /* Where the room really lies in the view: a room with neighbours beside it rests off centre
-     * (Port_NeighbourRooms_Rest). */
+    /* Where the room really lies in the view (a room with neighbours beside it rests off centre, a room
+     * wider or taller than the view is cut by it), the part of it that shows. */
     const int roomX = (int)gRoomControls.origin_x - (int)gRoomControls.scroll_x;
     const int roomY = (int)gRoomControls.origin_y - (int)gRoomControls.scroll_y;
-    if (roomX >= 0 && roomX + *w <= 400 && roomY >= 0 && roomY + *h <= 240) {
-        *x = roomX;
-        *y = roomY;
-    }
+    const int x0 = roomX > 0 ? roomX : 0, x1 = roomX + roomW < 400 ? roomX + roomW : 400;
+    const int y0 = roomY > 0 ? roomY : 0, y1 = roomY + roomH < 240 ? roomY + roomH : 240;
+    if (x1 <= x0 || y1 <= y0 || (x0 == 0 && x1 == 400 && y0 == 0 && y1 == 240)) return 0;
+    *x = x0;
+    *y = y0;
+    *w = x1 - x0;
+    *h = y1 - y0;
     *coveredSides = Port_NeighbourRooms_CoveredSides();
     return 1;
 #else
