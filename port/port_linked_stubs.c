@@ -1615,6 +1615,9 @@ int Port_Stereo_Scenes(void) {
 int Port_Widescreen_ContentRect(int* x, int* y, int* w, int* h, unsigned* coveredSides) {
 #ifdef TMC_3DS
     if (gMain.task != TASK_GAME || Port_Widescreen_3DSViewMode() != PORT_3DS_FULL_VIEW_OUTDOOR_1X) return 0;
+    /* A border scroll draws the outgoing and the incoming room (and their neighbours) across the view: no
+     * border while it runs. */
+    if (Port_WidescreenScrollActive()) return 0;
     const int roomW = (int)gRoomControls.width, roomH = (int)gRoomControls.height;
     if (roomW <= 0 || roomH <= 0 || (roomW >= 400 && roomH >= 240)) return 0;
     *w = roomW < 400 ? roomW : 400;
