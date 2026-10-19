@@ -1226,6 +1226,12 @@ static bool DrawOutput(C3D_RenderTarget* target, OutputPass pass) {
     C3D_TexSetWrap(&sAtlas, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     C3D_TexBind(0, &sAtlas);
     sBoundTexture = 0;
+    /* The atlas and the view rings were rewritten in place for this frame (Commit), and the PICA's
+     * texture cache can still hold lines of them from the last one: citro3d's texture-unit update writes
+     * GPUREG_TEXUNIT_CONFIG with a byte mask that leaves bit 16 (clear the texture cache) out. A ring
+     * cell reused for another map row then came out as its old (empty) texels on one line, beside a dark
+     * room's light (issue #44). Only that byte is written, so the units citro3d enabled stay as they are. */
+    GPUCMD_AddMaskedWrite(GPUREG_TEXUNIT_CONFIG, 0x4, 1u << 16);
     if (pass == PASS_ALL || pass == PASS_BASE) LogBatchList();
     /* The base keeps the blend-target mark in both bits; each eye in front uses its own. */
     sTarget2Bit = pass == PASS_FRONT_RIGHT ? 0x10u : 0x08u;
