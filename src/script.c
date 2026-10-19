@@ -1571,8 +1571,10 @@ void ScriptCommand_0807ED24(Entity* entity, ScriptExecutionContext* context) {
 #ifdef PC_PORT
 /* A walk off the screen: a MoveTo whose end lies just past the GBA's 240x160 view, followed at once by
  * SetEntityPositionRelative (the next spot, elsewhere; Zelda running ahead in the intro's Hyrule Town). In a
- * wider view that end is on screen and the entity vanished there. The walk goes on along the same line until
- * the sprite is out of the view; it takes a few frames more, and whoever waits for its sync flag waits them. */
+ * wider view that end is on screen and the entity vanished there, or appeared at the next spot when that one is
+ * on screen too. When the next spot is in the view the entity walks straight to it (the move to it then changes
+ * nothing); otherwise the walk goes on along the same line until the sprite is out of the view. Either takes a
+ * few frames more or less, and whoever waits for its sync flag waits them. */
 static void Port_ScriptMoveOutOfWideView(Entity* entity, ScriptExecutionContext* context) {
     /* Margins past the view's edges that hide a sprite: its position is near its feet, the body above. */
     enum { kCmdSetPositionRelative = 105, kMargin = 16, kBelow = 40, kGbaW = 240, kGbaH = 160 };
@@ -1598,6 +1600,13 @@ static void Port_ScriptMoveOutOfWideView(Entity* entity, ScriptExecutionContext*
     if (tx < left - kMargin || tx >= left + viewW + kMargin || ty < top - kMargin ||
         ty >= top + viewH + kBelow)
         return;
+    /* The next spot, in the view: walk there. */
+    const u16* next = &context->scriptInstructionPointer[gActiveScriptInfo.commandSize];
+    const int nx = gRoomControls.origin_x + next[1], ny = gRoomControls.origin_y + next[2];
+    if (nx >= left - kMargin && nx < left + viewW + kMargin && ny >= top - kMargin && ny < top + viewH + kBelow) {
+        LookAt(entity, context, nx, ny);
+        return;
+    }
     const int dx = tx - px, dy = ty - py;
     if (dx == 0 && dy == 0) return;
     /* The smallest scale of the walk (in 1/256) that takes the end past an edge of the view, by the margin. */
