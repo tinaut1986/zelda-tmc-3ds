@@ -63,6 +63,15 @@ static uint32_t* sBottomUploads[2];
 static void* sC2dFlushBase;
 static size_t sC2dFlushSize;
 static bool sFrameActive;
+
+/* Inside a frame C3D_SyncDisplayTransfer splits the command list with flags 0, and GSP then runs the PPU's
+ * draws without cleaning them from the CPU cache: a draw word still dirty in the ARM11's L1 is read as an
+ * older frame's, and a sprite vanishes for a frame (the Zz bubble, one tile). Splitting here first, with
+ * GX_CMDLIST_FLUSH, sends the draws so far cleaned; the transfer's own split then has nothing left (offset 0),
+ * so the GX queue gets no extra entry. */
+static void SplitFlushed(void) {
+    if (sFrameActive) C3D_FrameSplit(GX_CMDLIST_FLUSH);
+}
 static bool sReady;
 static bool sOld3DSProfile;
 static bool sBottomTargetValid;
@@ -495,6 +504,7 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
          * source rectangle so the display engine does not read another 96 unused
          * RGBA rows. New 3DS retains the established transfer dimensions. */
         const unsigned sourceHeight = sOld3DSProfile ? sUploadLayout.topRows : TOP_TEXTURE_HEIGHT;
+        SplitFlushed();
         C3D_SyncDisplayTransfer((u32*)pixels, GX_BUFFER_DIM(sUploadLayout.topPitch, sourceHeight),
                                 (u32*)sTopTexture.data, GX_BUFFER_DIM(TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT),
                                 TextureTransfer());
@@ -683,6 +693,7 @@ static void LoadScenePicture(ScenePicture* picture) {
     free(pixels);
     if (C3D_TexInit(&picture->texture, picture->texWidth, picture->texHeight, GPU_RGBA8)) {
         Platform3DS_CleanDataCache(linear, texBytes);
+        SplitFlushed();
         C3D_SyncDisplayTransfer((u32*)linear, GX_BUFFER_DIM(picture->texWidth, picture->texHeight),
                                 (u32*)picture->texture.data, GX_BUFFER_DIM(picture->texWidth, picture->texHeight),
                                 TextureTransfer());
@@ -813,6 +824,7 @@ static bool CaveReady(bool shown) {
     }
     const size_t bytes = CAVE_TEX_W * CAVE_TEX_H * sizeof(uint32_t);
     Platform3DS_CleanDataCache(sCave.linear, bytes);
+    SplitFlushed();
     C3D_SyncDisplayTransfer((u32*)sCave.linear, GX_BUFFER_DIM(CAVE_TEX_W, CAVE_TEX_H), (u32*)picture->texture.data,
                             GX_BUFFER_DIM(CAVE_TEX_W, CAVE_TEX_H), TextureTransfer());
     return true;
@@ -929,6 +941,7 @@ static bool RaToastPaint(const RaAchievement* a, const uint32_t* badge) {
     const int end = RaToastText(px, tx, 23, RA_TOAST_W - 6 - pointsW, C2D_Color32(232, 236, 240, 255), a->title);
     RaToastText(px, end, 23, RA_TOAST_W - 4, C2D_Color32(240, 200, 80, 255), points);
     Platform3DS_CleanDataCache(px, (size_t)RA_TOAST_TEX_W * RA_TOAST_TEX_H * sizeof(uint32_t));
+    SplitFlushed();
     C3D_SyncDisplayTransfer((u32*)px, GX_BUFFER_DIM(RA_TOAST_TEX_W, RA_TOAST_TEX_H), (u32*)sRaToastTexture.data,
                             GX_BUFFER_DIM(RA_TOAST_TEX_W, RA_TOAST_TEX_H), TextureTransfer());
     linearFree(px);
@@ -1470,7 +1483,7 @@ bool PlatformGpu3DS_QueueRgba5551Readback(void* texturePointer, uint16_t* pixels
     /* Retire the queued PPU draws before the transfer reads the target.
      * C3D_FrameSplit takes GX_CMDLIST_* flags; C3D_FRAME_SYNCDRAW belongs to
      * C3D_FrameBegin and would set GX_CMDLIST_UPDATE_GAS_ACC here. */
-    C3D_FrameSplit(0);
+    SplitFlushed();
     /* The top presenter samples visible row 0 at v=1 and its software upload
      * uses the same no-flip transfer. Untiling with no flip is therefore the
      * inverse mapping: linear row y is the visible row y, not raw Morton data. */
@@ -1508,6 +1521,7 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         const size_t bottomFlushBytes =
             (size_t)sUploadLayout.bottomPitch * 240u * sizeof(uint32_t);
         Platform3DS_CleanDataCache(pixels, bottomFlushBytes);
+        SplitFlushed();
         C3D_SyncDisplayTransfer((u32*)pixels,
                                 GX_BUFFER_DIM(sUploadLayout.bottomPitch, sUploadLayout.bottomRows),
                                 (u32*)sBottomTexture.data, GX_BUFFER_DIM(512, 256),
