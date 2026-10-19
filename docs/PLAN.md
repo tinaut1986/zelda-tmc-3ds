@@ -1221,9 +1221,14 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   town's rooms abut, so nothing changes there. (2) **The door between the two rooms showed "カベ" placeholder
   tiles** on the neighbour's side: a door's frame is an ARCHWAY object (a sprite over those tiles). Inert copies
   of the drawn neighbours' archways (their room lists 0 and 1, at the neighbour's position) are spawned in the
-  current room, marked by bit 31 of their EntityData's `type2` (the archway reads its low byte), deleted when the
-  room changes and respawned when some went missing (a transition's cleanup, a save state); only in play
-  (`GAMEMAIN_UPDATE`) or the cutscene below. This is the one exception to P4.9's "no entities"; every other object
+  current room, marked by bit 31 of their EntityData's `type2` (the archway reads its low byte), and compared every
+  frame in play (`GAMEMAIN_UPDATE`, or the cutscene below) with the ones the drawn neighbours call for, by world
+  position and frame: replaced only when they differ. The first version deleted them on every room key change:
+  a save state's own copies went away and the placeholders flashed until new ones drew, and after the cutscene
+  the doors stayed placeholders. An AuxCutscene sets the room's entity lists aside and restores them with
+  `gEntCount` at 0 though their entities live (the GBA's own bookkeeping); each deletion took one more off, the
+  count wrapped to 253, and the game found no free slot for anything. A deletion of copies now first raises
+  `gEntCount` to their number when it is lower. This is the one exception to P4.9's "no entities"; every other object
   of the neighbours stays parked (issue #38). The archway also hides Zelda again where the intro leaves her, half
   outside the room's left edge, as on the GBA. (3) **Zelda leaving Link's house** (AuxCutscene 5, the entrance
   room 0x10 shown while the game waits in 0x11) was drawn on the fixed 240x160 canvas; it now takes Full View as

@@ -157,22 +157,40 @@ static void Build(void) {
 
 /* The neighbours' ARCHWAY objects. A door's frame is a sprite over placeholder tiles (drawn as "カベ", wall), so a
  * neighbour drawn from its map alone shows those. Inert copies of its archways are spawned in the current room,
- * marked in their EntityData's type2 (bit 31; the archway reads only its low byte), and deleted again when the
- * room changes. Every other object of the neighbours is left out (issue #38). */
+ * marked in their EntityData's type2 (bit 31; the archway reads only its low byte). Every other object of the
+ * neighbours is left out (issue #38).
+ *
+ * The copies are compared with the ones the drawn neighbours call for, by world position and frame, and replaced
+ * only when they differ: a save state brings its own (they are entities), and so does the room an AuxCutscene
+ * returns to, whose entity lists the subtask set aside and restored. Deleting those on a room key change showed
+ * the placeholders until the new copies drew, and after the cutscene it wrapped the entity count: the subtask
+ * leaves gEntCount at 0 with the restored room's entities alive (the GBA's own bookkeeping), each deletion
+ * subtracts one more, and at 253 the game finds no free slot for anything. */
 enum { ARCHWAY_MARK = 0x80000000u, MAX_ARCHWAYS = 16 };
 extern const void* Port_ResolveRegionData(const void* data);
+
+typedef struct {
+    s16 x, y;
+    u8 frame;
+} ArchwayAt;
 
 static bool IsArchwayCopy(Entity* e) {
     return e->kind == OBJECT && e->id == ARCHWAY && (GE_FIELD(e, field_0x7c)->WORD_U & ARCHWAY_MARK) != 0;
 }
 
-static unsigned CountOrDeleteCopies(bool remove) {
+/* The copies alive in the entity lists, into `at` (up to MAX_ARCHWAYS), or deleted. */
+static unsigned ScanCopies(ArchwayAt* at, bool remove) {
     unsigned n = 0;
     for (LinkedList* list = gEntityLists; list < &gEntityLists[9]; ++list) {
         if (list->first == NULL) continue;
         for (Entity *e = list->first, *next; e != (Entity*)list && e != NULL; e = next) {
             next = e->next;
             if (!IsArchwayCopy(e)) continue;
+            if (at != NULL && n < MAX_ARCHWAYS) {
+                at[n].x = e->x.HALF.HI;
+                at[n].y = e->y.HALF.HI;
+                at[n].frame = e->type2;
+            }
             ++n;
             if (remove) DeleteEntity(e);
         }
@@ -180,7 +198,8 @@ static unsigned CountOrDeleteCopies(bool remove) {
     return n;
 }
 
-static unsigned SpawnArchways(bool spawn) {
+/* The copies the drawn neighbours call for, as EntityData of the current room. */
+static unsigned WantedCopies(EntityData* out) {
     unsigned n = 0;
     const int ox = gRoomControls.origin_x, oy = gRoomControls.origin_y;
     for (unsigned j = 0; j < MAX_ROOMS && n < MAX_ARCHWAYS; ++j) {
@@ -191,42 +210,48 @@ static unsigned SpawnArchways(bool spawn) {
                 (const EntityData*)Port_ResolveRegionData(GetRoomProperty(gRoomControls.area, j, prop));
             for (; dat != NULL && dat->kind != 0xFF && n < MAX_ARCHWAYS; ++dat) {
                 if ((dat->kind & 0xF) != OBJECT || dat->id != ARCHWAY || (dat->flags & 0xF0) != 0) continue;
+                out[n] = *dat;
+                out[n].type2 |= ARCHWAY_MARK;
+                out[n].xPos = (u16)(nb->map_x + dat->xPos - ox);
+                out[n].yPos = (u16)(nb->map_y + dat->yPos - oy);
                 ++n;
-                if (!spawn) continue;
-                EntityData copy = *dat;
-                copy.type2 |= ARCHWAY_MARK;
-                copy.xPos = (u16)(nb->map_x + dat->xPos - ox);
-                copy.yPos = (u16)(nb->map_y + dat->yPos - oy);
-                LoadRoomEntity(&copy);
             }
         }
     }
     return n;
 }
 
-static void UpdateArchways(bool roomChanged) {
-    if (roomChanged) {
-        CountOrDeleteCopies(true);
-        return;
-    }
-    /* Spawned only in plain play (or AuxCutscene 5, the wide one in a house: Zelda leaving Link's house) with no
-     * room change under way; respawned whole when the game dropped some (a transition's cleanup) or a save state
-     * brought others. */
+static void UpdateArchways(void) {
+    /* In plain play (or AuxCutscene 5, the wide one in a house: Zelda leaving Link's house) with no room change
+     * under way. */
     const bool play = gMain.substate == GAMEMAIN_UPDATE ||
                       (gMain.substate == GAMEMAIN_SUBTASK && gUI.lastState == SUBTASK_AUXCUTSCENE &&
                        gUI.field_0x3 == 5 && gUI.nextToLoad == 2);
     if (gMain.task != TASK_GAME || gMain.state != GAMETASK_MAIN || !play || gRoomControls.reload_flags != 0)
         return;
-    const unsigned want = SpawnArchways(false), have = CountOrDeleteCopies(false);
-    if (have == want) return;
-    if (have != 0) CountOrDeleteCopies(true);
-    SpawnArchways(true);
+    EntityData want[MAX_ARCHWAYS];
+    ArchwayAt have[MAX_ARCHWAYS];
+    const unsigned wanted = WantedCopies(want), had = ScanCopies(have, false);
+    bool same = wanted == had;
+    for (unsigned i = 0; same && i < wanted; ++i) {
+        const s16 x = (s16)(want[i].xPos + gRoomControls.origin_x), y = (s16)(want[i].yPos + gRoomControls.origin_y);
+        bool found = false;
+        for (unsigned k = 0; k < had && !found; ++k)
+            found = have[k].x == x && have[k].y == y && have[k].frame == (u8)want[i].type2;
+        same = found;
+    }
+    if (same) return;
+    if (had != 0) {
+        /* Each deletion takes one off gEntCount when the slot is recycled: never below zero (see above). */
+        if (gEntCount < had) gEntCount = (u8)had;
+        ScanCopies(NULL, true);
+    }
+    for (unsigned i = 0; i < wanted; ++i) LoadRoomEntity(&want[i]);
 }
 
 void Port_NeighbourRooms_Update(void) {
     const u32 key = RoomKey();
-    const bool changed = key != sKey;
-    if (changed) {
+    if (key != sKey) {
         sKey = key;
         sTicks = 0;
     } else {
@@ -239,7 +264,7 @@ void Port_NeighbourRooms_Update(void) {
         Build();
         sActive = 1;
     }
-    UpdateArchways(changed);
+    UpdateArchways();
 }
 
 uint16_t Port_NeighbourRooms_Tile(int topLayer, int column, int row, uint16_t blank) {
