@@ -271,6 +271,10 @@ void Port_NeighbourRooms_Update(void) {
     UpdateArchways();
 }
 
+bool Port_NeighbourRooms_RoomJustChanged(void) {
+    return sTicks == 0;
+}
+
 int Port_NeighbourRooms_DrawnRects(PortBlurRect* out, int max, int scrollX, int scrollY) {
     if (!sActive || max <= 0) return 0;
     PortBlurRect found[MAX_ROOMS];

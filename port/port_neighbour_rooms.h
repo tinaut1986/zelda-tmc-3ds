@@ -34,6 +34,9 @@ typedef struct PortBlurRect {
     int x, y, w, h;
 } PortBlurRect;
 int Port_NeighbourRooms_DrawnRects(PortBlurRect* out, int max, int scrollX, int scrollY);
+/* The tick the current room changed: the room's numbers are the new room's while the frame shown is still
+ * drawn with the old room's registers, so a rectangle worked out from them is wrong for that one frame. */
+bool Port_NeighbourRooms_RoomJustChanged(void);
 /* For the probe's log and the debug overlay: what the last build found. */
 typedef struct PortNeighbourStats {
     unsigned neighbours;     /* bordering rooms drawn */
