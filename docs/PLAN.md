@@ -1364,3 +1364,9 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   (`docs/debug-tools.md`). Asked for while checking the 3D of a lifted pot against the Deepwood boss: there the pot is
   drawn over the ChuChu by the game itself (both renderers, 2D too), so it is not a 3D bug and the stereo change
   tried for it was dropped.
+- **2026-10-20** **The map screens at 60 fps in 3D.** The pause menu's world map ran at ~50 fps with the slider up
+  (GPU 17.3 ms): drawn whole for each eye, first because its OBJ window "follows" a layer (refusal 1) and then because
+  the cursor and Link's icon are semi-transparent sprites in front (3). The window follows BG2, which has no depth, so
+  it is where it is in both eyes: only a window following a layer that moves refuses now. A semi-transparent sprite with
+  no second target in BLDCNT does not blend (the model gives it effect NONE), so only real blends refuse. Drawn over one
+  base: 59.8 fps, both eyes identical to the whole draw (FORCE 3D captures). Seen on the owner's New 3DS.

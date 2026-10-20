@@ -66,8 +66,10 @@ eye (reason 4). The software renderer leaves them flat.
     drawn once, the presenter shows it to both eyes.
   - **drawn whole** (any other number, the reason): the whole frame twice, as before. When something
     on the screen plane is drawn after a layer in front on the same lines (4), an OBJ window moves
-    (1, 2: the map hints), a sprite in front is semi-transparent (3: the GBA blends it with the
-    background, never with the lower sprite the base would have under it), `gpu_scissor_mode` is 0
+    (1, 2; the map screens' window follows their grey, BG2, which stays on the screen plane, so it does
+    not move and they are drawn over one base), a sprite in front blends (3: the GBA blends it with the
+    background, never with the lower sprite the base would have under it; a semi-transparent sprite with
+    no second target in BLDCNT does not blend and does not count), `gpu_scissor_mode` is 0
     (7), or the debug poke `gPpuGpu3DSEyesWhole 01` asks for it (5, to compare).
 
   The whole frame twice doubled the GPU's work: 9.0 ms a frame in 2D, 17.1 ms in 3D in the Deepwood
