@@ -38,7 +38,7 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 
 | Branch | State |
 |---|---|
-| `feat/blur-neighbours-all` (local only, not pushed, 12 commits on `release/v0.4.1`) | The work of 2026-10-20 on the neighbours and the blur, **not merged: the owner wants a new session to review the neighbour rooms first**. NEIGHBOURS setting (OFF / ON / BLUR, `neighbour_rooms`), NEIGHBOURS = BLUR drawn between the base layers and the HUD (`PlatformGpu3DS_BlurOver`, `HudSplitSafe` in `port_ppu_gpu_3ds.c`), the ambient border drawn under the HUD too, the border following every frame while the camera moves, the outgoing room covered during a border scroll, edge inset 20 px, cheaper masks (no sqrt); pins `.data` at **0x636000** (the release has 0x634000). Installed and seen by the owner on the Old 2DS up to `a4c6d77` (tall room scrolling: owner accepted "ahora me gusta mas"; the performance and the stepped scroll are still open, see Start here). Build it with `git checkout feat/blur-neighbours-all`. |
+| `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -52,28 +52,16 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 
 **Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
 
-**Start here (2026-10-20):** `release/v0.4.1` holds, on top of the `v0.4.0` tag, the blur work (WIDE + BLUR / WIDE + AI
-grown from the room and its neighbours), the neighbour-list fix, the GPU split flush and the Zz bubble fix (decisions log
-of 2026-10-19 and 2026-10-20); **it is not pushed** (`git log origin/release/v0.4.1..` lists ~20 commits; the owner's /document
-asked to push, so do it after reading this). Open branches: `feat/blur-neighbours-all` (see the branch table: not merged on
-purpose) and the parked `feat/village-3d`; `origin/feat/frame-blur` is merged and left on origin. Next, in this order:
-0. **Review of the neighbour rooms (the owner starts a new session with Opus for it).** What is open, with where to look:
-   - **Cost of the blur.** The owner saw ~40 fps "with any blur effect" on the 2DS in the throne room (area 0x80 room 02,
-     tall room scrolling): a third of the frames cost `top_ms` 18 against 7 (perf CSV, `ph_*` columns), the CPU side of the
-     border (a soft-float `sqrtf` per texel of the masks and weights: now `TopBlurDistance`, 58.6 fps after). Measure again
-     with and without NEIGHBOURS = BLUR in rooms with 1, 2 and 3 rectangles; the per-rectangle sets
-     (`BlurSet`, up to `BLUR_RECTS` = 3) multiply the passes; a cheaper design (one shared pyramid with a coverage mask)
-     was weighed and not done (decisions log 2026-10-20).
-   - **The border/blurred copy steps against the picture while scrolling** (owner: "se mueve a saltos"): the border is built from
-     the frame at half rate at rest and every frame once the camera moves (`Port_Widescreen_BlurCameraMoved`); the owner
-     still saw steps before the last two fixes; check the final build.
-   - **Dark bands at the sides** are the ambilight reading the dark walls (edge inset 20 px helps): decide whether to blend them
-     with the room's mean colour.
+**Start here (2026-10-20):** `release/v0.4.1` holds, on top of the `v0.4.0` tag, the neighbour-list fix, the GPU split
+flush, the Zz bubble fix, the NEIGHBOURS setting (ON / OFF) and the drop of WIDE + BLUR (decisions log of 2026-10-19 and
+2026-10-20); pushed to origin on 2026-10-20. Open branches: the parked `feat/village-3d` and the local backup
+`backup/blur-neighbours-all`; `origin/feat/frame-blur` is merged and left on origin. Next, in this order:
+0. **Review of the neighbour rooms.** The blur is gone from WIDE (decisions log 2026-10-20, third entry): VIEW is WIDE,
+   WIDE + AI, ORIGINAL and NEIGHBOURS is ON / OFF. What is open, with where to look:
    - **P4.9 itself** (towns, outdoors, zone-swapped rooms, special tiles, the neighbours' objects #38) as before in item 1.
    - The code is split in `port/port_neighbour_rooms.c` (tiles, archway copies, `Port_NeighbourRooms_DrawnRects`,
      `RoomJustChanged`), `port/port_linked_stubs.c` (`Port_Widescreen_ContentRects`: the rectangles in view pixels from the
-     frame's background offsets), `platform/3ds/source/platform_gpu_3ds.c` (`TopBlur*`) and `port_ppu_gpu_3ds.c`
-     (`sHudSplit`, `PlatformGpu3DS_BlurOver`).
+     frame's background offsets, unused since the wide blur was dropped).
 1. **v0.4.0 beta** is published: AUTO UPDATE (seen on the New 3DS) and P4.9's neighbour rooms (seen in the Deepwood
    Shrine on the New 3DS and in Link's house and the intro's festival town on the Old 2DS). P4.9 is still open: the
    towns, the outdoors and the zone-swapped rooms, the special tiles, the Old 3DS cost; the owner checks towns and
@@ -571,6 +559,8 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   `platform_gpu_3ds.c` (the picture shrunk through four small VRAM targets, every other frame, edge texels
   carried outwards with a fade to black). *Done when:* the owner has seen it in both views, both presenters
   and 3D, and the frame rate holds on the Old 3DS (not measured).
+  *2026-10-20: WIDE + BLUR and WIDE + AI's blur are dropped* (cost and stepping while scrolling, decisions log); only
+  FRAME = BLUR in ORIGINAL stays. A wide blur needs a cheaper design that slides with the picture before it comes back.
 
 ## Phase 5: stereoscopic 3D
 
@@ -1317,3 +1307,18 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   (7) **Process lessons** (memory too): never `loadstate` or install over the owner's live game; check the console shows
   the scene before measuring; `./build_3ds.sh --install` right after a commit looks for a CIA named with the new
   commit: run `TMC3DS_DEBUG_TOOLS=1 ./platform/3ds/build.sh` first.
+- **2026-10-20** The wide blur dropped (owner, after trying it on the Old 3DS, house and smithy of area 0x22 rooms 10/11).
+  (1) NEIGHBOURS = BLUR's own blurred copy and the ambient border met at a seam; drawing the neighbours from the border's
+  picture removed the seam but showed the border's faults inside the rooms. (2) **Why the wide border "walked"**: the edge
+  inset (20 px) was stretched back over the whole rectangle, so a room the screen cuts changed scale every scroll frame
+  (an accordion; fix: inset only the room's own edges and lay the part read back in place); and every pass shrank too far
+  in one go (a 300 px picture into 64 texels, 64 into 13 of the 32x16 level), so each texel read a few pixels and its
+  colour jumped as the picture moved. Halving steps (128x128 before stage 0; 128x64 and 64x32 before stage 1) cut the
+  frame-to-frame jumps in the border bands from 7.7 to 3.0 (second temporal difference, `scenerec` of the scroll), but
+  the blur with any of it cost too much for the owner (~40 fps in the scrolling frames, `top_ms` 16-20 ms). (3) **Why
+  FRAME = BLUR is smooth**: its rectangle never moves and it always blends each rebuild into the last (40/255);
+  `Port_Widescreen_BlurCameraMoved` only updates in WIDE, which turned the blending off while scrolling. (4) Decision:
+  VIEW is WIDE, WIDE + AI, ORIGINAL (`wide_blur` ignored), WIDE + AI leaves black where it has no picture, NEIGHBOURS is
+  ON / OFF, FRAME = BLUR stays. The branch was shrunk to those two commits; its history is `backup/blur-neighbours-all`
+  (local). The release's multi-rectangle border and `Port_Widescreen_ContentRects` stay, unused. The OPTIONS label is
+  shortened where it did not fit (SALA VECINA, SALLES VOIS., NACHBARN, STANZE VIC.).
