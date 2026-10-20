@@ -288,6 +288,10 @@ s32 ModHealth(s32 delta) {
      * to negative deltas so healing/heart-pickups stay normal. */
     {
         extern bool Port_Reborn_IsEnabled(int feat);
+        extern int Port_Debug_GodModeEnabled(void);
+        if (delta < 0 && Port_Debug_GodModeEnabled()) {
+            delta = 0;
+        }
         if (delta < 0 && Port_Reborn_IsEnabled(7 /* REBORN_FEAT_HERO_MODE */)) {
             delta *= 2;
         }

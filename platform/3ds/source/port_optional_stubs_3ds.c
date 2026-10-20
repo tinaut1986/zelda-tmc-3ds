@@ -23,6 +23,13 @@ bool Port_TTS_GetEnabled(void) { return false; }
 bool Port_AudioMute_ShouldSuppress(unsigned int soundRequest) { (void)soundRequest; return false; }
 int Port_Debug_NoclipEnabled(void) { return 0; }
 
+/* God mode (port_debug_actions.h; the PC build has its own in port_debug_actions.c): Link takes no damage, ModHealth
+ * dropping negative deltas. Toggled by the heart button beside the rupees on the bottom screen, debug-tools builds
+ * only; in memory, off at boot. */
+static bool sGodMode;
+void Port_DebugAction_SetGodMode(int on) { sGodMode = on != 0; }
+int Port_Debug_GodModeEnabled(void) { return sGodMode ? 1 : 0; }
+
 static uint64_t sNextAutosaveMs;
 
 extern u32 WriteSaveFile(u32 index, SaveFile* saveFile);
