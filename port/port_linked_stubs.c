@@ -1861,9 +1861,11 @@ static int Port_WidescreenFixedCanvasSubtask(void) {
      * AuxCutscene 5, Zelda leaving Link's house through its entrance room (HOUSE_INTERIORS_2
      * room 0x10) while the game waits in the Smith's room next door: drawn at 240x160 it
      * lost the neighbour rooms the play around it shows. AuxCutscene 0 too: the Minish Woods seen from outside the
-     * Deepwood Shrine when its big door opens (area 0x48 room 0x17), the woods as in play. */
+     * Deepwood Shrine when its big door opens (area 0x48 room 0x17), the woods as in play. Their fade out
+     * (Subtask_FadeOut, nextToLoad 3) is still that world: as the fixed canvas it dropped to 240x160 for its last
+     * frames before the game came back. */
     if (gUI.lastState == SUBTASK_AUXCUTSCENE && (gUI.field_0x3 == 0 || gUI.field_0x3 == 1 || gUI.field_0x3 == 5) &&
-        gUI.nextToLoad == 2) {
+        (gUI.nextToLoad == 2 || gUI.nextToLoad == 3)) {
         return 0;
     }
     /* Pause/inventory replace the world with a fixed GBA canvas. State 3 is
@@ -2340,9 +2342,10 @@ static void Port_WidescreenSnapGameplayCamera(Port3DSFullViewMode mode) {
     sWsGameplayMode = mode;
     /* AuxCutscene 0 (the Minish Woods seen when the Deepwood Shrine's big door opens) places its camera by hand and
      * its camera target is still Link, in the shrine: the 400x240 view keeps the centre of the GBA's 240x160 picture
-     * instead (80 and 40 px more on each side), and gives it back on the way out. */
+     * instead (80 and 40 px more on each side), and gives it back on the way out. Only while the woods are shown:
+     * from Subtask_Die (nextToLoad 4) the shrine's own camera is back and snaps as any room's. */
     if (gMain.substate == GAMEMAIN_SUBTASK && gUI.lastState == SUBTASK_AUXCUTSCENE && gUI.field_0x3 == 0 &&
-        previous != mode) {
+        gUI.nextToLoad < 4 && previous != mode) {
         const int sign = mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X ? -1 : previous == PORT_3DS_FULL_VIEW_OUTDOOR_1X ? 1 : 0;
         gRoomControls.scroll_x = (s16)(gRoomControls.scroll_x + sign * 80);
         gRoomControls.scroll_y = (s16)(gRoomControls.scroll_y + sign * 40);
