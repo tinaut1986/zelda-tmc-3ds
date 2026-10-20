@@ -1322,3 +1322,10 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   ON / OFF, FRAME = BLUR stays. The branch was shrunk to those two commits; its history is `backup/blur-neighbours-all`
   (local). The release's multi-rectangle border and `Port_Widescreen_ContentRects` stay, unused. The OPTIONS label is
   shortened where it did not fit (SALA VECINA, SALLES VOIS., NACHBARN, STANZE VIC.).
+- **2026-10-20** Two small ones, both seen by the owner. (1) **The Minish Paths' leaves jumped into place** when a path
+  room's fade-in ended: the camera snaps into Full View during the fade, when the parallax managers do not run yet, so
+  BG1/BG3 kept the old camera's offsets; their update is run again after the snap (`Port_WidescreenRefreshParallax`).
+  (2) **Stereo 3D for what Link holds up** (a lifted pot, a treasure from a chest) at 4 px: the first sprite-level depth,
+  an OAM mark carried into the GPU batches (`docs/stereo-3d.md`, "What Link holds up"). A sprite's scissor has to move
+  with its own shift, not its layer's: with the layer's (0) a two-piece jar lost 2 px of each half and split down the
+  middle (seen on the New 3DS).

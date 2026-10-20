@@ -23,6 +23,8 @@
 #include "sound.h"
 #include "structures.h"
 #include "vram.h"
+#include "object.h"
+#include "player.h"
 
 #include "port_widescreen.h"
 #include "port_rom.h"
@@ -38,6 +40,9 @@ static void RenderSpritePieces(const u8* data, s16 baseX, s16 baseY, u32 flags, 
 
 /* Set true only while rendering the player; drives the swamp-sink body clip. */
 static int sRenderingPlayer = 0;
+/* Set while rendering what Link holds up: its OAM entries are marked for the 3DS's stereo 3D, which draws
+ * them in front of the screen (virtuappu_mode1_obj_front_mark, docs/stereo-3d.md). */
+static int sRenderingHeld = 0;
 
 /* The file select drawn at 400x240 (Port_Widescreen_FileSelectWide): the game keeps placing its
  * sprites on the GBA's 240x160 screen; each drawn thing (an entity, a DrawDirect) is moved into
@@ -428,6 +433,7 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
     if (updated == 0) {
         memset(virtuappu_mode1_obj_clip_mark_staged, 0, MODE1_GBA_OAM_COUNT);
         memset(virtuappu_mode1_obj_y_negative_staged, 0, MODE1_GBA_OAM_COUNT);
+        memset(virtuappu_mode1_obj_front_mark_staged, 0, MODE1_GBA_OAM_COUNT);
         virtuappu_mode1_obj_clip_enable_staged = 0;
     }
     int sSwampClipActive = (sRenderingPlayer && gPlayerState.floor_type == SURFACE_SWAMP &&
@@ -533,6 +539,7 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
          * clip in ViruaPPU (see RenderSpritePieces top + port_gba_mem). */
         if (sSwampClipActive)
             virtuappu_mode1_obj_clip_mark_staged[updated & 0x7F] = 1;
+        virtuappu_mode1_obj_front_mark_staged[updated & 0x7F] = (u8)sRenderingHeld;
 
         updated++;
     }
@@ -591,6 +598,7 @@ static void WideSpritesEnd(int first) {
         memcpy(oam + out * 8, attr, sizeof(attr));
         virtuappu_mode1_obj_y_negative_staged[out] = y < 0;
         virtuappu_mode1_obj_clip_mark_staged[out] = virtuappu_mode1_obj_clip_mark_staged[i];
+        virtuappu_mode1_obj_front_mark_staged[out] = virtuappu_mode1_obj_front_mark_staged[i];
         out++;
     }
     gOAMControls.updated = (u8)out;
@@ -897,7 +905,24 @@ static void LookupAndRenderNormal(Entity* entity, s32 x, s32 y, u32 flags, u16 e
  *   spriteAnimation[2] < 0:  direct frame data from entity->myHeap
  *   spriteAnimation[2] > 0:  multi-part from gUnk_020000C0
  */
+/* What Link holds up: the object he lifted (to throw it: the carried entity's child while heldObject is 3,
+ * lifting, or 4, holding; UpdateCarriedObject) and the treasure he shows when he gets one (LinkHoldingItem). */
+static int IsHeldUp(const Entity* entity) {
+    extern PlayerEntity gPlayerEntity;
+    if (entity->kind == OBJECT && entity->id == LINK_HOLDING_ITEM) return 1;
+    return (u8)(gPlayerState.heldObject - 3) < 2 && gPlayerEntity.carriedEntity != NULL &&
+           gPlayerEntity.carriedEntity->child == entity;
+}
+
+static void DrawEntitySpritesOf(Entity* entity, s32 x, s32 y, u32 flags, u16 extra);
+
 static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra) {
+    sRenderingHeld = IsHeldUp(entity);
+    DrawEntitySpritesOf(entity, x, y, flags, extra);
+    sRenderingHeld = 0; /* what is drawn next (the HUD, DrawDirect) is not held */
+}
+
+static void DrawEntitySpritesOf(Entity* entity, s32 x, s32 y, u32 flags, u16 extra) {
     s8 renderMode = (s8)entity->spriteAnimation[2]; /* offset 0x28 */
 
     extern PlayerEntity gPlayerEntity;

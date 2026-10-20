@@ -260,6 +260,8 @@ typedef struct PpuGpu3DSFrameView {
     bool objClipEnable;
     const uint8_t* objClipMark;
     int objClipY;
+    /* The OAM entries of what Link holds up (virtuappu_mode1_obj_front_mark): stereo 3D draws them in front. */
+    const uint8_t* objFrontMark;
     /* A uniform screen fade the renderer applies itself (docs/gpu-fade.md):
      * `memory`'s palettes are then the unfaded ones and the finished picture is
      * blended toward grey `fadeLevel` by fadeWeight/255. 0 weight: none. */
@@ -336,6 +338,8 @@ typedef struct PpuGpu3DSBatch {
     uint8_t effect, eva, evb, evy, objectIndex;
     uint16_t color;
     bool objWindow, semiTransparent;
+    /* A sprite of what Link holds up (objFrontMark): stereo 3D moves it with its own depth. */
+    bool held;
     /* 0 samples the tile atlas; 1 + n samples view ring n (bg * 2 + variant). */
     uint8_t texture;
     /* Added to every vertex position by the shader. Zero except for

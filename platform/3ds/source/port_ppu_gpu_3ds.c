@@ -108,6 +108,9 @@ static C3D_RenderTarget* sOutputRightTarget;
 static bool sRightReady;
 static bool sEyeShifting;
 static float sEyeShiftNdc[PPU_GPU3DS_OBJ + 1][4];
+/* The same for the sprites of what Link holds up (PpuGpu3DSBatch.held). */
+static int sEyeHeldPx;
+static float sEyeHeldNdc;
 /* The same in whole pixels, for the batch's scissor: a layer's regions move with it, or their
  * edges cut what moved (the R button split in two, a heart cut by the next). */
 static int sEyeShiftPx[PPU_GPU3DS_OBJ + 1][4];
@@ -1019,8 +1022,8 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
                                                                       : &sRingTex[batch->texture - 1u]);
     }
     SetBatchOffset(batch->offsetX + (sEyeShifting && batch->layer <= PPU_GPU3DS_OBJ
-                                             ? (batch->objWindow && sEyeWindowFollows
-                                                        ? sEyeWindowNdc
+                                             ? (batch->objWindow && sEyeWindowFollows ? sEyeWindowNdc
+                                                : batch->held                            ? sEyeHeldNdc
                                                         : sEyeShiftNdc[batch->layer][batch->priority & 3u])
                                              : 0.0f),
                    batch->offsetY);
@@ -1052,6 +1055,7 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
     u32 left = batch->scissorLeft, right = batch->scissorRight;
     if (sEyeShifting && batch->layer <= PPU_GPU3DS_OBJ) {
         const int shift = batch->objWindow && sEyeWindowFollows ? sEyeWindowPx
+                          : batch->held                         ? sEyeHeldPx
                                                                  : sEyeShiftPx[batch->layer][batch->priority & 3u];
         const int movedLeft = (int)left + shift, movedRight = (int)right + shift;
         left = movedLeft < 0 ? 0u : (u32)movedLeft;
@@ -1126,6 +1130,7 @@ static bool sFrontLayer[PPU_GPU3DS_OBJ + 1][4];
 static bool sFrontHasObj;
 
 static bool IsFrontBatch(const PpuGpu3DSBatch* batch) {
+    if (batch->held) return sEyeHeldPx != 0;
     return batch->layer <= PPU_GPU3DS_OBJ && sFrontLayer[batch->layer][batch->priority & 3u];
 }
 
@@ -1421,6 +1426,11 @@ static void SetEyeShifts(bool shifted, Stereo3DSEye eye) {
             sEyeShiftPx[layer][priority] = pixels;
             sEyeShiftNdc[layer][priority] = (float)pixels * toNdc;
         }
+    {
+        const float shift = Stereo3DS_HeldShift(eye);
+        sEyeHeldPx = (int)(shift < 0.0f ? shift - 0.5f : shift + 0.5f);
+        sEyeHeldNdc = (float)sEyeHeldPx * toNdc;
+    }
     unsigned followLayer, followPriority;
     sEyeWindowFollows = Stereo3DS_ObjWindowFollows(&followLayer, &followPriority);
     if (sEyeWindowFollows) {

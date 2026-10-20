@@ -28,6 +28,8 @@ static const signed char kDepth[5][4] = {
  * and the stone panel behind them. */
 enum { GAME_OVER_TEXT_DEPTH = 10, GAME_OVER_CHOICES_DEPTH = 6, GAME_OVER_PANEL_DEPTH = 3 };
 enum { MAP_HINT_BACK_DEPTH = 0, MAP_HINT_MAP_DEPTH = 2, MAP_HINT_MARKER_DEPTH = 5 };
+/* What Link holds up over his head stands out of the screen, behind the HUD (owner, 2026-10-20). */
+enum { HELD_DEPTH = 4 };
 enum { RAYS_DEPTH = 4, LEAVES_DEPTH = 4, TITLE_FRONT_DEPTH = 8, FILE_SELECT_OBJ_DEPTH = 4, FILE_SELECT_PANEL_DEPTH = 2 };
 
 static bool sActive;
@@ -113,6 +115,12 @@ float Stereo3DS_LayerShift(unsigned layer, unsigned priority, Stereo3DSEye eye) 
     if (!sHasDepth || layer > PPU_GPU3DS_OBJ || priority > 3) return 0.0f;
     const int depth = DepthFor(sScenes, layer, priority);
     const float half = 0.5f * (float)depth * sSlider;
+    return eye == STEREO3DS_LEFT ? half : -half;
+}
+
+float Stereo3DS_HeldShift(Stereo3DSEye eye) {
+    if (!sHasDepth) return 0.0f;
+    const float half = 0.5f * (float)HELD_DEPTH * sSlider;
     return eye == STEREO3DS_LEFT ? half : -half;
 }
 

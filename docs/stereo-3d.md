@@ -31,6 +31,17 @@ Written to the SD log as `stereo: scenes N` when it changes.
 | 64 | the game over screen (`TASK_GAMEOVER`): the GAME OVER letters (sprites) at 10 px, the choices (BG0, priority 0) at 6, the stone panel (BG1, BG2) at 3 | OBJ, BG0, BG1, BG2 |
 | 32 | the map hints (`SUBTASK_MAPHINT`, `SUBTASK_LOCALMAPHINT`): the grey that covers what is not unlocked and its frame are BG2 (screen plane, with the backdrop); the unlocked map is BG1 at 2 px, seen through the OBJ-window sprites, which follow BG1 (`Stereo3DS_ObjWindowFollows`); the markers are sprites at 5 px | BG2 0, BG1 2, OBJ 5 |
 
+## What Link holds up
+
+A sprite rather than a layer: the object Link lifts to throw (the carried entity's child while
+`gPlayerState.heldObject` is 3, lifting, or 4, holding) and the treasure he shows when he gets one
+(`LINK_HOLDING_ITEM`) stand 4 px in front (`HELD_DEPTH` in `stereo_3ds.c`, owner 2026-10-20). `port_draw.c`
+marks their OAM entries (`IsHeldUp`, `virtuappu_mode1_obj_front_mark`, committed with the rest of the OAM
+metadata); each sprite is a batch of its own in the GPU model, which carries the mark (`PpuGpu3DSBatch.held`), and
+the renderer moves those batches by `Stereo3DS_HeldShift` and counts them as in front (`IsFrontBatch`). When a
+layer on the screen plane is drawn over them on the same lines (tree tops) the frame is drawn whole for each eye
+(reason 4). The software renderer does not move them.
+
 ## How it works
 
 - `stereo_3ds.c`, once a frame (`Stereo3DS_BeginFrame` in `PresentFrame`): the setting, the slider,
