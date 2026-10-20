@@ -2,6 +2,7 @@
 #include "area.h"
 #include "common.h"
 #include "game.h"
+#include "main.h"
 #include "global.h"
 #include "item.h"
 #include "message.h"
@@ -149,7 +150,14 @@ void Port_UI_PrepareGameplayGeometry(void) {
     }
 
     /* These widgets live in BG0 rather than OAM. Their draw routines erase
-     * the previous tilemap footprint before repainting at the new offset. */
+     * the previous tilemap footprint before repainting at the new offset.
+     * Not while a menu runs (the pause menu calls UpdateUIElements, and the
+     * view drops to 240x160 there): the GBA does not draw the HUD over a
+     * menu, and repainting it put the keys' icon and count over the pause
+     * screen's frame. DrawUI repaints them once play is back. */
+    if (gMain.substate == GAMEMAIN_SUBTASK && gUI.nextToLoad == 2) {
+        return;
+    }
     DrawRupees();
     DrawKeys();
 }
