@@ -19,8 +19,9 @@ change (what goes where: the table in `CLAUDE.md`).
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.4.1` (on origin; the line was `release/v0.3.3`, renamed `release/v0.4.0` for the
-minor bump the owner chose, tagged, and renamed again right after the `v0.4.0` tag). Published: **`v0.4.0`**
+**Release line:** `release/v0.4.2` (on origin; renamed from `release/v0.4.1` right after the `v0.4.1` tag). Published:
+**`v0.4.1`** (2026-10-20, **beta**: FRAME = BLUR, NEIGHBOURS ON / OFF, 3D for what Link holds up, the Deepwood door
+cutscene in wide, fixes; `docs/release-notes/v0.4.1.md`), **`v0.4.0`**
 (2026-10-19, **beta**: neighbour rooms in Full View, AUTO UPDATE, the bottom map's parity with the pause map and
 fixes; `docs/release-notes/v0.4.0.md`), **`v0.3.2`** (2026-10-18, **stable**: first a beta, then promoted by re-running the
 workflow on the tag after `release/v0.3.2` was merged `--no-ff` into `main`, `a42d406`; its release body's notes
@@ -52,7 +53,7 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 
 **Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
 
-**Start here (2026-10-20):** `release/v0.4.1` holds, on top of the `v0.4.0` tag, the neighbour-list fix, the GPU split
+**Start here (2026-10-20):** `v0.4.1` (beta, tagged on what `release/v0.4.2` starts from) holds, on top of `v0.4.0`, the neighbour-list fix, the GPU split
 flush, the Zz bubble fix, the NEIGHBOURS setting (ON / OFF) and the drop of WIDE + BLUR (decisions log of 2026-10-19 and
 2026-10-20); pushed to origin on 2026-10-20. Open branches: the parked `feat/village-3d` and the local backup
 `backup/blur-neighbours-all`; `origin/feat/frame-blur` is merged and left on origin. Next, in this order:
