@@ -317,6 +317,12 @@ static struct {
     /* A finger down on the map (3DS): a tap picks a tile only on release, because the same touch may turn
      * into a drag that pans the zoomed-in map. dragDx/dragDy are screen pixels not yet applied. */
     uint8_t mapTouch, mapTouchMoved, mapDragging;
+    uint8_t scrollTouch;      /* 1: the touch is on a scrolling panel (OPTIONS); 2: and it began on a target */
+    int32_t scrollHitX, scrollHitY;
+    /* The scroll bar of the panel just painted (0 sbMax = none): the tap thread grabs it, the paint thread
+     * reads scrollFrac (0..1, -1 = untouched) as the position the finger asked for. */
+    float scrollFrac, sbMax;
+    int32_t sbX0, sbTop, sbTrackH, sbBarH;
     int32_t mapTouchX0, mapTouchY0, mapTouchLastX, mapTouchLastY;
     float dragDx, dragDy;
     /* Quest tab: which of its screens is up — the status screen itself or
@@ -327,7 +333,7 @@ static struct {
     uint8_t loadStateResult;
     uint8_t loadConfirmActive;
     uint8_t unavailableNoticeActive;
-} sUi = { .floorPreview = SS_NO_FLOOR, .playerFloorDisp = SS_NO_FLOOR };
+} sUi = { .floorPreview = SS_NO_FLOOR, .playerFloorDisp = SS_NO_FLOOR, .scrollFrac = -1.0f };
 
 /* sUi.questView */
 enum { SS_QUEST_MAIN = 0, SS_QUEST_KINSTONES, SS_QUEST_TECHNIQUES };
@@ -3313,6 +3319,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     loadConfirmActive = sUi.loadConfirmActive;
     unavailableNoticeActive = sUi.unavailableNoticeActive;
     sUi.mapLive = 0; /* set again by PaintOverworld when the map is up */
+    sUi.sbMax = 0.0f; /* and by the panels that scroll */
     UI_UNLOCK();
 
     int followCfg = Port_Config_GetSecondScreenFollowCam();
@@ -3526,6 +3533,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
  * bracket that tile for a beat before the regional map opens. Returns 0
  * when nothing was picked (off-grid, or the grid isn't decodable), which
  * leaves the caller's plain follow/whole toggle in charge. */
+static void DispatchTap(int x, int y, int longPress);
 static int PickMapRegion(int x, int y) {
     int picked = 0;
     UI_LOCK();
@@ -3571,12 +3579,24 @@ int Port_SecondScreen_TapIsTab(int x, int y) {
 }
 
 #ifdef TMC_3DS
-/* The finger moved while it is down on the map. Past a few pixels the touch is a drag, not a tap: it pans
- * the zoomed-in map (MAP FOLLOW off). Returns 1 when the view needs repainting. */
+/* Where the finger on the scroll bar's track puts the list, 0..1 (the bar's middle follows the finger). */
+static float ScrollBarFrac(int y) {
+    float f = sUi.sbTrackH > sUi.sbBarH
+                  ? ((float)y - (float)sUi.sbTop - (float)sUi.sbBarH * 0.5f) / (float)(sUi.sbTrackH - sUi.sbBarH)
+                  : 0.0f;
+    return f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
+}
+
+/* The finger moved while it is down. On the map, past a few pixels the touch is a drag, not a tap: it pans
+ * the zoomed-in map (MAP FOLLOW off). On a scrolling panel (OPTIONS) it scrolls the list. Returns 1 when the
+ * view needs repainting. */
 int Port_SecondScreen_OnTouchMove(int x, int y) {
     int changed = 0;
     UI_LOCK();
-    if (sUi.mapTouch) {
+    if (sUi.mapTouch && sUi.scrollTouch == 3) {
+        sUi.scrollFrac = ScrollBarFrac(y);
+        changed = 1;
+    } else if (sUi.mapTouch) {
         if (!sUi.mapTouchMoved) {
             int ax = x - sUi.mapTouchX0, ay = y - sUi.mapTouchY0;
             if (ax < 0) ax = -ax;
@@ -3584,7 +3604,10 @@ int Port_SecondScreen_OnTouchMove(int x, int y) {
             if (ax + ay >= 8) sUi.mapTouchMoved = 1;
         }
         if (sUi.mapTouchMoved) {
-            if (!sUi.wholeMap && !Port_Config_GetSecondScreenFollowCam()) {
+            if (sUi.scrollTouch) {
+                sUi.dragDy += (float)(y - sUi.mapTouchLastY);
+                changed = 1;
+            } else if (!sUi.wholeMap && !Port_Config_GetSecondScreenFollowCam()) {
                 sUi.dragDx += (float)(x - sUi.mapTouchLastX);
                 sUi.dragDy += (float)(y - sUi.mapTouchLastY);
                 sUi.mapDragging = 1;
@@ -3598,23 +3621,28 @@ int Port_SecondScreen_OnTouchMove(int x, int y) {
     return changed;
 }
 
-/* The finger left the screen: a touch that never became a drag was a tap on the map. */
+/* The finger left the screen: a touch that never became a drag was a tap (on the map, or on what the
+ * scrolling panel held back until now). */
 void Port_SecondScreen_OnTouchRelease(void) {
-    int tap = 0, x = 0, y = 0;
+    int tap = 0, x = 0, y = 0, scroll = 0;
     UI_LOCK();
     if (sUi.mapTouch) {
         tap = !sUi.mapTouchMoved;
-        x = sUi.mapTouchX0;
-        y = sUi.mapTouchY0;
+        scroll = sUi.scrollTouch;
+        x = sUi.scrollTouch == 2 ? sUi.scrollHitX : sUi.mapTouchX0;
+        y = sUi.scrollTouch == 2 ? sUi.scrollHitY : sUi.mapTouchY0;
+        if (sUi.scrollTouch == 1 || sUi.scrollTouch == 3) tap = 0;
         sUi.mapTouch = 0;
+        sUi.scrollTouch = 0;
     }
     sUi.mapDragging = 0;
     UI_UNLOCK();
-    if (tap) PickMapRegion(x, y);
+    if (tap && scroll) DispatchTap(x, y, 0);
+    else if (tap) PickMapRegion(x, y);
 }
 #endif
 
-void Port_SecondScreen_OnTap(int x, int y, int longPress) {
+static void DispatchTap(int x, int y, int longPress) {
     TapTarget hit;
     int found = 0;
 
@@ -3959,6 +3987,49 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             UI_UNLOCK();
             break;
     }
+}
+
+void Port_SecondScreen_OnTap(int x, int y, int longPress) {
+#ifdef TMC_3DS
+    /* OPTIONS and the STATES list scroll by dragging, so a touch on one of their cells (or on nothing) waits
+     * for the finger to lift: a tap if it never moved, a scroll if it did. A touch on the scroll bar's strip
+     * grabs the bar. The tab bar and anything else acts at once. */
+    int deferred = 0;
+    UI_LOCK();
+    if ((sUi.tab == SS_TAB_SETTINGS && sUi.settingsPage == SS_SETTINGS_ROOT) ||
+        (sUi.tab == SS_TAB_STATES && Compact_StatesListShown())) {
+        int found = 0, cell = 0;
+        for (int i = 0; i < sTapTargetCount; i++) {
+            const TapTarget* t = &sTapTargets[i];
+            if (x >= t->x0 && x < t->x1 && y >= t->y0 && y < t->y1) {
+                found = 1;
+                cell = t->action == SS_ACT_SETTING || t->action == SS_ACT_THEME || t->action == SS_ACT_TABS ||
+                       t->action == SS_ACT_SETTINGS_PAGE ||
+                       (t->action == SS_ACT_STATES && Compact_StatesIsCard(t->arg));
+                break;
+            }
+        }
+        if (sUi.sbMax > 0.0f && x >= sUi.sbX0 && y >= sUi.sbTop && y < sUi.sbTop + sUi.sbTrackH) {
+            sUi.mapTouch = 1;
+            sUi.mapTouchMoved = 1;
+            sUi.scrollTouch = 3;
+            sUi.scrollFrac = ScrollBarFrac(y);
+            deferred = 1;
+        } else if (!found || cell) {
+            sUi.mapTouch = 1;
+            sUi.mapTouchMoved = 0;
+            sUi.mapTouchX0 = sUi.mapTouchLastX = x;
+            sUi.mapTouchY0 = sUi.mapTouchLastY = y;
+            sUi.scrollTouch = cell ? 2 : 1;
+            sUi.scrollHitX = x;
+            sUi.scrollHitY = y;
+            deferred = 1;
+        }
+    }
+    UI_UNLOCK();
+    if (deferred) return;
+#endif
+    DispatchTap(x, y, longPress);
 }
 
 /* ------------------------------------------------------------------ */
