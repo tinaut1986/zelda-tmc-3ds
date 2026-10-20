@@ -55,6 +55,13 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 
 **Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
 
+**Since `v0.4.2`, on `release/v0.4.3` (2026-10-20, all seen by the owner on the New 3DS, not on the Old 3DS/2DS):**
+Gentari's two halves (picture rooms) scroll in Full View and show their neighbours; a state saved with the camera
+frozen loads in Full View; the Deepwood door cutscene keeps the wide view through its fade out; no HUD keys over the
+pause menu; GOD MODE in debug builds (a heart beside the rupees); the map screens at 60 fps in 3D. One entry each in
+the decisions log of 2026-10-20 (the last six). No release notes yet: write `docs/release-notes/v0.4.3.md` before the
+tag. Open from today: #46 (a state saved in the pause menu leaves pots unliftable).
+
 **Start here (2026-10-20):** `v0.4.1` (beta, tagged on what `release/v0.4.2` starts from) holds, on top of `v0.4.0`, the neighbour-list fix, the GPU split
 flush, the Zz bubble fix, the NEIGHBOURS setting (ON / OFF) and the drop of WIDE + BLUR (decisions log of 2026-10-19 and
 2026-10-20); pushed to origin on 2026-10-20. Open branches: the parked `feat/village-3d` and the local backup
@@ -121,9 +128,12 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
   **do not `loadstate` while the owner plays** (it replaced their place twice on 2026-10-20) and **check `state` shows
   the scene (`ingame=1 area=80 room=04`) before measuring** (six recordings of the title screen were taken as results once).
   `debug/` still holds the owner's old files and `tmc-check-*`; Claude's `tmc-dump-006x` sets were deleted.
-- **New 3DS, `192.168.1.133`**: untouched today: the debug build of `feat/wide-neighbour-rooms` at 45a90f5
-  (`0.3.3-dev.35.15+45a90f5`), settings as on 2026-10-17 (WIDE + AI YES, pixel-perfect, GBA GRID LOW, TOP HUD AUTO,
-  FRAMES "sin saltos", SHOW FPS, stereo on, COLOURS on). `.3ds_ftp_ip` may hold either console: pass `--ip`.
+- **New 3DS, `192.168.1.133`**: the debug build `0.4.3-dev.11+dbe9c18` (the code of `release/v0.4.3` at `9078959`, built
+  before that commit), installed by Claude on 2026-10-20; FORCE 3D off. Settings as on 2026-10-17 (WIDE + AI YES,
+  pixel-perfect, TOP HUD AUTO, SHOW FPS, stereo on, NEIGHBOURS ON). The owner's states are theirs (they deleted and
+  re-made several on 2026-10-20); the newest ones are the Deepwood boss room (49/00, one of them made by Claude in the
+  pause menu: #46, do not use it) and the Minish Woods before the shrine door cutscene (00/00). Left in the pause
+  menu's world map of the Gentari house state.
 - The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP). How to read one:
   `docs/debug-tools.md`, "Reading a Luma crash dump". The 2DS crash dumps 1 and 2 (588 bytes, kernel mode, `pc` 0xfff1c1d8) and 19 are explained in the decisions log of 2026-10-20. RetroAchievements on the 2DS was logged in as the test
   account `tinaut1986test` on 2026-10-15 (check before the owner plays for real).
