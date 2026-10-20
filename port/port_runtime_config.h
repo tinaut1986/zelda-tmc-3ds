@@ -292,6 +292,11 @@ void Port_Config_CycleGbaGrid(void);
 int Port_Config_GetGbaFrame(void);
 const char* Port_Config_GetGbaFrameName(void);
 void Port_Config_CycleGbaFrame(void);
+/* NEIGHBOURS (neighbour_rooms): the rooms drawn beside a room smaller than the Full View (P4.9): 0 OFF (only the
+ * room), 1 ON. */
+int Port_Config_GetNeighbourRooms(void);
+const char* Port_Config_GetNeighbourRoomsName(void);
+void Port_Config_CycleNeighbourRooms(void);
 /* The frame is for VIEW: ORIGINAL only (WIDE fills the border with world): locked and off otherwise,
  * whatever gba_frame says; Active is what the presenter draws. */
 bool Port_Config_GbaFrameAvailable(void);

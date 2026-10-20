@@ -515,6 +515,7 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
     CSettingCell(s, tl, 2, 0, 1, "COLOURS", SS_SET_COLOR_CORRECTION);
     CSettingCell(s, tl, 2, 1, 1, "GBA GRID", SS_SET_GBA_GRID);
     CSettingCell(s, tl, 2, 2, 1, "FRAME", SS_SET_GBA_FRAME);
+    CSettingCell(s, tl, 2, 3, 1, "NEIGHBOURS", SS_SET_NEIGHBOURS);
     /* Look and system */
     {
         int32_t x, w;

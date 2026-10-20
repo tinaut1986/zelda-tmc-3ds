@@ -104,6 +104,10 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
   stop before it, fills the border of the screens the game draws at 240x160 (logos, intro, game over...) with a
   blur of the picture, the same ambilight as FRAME = BLUR; WIDE + AI does it too where it has no picture.
   The VIEW stops are WIDE, WIDE + BLUR, WIDE + AI, ORIGINAL.
+- NEIGHBOURS (`neighbour_rooms=0|1` in `tmc3ds.ini`, OPTIONS, next to FRAME): the rooms drawn beside a room
+  smaller than the Full View (`port/port_neighbour_rooms.c`). OFF: only the room (the camera centres it as before
+  P4.9); ON (default): the neighbours, with their doors. Only in the WIDE stops (the view that has room beside the
+  room); in ORIGINAL it does nothing.
 - Show FPS: a compact lower-left top-screen box of four lines, averaged over
   the last second: the game's rate (green from 59, yellow from 50, red below),
   `L` the logic's ms per tick, `G` the GPU's ms per presented frame and `S` the

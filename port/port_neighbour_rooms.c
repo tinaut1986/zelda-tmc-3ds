@@ -11,6 +11,7 @@
 #include "subtask.h"
 #include "port_generic_entity.h"
 #include "port_rom.h"
+#include "port_runtime_config.h"
 
 #include <string.h>
 
@@ -29,6 +30,7 @@ static unsigned sTicks;
 static int sActive;
 static PortNeighbourStats sStats;
 static u64 sDrawn; /* the rooms the last build drew */
+static int sMode = -1; /* the setting the module last ran with: 0 OFF, 1 ON */
 
 static u32 RoomKey(void) {
     return ((u32)gRoomControls.area << 8) | gRoomControls.room;
@@ -205,6 +207,7 @@ static unsigned ScanCopies(ArchwayAt* at, bool remove) {
 /* The copies the drawn neighbours call for, as EntityData of the current room. */
 static unsigned WantedCopies(EntityData* out) {
     unsigned n = 0;
+    if (Port_Config_GetNeighbourRooms() == 0) return 0;
     const int ox = gRoomControls.origin_x, oy = gRoomControls.origin_y;
     for (unsigned j = 0; j < MAX_ROOMS && n < MAX_ARCHWAYS; ++j) {
         if (((sDrawn >> j) & 1) == 0) continue;
@@ -254,6 +257,19 @@ static void UpdateArchways(void) {
 }
 
 void Port_NeighbourRooms_Update(void) {
+    /* NEIGHBOURS: OFF leaves only the room (and takes the archway copies away). A change of the setting starts the
+     * room's build again. */
+    const int mode = Port_Config_GetNeighbourRooms();
+    if (mode != sMode) {
+        sMode = mode;
+        sKey = 0xffffffffu;
+    }
+    if (mode == 0) {
+        sActive = 0;
+        sDrawn = 0;
+        UpdateArchways();
+        return;
+    }
     const u32 key = RoomKey();
     if (key != sKey) {
         sKey = key;
@@ -273,7 +289,7 @@ void Port_NeighbourRooms_Update(void) {
 
 bool Port_NeighbourRooms_RoomJustChanged(void) {
     /* The room's numbers change before this module's tick runs: until it does, its list is the old room's. */
-    return RoomKey() != sKey || sTicks == 0;
+    return Port_Config_GetNeighbourRooms() != 0 && (RoomKey() != sKey || sTicks == 0);
 }
 
 
@@ -377,7 +393,7 @@ static unsigned RestSlot(unsigned room, int axis, int view) {
 int Port_NeighbourRooms_Rest(unsigned room, int axis, int view, int prefer) {
     const unsigned slot = RestSlot(room, axis, view);
     const int centred = sRestCache[slot].centred;
-    if (sRestCache[slot].count == 0) return centred;
+    if (sRestCache[slot].count == 0 || Port_Config_GetNeighbourRooms() == 0) return centred;
     const int target = prefer == PORT_NEIGHBOUR_NO_PREFERENCE ? centred : prefer;
     int best = centred, bestScore = -1, bestDistance = 0x7fffffff;
     /* The centred position is a candidate too (it may fall between the 8-pixel steps). */
@@ -426,8 +442,8 @@ int Port_NeighbourRooms_LineUp(unsigned room, int axis, int view, int prefer, un
     int maxScore = 0;
     for (int i = 0; i < count; ++i)
         if (sRestCache[slot].score[i] > maxScore) maxScore = sRestCache[slot].score[i];
-    /* Nothing to draw beside the incoming room: as before P4.9. */
-    if (count == 0 || maxScore == 0) return sRestCache[slot].centred;
+    /* Nothing to draw beside the incoming room (or NEIGHBOURS is OFF): as before P4.9. */
+    if (count == 0 || maxScore == 0 || Port_Config_GetNeighbourRooms() == 0) return sRestCache[slot].centred;
     const RoomResInfo* from = &gArea.roomResInfos[fromRoom < MAX_ROOMS ? fromRoom : 0];
     int best = sRestCache[slot].centred, bestCovered = -1, bestDistance = 0x7fffffff;
     for (int i = 0; i < count; ++i) {

@@ -34,6 +34,7 @@ static _Atomic bool sHoldText;
 static _Atomic bool sColorCorrection;
 static _Atomic int sGbaGrid; /* 0 OFF .. 3 HIGH */
 static _Atomic int sGbaFrame; /* 0 NO, 1 GBA, 2 BLUR */
+static _Atomic int sNeighbourRooms = 1; /* the rooms beside a small one in Full View: 0 NO, 1 YES */
 static _Atomic bool sAutosave;
 static bool sConsoleParity;
 static _Atomic Port3DSAspectRatio sAspectRatio = CONFIG_3DS_DEFAULT_ASPECT;
@@ -189,6 +190,7 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("color_correction=%u\n", sColorCorrection ? 1u : 0u);
     APPEND("gba_grid=%d\n", (int)sGbaGrid);
     APPEND("gba_frame=%d\n", (int)sGbaFrame);
+    APPEND("neighbour_rooms=%d\n", (int)sNeighbourRooms);
     APPEND("autosave=%u\n", sAutosave ? 1u : 0u);
     APPEND("widescreen=%u\n", sAspectRatio == PORT_3DS_ASPECT_WIDE ? 1u : 0u);
     APPEND("screen_aspect=%s\n", ConfigValues3DS_AspectName(sAspectRatio));
@@ -416,6 +418,9 @@ void Port_Config_Load(const char* path) {
                 /* 0 NO, 1 GBA, 2 BLUR; older files hold a yes/no word */
                 const int mode = atoi(value);
                 sGbaFrame = mode >= 1 && mode <= 2 ? mode : (ParseBool(value) ? 1 : 0);
+            }
+            else if (strcmp(key, "neighbour_rooms") == 0) {
+                sNeighbourRooms = atoi(value) != 0 || ParseBool(value);
             }
             else if (strcmp(key, "wide_ai") == 0) sWideAi = ParseBool(value);
             else if (strcmp(key, "wide_blur") == 0) sWideBlur = ParseBool(value);
@@ -869,6 +874,14 @@ bool Port_Config_GbaFrameAvailable(void) { return sAspectRatio == PORT_3DS_ASPEC
 int Port_Config_GbaFrameActive(void) { return Port_Config_GbaFrameAvailable() ? (int)sGbaFrame : 0; }
 void Port_Config_CycleGbaFrame(void) {
     sGbaFrame = (sGbaFrame + 1) % 3;
+    SaveConfig();
+}
+int Port_Config_GetNeighbourRooms(void) { return (int)sNeighbourRooms; }
+const char* Port_Config_GetNeighbourRoomsName(void) {
+    return sNeighbourRooms ? "ON" : "OFF";
+}
+void Port_Config_CycleNeighbourRooms(void) {
+    sNeighbourRooms = !sNeighbourRooms;
     SaveConfig();
 }
 bool Port_Config_3DSFullViewComboEnabled(void) {
