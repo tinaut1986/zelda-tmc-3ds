@@ -1354,3 +1354,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   of AuxCutscenes 0, 1 and 5 covered only `nextToLoad == 2`, and `Subtask_FadeOut` (3) still shows their world. It
   covers 3 now. The cutscene's ±80/±40 camera shift is limited to `nextToLoad < 4`, so the shrine's restored camera
   snaps as any room's (checked: the same scroll as before, 832/1344). Seen by the owner on the New 3DS.
+- **2026-10-20** **No HUD keys over the pause menu.** In Full View the pause screen showed half of the dungeon keys'
+  icon and count by its bottom-right corner: the pause menu calls `UpdateUIElements`, whose
+  `Port_UI_PrepareGameplayGeometry` saw the view drop from 400 to 240 and repainted the BG0 rupees and keys at the
+  GBA's offset, over the menu. It no longer repaints while a menu runs (`GAMEMAIN_SUBTASK`, `nextToLoad == 2`);
+  `DrawUI` repaints them when play resumes. Checked with the top HUD shown and hidden.
