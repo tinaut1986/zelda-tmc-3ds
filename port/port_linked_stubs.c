@@ -1852,8 +1852,9 @@ static int Port_WidescreenFixedCanvasSubtask(void) {
      * the world drawn as in play, not a fixed picture: it takes the wide view too. So does
      * AuxCutscene 5, Zelda leaving Link's house through its entrance room (HOUSE_INTERIORS_2
      * room 0x10) while the game waits in the Smith's room next door: drawn at 240x160 it
-     * lost the neighbour rooms the play around it shows. */
-    if (gUI.lastState == SUBTASK_AUXCUTSCENE && (gUI.field_0x3 == 1 || gUI.field_0x3 == 5) &&
+     * lost the neighbour rooms the play around it shows. AuxCutscene 0 too: the Minish Woods seen from outside the
+     * Deepwood Shrine when its big door opens (area 0x48 room 0x17), the woods as in play. */
+    if (gUI.lastState == SUBTASK_AUXCUTSCENE && (gUI.field_0x3 == 0 || gUI.field_0x3 == 1 || gUI.field_0x3 == 5) &&
         gUI.nextToLoad == 2) {
         return 0;
     }
@@ -2328,6 +2329,18 @@ static void Port_WidescreenRefreshParallax(void) {
 static void Port_WidescreenSnapGameplayCamera(Port3DSFullViewMode mode) {
     const Port3DSFullViewMode previous = Port_WidescreenGameplayMode();
     sWsGameplayMode = mode;
+    /* AuxCutscene 0 (the Minish Woods seen when the Deepwood Shrine's big door opens) places its camera by hand and
+     * its camera target is still Link, in the shrine: the 400x240 view keeps the centre of the GBA's 240x160 picture
+     * instead (80 and 40 px more on each side), and gives it back on the way out. */
+    if (gMain.substate == GAMEMAIN_SUBTASK && gUI.lastState == SUBTASK_AUXCUTSCENE && gUI.field_0x3 == 0 &&
+        previous != mode) {
+        const int sign = mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X ? -1 : previous == PORT_3DS_FULL_VIEW_OUTDOOR_1X ? 1 : 0;
+        gRoomControls.scroll_x = (s16)(gRoomControls.scroll_x + sign * 80);
+        gRoomControls.scroll_y = (s16)(gRoomControls.scroll_y + sign * 40);
+        gUpdateVisibleTiles = 1;
+        Port_WidescreenRefreshParallax();
+        return;
+    }
     if (gRoomControls.camera_target == NULL) {
         /* A frozen camera leaving Full View (a portal's closing window, a script
          * moving it out of the room's 400x240 range): centre the narrower view on

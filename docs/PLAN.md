@@ -1329,3 +1329,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   an OAM mark carried into the GPU batches (`docs/stereo-3d.md`, "What Link holds up"). A sprite's scissor has to move
   with its own shift, not its layer's: with the layer's (0) a two-piece jar lost 2 px of each half and split down the
   middle (seen on the New 3DS).
+- **2026-10-20** **AuxCutscene 0 takes the wide view** (the Minish Woods shown when the Deepwood Shrine's big door opens,
+  area 0x48 room 0x17): exempted from the fixed canvas like 1 and 5 (`Port_WidescreenFixedCanvasSubtask`). Its camera is
+  placed by hand while its target is still Link in the shrine, so the snap into Full View centred the woods on Link's
+  shrine coordinates; for this cutscene the snap keeps the GBA picture's centre instead (80 / 40 px). Seen by the owner
+  on the New 3DS.
