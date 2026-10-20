@@ -100,10 +100,14 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
 - WIDE + AI (`wide_ai`, `wide_ai_asked` in `tmc3ds.ini`), after `../mzm`: the scene extensions made with a
   generative AI (the portal's sides, the title's forest, the file select's cave) are shown only in WIDE + AI,
   the second stop of OPTIONS -> VIEW (WIDE, WIDE + AI, ORIGINAL). The first time WIDE is on, the bottom screen
-  asks once whether to show them (YES is WIDE + AI); the answer is kept. WIDE + BLUR (`wide_blur`), the
-  stop before it, fills the border of the screens the game draws at 240x160 (logos, intro, game over...) with a
-  blur of the picture, the same ambilight as FRAME = BLUR; WIDE + AI does it too where it has no picture.
-  The VIEW stops are WIDE, WIDE + BLUR, WIDE + AI, ORIGINAL.
+  asks once whether to show them (YES is WIDE + AI); the answer is kept. Where WIDE + AI has no picture the
+  border stays black. The VIEW stops are WIDE, WIDE + AI, ORIGINAL. (WIDE + BLUR, `wide_blur`, a blurred border
+  grown from the picture and the rooms around it, was dropped on 2026-10-20: too costly on the Old 3DS while
+  scrolling; a file's `wide_blur` is ignored.)
+- NEIGHBOURS (`neighbour_rooms=0|1` in `tmc3ds.ini`, OPTIONS, next to FRAME): the rooms drawn beside a room
+  smaller than the Full View (`port/port_neighbour_rooms.c`). OFF: only the room (the camera centres it as before
+  P4.9); ON (default): the neighbours, with their doors. Only in the WIDE stops (the view that has room beside the
+  room); in ORIGINAL it does nothing.
 - Show FPS: a compact lower-left top-screen box of four lines, averaged over
   the last second: the game's rate (green from 59, yellow from 50, red below),
   `L` the logic's ms per tick, `G` the GPU's ms per presented frame and `S` the

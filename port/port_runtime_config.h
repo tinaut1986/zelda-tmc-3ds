@@ -273,8 +273,6 @@ void Port_Config_Cycle3DSAspectRatio(void);
 /* WIDE + AI: the scene extensions made with a generative AI are shown (WIDE only). The bottom screen
  * asks once whether to, the first time WIDE is on; the answer is kept (wide_ai, wide_ai_asked). */
 bool Port_Config_GetWideAi(void);
-/* WIDE + BLUR, and WIDE + AI where it has no picture: the border blurred from the picture's colours. */
-bool Port_Config_GetWideBlur(void);
 bool Port_Config_WideAiQuestionDue(void);
 void Port_Config_AnswerWideAi(bool yes);
 /* AUTO UPDATE (3DS): check for a newer build when the game opens and ask whether to install it. */
@@ -292,6 +290,11 @@ void Port_Config_CycleGbaGrid(void);
 int Port_Config_GetGbaFrame(void);
 const char* Port_Config_GetGbaFrameName(void);
 void Port_Config_CycleGbaFrame(void);
+/* NEIGHBOURS (neighbour_rooms): the rooms drawn beside a room smaller than the Full View (P4.9): 0 OFF (only the
+ * room), 1 ON. */
+int Port_Config_GetNeighbourRooms(void);
+const char* Port_Config_GetNeighbourRoomsName(void);
+void Port_Config_CycleNeighbourRooms(void);
 /* The frame is for VIEW: ORIGINAL only (WIDE fills the border with world): locked and off otherwise,
  * whatever gba_frame says; Active is what the presenter draws. */
 bool Port_Config_GbaFrameAvailable(void);

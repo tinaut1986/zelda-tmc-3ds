@@ -219,6 +219,7 @@ enum {
     SS_SET_FRAMES,        /* frame_pacing: AUTO / LOCK 30 / NO SKIP */
     SS_SET_GBA_GRID,      /* gba_grid: OFF / LOW / MED / HIGH (gba_look_3ds.h) */
     SS_SET_GBA_FRAME,     /* gba_frame: the console's body around a 240x160 / 360x240 picture */
+    SS_SET_NEIGHBOURS,    /* neighbour_rooms: OFF / ON */
 #endif
     SS_SET_COUNT
 };
@@ -2015,7 +2016,7 @@ static const char* const kSettingLabels[SS_SET_COUNT] = {
     "RANDOMIZER",       "PANEL BACKDROP",     "SWAP SCREENS",
 #ifdef TMC_3DS
     "ASPECT RATIO",     "DISPLAY STYLE",    "FRAMES",
-    "GBA GRID",         "FRAME",
+    "GBA GRID",         "FRAME",         "NEIGHBOURS",
 #endif
 };
 
@@ -2067,6 +2068,7 @@ static int SettingsPageRows(int page, uint8_t* out) {
         out[n++] = SS_SET_DISPLAY_STYLE;
         out[n++] = SS_SET_GBA_GRID;
         out[n++] = SS_SET_GBA_FRAME;
+        out[n++] = SS_SET_NEIGHBOURS;
         out[n++] = SS_SET_TOP_HUD;
         out[n++] = SS_SET_COLOR_CORRECTION;
         out[n++] = SS_SET_BACKDROP;
@@ -2326,6 +2328,9 @@ static int GetSettingState(int row, char* out, int outCap) {
             }
             snprintf(out, (size_t)outCap, "%s", Port_Config_GetGbaFrameName());
             return Port_Config_GetGbaFrame() != 0;
+        case SS_SET_NEIGHBOURS:
+            snprintf(out, (size_t)outCap, "%s", Port_Text_Tr(Port_Config_GetNeighbourRoomsName()));
+            return Port_Config_GetNeighbourRooms() != 0;
         case SS_SET_FRAMES: {
             static const char* const kPacing[PORT_3DS_PACING_COUNT] = { "AUTO", "LOCK 30", "NO SKIP" };
             int pacing = Port_Config_GetFramePacing();
@@ -3690,6 +3695,9 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
                 case SS_SET_GBA_FRAME:
                     if (Port_Config_GbaFrameAvailable()) Port_Config_CycleGbaFrame();
                     else Compact_Toast("%s", Port_Text_Tr("ONLY IN VIEW: ORIGINAL"));
+                    break;
+                case SS_SET_NEIGHBOURS:
+                    Port_Config_CycleNeighbourRooms();
                     break;
                 case SS_SET_FRAMES: {
                     int next = (Port_Config_GetFramePacing() + 1) % PORT_3DS_PACING_COUNT;

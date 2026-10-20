@@ -45,7 +45,6 @@ void Port_Config_SetUiTabsBottom(bool bottom) { sTabsBottom = bottom; }
 static int sAspect = 0, sStyle = 2, sBackdrop = 0;
 static bool sWideAi = false, sWideAiAsked = false;
 bool Port_Config_GetWideAi(void) { return sWideAi; }
-bool Port_Config_GetWideBlur(void) { return sWideAi; }
 bool Port_Config_WideAiQuestionDue(void) { return !sWideAiAsked && !getenv("NO_WIDE_ASK"); }
 void Port_Config_AnswerWideAi(bool yes) { sWideAi = yes; sWideAiAsked = true; }
 static bool sColor = true, sHideHud = false, sHold = true, sCrests = true, sFloor = true, sFollow = true;
@@ -65,6 +64,10 @@ static const char* const kGrid[] = { "OFF", "LOW", "MED", "HIGH" };
 int Port_Config_GetGbaGrid(void) { return sGrid; }
 const char* Port_Config_GetGbaGridName(void) { return kGrid[sGrid]; }
 void Port_Config_CycleGbaGrid(void) { sGrid = (sGrid + 1) % 4; }
+static int sNeighbourRooms = 1;
+int Port_Config_GetNeighbourRooms(void) { return sNeighbourRooms; }
+const char* Port_Config_GetNeighbourRoomsName(void) { return sNeighbourRooms ? "ON" : "OFF"; }
+void Port_Config_CycleNeighbourRooms(void) { sNeighbourRooms = !sNeighbourRooms; }
 int Port_Config_GetGbaFrame(void) { return sGbaFrame; }
 const char* Port_Config_GetGbaFrameName(void) { static const char* const n[] = { "NO", "GBA", "BLUR" }; return n[sGbaFrame]; }
 bool Port_Config_GbaFrameAvailable(void) { return sAspect == 1; }
