@@ -1344,3 +1344,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   the usual stride once loaded (`sub_0807C5F4`), so the Full View scroll takes them. A camera slide tried first on the
   belief that these rooms had no border scroll was dropped: it also fed the old room's rest into every scroll's
   line-up. Seen by the owner on the New 3DS.
+- **2026-10-20** **A save state made with the camera frozen loads in Full View.** A state saved while Link was still
+  walking into a room (no `camera_target`) loaded at 266x160 (`player-invalid`) until the camera got a target again:
+  `Port_Widescreen_ResetAfterStateLoad` forgets the room key, and the new-room latch cleared `sWsArrivalFrozenCamera`
+  for want of a fade. The first latch after a load now counts as an arrival (`sWsStateLoaded`). Seen by the owner on
+  the New 3DS.
