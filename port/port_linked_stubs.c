@@ -1482,6 +1482,9 @@ static int sWsRoomLoadGraceTicks; /* past sWsRoomLoadTicks: the hold may go on w
 /* A door's arrival with the camera still frozen (no camera_target): Link coming out of the stairs. Cleared when the
  * game gives the camera a target, or the room changes again. */
 static int sWsArrivalFrozenCamera;
+/* A save state was just loaded: the room key is forgotten (Port_Widescreen_ResetAfterStateLoad), and a state saved
+ * while the camera was frozen (Link still walking in, no camera_target) is an arrival like a door's, not a scroll. */
+static int sWsStateLoaded;
 static int sWsFadeRecent;    /* ticks left since a fade was last on: a door, not a border scroll */
 static int sWsChangeRoomTicks; /* UpdateShadows ticks spent in GAMEMAIN_CHANGEROOM so far */
 static Port3DSFullViewMode sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
@@ -2110,6 +2113,7 @@ void Port_Widescreen_ResetAfterStateLoad(void) {
     sWsContentHeightPx = 0;
     sWsExperimentalCameraRoomKey = 0xffffffffu;
     sWsExperimentalCameraSnapArmed = 1;
+    sWsStateLoaded = 1;
     Port_WidescreenPublish3DSView(0xffffffffu, PORT_3DS_FULL_VIEW_FALLBACK);
     virtuappu_mode1_ws_full_view = 0;
 }
@@ -2812,7 +2816,8 @@ void Port_Widescreen_UpdateShadows(void) {
         const int carry = Port_WidescreenScrollCarriesFullView();
         sWsRoomLoadTicks = sWsFadeRecent > 0 ? 16 : 0;
         sWsRoomLoadGraceTicks = sWsFadeRecent > 0 ? 16 + 24 : 0;
-        sWsArrivalFrozenCamera = sWsFadeRecent > 0;
+        sWsArrivalFrozenCamera = sWsFadeRecent > 0 || sWsStateLoaded;
+        sWsStateLoaded = 0;
         sWsGameplayRoomKey = roomKey;
         sWsGameplayMode = carry ? PORT_3DS_FULL_VIEW_OUTDOOR_1X : PORT_3DS_FULL_VIEW_FALLBACK;
         sWsProducerPendingRoomKey = 0xffffffffu;
