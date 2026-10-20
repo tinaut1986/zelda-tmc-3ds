@@ -19,8 +19,10 @@ change (what goes where: the table in `CLAUDE.md`).
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.4.2` (on origin; renamed from `release/v0.4.1` right after the `v0.4.1` tag). Published:
-**`v0.4.1`** (2026-10-20, **beta**: FRAME = BLUR, NEIGHBOURS ON / OFF, 3D for what Link holds up, the Deepwood door
+**Release line:** `release/v0.4.3` (renamed from `release/v0.4.2` right after the `v0.4.2` tag). Published:
+**`v0.4.2`** (2026-10-20, **stable**, straight to stable at the owner's request: `release/v0.4.2` merged `--no-ff` into
+`main` and tagged there; the betas' contents plus 3D by height for what Link lifts or throws, which was not seen on
+the console before the tag; `docs/release-notes/v0.4.2.md`), **`v0.4.1`** (2026-10-20, **beta**: FRAME = BLUR, NEIGHBOURS ON / OFF, 3D for what Link holds up, the Deepwood door
 cutscene in wide, fixes; `docs/release-notes/v0.4.1.md`), **`v0.4.0`**
 (2026-10-19, **beta**: neighbour rooms in Full View, AUTO UPDATE, the bottom map's parity with the pause map and
 fixes; `docs/release-notes/v0.4.0.md`), **`v0.3.2`** (2026-10-18, **stable**: first a beta, then promoted by re-running the
