@@ -18,8 +18,9 @@ bool Stereo3DS_HasDepth(void);
  * (0 front .. 3 back) is moved for an eye: depth (positive: out of the screen) times the
  * slider, half to each eye, the left eye to the right. 0 when not active. */
 float Stereo3DS_LayerShift(unsigned layer, unsigned priority, Stereo3DSEye eye);
-/* The move of what Link holds up (a lifted pot, a treasure he got): sprites marked by the port (PpuGpu3DSBatch.held). */
-float Stereo3DS_HeldShift(Stereo3DSEye eye);
+/* The move of a sprite with a depth of its own (PpuGpu3DSBatch.depth, quarter pixels at the full slider): what Link
+ * holds up or has thrown. */
+float Stereo3DS_SpriteShift(unsigned depthQuarters, Stereo3DSEye eye);
 /* Sprites in OBJ-window mode make a mask, not a picture: true when the mask follows another layer
  * (the shift of that layer and priority is the mask's), as in the map hints' unlocked map. */
 bool Stereo3DS_ObjWindowFollows(unsigned* layer, unsigned* priority);
