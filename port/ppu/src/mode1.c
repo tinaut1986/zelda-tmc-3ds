@@ -512,6 +512,10 @@ uint8_t virtuappu_mode1_obj_clip_mark_staged[MODE1_GBA_OAM_COUNT];
 uint8_t virtuappu_mode1_obj_y_negative_staged[MODE1_GBA_OAM_COUNT];
 int virtuappu_mode1_obj_clip_y_staged;
 int virtuappu_mode1_obj_clip_enable_staged;
+/* The OAM entries of what Link holds up (a lifted pot, a treasure he got): the 3DS's stereo 3D draws them in
+ * front of the screen (docs/stereo-3d.md). Staged and committed with the rest of the OAM metadata. */
+uint8_t virtuappu_mode1_obj_front_mark[MODE1_GBA_OAM_COUNT];
+uint8_t virtuappu_mode1_obj_front_mark_staged[MODE1_GBA_OAM_COUNT];
 
 void virtuappu_mode1_commit_obj_metadata(void) {
     memcpy(virtuappu_mode1_obj_clip_mark, virtuappu_mode1_obj_clip_mark_staged,
@@ -520,6 +524,8 @@ void virtuappu_mode1_commit_obj_metadata(void) {
            sizeof(virtuappu_mode1_obj_y_negative));
     virtuappu_mode1_obj_clip_y = virtuappu_mode1_obj_clip_y_staged;
     virtuappu_mode1_obj_clip_enable = virtuappu_mode1_obj_clip_enable_staged;
+    memcpy(virtuappu_mode1_obj_front_mark, virtuappu_mode1_obj_front_mark_staged,
+           sizeof(virtuappu_mode1_obj_front_mark));
 }
 
 uint16_t virtuappu_mode1_io_read16(uint16_t offset) {
