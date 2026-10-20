@@ -1297,6 +1297,13 @@ static bool DrawOutput(C3D_RenderTarget* target, OutputPass pass) {
         else
             C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_COLOR);
         DrawBatch(batch);
+        /* A sprite's colour draw is sometimes lost on the Old 3DS (the Zz bubble's one tile in Hyrule Castle's
+         * bedroom, about one frame in four): measured on the console, drawing the opaque OBJ batches twice
+         * brought it from 3-9 bad frames in 66 to 0 in three recordings; the same batches twice in the depth
+         * pre-pass did not (8-10). The second draw rewrites the same pixels, so it costs only the draw. The root
+         * cause is not known (docs/PLAN.md, decisions log 2026-10-20). */
+        if (batch->layer == PPU_GPU3DS_OBJ && batch->effect != PPU_GPU3DS_EFFECT_ALPHA && !batch->semiTransparent)
+            DrawBatch(batch);
     }
 
     /* The iris (PpuGpu3DSFrameView::irisLines): the backdrop outside the circle,
