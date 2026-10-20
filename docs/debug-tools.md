@@ -279,7 +279,10 @@ they filled `debug/` and slowed the SD and every listing). `tools/scene-rec/deco
 [--gif OUT.gif] [--first N] [--last N] [--crop X,Y,W,H] [--scale N]` writes the frames as PNG and,
 with `--gif`, an animated GIF at the rate they were taken. The file: a header (`SCN1`, frame count,
 400, 240, N), then per frame its number and 400x240 RGB565 in the framebuffer's order (columns from
-the left, each bottom to top). A capture costs a few ms a recorded frame.
+the left, each bottom to top). A capture costs a few ms a recorded frame. The fetch of the ~12 MB file over the game's own
+FTP stalls the game for 15 to 30 s on a weak Wi-Fi (the log shows `WATCHDOG: ... command RETR`): do few of them and not while the
+owner plays. Check `tmc-link.py state` shows the scene you want (`ingame=1 area=.. room=..`) before recording: a recording of the
+title screen decodes without an error and measures nothing.
 
 ## Screen dump
 
