@@ -119,9 +119,9 @@ extern uint8_t virtuappu_mode1_obj_y_negative_staged[MODE1_GBA_OAM_COUNT];
 extern uint8_t virtuappu_mode1_obj_clip_mark_staged[MODE1_GBA_OAM_COUNT];
 extern int virtuappu_mode1_obj_clip_y_staged;
 extern int virtuappu_mode1_obj_clip_enable_staged;
-/* The OAM entries of what Link holds up (stereo 3D draws them in front). */
-extern uint8_t virtuappu_mode1_obj_front_mark[MODE1_GBA_OAM_COUNT];
-extern uint8_t virtuappu_mode1_obj_front_mark_staged[MODE1_GBA_OAM_COUNT];
+/* Each OAM entry's stereo 3D depth, quarter pixels (what Link holds up or has thrown). */
+extern uint8_t virtuappu_mode1_obj_depth[MODE1_GBA_OAM_COUNT];
+extern uint8_t virtuappu_mode1_obj_depth_staged[MODE1_GBA_OAM_COUNT];
 void virtuappu_mode1_commit_obj_metadata(void);
 
 /* Runtime WIP widescreen HUD anchor. BG0 stays 32 tiles wide, but gameplay
