@@ -563,6 +563,7 @@ static void Compact_Toast(const char* fmt, ...) {
 static uint8_t sToastOnScreen;
 
 #include "ftp_server_3ds.h"
+#include "port_debug_actions.h"
 
 /* A notice that holds the toast while it lasts: a build arriving over FTP (the DEBUG tab's
  * server, or the install-only one of a production build). */
@@ -1001,6 +1002,7 @@ static void Compact_PaintNoGame(const SSurf* s) {
 #include "debug_switches_3ds.h"
 #include "port_ppu_gpu_3ds.h"
 #include "ftp_server_3ds.h"
+#include "port_debug_actions.h"
 
 enum { DBG_PAGE_MAIN, DBG_PAGE_SWITCHES };
 static int sDebugPage;
@@ -1015,6 +1017,7 @@ enum {
     DBG_CMD_PERF_RUN,
     DBG_CMD_GPU_CHECK,
     DBG_CMD_FTP_RUN,
+    DBG_CMD_GOD_MODE, /* the sidebar's heart button (Compact_PaintSidebar) */
     DBG_CMD_SWITCH0 = 32, /* + DEBUG_SW_* */
 };
 
@@ -1242,6 +1245,11 @@ static void Compact_DebugCommand(int cmd) {
                 Compact_Toast("FTP: %s", reason);
             }
             break;
+        case DBG_CMD_GOD_MODE:
+            Port_DebugAction_SetGodMode(!Port_Debug_GodModeEnabled());
+            DebugLog_Printf("god mode %s", Port_Debug_GodModeEnabled() ? "on" : "off");
+            Compact_Toast(Port_Debug_GodModeEnabled() ? "GOD MODE ON" : "GOD MODE OFF");
+            break;
         case DBG_CMD_GPU_CHECK:
             Port_PPU_3DS_RequestGpuCheck();
             DebugLog_Printf("gpu check requested");
@@ -1436,6 +1444,17 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
         if (key) BlitSprite(s, key, ix, by + 17, 1);
         DrawHudNumber(s, ix + 18 + 8, by + 17, 1, snap->dungeonKeys, 1, 0);
     }
+#if TMC3DS_DEBUG_TOOLS
+    /* God mode (debug builds): a heart button at the rupees' right, its edge lit while Link takes no damage. */
+    {
+        const int on = Port_Debug_GodModeEnabled();
+        const int32_t gw = 18, gh = 16, gx = ix + iw - gw, gy = by - 1;
+        CBox(s, gx, gy, gw, gh, on ? CC_GOOD : CC_BTN, on ? CC_GOOD : CC_BTN_EDGE);
+        const SecondScreenThemeSprite* heart = Port_SecondScreenTheme_Get(on ? SST_HEART_FULL : SST_HEART_EMPTY);
+        if (heart) BlitSprite(s, heart, gx + (gw - 8) / 2, gy + (gh - 8) / 2, 1);
+        AddTarget(tl, (float)gx, (float)gy, (float)(gx + gw), (float)(gy + gh), SS_ACT_DEBUG, DBG_CMD_GOD_MODE);
+    }
+#endif
 }
 
 /* A square cell for an item slot. */

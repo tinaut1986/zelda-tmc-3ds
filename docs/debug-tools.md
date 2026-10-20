@@ -47,6 +47,13 @@ Cells for something that runs work as in mzm and sm-3ds: the button on their
 right starts it (green triangle) or stops it (red square). A toast at the bottom
 says what happened (file number, rows written).
 
+### God mode
+
+Outside the DEBUG tab: a heart button at the right of the rupees in the MAP tab's sidebar (debug builds only).
+A tap toggles it; while it is on the button is green with a full heart and Link takes no damage (`ModHealth`
+drops negative deltas; knockback, pits and water still act). In memory only, off at boot
+(`Port_Debug_GodModeEnabled`, `platform/3ds/source/port_optional_stubs_3ds.c`).
+
 ### SWITCHES
 
 The performance knobs that upstream left in `tmc3ds.ini` only, on the console.

@@ -1359,3 +1359,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   `Port_UI_PrepareGameplayGeometry` saw the view drop from 400 to 240 and repainted the BG0 rupees and keys at the
   GBA's offset, over the menu. It no longer repaints while a menu runs (`GAMEMAIN_SUBTASK`, `nextToLoad == 2`);
   `DrawUI` repaints them when play resumes. Checked with the top HUD shown and hidden.
+- **2026-10-20** **God mode for debug builds** (owner's request): a heart button beside the rupees in the MAP tab's
+  sidebar, compiled only with `TMC3DS_DEBUG_TOOLS`; `ModHealth` ignores negative deltas while it is on
+  (`docs/debug-tools.md`). Asked for while checking the 3D of a lifted pot against the Deepwood boss: there the pot is
+  drawn over the ChuChu by the game itself (both renderers, 2D too), so it is not a 3D bug and the stereo change
+  tried for it was dropped.
