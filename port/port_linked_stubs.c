@@ -20,6 +20,8 @@
 #include "map.h"
 #include "manager/diggingCaveEntranceManager.h"
 #include "manager/lightRayManager.h"
+#include "manager/horizontalMinishPathBackgroundManager.h"
+#include "manager/verticalMinishPathBackgroundManager.h"
 #include "menu.h"
 #include "message.h"
 #include "npc.h"
@@ -2310,6 +2312,19 @@ int Port_Widescreen_CameraRestY(int target_y) {
     return Port_WidescreenCameraRestYForMode(target_y, Port_WidescreenGameplayMode());
 }
 
+/* The Minish Paths' parallax layers (BG1 leaves, BG3 shadows) follow the camera through their managers. A snap of
+ * the camera into or out of Full View happens while a room fades in, when the managers do not run yet: the layers
+ * kept the old camera's offsets for the whole fade and jumped into place when it ended. Their update is run again
+ * here, with the new camera. */
+void sub_0805754C(VerticalMinishPathBackgroundManager*);
+void sub_08057F20(HorizontalMinishPathBackgroundManager*);
+static void Port_WidescreenRefreshParallax(void) {
+    Entity* manager = DeepFindEntityByID(MANAGER, VERTICAL_MINISH_PATH_BACKGROUND_MANAGER);
+    if (manager != NULL) sub_0805754C((VerticalMinishPathBackgroundManager*)manager);
+    manager = DeepFindEntityByID(MANAGER, HORIZONTAL_MINISH_PATH_BACKGROUND_MANAGER);
+    if (manager != NULL) sub_08057F20((HorizontalMinishPathBackgroundManager*)manager);
+}
+
 static void Port_WidescreenSnapGameplayCamera(Port3DSFullViewMode mode) {
     const Port3DSFullViewMode previous = Port_WidescreenGameplayMode();
     sWsGameplayMode = mode;
@@ -2325,6 +2340,7 @@ static void Port_WidescreenSnapGameplayCamera(Port3DSFullViewMode mode) {
             gRoomControls.scroll_x = (s16)Port_WidescreenCameraRestXForMode(cx, mode);
             gRoomControls.scroll_y = (s16)Port_WidescreenCameraRestYForMode(cy, mode);
             gUpdateVisibleTiles = 1;
+            Port_WidescreenRefreshParallax();
         }
         return;
     }
@@ -2334,6 +2350,7 @@ static void Port_WidescreenSnapGameplayCamera(Port3DSFullViewMode mode) {
         gRoomControls.camera_target->y.HALF.HI, mode);
     gUpdateVisibleTiles = 1;
     UpdateScreenShake();
+    Port_WidescreenRefreshParallax();
 }
 
 static int Port_WidescreenMapShadowsCanPrepare(void);
