@@ -1464,6 +1464,17 @@ static void Compact_EquipCell(const SSurf* s, const SecondScreenSnapshot* snap, 
     AddTarget(tl, (float)x, (float)y, (float)(x + w), (float)(y + h), SS_ACT_RING, (uint8_t)(button + 1));
 }
 
+/* The columns the heart-row edge tile inks, at its right: the first heart's left outline, which the heart's own
+ * tile does not carry. */
+static int32_t Compact_HeartEdgeInk(const SecondScreenThemeSprite* edge) {
+    if (!edge || !edge->px) return 0;
+    for (int32_t c = 0; c < edge->w; c++)
+        for (int32_t r = 0; r < edge->h; r++)
+            if (edge->px[r * edge->w + c] != 0) /* BlitSprite's transparency */
+                return edge->w - c;
+    return 0;
+}
+
 static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, int32_t x,
                                  int32_t y, int32_t w, int32_t h, uint32_t tick, int armedRing) {
     FillRect(s, x - 1, y, x, y + h, CC_CELL_EDGE);
@@ -1476,15 +1487,7 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
     if (maxHearts > 20) maxHearts = 20;
     if (maxHearts < 1) maxHearts = 1;
     const SecondScreenThemeSprite* edge = Port_SecondScreenTheme_Get(SST_HEART_EDGE);
-    int32_t edgeInk = 0; /* the edge tile's inked columns, at its right */
-    if (edge && edge->px) {
-        for (int32_t c = 0; c < edge->w && edgeInk == 0; c++)
-            for (int32_t r = 0; r < edge->h; r++)
-                if (edge->px[r * edge->w + c] != 0) { /* BlitSprite's transparency */
-                    edgeInk = edge->w - c;
-                    break;
-                }
-    }
+    const int32_t edgeInk = Compact_HeartEdgeInk(edge);
     const int32_t hx = ix + edgeInk;
     const int cols = (iw - edgeInk) / 8 < 8 ? (iw - edgeInk) / 8 : 8;
     const int quarters = snap->health == 1 ? 1 : snap->health / 2;
@@ -1569,7 +1572,14 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
         const int32_t gw = 18, gh = 16, gx = ix + iw - gw, gy = by - 1;
         CBox(s, gx, gy, gw, gh, on ? CC_GOOD : CC_BTN, on ? CC_GOOD : CC_BTN_EDGE);
         const SecondScreenThemeSprite* heart = Port_SecondScreenTheme_Get(on ? SST_HEART_FULL : SST_HEART_EMPTY);
-        if (heart) BlitSprite(s, heart, gx + (gw - 8) / 2, gy + (gh - 8) / 2, 1);
+        if (heart) {
+            /* With the outline column the HUD's edge tile gives the first heart. */
+            const SecondScreenThemeSprite* edge = Port_SecondScreenTheme_Get(SST_HEART_EDGE);
+            const int32_t ink = Compact_HeartEdgeInk(edge);
+            const int32_t hx = gx + (gw - 8 - ink) / 2 + ink, hy = gy + (gh - 8) / 2;
+            if (ink) BlitSprite(s, edge, hx - 8, hy, 1);
+            BlitSprite(s, heart, hx, hy, 1);
+        }
         AddTarget(tl, (float)gx, (float)gy, (float)(gx + gw), (float)(gy + gh), SS_ACT_DEBUG, DBG_CMD_GOD_MODE);
     }
 #endif
