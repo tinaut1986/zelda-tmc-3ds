@@ -22,7 +22,7 @@ FLAGS="-std=gnu11 -O1 -w -DPC_PORT -DNON_MATCHING -DMULTI_REGION -DUSA -DENGLISH
 (cd "$OUT/gen" && gcc $FLAGS \
     "$ROOT/port/port_second_screen.c" "$ROOT/port/port_second_screen_theme.c" \
     "$ROOT/port/port_second_screen_render.c" "$ROOT/port/port_second_screen_quest.c" \
-    "$ROOT/port/port_second_screen_dungeonmap.c" "$ROOT/port/port_second_screen_worldmap.c" \
+    "$ROOT/port/port_second_screen_dungeonmap.c" "$ROOT/port/port_second_screen_worldmap.c" "$ROOT/port/port_second_screen_color.c" \
     "$ROOT/port/port_text_i18n.c" "$ROOT/platform/3ds/source/ui_font_3ds.c" "$ROOT/tools/ui-preview/preview.c" -c)
 gcc -std=gnu11 -O1 -w -I"$ROOT/platform/3ds/source" -I"$ROOT/port/ppu/include" -c "$ROOT/tools/ui-preview/stubs.c" -o "$OUT/gen/stubs.o"
 gcc "$OUT"/gen/*.o -o "$OUT/preview" -lm -lpthread

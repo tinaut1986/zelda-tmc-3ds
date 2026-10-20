@@ -45,7 +45,7 @@ void Port_Config_SetUiTabsBottom(bool bottom) { sTabsBottom = bottom; }
 static int sAspect = 0, sStyle = 2, sBackdrop = 0;
 static bool sWideAi = false, sWideAiAsked = false;
 bool Port_Config_GetWideAi(void) { return sWideAi; }
-bool Port_Config_WideAiQuestionDue(void) { return !sWideAiAsked; }
+bool Port_Config_WideAiQuestionDue(void) { return !sWideAiAsked && !getenv("NO_WIDE_ASK"); }
 void Port_Config_AnswerWideAi(bool yes) { sWideAi = yes; sWideAiAsked = true; }
 static bool sColor = true, sHideHud = false, sHold = true, sCrests = true, sFloor = true, sFollow = true;
 static bool sSwap = false, sFps = false, sWide = true, sAuto = true;
@@ -59,15 +59,20 @@ const char* Port_Config_Get3DSAspectRatioName(void) { return kAspect[sAspect]; }
 int Port_Config_Get3DSDisplayStyle(void) { return sStyle; }
 const char* Port_Config_Get3DSDisplayStyleName(void) { return kStyle[sStyle]; }
 static int sGrid = 0;
-static bool sGbaFrame = false;
+static int sGbaFrame = 0;
 static const char* const kGrid[] = { "OFF", "LOW", "MED", "HIGH" };
 int Port_Config_GetGbaGrid(void) { return sGrid; }
 const char* Port_Config_GetGbaGridName(void) { return kGrid[sGrid]; }
 void Port_Config_CycleGbaGrid(void) { sGrid = (sGrid + 1) % 4; }
-bool Port_Config_GetGbaFrame(void) { return sGbaFrame; }
+static int sNeighbourRooms = 1;
+int Port_Config_GetNeighbourRooms(void) { return sNeighbourRooms; }
+const char* Port_Config_GetNeighbourRoomsName(void) { return sNeighbourRooms ? "ON" : "OFF"; }
+void Port_Config_CycleNeighbourRooms(void) { sNeighbourRooms = !sNeighbourRooms; }
+int Port_Config_GetGbaFrame(void) { return sGbaFrame; }
+const char* Port_Config_GetGbaFrameName(void) { static const char* const n[] = { "NO", "GBA", "BLUR" }; return n[sGbaFrame]; }
 bool Port_Config_GbaFrameAvailable(void) { return sAspect == 1; }
-bool Port_Config_GbaFrameActive(void) { return sGbaFrame && sAspect == 1; }
-void Port_Config_SetGbaFrame(bool on) { sGbaFrame = on; }
+int Port_Config_GbaFrameActive(void) { return sAspect == 1 ? sGbaFrame : 0; }
+void Port_Config_CycleGbaFrame(void) { sGbaFrame = (sGbaFrame + 1) % 3; }
 bool Port_Config_GetColorCorrection(void) { return sColor; }
 int sTopHudMode = 0;
 int Port_Config_GetTopHudMode(void) { return sTopHudMode; }
@@ -105,6 +110,16 @@ bool Updater_Busy(void) { return false; }
 void Updater_Cancel(void) {}
 void Updater_Check(void) {}
 void Updater_Download(void) {}
+unsigned Platform3DS_RelaunchRemainingMs(void) { return 4000; }
+/* UPDATE_PROMPT=ask|work|restart|error: the prompt raised by the boot check, to preview its window. */
+UpdatePrompt Updater_AutoPrompt(void) {
+    const char* p = getenv("UPDATE_PROMPT");
+    return !p ? UPDATE_PROMPT_NONE : p[0] == 'a' ? UPDATE_PROMPT_ASK : p[0] == 'w' ? UPDATE_PROMPT_WORKING : p[0] == 'r' ? UPDATE_PROMPT_RESTART : UPDATE_PROMPT_ERROR;
+}
+void Updater_AutoAnswer(bool yes) { (void)yes; }
+static bool sAutoUpdate = true;
+bool Port_Config_GetAutoUpdate(void) { return sAutoUpdate; }
+void Port_Config_ToggleAutoUpdate(void) { sAutoUpdate = !sAutoUpdate; }
 void Updater_SetChannel(bool prerelease) { (void)prerelease; }
 unsigned Updater_GetNotes(char* out, unsigned capacity) { if (capacity) out[0] = 0; return 0; }
 /* UPDATE_BETA=1: a beta found on the + BETAS channel, to preview the RELEASE cell. */
@@ -137,6 +152,8 @@ uint32_t GetRoomProperty(void) { return 0; }
 void* Port_GetDirectSpriteFrame(void) { return NULL; }
 void* Port_GetKinstonePieceTiles(void) { return NULL; }
 void* Port_GetRawGfxSpanForVram(void) { return NULL; }
+void* Port_GetRawGfxSpanForVramLang(void) { return NULL; }
+uint32_t sub_0801DF10(void) { return 0; }
 void* Port_GetRawPaletteGroupBankData(void) { return NULL; }
 void* Port_GetRawPaletteGroupData(void) { return NULL; }
 void* Port_GetRawPaletteGroupEntryData(void) { return NULL; }

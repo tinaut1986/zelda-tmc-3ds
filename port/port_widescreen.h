@@ -1,6 +1,8 @@
 #ifndef PORT_WIDESCREEN_H
 #define PORT_WIDESCREEN_H
 
+#include "port_neighbour_rooms.h"
+
 /*
  * port_widescreen.h — single source of truth for the rendered viewport
  * width, shared by the ViruaPPU renderer and the engine-side on-screen /
@@ -143,6 +145,10 @@ enum { PORT_STEREO_SCENE_TITLE_RAYS = 1, PORT_STEREO_SCENE_LIGHT_RAYS = 2,
        PORT_STEREO_SCENE_LOGOS = 16, PORT_STEREO_SCENE_MAP_HINT = 32,
        PORT_STEREO_SCENE_GAME_OVER = 64 };
 int Port_Stereo_Scenes(void);
+/* The parts of the 400x240 view the rooms paint (the rest is black), for the presenter's blurred border: the
+ * room first, then the neighbouring rooms drawn beside it; how many (at most `max`), or 0 when the room fills
+ * the view or the view is not 400x240. */
+int Port_Widescreen_ContentRects(PortBlurRect* rects, int max);
 /* The title's light rays extended over the 400x240 view in VRAM (platform/3ds/source/
  * title_rays_3ds.c): the screen block of BG0's 512x256 map, or 0 (BG0 as the game has it). */
 int Port_Widescreen_TitleRays(void);

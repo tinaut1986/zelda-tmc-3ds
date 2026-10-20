@@ -2092,7 +2092,7 @@ static bool batches_extend(const PpuGpu3DSBatch* a, const PpuGpu3DSBatch* b) {
            a->priority == b->priority && a->windowControl == b->windowControl && a->target2 == b->target2 &&
            a->effect == b->effect && a->eva == b->eva && a->evb == b->evb && a->evy == b->evy &&
            a->objectIndex == b->objectIndex && a->color == b->color && a->objWindow == b->objWindow &&
-           a->semiTransparent == b->semiTransparent && a->texture == b->texture && a->offsetX == b->offsetX &&
+           a->semiTransparent == b->semiTransparent && a->depth == b->depth && a->texture == b->texture && a->offsetX == b->offsetX &&
            a->offsetY == b->offsetY;
 }
 
@@ -3357,6 +3357,7 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
         .objectIndex = obj->index,
         .objWindow = stencilOnly,
         .semiTransparent = obj->mode == 1u,
+        .depth = !stencilOnly && frame->objDepth != NULL ? frame->objDepth[obj->index] : 0,
     };
     if (stencilOnly) {
         store_batch(cmd, *batchCursor, &base, emit);

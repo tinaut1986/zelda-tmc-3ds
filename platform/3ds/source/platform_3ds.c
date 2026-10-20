@@ -614,12 +614,18 @@ static uint64_t sAudioPumpMaxTicks;
  * dumps 7 and 8, r0 = 0xD86007F3, issue #4); ../legend-of-doom-3ds measured the same: 3 installs
  * in 4 jumping at once, none of 10 waiting 10 s. The notice stays on the bottom screen meanwhile. */
 static volatile bool sRelaunchRequested;
-static uint64_t sRelaunchAt; /* osGetTime() of the relaunch, 0 none: main thread only */
+static volatile uint64_t sRelaunchAt; /* osGetTime() of the relaunch, 0 none: set on the main thread */
 
 static bool sRelaunching;
 
 void Platform3DS_RequestRelaunch(void) {
     sRelaunchRequested = true;
+}
+
+unsigned Platform3DS_RelaunchRemainingMs(void) {
+    if (sRelaunchRequested && sRelaunchAt == 0) return 10000u;
+    const uint64_t at = sRelaunchAt, now = osGetTime();
+    return at == 0 ? 0u : (now >= at ? 0u : (unsigned)(at - now));
 }
 
 bool Platform3DS_Relaunching(void) {

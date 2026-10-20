@@ -24,7 +24,7 @@ SITE commands of platform/3ds/source/debug_link_3ds.h. Standard library only.
     perf stop [DIR]           write debug/tmc-perf-NNNN.csv and fetch it to DIR (default
                               /tmp/tmc-debug); tools/perf-csv/analyze.py summarises it
     scenerec start [N]        the top screen, full size, one frame in N (default 2), into RAM
-    scenerec stop [DIR]       write it (debug/tmc-scene-NNNN.bin), fetch it to DIR (default
+    scenerec stop [DIR]       write it (debug/tmc-scene-NNNN.bin), fetch it to DIR and delete it on the SD (default
                               /tmp/tmc-scene); tools/scene-rec/decode.py makes PNGs and a GIF
     rec [now]                 record the top screen around the next room change, HUD hide or fade start (now: no trigger)
     recfetch [DIR]            wait for the recording, write DIR/frames.png (a contact sheet) and list the frames
@@ -279,6 +279,8 @@ def run(link, argv):
             path = os.path.join(out, name)
             with open(path, 'wb') as f:
                 link.connect().retrbinary('RETR %s/debug/%s' % (DATA, name), f.write)
+            # ~17 MB each: left on the SD they fill debug/ and slow every listing and the SD itself.
+            link.connect().voidcmd('DELE %s/debug/%s' % (DATA, name))
             print(path)
     elif cmd == 'perf':
         if not args or args[0].lower() not in ('start', 'stop'):
@@ -300,9 +302,12 @@ def run(link, argv):
         os.makedirs(out, exist_ok=True)
         end = time.time() + 60
         while True:
-            names = [os.path.basename(n) for n in link.connect().nlst(DATA + '/debug')]
-            if 'frames.bin' in names:
+            # SIZE of the one file, not a listing: debug/ can hold hundreds of files and a listing is slow
+            try:
+                link.connect().size('%s/debug/frames.bin' % DATA)
                 break
+            except Exception:
+                pass
             if time.time() > end:
                 raise LinkError('no debug/frames.bin: was REC armed and did the room change?')
             time.sleep(0.5)

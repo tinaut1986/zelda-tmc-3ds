@@ -79,6 +79,7 @@ int main(int argc, char** argv) {
     }
     SecondScreenSnapshot snap;
     FakeSnapshot(&snap);
+    if (getenv("UILANG")) snap.language = atoi(getenv("UILANG")); /* 2 FR, 3 DE, 4 ES, 5 IT */
     const char* theme = getenv("THEME");
     if (theme) {
         /* As the theme button does: the theme and its panel backdrop

@@ -75,10 +75,24 @@ int main(int argc,char **argv) {
    json_array_insert_new(l,0,make_notes("v0.4.0",true,"- beta four"));
    assert(parse_list(l,true,"0.3.0",&out)==1&&!strcmp(out.version,"v0.4.0")&&out.prerelease);
    assert(parse_list(l,false,"0.3.0",&out)==1&&!strcmp(out.version,"v0.3.0"));
-   // Stable only: the notes of every stable release newer than the installed build.
+   // Stable only: the notes of every stable release newer than the installed build, and of the betas
+   // on the way to the newest stable (a stable lists everything since the previous one); a beta newer
+   // than that stable (v0.4.0) or one the install already has (v0.1.2 for 0.2.0) stays out.
    assert(parse_list(l,false,"0.1.0",&out)==1&&strstr(out.notes,"stable three")&&strstr(out.notes,"stable two")&&
-          strstr(out.notes,"stable one one")&&!strstr(out.notes,"beta"));
-   assert(strstr(out.notes,"stable three")<strstr(out.notes,"stable two"));
+          strstr(out.notes,"stable one one")&&strstr(out.notes,"beta two one")&&strstr(out.notes,"beta one two")&&
+          !strstr(out.notes,"beta four"));
+   assert(strstr(out.notes,"stable three")<strstr(out.notes,"beta two one")&&
+          strstr(out.notes,"beta two one")<strstr(out.notes,"stable two"));
+   assert(parse_list(l,false,"0.2.0",&out)==1&&strstr(out.notes,"## v0.2.1 BETA")&&strstr(out.notes,"stable three")&&
+          !strstr(out.notes,"beta one two")&&!strstr(out.notes,"beta four"));
+   // Up to date: the whole changelog of the channel, newest first (STABLE: the stable releases and the
+   // betas before the newest one), instead of only the newest release's notes.
+   assert(parse_list(l,false,"0.3.0",&out)==1&&strstr(out.notes,"stable three")&&strstr(out.notes,"beta two one")&&
+          strstr(out.notes,"stable one one")&&!strstr(out.notes,"beta four")&&
+          strstr(out.notes,"stable three")<strstr(out.notes,"stable two"));
+   assert(parse_list(l,true,"0.4.0",&out)==1&&strstr(out.notes,"beta four")&&strstr(out.notes,"stable one one"));
+   json_t *lone=json_array();json_array_append_new(lone,make_notes("v0.3.0",false,"- only one"));
+   assert(parse_list(lone,false,"0.3.0",&out)==1&&strstr(out.notes,"intro")&&!strstr(out.notes,"## v0.3.0"));json_decref(lone);
    // BETAS: every release in between, betas included; a build already on the newest gets none.
    assert(parse_list(l,true,"0.1.1",&out)==1&&strstr(out.notes,"beta four")&&strstr(out.notes,"beta two one")&&
           strstr(out.notes,"beta one two")&&strstr(out.notes,"stable two")&&!strstr(out.notes,"stable one one"));

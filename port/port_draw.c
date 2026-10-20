@@ -23,6 +23,8 @@
 #include "sound.h"
 #include "structures.h"
 #include "vram.h"
+#include "object.h"
+#include "player.h"
 
 #include "port_widescreen.h"
 #include "port_rom.h"
@@ -38,6 +40,9 @@ static void RenderSpritePieces(const u8* data, s16 baseX, s16 baseY, u32 flags, 
 
 /* Set true only while rendering the player; drives the swamp-sink body clip. */
 static int sRenderingPlayer = 0;
+/* The stereo 3D depth of what is being rendered, quarter pixels (virtuappu_mode1_obj_depth, docs/stereo-3d.md):
+ * what Link holds up or has just thrown stands out of the screen. */
+static u8 sRenderingDepth = 0;
 
 /* The file select drawn at 400x240 (Port_Widescreen_FileSelectWide): the game keeps placing its
  * sprites on the GBA's 240x160 screen; each drawn thing (an entity, a DrawDirect) is moved into
@@ -428,6 +433,7 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
     if (updated == 0) {
         memset(virtuappu_mode1_obj_clip_mark_staged, 0, MODE1_GBA_OAM_COUNT);
         memset(virtuappu_mode1_obj_y_negative_staged, 0, MODE1_GBA_OAM_COUNT);
+        memset(virtuappu_mode1_obj_depth_staged, 0, MODE1_GBA_OAM_COUNT);
         virtuappu_mode1_obj_clip_enable_staged = 0;
     }
     int sSwampClipActive = (sRenderingPlayer && gPlayerState.floor_type == SURFACE_SWAMP &&
@@ -533,6 +539,7 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
          * clip in ViruaPPU (see RenderSpritePieces top + port_gba_mem). */
         if (sSwampClipActive)
             virtuappu_mode1_obj_clip_mark_staged[updated & 0x7F] = 1;
+        virtuappu_mode1_obj_depth_staged[updated & 0x7F] = sRenderingDepth;
 
         updated++;
     }
@@ -591,6 +598,7 @@ static void WideSpritesEnd(int first) {
         memcpy(oam + out * 8, attr, sizeof(attr));
         virtuappu_mode1_obj_y_negative_staged[out] = y < 0;
         virtuappu_mode1_obj_clip_mark_staged[out] = virtuappu_mode1_obj_clip_mark_staged[i];
+        virtuappu_mode1_obj_depth_staged[out] = virtuappu_mode1_obj_depth_staged[i];
         out++;
     }
     gOAMControls.updated = (u8)out;
@@ -897,7 +905,61 @@ static void LookupAndRenderNormal(Entity* entity, s32 x, s32 y, u32 flags, u16 e
  *   spriteAnimation[2] < 0:  direct frame data from entity->myHeap
  *   spriteAnimation[2] > 0:  multi-part from gUnk_020000C0
  */
+/* What stands out in stereo 3D (owner, 2026-10-20): the treasure Link shows when he gets one (LinkHoldingItem), 4 px,
+ * and the object he lifts to throw (the carried entity's child while heldObject is 3, lifting, or 4, holding;
+ * UpdateCarriedObject) with a depth that follows its height over the floor: 4 px over his head, less as it rises
+ * and, once thrown, as it falls, 0 when it lands and breaks. Its height over his head is learnt while he holds it. */
+enum { HELD_DEPTH_Q = 16 /* 4 px */ };
+static const Entity* sCarried;
+static const Entity* sThrown;
+static u8 sThrownKind, sThrownId;
+static s32 sHoldHeight = 16;
+
+static u8 DepthForHeight(const Entity* entity) {
+    const s32 height = -(s32)entity->z.HALF.HI;
+    if (height <= 0) return 0;
+    const s32 q = height * HELD_DEPTH_Q / sHoldHeight;
+    return (u8)(q > HELD_DEPTH_Q ? HELD_DEPTH_Q : q);
+}
+
+static u8 SpriteDepth(const Entity* entity) {
+    extern PlayerEntity gPlayerEntity;
+    if (entity->kind == OBJECT && entity->id == LINK_HOLDING_ITEM) return HELD_DEPTH_Q;
+    const Entity* carried = (u8)(gPlayerState.heldObject - 3) < 2 && gPlayerEntity.carriedEntity != NULL
+                                ? gPlayerEntity.carriedEntity->child
+                                : NULL;
+    if (carried != NULL) {
+        sCarried = carried;
+        sThrown = NULL;
+        if (gPlayerState.heldObject == 4 && -(s32)carried->z.HALF.HI > 4) sHoldHeight = -(s32)carried->z.HALF.HI;
+    } else if (sCarried != NULL) {
+        /* Let go of: thrown (or dropped). Followed while it is in the air. */
+        sThrown = sCarried;
+        sThrownKind = sCarried->kind;
+        sThrownId = sCarried->id;
+        sCarried = NULL;
+    }
+    if (entity == carried) return DepthForHeight(entity);
+    if (entity == sThrown) {
+        /* The slot can be another entity's by now; a landed one is on the floor for good. */
+        if (entity->kind != sThrownKind || entity->id != sThrownId || entity->z.HALF.HI >= 0) {
+            sThrown = NULL;
+            return 0;
+        }
+        return DepthForHeight(entity);
+    }
+    return 0;
+}
+
+static void DrawEntitySpritesOf(Entity* entity, s32 x, s32 y, u32 flags, u16 extra);
+
 static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra) {
+    sRenderingDepth = SpriteDepth(entity);
+    DrawEntitySpritesOf(entity, x, y, flags, extra);
+    sRenderingDepth = 0; /* what is drawn next (the HUD, DrawDirect) stays on the screen plane */
+}
+
+static void DrawEntitySpritesOf(Entity* entity, s32 x, s32 y, u32 flags, u16 extra) {
     s8 renderMode = (s8)entity->spriteAnimation[2]; /* offset 0x28 */
 
     extern PlayerEntity gPlayerEntity;

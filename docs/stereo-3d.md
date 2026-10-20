@@ -31,6 +31,20 @@ Written to the SD log as `stereo: scenes N` when it changes.
 | 64 | the game over screen (`TASK_GAMEOVER`): the GAME OVER letters (sprites) at 10 px, the choices (BG0, priority 0) at 6, the stone panel (BG1, BG2) at 3 | OBJ, BG0, BG1, BG2 |
 | 32 | the map hints (`SUBTASK_MAPHINT`, `SUBTASK_LOCALMAPHINT`): the grey that covers what is not unlocked and its frame are BG2 (screen plane, with the backdrop); the unlocked map is BG1 at 2 px, seen through the OBJ-window sprites, which follow BG1 (`Stereo3DS_ObjWindowFollows`); the markers are sprites at 5 px | BG2 0, BG1 2, OBJ 5 |
 
+## What Link holds up or throws
+
+A sprite rather than a layer. The treasure Link shows when he gets one (`LINK_HOLDING_ITEM`) stands 4 px in
+front; the object he lifts to throw (the carried entity's child while `gPlayerState.heldObject` is 3, lifting, or 4,
+holding) stands out by its height over the floor: 4 px over his head (the height is learnt while he holds it), less
+while it rises, and once thrown it is followed (`sThrown`, same kind and id) and comes down with its height until it
+lands (z 0) and breaks (owner, 2026-10-20). `port_draw.c` (`SpriteDepth`) writes each OAM entry's depth in quarter
+pixels to `virtuappu_mode1_obj_depth`, committed with the rest of the OAM metadata; each sprite is a batch of its own in
+the GPU model, which carries it (`PpuGpu3DSBatch.depth`), and the renderer moves the batch and its scissor by
+`Stereo3DS_SpriteShift` (`SpritePx`) and counts it as in front when that rounds to a pixel or more (`IsFrontBatch`).
+The scissor must move with the sprite's own shift: with its layer's (0) a two-piece jar split down the middle. When a
+layer on the screen plane is drawn over such a sprite on the same lines (tree tops) the frame is drawn whole for each
+eye (reason 4). The software renderer leaves them flat.
+
 ## How it works
 
 - `stereo_3ds.c`, once a frame (`Stereo3DS_BeginFrame` in `PresentFrame`): the setting, the slider,

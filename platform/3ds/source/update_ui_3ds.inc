@@ -6,6 +6,7 @@
 #include <ctype.h>
 
 static bool sUpdateConfirm, sUpdateNotes;
+static bool sAutoNotes; /* the changelog window opened from the boot prompt (WHAT'S NEW) */
 static unsigned sUpdatePage, sUpdatePages = 1;
 
 static void UpdateUI_Reset(void) {
@@ -88,7 +89,7 @@ static void UpdateLoadNotes(const UpdateStatus* st) {
 }
 
 /* The changelog window: the lines, paged with PREV / NEXT, CLOSE back to the page. */
-static void PaintUpdateNotes(const SSurf* s, TargetList* tl, const UpdateStatus* st) {
+static void PaintUpdateNotes(const SSurf* s, TargetList* tl, const UpdateStatus* st, bool fromPrompt) {
     const int32_t top = CcContentTop(), bottom = CcContentBottom(s->h), w = s->w - 2 * CC_MARGIN;
     FillRect(s, 0, top, s->w, bottom, CC_BG);
     UpdateLoadNotes(st);
@@ -106,6 +107,11 @@ static void PaintUpdateNotes(const SSurf* s, TargetList* tl, const UpdateStatus*
     char head[80], upper[48];
     UpdateUpper(upper, sizeof(upper), st->version);
     snprintf(head, sizeof(head), "%s %s", Port_Text_Tr("CHANGELOG"), upper);
+    if (fromPrompt) {
+        char count[24];
+        snprintf(count, sizeof(count), "  %u/%u", page + 1, pages);
+        strncat(head, count, sizeof(head) - strlen(head) - 1);
+    }
     CBox(s, CC_MARGIN, top + 2, w, 16, CC_BAR, CC_TAB_EDGE);
     CTextCentered(s, s->w / 2, top + 6, CC_TEXT, head);
     CBox(s, CC_MARGIN, listY, w, buttonsY - CC_GAP - listY, CC_CELL, CC_CELL_EDGE);
@@ -116,7 +122,10 @@ static void PaintUpdateNotes(const SSurf* s, TargetList* tl, const UpdateStatus*
             SS_ACT_UPDATE_NEXT, 0);
     char foot[32];
     snprintf(foot, sizeof(foot), "%s %u %s %u", Port_Text_Tr("PAGE"), page + 1, Port_Text_Tr("OF"), pages);
-    CButton(s, tl, CC_MARGIN + 64 + CC_GAP, buttonsY, w - 128 - 2 * CC_GAP, 24, foot, CC_DIM, SS_ACT_UPDATE_RELEASE, 0);
+    if (fromPrompt) /* back to the question */
+        CButton(s, tl, CC_MARGIN + 64 + CC_GAP, buttonsY, w - 128 - 2 * CC_GAP, 24, "CLOSE", CC_TEXT, SS_ACT_AUTOUPD_NEWS, 0);
+    else
+        CButton(s, tl, CC_MARGIN + 64 + CC_GAP, buttonsY, w - 128 - 2 * CC_GAP, 24, foot, CC_DIM, SS_ACT_UPDATE_RELEASE, 0);
 }
 
 static void PaintUpdatePanel(const SSurf* s, TargetList* tl) {
@@ -131,7 +140,7 @@ static void PaintUpdatePanel(const SSurf* s, TargetList* tl) {
     pages = sUpdatePages;
     UI_UNLOCK();
     if (notes && !confirm) {
-        PaintUpdateNotes(s, tl, &st);
+        PaintUpdateNotes(s, tl, &st, false);
         return;
     }
     const bool busy = Updater_Busy();
@@ -143,9 +152,12 @@ static void PaintUpdatePanel(const SSurf* s, TargetList* tl) {
     int32_t y = top + 2;
     int32_t x, cw;
     char text[96];
-    CColumn(s->w, 2, 0, 1, &x, &cw);
+    CColumn(s->w, 3, 0, 1, &x, &cw);
     CCell(s, tl, x, y, cw, CC_CELL_H, "CHANNEL", st.prerelease ? "+ BETAS" : "STABLE", CC_TEXT, SS_ACT_UPDATE_CHANNEL, 0);
-    CColumn(s->w, 2, 1, 1, &x, &cw);
+    CColumn(s->w, 3, 1, 1, &x, &cw);
+    CCell(s, tl, x, y, cw, CC_CELL_H, "AUTO UPDATE", Port_Config_GetAutoUpdate() ? "ON" : "OFF",
+          Port_Config_GetAutoUpdate() ? CC_GOOD : CC_DIM, SS_ACT_UPDATE_AUTO, 0);
+    CColumn(s->w, 3, 2, 1, &x, &cw);
     /* st.version already says BETA when the release found is a pre-release. */
     if (st.version[0]) {
         UpdateUpper(text, sizeof(text), st.version);
@@ -199,6 +211,17 @@ static void PaintUpdatePanel(const SSurf* s, TargetList* tl) {
             confirm ? CC_WARN : CC_TEXT, SS_ACT_UPDATE_ACTION, 0);
 }
 
+/* Taps of the changelog window opened from the boot prompt; true when it swallowed the tap. */
+static bool HandleAutoNotesTap(int action) {
+    if (!sAutoNotes) return false;
+    UI_LOCK();
+    if (action == SS_ACT_AUTOUPD_NEWS) { sAutoNotes = false; }
+    else if (action == SS_ACT_UPDATE_PREV) { if (sUpdatePage) --sUpdatePage; }
+    else if (action == SS_ACT_UPDATE_NEXT) { if (sUpdatePage + 1 < sUpdatePages) ++sUpdatePage; }
+    UI_UNLOCK();
+    return true;
+}
+
 static bool HandleUpdateTap(int action, int arg) {
     if (!Port_SecondScreen_3DS_UpdateOpen()) return false;
     UpdateStatus st; Updater_GetStatus(&st);
@@ -233,6 +256,9 @@ static bool HandleUpdateTap(int action, int arg) {
     switch (action) {
         case SS_ACT_UPDATE_CHANNEL:
             UpdateUI_Reset(); Updater_SetChannel(!st.prerelease); break;
+        case SS_ACT_UPDATE_AUTO:
+            Port_Config_ToggleAutoUpdate();
+            break;
         case SS_ACT_UPDATE_RELEASE:
             UI_LOCK();
             if (sUpdateNotes) sUpdateNotes = false;

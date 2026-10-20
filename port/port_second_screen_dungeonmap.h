@@ -9,12 +9,14 @@
  *
  * Reveal rules mirror the real map so the second screen never cheats:
  * the dungeon map item gates the layout, the compass gates markers,
- * visited rooms come from the caller's session tracking.
+ * visited rooms and opened chests come from the save's flags.
  *
  * Same threading contract as port_second_screen_worldmap.h: ROM/static
- * decomp tables only; all live state (visited mask, dungeon items, player
- * position) arrives as parameters from the snapshot.
+ * decomp tables only; all live state (dungeon items, flags, player
+ * position, language) arrives in the snapshot.
  */
+
+#include "port_second_screen_state.h"
 
 #include <stdint.h>
 
@@ -33,19 +35,58 @@ typedef struct {
 int Port_SecondScreenDungeonMap_GetInfo(uint8_t dungeonIdx, uint8_t area, uint8_t room,
                                         SecondScreenDungeonMapInfo* out);
 
-/* Draws one floor of the dungeon map into `pixels` (RGBA8888,
- * stride-pixels-per-row, bufW x bufH), fitted and centered inside the
- * destination rect. dungeonItemBits is gSave.dungeonItems[dungeonIdx]
- * (4: compass, 2: big key, 1: small key — plus whatever encodes the map
- * item). visitedMask bit n = room n entered this session. Player marker is
- * drawn only on the player's own floor; `tick` drives its blink. Returns 1
- * if authentic art was drawn, 0 for callers to fall back to the schematic
- * renderer. */
+/* Draws floor `floor` (display row, top = 0) of snap->dungeonIdx into
+ * `pixels` (RGBA8888, stride-pixels-per-row, bufW x bufH), fitted and
+ * centered inside the destination rect, the way the pause map draws it
+ * (DrawDungeonFeatures + DrawDungeonMap, src/common.c): rooms by the map
+ * item and the save's visited flags, Link (his own frame on his floor,
+ * another on the rest), with the compass the closed chests and an unbeaten
+ * boss, and the re-entry arrow. `tick` drives the current room's pulse.
+ * Returns 1 if authentic art was drawn, 0 for callers to fall back to the
+ * schematic renderer. */
 int Port_SecondScreenDungeonMap_Draw(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
                                      int32_t dstX, int32_t dstY, int32_t dstW, int32_t dstH,
-                                     uint8_t dungeonIdx, int32_t floor, uint8_t area, uint8_t room,
-                                     uint64_t visitedMask, uint8_t dungeonItemBits,
-                                     int32_t playerAreaX, int32_t playerAreaY, uint32_t tick);
+                                     int32_t floor, const SecondScreenSnapshot* snap, uint32_t tick);
+
+/* Frames of the map screen's DrawDirect sheet drawn beside the floor
+ * list by DrawDungeonMapActually (src/menu/pauseMenu.c). Each pair
+ * alternates: the cursor on the floor being viewed by bit 4 of the game's
+ * frame count, Link on his floor and the boss on its floor by bit 5. */
+#define SS_DMAP_FRAME_FLOOR_CURSOR_A 0x75u /* (ticks & 0x10) == 0 */
+#define SS_DMAP_FRAME_FLOOR_CURSOR_B 0x74u
+#define SS_DMAP_FRAME_LINK_FLOOR_A 0x78u /* (ticks & 0x20) != 0 */
+#define SS_DMAP_FRAME_LINK_FLOOR_B 0x79u
+#define SS_DMAP_FRAME_BOSS_FLOOR_A 0x7au /* (ticks & 0x20) != 0 */
+#define SS_DMAP_FRAME_BOSS_FLOOR_B 0x7bu
+
+/* Draws one frame of that sheet anchored at (x, y) as the game anchors
+ * gOamCmd, each source pixel a scale x scale block, with the OBJ tiles the
+ * map screen holds for the save's language (snap->saveLanguage). Returns 1
+ * when it drew any pixel, 0 when the frame or its tiles are not available. */
+int Port_SecondScreenDungeonMap_DrawFrame(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x,
+                                          int32_t y, int32_t scale, uint32_t frameIndex, uint8_t saveLanguage);
+
+/* The pause map's dungeon item icon (DrawDungeonMapActually, src/menu/pauseMenu.c): item `itemId`'s frame of
+ * gSpriteAnimations_322, from sheet 0x144 (EU 0x143), not the item menu's sheet; the OAM command's palette row
+ * `cmdPalRow` (gOamCmd._8 >> 12). Returns 1 when it drew any pixel. */
+int Port_SecondScreenDungeonMap_DrawDungeonItem(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                                int32_t x, int32_t y, int32_t scale, uint32_t itemId,
+                                                uint32_t cmdPalRow, uint8_t saveLanguage);
+
+/* Pixel bounds of that frame around its anchor at scale 1 ([x0, x1) x
+ * [y0, y1)). Returns 0 when the frame is not available. */
+int Port_SecondScreenDungeonMap_FrameBounds(uint32_t frameIndex, int32_t* x0, int32_t* y0, int32_t* x1, int32_t* y1);
+
+/* The floor name frame of display row `row` (the game's own "1F", "B1",
+ * "PB", "S.1", ... sprites: highestFloor + 0x82 - row), -1 if none. */
+int Port_SecondScreenDungeonMap_FloorLabelFrame(uint8_t dungeonIdx, int32_t row);
+
+/* Display row of Link's floor (sub_0801DB94: dungeon_map_y >> 11). */
+int Port_SecondScreenDungeonMap_LinkFloor(const SecondScreenSnapshot* snap);
+
+/* Display row the boss icon marks (highestFloor - unk_2), or -1 when the
+ * pause map shows none: no compass, or sub_080A5F24 says no. */
+int Port_SecondScreenDungeonMap_BossFloor(const SecondScreenSnapshot* snap);
 
 #ifdef __cplusplus
 }

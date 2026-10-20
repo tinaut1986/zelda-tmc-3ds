@@ -275,6 +275,9 @@ void Port_Config_Cycle3DSAspectRatio(void);
 bool Port_Config_GetWideAi(void);
 bool Port_Config_WideAiQuestionDue(void);
 void Port_Config_AnswerWideAi(bool yes);
+/* AUTO UPDATE (3DS): check for a newer build when the game opens and ask whether to install it. */
+bool Port_Config_GetAutoUpdate(void);
+void Port_Config_ToggleAutoUpdate(void);
 int Port_Config_Get3DSDisplayStyle(void);
 const char* Port_Config_Get3DSDisplayStyleName(void);
 void Port_Config_Cycle3DSDisplayStyle(void);
@@ -283,12 +286,19 @@ void Port_Config_Cycle3DSDisplayStyle(void);
 int Port_Config_GetGbaGrid(void);
 const char* Port_Config_GetGbaGridName(void);
 void Port_Config_CycleGbaGrid(void);
-bool Port_Config_GetGbaFrame(void);
-void Port_Config_SetGbaFrame(bool on);
+/* FRAME: 0 NO, 1 GBA (the console's body), 2 BLUR (the picture's colours blurred into the border). */
+int Port_Config_GetGbaFrame(void);
+const char* Port_Config_GetGbaFrameName(void);
+void Port_Config_CycleGbaFrame(void);
+/* NEIGHBOURS (neighbour_rooms): the rooms drawn beside a room smaller than the Full View (P4.9): 0 OFF (only the
+ * room), 1 ON. */
+int Port_Config_GetNeighbourRooms(void);
+const char* Port_Config_GetNeighbourRoomsName(void);
+void Port_Config_CycleNeighbourRooms(void);
 /* The frame is for VIEW: ORIGINAL only (WIDE fills the border with world): locked and off otherwise,
  * whatever gba_frame says; Active is what the presenter draws. */
 bool Port_Config_GbaFrameAvailable(void);
-bool Port_Config_GbaFrameActive(void);
+int Port_Config_GbaFrameActive(void); /* the mode drawn: 0 when unavailable */
 /* Experimental presentation gate only. It does not add a persisted enum or
  * INI key: New 3DS + the existing Wide + Pixel Perfect selections opt in. */
 bool Port_Config_3DSFullViewComboEnabled(void);

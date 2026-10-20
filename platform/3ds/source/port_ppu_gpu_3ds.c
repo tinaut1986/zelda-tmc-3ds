@@ -108,6 +108,15 @@ static C3D_RenderTarget* sOutputRightTarget;
 static bool sRightReady;
 static bool sEyeShifting;
 static float sEyeShiftNdc[PPU_GPU3DS_OBJ + 1][4];
+/* The eye the shifts are for, and pixels to NDC: a sprite with a depth of its own (PpuGpu3DSBatch.depth) is moved
+ * by its own shift (SpritePx). */
+static Stereo3DSEye sEyeCurrent;
+static float sEyeToNdc;
+
+static int SpritePx(const PpuGpu3DSBatch* batch) {
+    const float shift = Stereo3DS_SpriteShift(batch->depth, sEyeCurrent);
+    return (int)(shift < 0.0f ? shift - 0.5f : shift + 0.5f);
+}
 /* The same in whole pixels, for the batch's scissor: a layer's regions move with it, or their
  * edges cut what moved (the R button split in two, a heart cut by the next). */
 static int sEyeShiftPx[PPU_GPU3DS_OBJ + 1][4];
@@ -1019,8 +1028,8 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
                                                                       : &sRingTex[batch->texture - 1u]);
     }
     SetBatchOffset(batch->offsetX + (sEyeShifting && batch->layer <= PPU_GPU3DS_OBJ
-                                             ? (batch->objWindow && sEyeWindowFollows
-                                                        ? sEyeWindowNdc
+                                             ? (batch->objWindow && sEyeWindowFollows ? sEyeWindowNdc
+                                                : batch->depth != 0 ? (float)SpritePx(batch) * sEyeToNdc
                                                         : sEyeShiftNdc[batch->layer][batch->priority & 3u])
                                              : 0.0f),
                    batch->offsetY);
@@ -1052,6 +1061,7 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
     u32 left = batch->scissorLeft, right = batch->scissorRight;
     if (sEyeShifting && batch->layer <= PPU_GPU3DS_OBJ) {
         const int shift = batch->objWindow && sEyeWindowFollows ? sEyeWindowPx
+                          : batch->depth != 0                   ? SpritePx(batch)
                                                                  : sEyeShiftPx[batch->layer][batch->priority & 3u];
         const int movedLeft = (int)left + shift, movedRight = (int)right + shift;
         left = movedLeft < 0 ? 0u : (u32)movedLeft;
@@ -1126,6 +1136,8 @@ static bool sFrontLayer[PPU_GPU3DS_OBJ + 1][4];
 static bool sFrontHasObj;
 
 static bool IsFrontBatch(const PpuGpu3DSBatch* batch) {
+    /* Its eye's shift is the other's negated: in front for both or for neither. */
+    if (batch->depth != 0) return SpritePx(batch) != 0;
     return batch->layer <= PPU_GPU3DS_OBJ && sFrontLayer[batch->layer][batch->priority & 3u];
 }
 
@@ -1226,6 +1238,12 @@ static bool DrawOutput(C3D_RenderTarget* target, OutputPass pass) {
     C3D_TexSetWrap(&sAtlas, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     C3D_TexBind(0, &sAtlas);
     sBoundTexture = 0;
+    /* The atlas and the view rings were rewritten in place for this frame (Commit), and the PICA's
+     * texture cache can still hold lines of them from the last one: citro3d's texture-unit update writes
+     * GPUREG_TEXUNIT_CONFIG with a byte mask that leaves bit 16 (clear the texture cache) out. A ring
+     * cell reused for another map row then came out as its old (empty) texels on one line, beside a dark
+     * room's light (issue #44). Only that byte is written, so the units citro3d enabled stay as they are. */
+    GPUCMD_AddMaskedWrite(GPUREG_TEXUNIT_CONFIG, 0x4, 1u << 16);
     if (pass == PASS_ALL || pass == PASS_BASE) LogBatchList();
     /* The base keeps the blend-target mark in both bits; each eye in front uses its own. */
     sTarget2Bit = pass == PASS_FRONT_RIGHT ? 0x10u : 0x08u;
@@ -1291,6 +1309,13 @@ static bool DrawOutput(C3D_RenderTarget* target, OutputPass pass) {
         else
             C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_COLOR);
         DrawBatch(batch);
+        /* A sprite's colour draw is sometimes lost on the Old 3DS (the Zz bubble's one tile in Hyrule Castle's
+         * bedroom, about one frame in four): measured on the console, drawing the opaque OBJ batches twice
+         * brought it from 3-9 bad frames in 66 to 0 in three recordings; the same batches twice in the depth
+         * pre-pass did not (8-10). The second draw rewrites the same pixels, so it costs only the draw. The root
+         * cause is not known (docs/PLAN.md, decisions log 2026-10-20). */
+        if (batch->layer == PPU_GPU3DS_OBJ && batch->effect != PPU_GPU3DS_EFFECT_ALPHA && !batch->semiTransparent)
+            DrawBatch(batch);
     }
 
     /* The iris (PpuGpu3DSFrameView::irisLines): the backdrop outside the circle,
@@ -1408,6 +1433,8 @@ static void SetEyeShifts(bool shifted, Stereo3DSEye eye) {
             sEyeShiftPx[layer][priority] = pixels;
             sEyeShiftNdc[layer][priority] = (float)pixels * toNdc;
         }
+    sEyeCurrent = eye;
+    sEyeToNdc = toNdc;
     unsigned followLayer, followPriority;
     sEyeWindowFollows = Stereo3DS_ObjWindowFollows(&followLayer, &followPriority);
     if (sEyeWindowFollows) {

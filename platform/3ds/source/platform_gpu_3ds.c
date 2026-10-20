@@ -21,6 +21,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include <string.h>
 
 /* The static quad is drawn with the PPU's own shader and attribute info, so it
@@ -63,6 +64,15 @@ static uint32_t* sBottomUploads[2];
 static void* sC2dFlushBase;
 static size_t sC2dFlushSize;
 static bool sFrameActive;
+
+/* Inside a frame C3D_SyncDisplayTransfer splits the command list with flags 0, and GSP then runs the PPU's
+ * draws without cleaning them from the CPU cache: a draw word still dirty in the ARM11's L1 is read as an
+ * older frame's, and a sprite vanishes for a frame (the Zz bubble, one tile). Splitting here first, with
+ * GX_CMDLIST_FLUSH, sends the draws so far cleaned; the transfer's own split then has nothing left (offset 0),
+ * so the GX queue gets no extra entry. */
+static void SplitFlushed(void) {
+    if (sFrameActive) C3D_FrameSplit(GX_CMDLIST_FLUSH);
+}
 static bool sReady;
 static bool sOld3DSProfile;
 static bool sBottomTargetValid;
@@ -93,6 +103,7 @@ extern u32 __ctru_linear_heap_size;
 extern bool Port_Config_GetShowFps(void);
 extern bool Port_Config_GetColorCorrection(void);
 extern bool Port_Config_GetWideAi(void);
+extern int Port_Config_GbaFrameActive(void); /* 0 NO, 1 GBA, 2 BLUR */
 extern void Port_FadedBlackRGB(uint8_t* r, uint8_t* g, uint8_t* b); /* src/fade.c */
 
 /* What the bars beside a narrow view are filled with: black, or the fade's
@@ -465,6 +476,430 @@ static void DrawFrameEdges(const C2D_Image* frame, const C2D_DrawParams* at) {
     ConfigureStandardAlphaBlend();
 }
 
+/* ---- the blurred border (FRAME = BLUR) ----
+ *
+ * An ambilight: the colours of the game's picture, blurred, fill the border it leaves on the 400x240
+ * screen, never fading to black (a white screen gets a white border). Near the picture the border is
+ * its own pixels (barely blurred); the farther from it, the more diluted, up to a soft average of the
+ * whole picture at the screen's edge. Five small VRAM targets (a target switch costs the Old 3DS, so
+ * there are as few passes as this takes):
+ *   0  the picture shrunk to 64x64 (blended into its previous contents: see below);
+ *   1  the whole screen as a 32x16 image: that picture over its rectangle with its edge texels carried
+ *      outwards (the clamped wrap), so the corners take the colour of the corner;
+ *   2  that shrunk to 16x8, and 3 to 8x8: the diluted picture;
+ *   4  the border itself, 64x32: the sum of stages 1 to 3, each scaled by a weight that depends on the
+ *      distance from the picture (TopBlurMasks: near the picture stage 1, further out stage 2, then 3). Each level is blurrier than the
+ *      one over it, and the 6 px texels with the linear stretch to the screen blend the zones' edges.
+ * The small passes copy the source as it is (the port's ABGR carrier or true RGBA), so the final draw
+ * uses the env the source needs. They are redone every BLUR_REFRESH frames, once per frame whatever the
+ * eye. Pass 0 is blended into the previous result (BLUR_SMOOTH_ALPHA of 255 new), so the glow follows a
+ * scroll or a change of scene gently instead of jumping with every frame. Render targets must be at
+ * least 8 texels each way (a 4-high one aborts in citro3d). */
+enum { BLUR_STAGES = 5, BLUR_BORDER = BLUR_STAGES - 1, BLUR_REFRESH = 2, BLUR_SMOOTH_ALPHA = 40, BLUR_STEREO_INSET = 8, BLUR_NEAR_FALLOFF = 24,
+       BLUR_MID_FALLOFF = 72, BLUR_EDGE_INSET = 6 };
+typedef struct BlurStage {
+    C3D_Tex texture;
+    C3D_RenderTarget* target;
+    unsigned width, height;
+} BlurStage;
+/* One set of stages per rectangle the border is made from (the room that shows and the drawn neighbouring rooms:
+ * the border grows from each, the nearest one winning). Allocated when first needed. */
+enum { BLUR_RECTS = 3 };
+typedef struct BlurSet {
+    BlurStage stage[BLUR_STAGES];
+    C3D_Tex mask[3]; /* the weights of the levels (stages 1 to 3), one small texture each, as big as their stage; all
+                        four channels hold the weight, so scaling a stage by one scales its colour and its alpha alike */
+    int rect[4];     /* the rectangle it was built for */
+    bool ready, valid;
+} BlurSet;
+static const unsigned kBlurStageSize[BLUR_STAGES][2] = { { 64, 64 }, { 32, 16 }, { 16, 8 }, { 8, 8 }, { 64, 32 } };
+static BlurSet sBlurSets[BLUR_RECTS];
+/* With more than one set: their borders, each scaled by its weight (the share of the screen it is the nearest
+ * rectangle of), added into one. */
+static BlurStage sBlurFinal = { .width = 64, .height = 32 };
+static C3D_Tex sBlurWeight[BLUR_RECTS];
+static bool sBlurTried, sBlurOk, sBlurValid, sBlurFinalReady;
+static unsigned sBlurTick;
+static int sBlurCount;        /* rectangles of the last build */
+static int sBlurWeightsFor[BLUR_RECTS][4]; /* what the weights were made for */
+
+static void TopBlurSetFree(BlurSet* set) {
+    for (int i = 0; i < BLUR_STAGES; ++i) {
+        if (!set->stage[i].target) continue;
+        C3D_RenderTargetDelete(set->stage[i].target);
+        C3D_TexDelete(&set->stage[i].texture);
+        set->stage[i].target = NULL;
+    }
+    for (int i = 0; i < 3; ++i) {
+        if (!set->mask[i].data) continue;
+        C3D_TexDelete(&set->mask[i]);
+        set->mask[i].data = NULL;
+    }
+    set->ready = set->valid = false;
+}
+
+static void TopBlurFree(void) {
+    for (int j = 0; j < BLUR_RECTS; ++j) {
+        TopBlurSetFree(&sBlurSets[j]);
+        if (sBlurWeight[j].data) {
+            C3D_TexDelete(&sBlurWeight[j]);
+            sBlurWeight[j].data = NULL;
+        }
+    }
+    if (sBlurFinal.target) {
+        C3D_RenderTargetDelete(sBlurFinal.target);
+        C3D_TexDelete(&sBlurFinal.texture);
+        sBlurFinal.target = NULL;
+    }
+    sBlurFinalReady = false;
+    sBlurOk = sBlurValid = false;
+}
+
+static bool TopBlurStageInit(BlurStage* st) {
+    if (!C3D_TexInitVRAM(&st->texture, st->width, st->height, GPU_RGBA8)) return false;
+    C3D_TexSetFilter(&st->texture, GPU_LINEAR, GPU_LINEAR);
+    C3D_TexSetWrap(&st->texture, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+    st->target = C3D_RenderTargetCreateFromTex(&st->texture, GPU_TEXFACE_2D, 0, -1);
+    if (!st->target) {
+        C3D_TexDelete(&st->texture);
+        return false;
+    }
+    return true;
+}
+
+static bool TopBlurSetEnsure(int j) {
+    BlurSet* set = &sBlurSets[j];
+    if (set->ready) return true;
+    for (int i = 0; i < BLUR_STAGES; ++i) {
+        set->stage[i].width = kBlurStageSize[i][0];
+        set->stage[i].height = kBlurStageSize[i][1];
+        if (!TopBlurStageInit(&set->stage[i])) {
+            TopBlurSetFree(set);
+            return false;
+        }
+    }
+    for (int i = 0; i < 3; ++i) {
+        if (!C3D_TexInit(&set->mask[i], set->stage[i + 1].width, set->stage[i + 1].height, GPU_RGBA8)) {
+            TopBlurSetFree(set);
+            return false;
+        }
+        C3D_TexSetFilter(&set->mask[i], GPU_NEAREST, GPU_NEAREST);
+        C3D_TexSetWrap(&set->mask[i], GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+    }
+    set->ready = true;
+    return true;
+}
+
+static bool TopBlurInit(void) {
+    if (sBlurTried) return sBlurOk;
+    sBlurTried = true;
+    if (!TopBlurSetEnsure(0)) return false;
+    sBlurOk = true;
+    return true;
+}
+
+/* The shared pieces of a border made from more than one rectangle, when first needed. */
+static bool TopBlurFinalEnsure(void) {
+    if (sBlurFinalReady) return true;
+    if (!TopBlurStageInit(&sBlurFinal)) return false;
+    for (int j = 0; j < BLUR_RECTS; ++j) {
+        if (!C3D_TexInit(&sBlurWeight[j], 64, 32, GPU_RGBA8)) return false;
+        C3D_TexSetFilter(&sBlurWeight[j], GPU_NEAREST, GPU_NEAREST);
+        C3D_TexSetWrap(&sBlurWeight[j], GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+    }
+    sBlurFinalReady = true;
+    return true;
+}
+
+static void TopBlurShutdown(void) {
+    TopBlurFree();
+}
+
+/* What the blurred border is made from this frame: the parts of the view the game's picture holds, as
+ * rectangles of the screen (x, y, w x h) and as the texels of the frame they are (srcX, srcY). Every screen
+ * whose picture leaves the 400x240 black around it gets them: a picture drawn smaller than the screen
+ * (FRAME = BLUR in ORIGINAL; the 240x160 screens of WIDE + BLUR / WIDE + AI, which leave the scenes that
+ * have a generated picture, and the portal's strips, to those) and, in WIDE, a room smaller than the
+ * view, which the game centres with black on both sides (the room, and the neighbouring rooms drawn
+ * beside it, each a rectangle of its own). */
+typedef struct BlurRect {
+    int x, y, w, h;
+    int srcX, srcY;
+} BlurRect;
+typedef struct BlurJob {
+    BlurRect rects[BLUR_RECTS];
+    int count;
+    bool over; /* drawn over the frame, where it is black, not under it: the room's own black is in the frame */
+} BlurJob;
+
+static bool TopBlurWanted(const TopView3DSPlan* plan, BlurJob* job) {
+    const Port3DSFullViewPresentation* presentation = &plan->source;
+    /* Only FRAME = BLUR (VIEW ORIGINAL) since 2026-10-20: WIDE + BLUR, and WIDE + AI's blur where it has no picture,
+     * cost the Old 3DS too much while scrolling and were dropped. The rectangles of the view (job->over, more than
+     * one: the room and its neighbours) served them and are kept for a cheaper way back. */
+    if (Port_Config_GbaFrameActive() != 2) return false;
+    job->count = 1;
+    job->over = false;
+    job->rects[0] = (BlurRect){ plan->drawX, plan->drawY, plan->drawWidth, plan->drawHeight, presentation->sourceX,
+                                presentation->sourceY };
+    return true;
+}
+
+static void TopBlurInvalidate(void) {
+    sBlurValid = false;
+    for (int j = 0; j < BLUR_RECTS; ++j) sBlurSets[j].valid = false;
+}
+
+/* One pass: the (u0, v0)-(u1, v1) part of `src` (texture coordinates, which may lie outside 0..1 for
+ * the clamped wrap to carry the edge) into the whole of `dst`. */
+static void TopBlurPass(C3D_Tex* src, float u0, float v0, float u1, float v1, const BlurStage* dst) {
+    const Tex3DS_SubTexture sub = {
+        .width = (u16)dst->width, .height = (u16)dst->height, .left = u0, .right = u1, .top = v0, .bottom = v1,
+    };
+    const C2D_Image image = { .tex = src, .subtex = &sub };
+    const C2D_DrawParams params = {
+        .pos = { 0.0f, 0.0f, (float)dst->width, (float)dst->height },
+        .center = { 0.0f, 0.0f }, .depth = 0.0f, .angle = 0.0f,
+    };
+    C3D_TexSetFilter(src, GPU_LINEAR, GPU_LINEAR);
+    C2D_SceneBegin(dst->target);
+    C2D_DrawImage(image, &params, NULL);
+}
+
+/* The weights of the border's three levels at the centre of each texel of their stage: how far a point of the
+ * screen is from the picture's rectangle (the straight distance, so the zones have rounded corners) gives the
+ * near level a weight falling smoothly from 1 at the picture to 0 at BLUR_NEAR_FALLOFF, the mid one likewise to
+ * BLUR_MID_FALLOFF, and the weights are made to add up to 1 everywhere: near, mid among what the near one leaves,
+ * the diluted picture the rest. */
+static float TopBlurFalloff(float distance, float reach) {
+    float t = 1.0f - distance / reach;
+    t = t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t;
+    return t * t * (3.0f - 2.0f * t);
+}
+
+static void TopBlurMasks(BlurSet* set, int x, int y, int w, int h) {
+    for (int level = 0; level < 3; ++level) {
+        const unsigned mw = set->stage[level + 1].width, mh = set->stage[level + 1].height;
+        uint32_t texels[32 * 16];
+        for (unsigned row = 0; row < mh; ++row) { /* memory row 0 is the bottom of the screen */
+            for (unsigned col = 0; col < mw; ++col) {
+                const float sx = ((float)col + 0.5f) * 400.0f / (float)mw;
+                const float sy = (1.0f - ((float)row + 0.5f) / (float)mh) * 240.0f;
+                const float dx = sx < (float)x ? (float)x - sx : sx > (float)(x + w) ? sx - (float)(x + w) : 0.0f;
+                const float dy = sy < (float)y ? (float)y - sy : sy > (float)(y + h) ? sy - (float)(y + h) : 0.0f;
+                const float distance = sqrtf(dx * dx + dy * dy);
+                const float near = TopBlurFalloff(distance, (float)BLUR_NEAR_FALLOFF);
+                const float mid = TopBlurFalloff(distance, (float)BLUR_MID_FALLOFF);
+                const float weight = level == 0 ? near : level == 1 ? (1.0f - near) * mid : (1.0f - near) * (1.0f - mid);
+                const unsigned v = (unsigned)(weight * 255.0f + 0.5f);
+                /* 8x8 tiles, row-major; inside a tile the bits of x and y interleaved (x first). */
+                const unsigned tile = (row / 8u) * (mw / 8u) + col / 8u;
+                const unsigned cx = col & 7u, cy = row & 7u;
+                const unsigned morton = (cx & 1u) | ((cy & 1u) << 1) | ((cx & 2u) << 1) | ((cy & 2u) << 2) |
+                                        ((cx & 4u) << 2) | ((cy & 4u) << 3);
+                texels[tile * 64u + morton] = v | (v << 8) | (v << 16) | (v << 24);
+            }
+        }
+        C3D_TexLoadImage(&set->mask[level], texels, GPU_TEXFACE_2D, 0);
+    }
+}
+
+/* The share of each rectangle in the final border (64x32 texels): at the centre of a texel the rectangles weigh
+ * 1 / (1 + (distance / 10)^2), made to add up to 1, so the nearest one decides the colour and where two are
+ * about as near they blend. */
+static void TopBlurWeights(const BlurRect* rects, int count) {
+    for (int k = 0; k < count; ++k) {
+        uint32_t texels[64 * 32];
+        for (unsigned row = 0; row < 32; ++row) {
+            for (unsigned col = 0; col < 64; ++col) {
+                const float sx = ((float)col + 0.5f) * 400.0f / 64.0f;
+                const float sy = (1.0f - ((float)row + 0.5f) / 32.0f) * 240.0f;
+                float sum = 0.0f, mine = 0.0f;
+                for (int j = 0; j < count; ++j) {
+                    const float dx = sx < (float)rects[j].x ? (float)rects[j].x - sx
+                                     : sx > (float)(rects[j].x + rects[j].w) ? sx - (float)(rects[j].x + rects[j].w) : 0.0f;
+                    const float dy = sy < (float)rects[j].y ? (float)rects[j].y - sy
+                                     : sy > (float)(rects[j].y + rects[j].h) ? sy - (float)(rects[j].y + rects[j].h) : 0.0f;
+                    const float d = sqrtf(dx * dx + dy * dy) / 10.0f;
+                    const float weight = 1.0f / (1.0f + d * d);
+                    sum += weight;
+                    if (j == k) mine = weight;
+                }
+                const unsigned v = (unsigned)(mine / sum * 255.0f + 0.5f);
+                const unsigned tile = (row / 8u) * 8u + col / 8u;
+                const unsigned cx = col & 7u, cy = row & 7u;
+                const unsigned morton = (cx & 1u) | ((cy & 1u) << 1) | ((cx & 2u) << 1) | ((cy & 2u) << 2) |
+                                        ((cx & 4u) << 2) | ((cy & 4u) << 3);
+                texels[tile * 64u + morton] = v | (v << 8) | (v << 16) | (v << 24);
+            }
+        }
+        C3D_TexLoadImage(&sBlurWeight[k], texels, GPU_TEXFACE_2D, 0);
+        memcpy(sBlurWeightsFor[k], &rects[k], sizeof(sBlurWeightsFor[k]));
+    }
+}
+
+/* Shrinks the picture (srcX, srcY, srcW x srcH of `source`), which is drawn at (x, y, w x h) on the
+ * screen, into a set's stages. */
+static void TopBlurBuildSet(BlurSet* set, C3D_Tex* source, int srcX, int srcY, int srcW, int srcH, int x, int y, int w,
+                            int h) {
+    const int rect[4] = { x, y, w, h };
+    const bool smooth = set->valid && memcmp(rect, set->rect, sizeof(rect)) == 0;
+    ConfigureIdentityTextureEnv();
+    ConfigureOpaqueOverwriteBlend();
+    if (smooth) { /* the picture goes into its previous contents, a little of it each time */
+        C3D_BlendingColor((u32)BLUR_SMOOTH_ALPHA << 24);
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA,
+                       GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
+    }
+    /* The picture to 64x64; half a texel in so the linear filter never reads outside it. */
+    const float tw = (float)source->width, th = (float)source->height;
+    /* Not the picture's outermost rows and columns: the border carries the edge outwards, and a few bright
+     * pixels along the edge of an otherwise dark picture (the line where a room ends) would become streaks
+     * across the whole border. */
+    if (srcW > 8 * BLUR_EDGE_INSET && srcH > 8 * BLUR_EDGE_INSET) {
+        srcX += BLUR_EDGE_INSET;
+        srcY += BLUR_EDGE_INSET;
+        srcW -= 2 * BLUR_EDGE_INSET;
+        srcH -= 2 * BLUR_EDGE_INSET;
+    }
+    TopBlurPass(source, ((float)srcX + 0.5f) / tw, 1.0f - ((float)srcY + 0.5f) / th,
+                ((float)(srcX + srcW) - 0.5f) / tw, 1.0f - ((float)(srcY + srcH) - 0.5f) / th, &set->stage[0]);
+    C2D_Flush(); /* drawn under that blend, the rest under the overwrite one */
+    ConfigureOpaqueOverwriteBlend();
+    /* That over the picture's rectangle of the screen, its edge texels carried out to the screen's (texture
+     * coordinates past 0..1), then shrunk again. */
+    TopBlurPass(&set->stage[0].texture, -(float)x / (float)w, 1.0f + (float)y / (float)h, (float)(400 - x) / (float)w,
+                1.0f - (float)(240 - y) / (float)h, &set->stage[1]);
+    TopBlurPass(&set->stage[1].texture, 0.0f, 1.0f, 1.0f, 0.0f, &set->stage[2]);
+    TopBlurPass(&set->stage[2].texture, 0.0f, 1.0f, 1.0f, 0.0f, &set->stage[3]);
+    if (!smooth) TopBlurMasks(set, x, y, w, h);
+    /* Each level scaled by its weight (the destination times the mask, colour and alpha)... */
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ZERO, GPU_SRC_COLOR, GPU_ZERO, GPU_SRC_ALPHA);
+    for (int level = 1; level <= 3; ++level)
+        TopBlurPass(&set->mask[level - 1], 0.0f, 1.0f, 1.0f, 0.0f, &set->stage[level]);
+    C2D_Flush();
+    /* ...and the border is their sum. */
+    ConfigureOpaqueOverwriteBlend();
+    TopBlurPass(&set->stage[3].texture, 0.0f, 1.0f, 1.0f, 0.0f, &set->stage[BLUR_BORDER]);
+    C2D_Flush();
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ONE, GPU_ONE, GPU_ONE);
+    TopBlurPass(&set->stage[2].texture, 0.0f, 1.0f, 1.0f, 0.0f, &set->stage[BLUR_BORDER]);
+    TopBlurPass(&set->stage[1].texture, 0.0f, 1.0f, 1.0f, 0.0f, &set->stage[BLUR_BORDER]);
+    C2D_Flush();
+    ConfigureOpaqueOverwriteBlend();
+    memcpy(set->rect, rect, sizeof(rect));
+    set->valid = true;
+}
+
+/* Builds the border from the job's rectangles of `source`, unless this frame is skipped or belongs to the
+ * right eye. Call between the eye's clear and its first draw; the caller goes back to the eye's scene. */
+static void TopBlurBuild(C3D_Tex* source, const BlurJob* job) {
+    if (sRightEye || !TopBlurInit() || job->count <= 0) return;
+    if (sBlurValid && (++sBlurTick % BLUR_REFRESH) != 0) return;
+    int count = 0;
+    for (int j = 0; j < job->count && j < BLUR_RECTS; ++j) {
+        const BlurRect* r = &job->rects[j];
+        if (r->w <= 0 || r->h <= 0 || !TopBlurSetEnsure(j)) continue;
+        TopBlurBuildSet(&sBlurSets[j], source, r->srcX, r->srcY, r->w, r->h, r->x, r->y, r->w, r->h);
+        ++count;
+    }
+    if (count > 1 && !TopBlurFinalEnsure()) count = 1;
+    if (count > 1) {
+        bool changed = count != sBlurCount;
+        for (int k = 0; k < count && !changed; ++k) changed = memcmp(sBlurWeightsFor[k], &job->rects[k], sizeof(sBlurWeightsFor[k])) != 0;
+        if (changed) TopBlurWeights(job->rects, count);
+        /* Each border scaled by its share, then added into the final one. */
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ZERO, GPU_SRC_COLOR, GPU_ZERO, GPU_SRC_ALPHA);
+        for (int k = 0; k < count; ++k)
+            TopBlurPass(&sBlurWeight[k], 0.0f, 1.0f, 1.0f, 0.0f, &sBlurSets[k].stage[BLUR_BORDER]);
+        C2D_Flush();
+        ConfigureOpaqueOverwriteBlend();
+        TopBlurPass(&sBlurSets[0].stage[BLUR_BORDER].texture, 0.0f, 1.0f, 1.0f, 0.0f, &sBlurFinal);
+        C2D_Flush();
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ONE, GPU_ONE, GPU_ONE);
+        for (int k = 1; k < count; ++k)
+            TopBlurPass(&sBlurSets[k].stage[BLUR_BORDER].texture, 0.0f, 1.0f, 1.0f, 0.0f, &sBlurFinal);
+        C2D_Flush();
+        ConfigureOpaqueOverwriteBlend();
+    }
+    sBlurCount = count;
+    sBlurValid = count > 0;
+}
+
+/* The border drawn where the job's rectangles are not: the screen cut into bands at their top and bottom
+ * edges, and in each band what the rectangles crossing it leave of the width (each part of the last stage
+ * that lies under it when it is stretched over the whole screen). Needs the eye's scene and the standard blend;
+ * leaves the env it set (`carrier`: the source was the ABGR carrier). */
+static void TopBlurDraw(const BlurJob* job, bool carrier) {
+    if (!sBlurValid || !sBlurOk || sBlurCount <= 0) return;
+    C3D_Tex* texture = sBlurCount > 1 ? &sBlurFinal.texture : &sBlurSets[0].stage[BLUR_BORDER].texture;
+    if (carrier) ConfigureAbgrTextureEnv();
+    else ConfigureIdentityTextureEnv();
+    /* A layer in front moves in opposite ways in the two eyes and can uncover a few columns of the frame's
+     * black just inside the room's edge: over the frame the glow goes that far in too. */
+    const int inset = job->over && Stereo3DS_HasDepth() ? BLUR_STEREO_INSET : 0;
+    /* Over the frame: added where it is black (the light is multiplied by what the frame lacks of white),
+     * so what the game drew in the border (the HUD) stays as it is. */
+    if (job->over)
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE_MINUS_DST_COLOR, GPU_ONE, GPU_ZERO, GPU_ONE);
+    int breaks[2 * BLUR_RECTS + 2], breakCount = 0;
+    breaks[breakCount++] = 0;
+    breaks[breakCount++] = 240;
+    for (int j = 0; j < job->count; ++j) {
+        const int top = job->rects[j].y, bottom = job->rects[j].y + job->rects[j].h;
+        if (top > 0 && top < 240) breaks[breakCount++] = top;
+        if (bottom > 0 && bottom < 240) breaks[breakCount++] = bottom;
+    }
+    for (int i = 1; i < breakCount; ++i) { /* sorted */
+        const int v = breaks[i];
+        int k = i - 1;
+        while (k >= 0 && breaks[k] > v) { breaks[k + 1] = breaks[k]; --k; }
+        breaks[k + 1] = v;
+    }
+    for (int band = 0; band + 1 < breakCount; ++band) {
+        const int ya = breaks[band], yb = breaks[band + 1];
+        if (yb <= ya) continue;
+        /* What the rectangles crossing the band cover of the width, merged and sorted. */
+        int from[BLUR_RECTS], to[BLUR_RECTS], n = 0;
+        for (int j = 0; j < job->count; ++j) {
+            const BlurRect* r = &job->rects[j];
+            if (r->y > ya || r->y + r->h < yb) continue;
+            int lo = r->x, hi = r->x + r->w, k = n++;
+            while (k > 0 && from[k - 1] > lo) { from[k] = from[k - 1]; to[k] = to[k - 1]; --k; }
+            from[k] = lo;
+            to[k] = hi;
+        }
+        int merged = 0;
+        for (int k = 0; k < n; ++k) {
+            if (merged > 0 && from[k] <= to[merged - 1]) {
+                if (to[k] > to[merged - 1]) to[merged - 1] = to[k];
+            } else {
+                from[merged] = from[k];
+                to[merged++] = to[k];
+            }
+        }
+        int cursor = 0;
+        for (int k = 0; k <= merged; ++k) {
+            const int gapEnd = k < merged ? from[k] + (from[k] > 0 ? inset : 0) : 400;
+            if (gapEnd > cursor) {
+                const int rx = cursor, rw = gapEnd - cursor;
+                const Tex3DS_SubTexture sub = {
+                    .width = (u16)rw, .height = (u16)(yb - ya),
+                    .left = (float)rx / 400.0f,
+                    .right = (float)(rx + rw) / 400.0f,
+                    .top = 1.0f - (float)ya / 240.0f,
+                    .bottom = 1.0f - (float)yb / 240.0f,
+                };
+                const C2D_Image image = { .tex = texture, .subtex = &sub };
+                C2D_DrawImageAt(image, (float)rx, (float)ya, 0.0f, NULL, 1.0f, 1.0f);
+            }
+            if (k < merged) cursor = to[k] - (to[k] < 400 ? inset : 0);
+        }
+    }
+    C2D_Flush();
+    if (job->over) ConfigureStandardAlphaBlend();
+}
+
 static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height,
                          unsigned validSourceWidth, unsigned validSourceHeight,
                          Port3DSFullViewMode requestedMode, int cropX, int cropY) {
@@ -495,6 +930,7 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
          * source rectangle so the display engine does not read another 96 unused
          * RGBA rows. New 3DS retains the established transfer dimensions. */
         const unsigned sourceHeight = sOld3DSProfile ? sUploadLayout.topRows : TOP_TEXTURE_HEIGHT;
+        SplitFlushed();
         C3D_SyncDisplayTransfer((u32*)pixels, GX_BUFFER_DIM(sUploadLayout.topPitch, sourceHeight),
                                 (u32*)sTopTexture.data, GX_BUFFER_DIM(TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT),
                                 TextureTransfer());
@@ -514,6 +950,12 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
         .center = { 0.0f, 0.0f }, .depth = 0.0f, .angle = 0.0f,
     };
     C2D_TargetClear(sEyeTarget, TopClearColor());
+    BlurJob blur;
+    const bool blurBorder = TopBlurWanted(&plan, &blur);
+    if (blurBorder)
+        TopBlurBuild(&sTopTexture, &blur);
+    else
+        TopBlurInvalidate();
     const unsigned intermediateScale = (unsigned)plan.sharpBilinearScale;
     const bool validSharpBilinearScale = intermediateScale == 2u;
     const unsigned intermediateWidth = validSharpBilinearScale
@@ -615,6 +1057,7 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
          * blend state for the physical-target batch. */
         C2D_SceneBegin(sEyeTarget);
         ConfigureStandardAlphaBlend();
+        if (blurBorder && !blur.over) TopBlurDraw(&blur, true);
         C3D_TexSetFilter(&sSharpBilinearTexture, GPU_LINEAR, GPU_LINEAR);
         C2D_DrawImage(intermediateImage, &params, NULL);
         DrawFrameEdges(&intermediateImage, &params);
@@ -626,10 +1069,15 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
         C3D_TexSetFilter(&sTopTexture, filter, filter);
         C2D_SceneBegin(sEyeTarget);
         ConfigureStandardAlphaBlend();
+        if (blurBorder && !blur.over) TopBlurDraw(&blur, true);
         C2D_DrawImage(image, &params, NULL);
         DrawFrameEdges(&image, &params);
         ConfigureAbgrTextureEnv();
         if (plan.useSharpBilinear) if (!sRightEye) ++sStats.sharpBilinearFallbacks;
+    }
+    if (blurBorder && blur.over) {
+        C2D_Flush();
+        TopBlurDraw(&blur, true);
     }
     DrawScenePictures(plan.drawX, plan.drawY, plan.drawWidth, plan.drawHeight, true);
     if (GbaLook3DS_Draw(plan.drawX, plan.drawY, plan.drawWidth, plan.drawHeight,
@@ -683,6 +1131,7 @@ static void LoadScenePicture(ScenePicture* picture) {
     free(pixels);
     if (C3D_TexInit(&picture->texture, picture->texWidth, picture->texHeight, GPU_RGBA8)) {
         Platform3DS_CleanDataCache(linear, texBytes);
+        SplitFlushed();
         C3D_SyncDisplayTransfer((u32*)linear, GX_BUFFER_DIM(picture->texWidth, picture->texHeight),
                                 (u32*)picture->texture.data, GX_BUFFER_DIM(picture->texWidth, picture->texHeight),
                                 TextureTransfer());
@@ -813,6 +1262,7 @@ static bool CaveReady(bool shown) {
     }
     const size_t bytes = CAVE_TEX_W * CAVE_TEX_H * sizeof(uint32_t);
     Platform3DS_CleanDataCache(sCave.linear, bytes);
+    SplitFlushed();
     C3D_SyncDisplayTransfer((u32*)sCave.linear, GX_BUFFER_DIM(CAVE_TEX_W, CAVE_TEX_H), (u32*)picture->texture.data,
                             GX_BUFFER_DIM(CAVE_TEX_W, CAVE_TEX_H), TextureTransfer());
     return true;
@@ -929,6 +1379,7 @@ static bool RaToastPaint(const RaAchievement* a, const uint32_t* badge) {
     const int end = RaToastText(px, tx, 23, RA_TOAST_W - 6 - pointsW, C2D_Color32(232, 236, 240, 255), a->title);
     RaToastText(px, end, 23, RA_TOAST_W - 4, C2D_Color32(240, 200, 80, 255), points);
     Platform3DS_CleanDataCache(px, (size_t)RA_TOAST_TEX_W * RA_TOAST_TEX_H * sizeof(uint32_t));
+    SplitFlushed();
     C3D_SyncDisplayTransfer((u32*)px, GX_BUFFER_DIM(RA_TOAST_TEX_W, RA_TOAST_TEX_H), (u32*)sRaToastTexture.data,
                             GX_BUFFER_DIM(RA_TOAST_TEX_W, RA_TOAST_TEX_H), TextureTransfer());
     linearFree(px);
@@ -1191,6 +1642,12 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
      * the PICA200 PPU target and its physical-screen sampling pass. */
     if (sTopClearFrames != 0 && !sRightEye) --sTopClearFrames;
     C2D_TargetClear(sEyeTarget, TopClearColor());
+    BlurJob blur;
+    const bool blurBorder = TopBlurWanted(&plan, &blur);
+    if (blurBorder)
+        TopBlurBuild(texture, &blur);
+    else
+        TopBlurInvalidate();
     const unsigned intermediateScale = (unsigned)plan.sharpBilinearScale;
     const unsigned intermediateWidth =
         intermediateScale == 2u ? (unsigned)presentation->sourceWidth * 2u : 0u;
@@ -1293,6 +1750,7 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
         };
         C2D_SceneBegin(sEyeTarget);
         ConfigureStandardAlphaBlend();
+        if (blurBorder && !blur.over) TopBlurDraw(&blur, false);
         ConfigureIdentityTextureEnv();
         C3D_TexSetFilter(&sSharpBilinearTexture, GPU_LINEAR, GPU_LINEAR);
         C2D_DrawImage(intermediateImage, &params, NULL);
@@ -1303,9 +1761,10 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
          * bilinear mode rather than silently becoming nearest-neighbour. */
         const GPU_TEXTURE_FILTER_PARAM filter =
             (plan.linearFilter || plan.useSharpBilinear) ? GPU_LINEAR : GPU_NEAREST;
-        C3D_TexSetFilter(texture, filter, filter);
         C2D_SceneBegin(sEyeTarget);
         ConfigureStandardAlphaBlend();
+        if (blurBorder && !blur.over) TopBlurDraw(&blur, false);
+        C3D_TexSetFilter(texture, filter, filter);
         if (Port_Config_GpuStaticQuad() && sPresentQuad &&
             PortPpuGpu3DS_BindPresentShader()) {
             C2D_Flush();
@@ -1338,6 +1797,10 @@ static void DrawTopTexture(C3D_Tex* texture, unsigned width, unsigned height, Po
             DrawFrameEdges(&image, &params);
         }
         if (plan.useSharpBilinear) if (!sRightEye) ++sStats.sharpBilinearFallbacks;
+    }
+    if (blurBorder && blur.over) {
+        C2D_Flush();
+        TopBlurDraw(&blur, false);
     }
     if (configureAbgr) ConfigureAbgrTextureEnv();
 
@@ -1470,7 +1933,7 @@ bool PlatformGpu3DS_QueueRgba5551Readback(void* texturePointer, uint16_t* pixels
     /* Retire the queued PPU draws before the transfer reads the target.
      * C3D_FrameSplit takes GX_CMDLIST_* flags; C3D_FRAME_SYNCDRAW belongs to
      * C3D_FrameBegin and would set GX_CMDLIST_UPDATE_GAS_ACC here. */
-    C3D_FrameSplit(0);
+    SplitFlushed();
     /* The top presenter samples visible row 0 at v=1 and its software upload
      * uses the same no-flip transfer. Untiling with no flip is therefore the
      * inverse mapping: linear row y is the visible row y, not raw Morton data. */
@@ -1508,6 +1971,7 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         const size_t bottomFlushBytes =
             (size_t)sUploadLayout.bottomPitch * 240u * sizeof(uint32_t);
         Platform3DS_CleanDataCache(pixels, bottomFlushBytes);
+        SplitFlushed();
         C3D_SyncDisplayTransfer((u32*)pixels,
                                 GX_BUFFER_DIM(sUploadLayout.bottomPitch, sUploadLayout.bottomRows),
                                 (u32*)sBottomTexture.data, GX_BUFFER_DIM(512, 256),
@@ -1670,6 +2134,7 @@ void PlatformGpu3DS_Shutdown(void) {
     }
     if (!aptShouldClose()) C3D_FrameSync();
     GbaLook3DS_Shutdown();
+    TopBlurShutdown();
     C3D_RenderTargetDelete(sBottomTarget);
     C3D_RenderTargetDelete(sTopTarget);
     if (sTopRightTarget) C3D_RenderTargetDelete(sTopRightTarget);

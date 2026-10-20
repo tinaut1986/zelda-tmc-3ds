@@ -33,7 +33,8 @@ extern int Port_SecondScreen_TopHudCovered(void);
 static _Atomic bool sHoldText;
 static _Atomic bool sColorCorrection;
 static _Atomic int sGbaGrid; /* 0 OFF .. 3 HIGH */
-static _Atomic bool sGbaFrame;
+static _Atomic int sGbaFrame; /* 0 NO, 1 GBA, 2 BLUR */
+static _Atomic int sNeighbourRooms = 1; /* the rooms beside a small one in Full View: 0 NO, 1 YES */
 static _Atomic bool sAutosave;
 static bool sConsoleParity;
 static _Atomic Port3DSAspectRatio sAspectRatio = CONFIG_3DS_DEFAULT_ASPECT;
@@ -43,6 +44,9 @@ static _Atomic Port3DSAspectRatio sAspectRatio = CONFIG_3DS_DEFAULT_ASPECT;
  * about it was answered. */
 static _Atomic bool sWideAi;
 static _Atomic bool sWideAiAsked;
+/* OPTIONS -> UPDATES -> AUTO UPDATE: look for a newer build when the game opens and ask whether to
+ * install it (updater.h, "Updater_AutoPrompt"). On unless the player turns it off. */
+static _Atomic bool sAutoUpdate = true;
 static _Atomic Port3DSDisplayStyle sDisplayStyle = CONFIG_3DS_DEFAULT_DISPLAY;
 /* The desktop file-select overlay is rendered on the gameplay screen and
  * has no useful 3DS interaction path. Keep the native second-screen UI
@@ -182,12 +186,14 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("hold_to_advance_text=%u\n", sHoldText ? 1u : 0u);
     APPEND("color_correction=%u\n", sColorCorrection ? 1u : 0u);
     APPEND("gba_grid=%d\n", (int)sGbaGrid);
-    APPEND("gba_frame=%u\n", sGbaFrame ? 1u : 0u);
+    APPEND("gba_frame=%d\n", (int)sGbaFrame);
+    APPEND("neighbour_rooms=%d\n", (int)sNeighbourRooms);
     APPEND("autosave=%u\n", sAutosave ? 1u : 0u);
     APPEND("widescreen=%u\n", sAspectRatio == PORT_3DS_ASPECT_WIDE ? 1u : 0u);
     APPEND("screen_aspect=%s\n", ConfigValues3DS_AspectName(sAspectRatio));
     APPEND("wide_ai=%u\n", sWideAi ? 1u : 0u);
     APPEND("wide_ai_asked=%u\n", sWideAiAsked ? 1u : 0u);
+    APPEND("auto_update=%u\n", sAutoUpdate ? 1u : 0u);
     APPEND("display_style=%s\n", ConfigValues3DS_DisplayName(sDisplayStyle));
     APPEND("master_volume=%.2f\n", (double)sVolume);
     APPEND("panel_backdrop=%d\n", sBackdrop);
@@ -404,9 +410,17 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "gba_grid") == 0) {
                 const int level = atoi(value);
                 sGbaGrid = level >= 0 && level <= 3 ? level : 0;
-            } else if (strcmp(key, "gba_frame") == 0) sGbaFrame = ParseBool(value);
+            } else if (strcmp(key, "gba_frame") == 0) {
+                /* 0 NO, 1 GBA, 2 BLUR; older files hold a yes/no word */
+                const int mode = atoi(value);
+                sGbaFrame = mode >= 1 && mode <= 2 ? mode : (ParseBool(value) ? 1 : 0);
+            }
+            else if (strcmp(key, "neighbour_rooms") == 0) {
+                sNeighbourRooms = atoi(value) != 0 || ParseBool(value);
+            }
             else if (strcmp(key, "wide_ai") == 0) sWideAi = ParseBool(value);
             else if (strcmp(key, "wide_ai_asked") == 0) sWideAiAsked = ParseBool(value);
+            else if (strcmp(key, "auto_update") == 0) sAutoUpdate = ParseBool(value);
             else if (strcmp(key, "autosave") == 0) sAutosave = ParseBool(value);
             else if (strcmp(key, "widescreen") == 0 && !hasScreenAspect)
                 sAspectRatio = ParseBool(value) ? PORT_3DS_ASPECT_WIDE : PORT_3DS_ASPECT_ORIGINAL;
@@ -805,9 +819,14 @@ void Port_Config_AnswerWideAi(bool yes) {
     sWideAiAsked = true;
     SaveConfig();
 }
+bool Port_Config_GetAutoUpdate(void) { return sAutoUpdate; }
+void Port_Config_ToggleAutoUpdate(void) {
+    sAutoUpdate = !sAutoUpdate;
+    SaveConfig();
+}
 void Port_Config_Cycle3DSAspectRatio(void) {
-    /* WIDE comes twice: plain, then WIDE + AI (sWideAi); ORIGINAL after it. The way back into WIDE
-     * is the plain one. */
+    /* WIDE comes twice: plain, then WIDE + AI (sWideAi); ORIGINAL after it. The way back into WIDE is the
+     * plain one. (WIDE + BLUR, between them, was dropped on 2026-10-20: a file's wide_blur is ignored.) */
     if (sAspectRatio == PORT_3DS_ASPECT_WIDE && !sWideAi) {
         sWideAi = true;
         sWideAiAsked = true; /* choosing it is an answer */
@@ -834,10 +853,25 @@ void Port_Config_CycleGbaGrid(void) {
     sGbaGrid = (sGbaGrid + 1) & 3;
     SaveConfig();
 }
-bool Port_Config_GetGbaFrame(void) { return sGbaFrame; }
+int Port_Config_GetGbaFrame(void) { return (int)sGbaFrame; }
+const char* Port_Config_GetGbaFrameName(void) {
+    static const char* const names[3] = { "NO", "GBA", "BLUR" };
+    return names[sGbaFrame % 3];
+}
 bool Port_Config_GbaFrameAvailable(void) { return sAspectRatio == PORT_3DS_ASPECT_ORIGINAL; }
-bool Port_Config_GbaFrameActive(void) { return sGbaFrame && Port_Config_GbaFrameAvailable(); }
-void Port_Config_SetGbaFrame(bool on) { sGbaFrame = on; SaveConfig(); }
+int Port_Config_GbaFrameActive(void) { return Port_Config_GbaFrameAvailable() ? (int)sGbaFrame : 0; }
+void Port_Config_CycleGbaFrame(void) {
+    sGbaFrame = (sGbaFrame + 1) % 3;
+    SaveConfig();
+}
+int Port_Config_GetNeighbourRooms(void) { return (int)sNeighbourRooms; }
+const char* Port_Config_GetNeighbourRoomsName(void) {
+    return sNeighbourRooms ? "ON" : "OFF";
+}
+void Port_Config_CycleNeighbourRooms(void) {
+    sNeighbourRooms = !sNeighbourRooms;
+    SaveConfig();
+}
 bool Port_Config_3DSFullViewComboEnabled(void) {
     /* Load each atomic once so a bottom-screen option tap can only select one
      * complete policy on this call. A mixed/transient value fails closed on

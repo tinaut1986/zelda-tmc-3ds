@@ -51,13 +51,13 @@ SECTIONS
 		/* The game's code first (see the top of this file). */
 		__ss_text_start = .;
 		KEEP(EXCLUDE_FILE(*/port/* */libs/* */platform/*) *tmc-3ds.dir/*/src/*.o(.text .text.*))
-		KEEP(EXCLUDE_FILE(*/port/ppu/* *port_second_screen* *port_m4a_backend* *port_m4a_mixdown* *generated_sounds_embed* *port_filter* *port_math* *port_text_render* *port_3ds_full_view_policy* *port_dump_state* *port_save.o *port_softslots* *port_bios.o *port_draw.o *port_zone_tiles*) */port/*.o(.text .text.*))
+		KEEP(EXCLUDE_FILE(*/port/ppu/* *port_second_screen* *port_m4a_backend* *port_m4a_mixdown* *generated_sounds_embed* *port_filter* *port_math* *port_text_render* *port_3ds_full_view_policy* *port_dump_state* *port_save.o *port_softslots* *port_bios.o *port_draw.o *port_zone_tiles* *port_neighbour_rooms*) */port/*.o(.text .text.*))
 		__ss_text_end = .;
 		/* The game's constant tables, also at a fixed place: in the code segment,
 		 * whose start never moves. */
 		__ss_rodata_start = .;
 		KEEP(EXCLUDE_FILE(*/port/* */libs/* */platform/*) *tmc-3ds.dir/*/src/*.o(.rodata .rodata.* .roda))
-		KEEP(EXCLUDE_FILE(*/port/ppu/* *port_second_screen* *port_m4a_backend* *port_m4a_mixdown* *generated_sounds_embed* *port_filter* *port_math* *port_text_render* *port_3ds_full_view_policy* *port_dump_state* *port_save.o *port_softslots* *port_bios.o *port_draw.o *port_zone_tiles*) */port/*.o(.rodata .rodata.* .roda))
+		KEEP(EXCLUDE_FILE(*/port/ppu/* *port_second_screen* *port_m4a_backend* *port_m4a_mixdown* *generated_sounds_embed* *port_filter* *port_math* *port_text_render* *port_3ds_full_view_policy* *port_dump_state* *port_save.o *port_softslots* *port_bios.o *port_draw.o *port_zone_tiles* *port_neighbour_rooms*) */port/*.o(.rodata .rodata.* .roda))
 		__ss_rodata_end = .;
 
 		/* .text */
@@ -100,23 +100,23 @@ SECTIONS
 
 	/* 3dsxtool wants the segments back to back, so the read-only segment is
 	 * padded up to the pinned start of the data segment (zeros in the file). */
-	ASSERT(. <= 0x00630000, "3dsx.ld: read-only data passed the pinned .data (0x630000): raise it")
+	ASSERT(. <= 0x00634000, "3dsx.ld: read-only data passed the pinned .data (0x634000): raise it")
 	__ss_pad_start = .;
 	.ss_pad :
 	{
 		BYTE(0)
-		. += 0x00630000 - __ss_pad_start - 1;
+		. += 0x00634000 - __ss_pad_start - 1;
 	} : rodata
 
 	/* =========== DATA section =========== */
 
-	. = 0x00630000;
+	. = 0x00634000;
 
 	.data :
 	{
 		__ss_data_start = .;
 		KEEP(EXCLUDE_FILE(*/port/* */libs/* */platform/*) *tmc-3ds.dir/*/src/*.o(.data .data.*))
-		KEEP(EXCLUDE_FILE(*/port/ppu/* *port_second_screen* *port_m4a_backend* *port_m4a_mixdown* *generated_sounds_embed* *port_filter* *port_math* *port_text_render* *port_3ds_full_view_policy* *port_dump_state* *port_save.o *port_softslots* *port_bios.o *port_draw.o *port_zone_tiles*) */port/*.o(.data .data.*))
+		KEEP(EXCLUDE_FILE(*/port/ppu/* *port_second_screen* *port_m4a_backend* *port_m4a_mixdown* *generated_sounds_embed* *port_filter* *port_math* *port_text_render* *port_3ds_full_view_policy* *port_dump_state* *port_save.o *port_softslots* *port_bios.o *port_draw.o *port_zone_tiles* *port_neighbour_rooms*) */port/*.o(.data .data.*))
 		. = ALIGN(4);
 		__ss_data_end = .;
 		*(.data)
@@ -200,7 +200,7 @@ SECTIONS
 	{
 		__ss_bss_start = .;
 		KEEP(EXCLUDE_FILE(*/port/* */libs/* */platform/*) *tmc-3ds.dir/*/src/*.o(.bss .bss.* COMMON))
-		KEEP(EXCLUDE_FILE(*/port/ppu/* *port_second_screen* *port_m4a_backend* *port_m4a_mixdown* *generated_sounds_embed* *port_filter* *port_math* *port_text_render* *port_3ds_full_view_policy* *port_dump_state* *port_save.o *port_softslots* *port_bios.o *port_draw.o *port_zone_tiles*) */port/*.o(.bss .bss.* COMMON))
+		KEEP(EXCLUDE_FILE(*/port/ppu/* *port_second_screen* *port_m4a_backend* *port_m4a_mixdown* *generated_sounds_embed* *port_filter* *port_math* *port_text_render* *port_3ds_full_view_policy* *port_dump_state* *port_save.o *port_softslots* *port_bios.o *port_draw.o *port_zone_tiles* *port_neighbour_rooms*) */port/*.o(.bss .bss.* COMMON))
 		. = ALIGN(4);
 		__ss_bss_end = .;
 		/* Empty when the object paths did not match (a checkout under a folder

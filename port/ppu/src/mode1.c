@@ -512,6 +512,11 @@ uint8_t virtuappu_mode1_obj_clip_mark_staged[MODE1_GBA_OAM_COUNT];
 uint8_t virtuappu_mode1_obj_y_negative_staged[MODE1_GBA_OAM_COUNT];
 int virtuappu_mode1_obj_clip_y_staged;
 int virtuappu_mode1_obj_clip_enable_staged;
+/* How far each OAM entry stands out of the screen in the 3DS's stereo 3D, in quarter pixels at the full slider
+ * (0: on the screen plane): what Link holds up or has just thrown (docs/stereo-3d.md). Staged and committed with
+ * the rest of the OAM metadata. */
+uint8_t virtuappu_mode1_obj_depth[MODE1_GBA_OAM_COUNT];
+uint8_t virtuappu_mode1_obj_depth_staged[MODE1_GBA_OAM_COUNT];
 
 void virtuappu_mode1_commit_obj_metadata(void) {
     memcpy(virtuappu_mode1_obj_clip_mark, virtuappu_mode1_obj_clip_mark_staged,
@@ -520,6 +525,8 @@ void virtuappu_mode1_commit_obj_metadata(void) {
            sizeof(virtuappu_mode1_obj_y_negative));
     virtuappu_mode1_obj_clip_y = virtuappu_mode1_obj_clip_y_staged;
     virtuappu_mode1_obj_clip_enable = virtuappu_mode1_obj_clip_enable_staged;
+    memcpy(virtuappu_mode1_obj_depth, virtuappu_mode1_obj_depth_staged,
+           sizeof(virtuappu_mode1_obj_depth));
 }
 
 uint16_t virtuappu_mode1_io_read16(uint16_t offset) {

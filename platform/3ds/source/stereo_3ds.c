@@ -116,6 +116,12 @@ float Stereo3DS_LayerShift(unsigned layer, unsigned priority, Stereo3DSEye eye) 
     return eye == STEREO3DS_LEFT ? half : -half;
 }
 
+float Stereo3DS_SpriteShift(unsigned depthQuarters, Stereo3DSEye eye) {
+    if (!sHasDepth) return 0.0f;
+    const float half = 0.125f * (float)depthQuarters * sSlider;
+    return eye == STEREO3DS_LEFT ? half : -half;
+}
+
 /* The sprites of a map hint in OBJ-window mode mark the parts still covered (BG1, the map, is hidden inside them and BG2,
  * the grey, shows). The renderer cuts BG2 in batches along the window's edges as the game drew them, so the mask stays where
  * BG2 is: moved with the map it left a 2 px line of backdrop at its edges (found with both eyes captured, FORCE 3D). */

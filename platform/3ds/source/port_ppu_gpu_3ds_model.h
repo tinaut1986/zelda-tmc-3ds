@@ -260,6 +260,8 @@ typedef struct PpuGpu3DSFrameView {
     bool objClipEnable;
     const uint8_t* objClipMark;
     int objClipY;
+    /* Each OAM entry's stereo 3D depth, quarter pixels (virtuappu_mode1_obj_depth): what Link holds up or threw. */
+    const uint8_t* objDepth;
     /* A uniform screen fade the renderer applies itself (docs/gpu-fade.md):
      * `memory`'s palettes are then the unfaded ones and the finished picture is
      * blended toward grey `fadeLevel` by fadeWeight/255. 0 weight: none. */
@@ -336,6 +338,8 @@ typedef struct PpuGpu3DSBatch {
     uint8_t effect, eva, evb, evy, objectIndex;
     uint16_t color;
     bool objWindow, semiTransparent;
+    /* A sprite's own stereo 3D depth, quarter pixels (objDepth; 0: its layer's). */
+    uint8_t depth;
     /* 0 samples the tile atlas; 1 + n samples view ring n (bg * 2 + variant). */
     uint8_t texture;
     /* Added to every vertex position by the shader. Zero except for

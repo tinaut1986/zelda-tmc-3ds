@@ -14,13 +14,20 @@ change (what goes where: the table in `CLAUDE.md`).
   audio offload, an updater, a quick memory dump (L+R+A) and an experimental New 3DS
   "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors; the 2x indoor zoom is gone, see the decisions log).
 
-## Status (2026-10-18)
+## Status (2026-10-20)
 
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.3.2` (on origin; renamed from `release/v0.3.1` right after the
-`v0.3.1` tag). Published: **`v0.3.1`** (2026-10-17, **beta**; the release page and its CIA exist, the CI is green), **`v0.3.0`** (2026-10-15, **stable**, merged into `main`, straight
+**Release line:** `release/v0.4.3` (renamed from `release/v0.4.2` right after the `v0.4.2` tag). Published:
+**`v0.4.2`** (2026-10-20, **stable**, straight to stable at the owner's request: `release/v0.4.2` merged `--no-ff` into
+`main` and tagged there; the betas' contents plus 3D by height for what Link lifts or throws, which was not seen on
+the console before the tag; `docs/release-notes/v0.4.2.md`), **`v0.4.1`** (2026-10-20, **beta**: FRAME = BLUR, NEIGHBOURS ON / OFF, 3D for what Link holds up, the Deepwood door
+cutscene in wide, fixes; `docs/release-notes/v0.4.1.md`), **`v0.4.0`**
+(2026-10-19, **beta**: neighbour rooms in Full View, AUTO UPDATE, the bottom map's parity with the pause map and
+fixes; `docs/release-notes/v0.4.0.md`), **`v0.3.2`** (2026-10-18, **stable**: first a beta, then promoted by re-running the
+workflow on the tag after `release/v0.3.2` was merged `--no-ff` into `main`, `a42d406`; its release body's notes
+were widened by hand to cover `v0.3.1` too, see the decisions log), **`v0.3.1`** (2026-10-17, **beta**), **`v0.3.0`** (2026-10-15, **stable**, merged into `main`, straight
 to stable without a beta at the owner's request), `v0.2.0` (2026-10-14, stable), `v0.1.2`
 (2026-10-13, beta), `v0.1.1` (2026-10-12, stable) and `v0.1.0` (2026-10-11, beta).
 
@@ -29,14 +36,15 @@ merged into the release line was deleted, here and on origin (2026-10-17: `fix/t
 `feat/gba-look`, `feat/hud-auto`, `feat/title-rays-3d`, `feat/minish-paths-centred`,
 `feat/wide-ai-ask`, `feat/stereo-fileselect`, `feat/splash-3d`, `docs/plan-branches-2026-10-17`; the
 remote `feat/retroachievements` is gone too and the local `test/crash-fix-and-map-chips`, `537b5fa`,
-was deleted). Their history is in `git log` and the decisions log.
+was deleted; 2026-10-19: `feat/wide-neighbour-rooms`, P4.9 as far as the owner checked it, Deepwood Shrine and
+Link's house; P4.9 stays open for the rest). Their history is in `git log` and the decisions log.
 
 | Branch | State |
 |---|---|
+| `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
-**In `release/v0.3.2` since the `v0.3.1` tag (2026-10-17, all seen working on the New 3DS, no tag yet; a
-`v0.3.2` needs `docs/release-notes/v0.3.2.md` first):** the garbage beside a narrow room whose BG3 has no blank
+**What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
 tile 0 (area 0x20 room 09), the village's gap cells taking the nearest zone's graphics, the top-frame HOLD
 also for doors into interiors, a state saved inside a subtask keeping the room's entities (Link locked after
 a map hint), the 3D depth of the map screens (hint and pause map), PLANE TINT / FORCE 3D / right-eye
@@ -47,15 +55,27 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 
 **Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
 
-**Start here (2026-10-18, after the other sessions' merges and the owner's cleanup):** `release/v0.3.2` is pushed and
-clean, no branch or worktree is open but the parked `feat/village-3d`. Next, in this order:
-1. **v0.3.1 beta** is published: check, with a console, that OPTIONS -> UPDATES offers it and shows its notes
-   (not done). Promoting it to stable (re-run the workflow on the tag) is only valid if nothing was committed
-   after it, which is not the case: the next stable is a `v0.3.2` (notes first, CLAUDE.md "Releases"; the
-   owner has chosen beta first this time).
+**Start here (2026-10-20):** `v0.4.1` (beta, tagged on what `release/v0.4.2` starts from) holds, on top of `v0.4.0`, the neighbour-list fix, the GPU split
+flush, the Zz bubble fix, the NEIGHBOURS setting (ON / OFF) and the drop of WIDE + BLUR (decisions log of 2026-10-19 and
+2026-10-20); pushed to origin on 2026-10-20. Open branches: the parked `feat/village-3d` and the local backup
+`backup/blur-neighbours-all`; `origin/feat/frame-blur` is merged and left on origin. Next, in this order:
+0. **Review of the neighbour rooms.** The blur is gone from WIDE (decisions log 2026-10-20, third entry): VIEW is WIDE,
+   WIDE + AI, ORIGINAL and NEIGHBOURS is ON / OFF. What is open, with where to look:
+   - **P4.9 itself** (towns, outdoors, zone-swapped rooms, special tiles, the neighbours' objects #38) as before in item 1.
+   - The code is split in `port/port_neighbour_rooms.c` (tiles, archway copies, `Port_NeighbourRooms_DrawnRects`,
+     `RoomJustChanged`), `port/port_linked_stubs.c` (`Port_Widescreen_ContentRects`: the rectangles in view pixels from the
+     frame's background offsets, unused since the wide blur was dropped).
+1. **v0.4.0 beta** is published: AUTO UPDATE (seen on the New 3DS) and P4.9's neighbour rooms (seen in the Deepwood
+   Shrine on the New 3DS and in Link's house and the intro's festival town on the Old 2DS). P4.9 is still open: the
+   towns, the outdoors and the zone-swapped rooms, the special tiles, the Old 3DS cost; the owner checks towns and
+   outdoors next. Not seen: the updater on the Old 3DS/2DS. **Waiting for the owner's word to close:** #44 (the
+   lit dark room's black line, d342f7d), #37 and #39-#42 (the bottom dungeon map; the owner said on 2026-10-18 the
+   chests and the item icons are right, the rest not confirmed). #38 (the neighbours' other objects) is parked.
+   #45 (Zelda vanishing in the intro, two fixes) is closed: if another scripted walk looks wrong in Full View, the
+   rule in `src/script.c` `Port_ScriptMoveOutOfWideView` is the first suspect.
 2. **Old 3DS/2DS check** of what only the New 3DS has seen: the grid on HIGH (frame rate), WIDE + AI,
-   the file select and title without 3D, TOP HUD AUTO. The 2DS is `192.168.1.139` (its FTP answered
-   `530 Login incorrect` on 2026-10-17: ask the owner what that console runs).
+   the file select and title without 3D, TOP HUD AUTO, and the cost of P4.9's neighbour rooms there. The 2DS is
+   `192.168.1.139` and answers the debug FTP again (2026-10-19; see the consoles below).
 3. **Side strips for narrow map rooms (P4.6).** The owner is generating, with Antigravity, the 80 px on each
    side of the shrine yard (area 0x4A room 00; material in `~/Imágenes/outpaint-area-4A/`: template with black
    bands, mask, reference and `prompt.txt`, made with `tools/scene-extend/extract_map_room.py`). When the
@@ -91,51 +111,22 @@ material in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/intro-titulo/`, 
 `tmc-link.py shot` also writes `top-right.png`; PLANE TINT (LAYERS / DEPTH) paints each layer flat. `docs/debug-tools.md`.
 To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
-**On the owner's consoles now (2026-10-17, newer than the lines below):**
-- **New 3DS, `192.168.1.133`** (the owner, 2026-10-17: "es la 133 (new3ds)"; its address changes with the
-  router: it answered on `.141` earlier the same day, and `.142` on 2026-10-14, so ping before assuming):
-  a debug build of the code of `release/v0.3.2` at `aeb0c48` (`0.3.2-dev.*`; the perf sessions of 2026-10-18 may have
-  installed newer builds since: read the version in `tmc3ds.log` or the options footer), WIDE + AI answered YES, VIEW wide,
-  STYLE pixel-perfect, GBA GRID LOW, GBA FRAME off, TOP HUD AUTO, FRAMES "sin saltos", SHOW FPS on (debug
-  builds show the fifth line `C<n>`), stereo on, COLOURS on. FORCE 3D and PLANE TINT are off (they reset at
-  boot). State 1 is Claude's (the shrine yard, area 0x4A, saved before going out to take the pictures); the
-  states made the same day before it (the Minish village, the map hint at the owner's place) are the owner's
-  or Claude's from earlier installs: never overwrite or delete any, the owner's own were not touched. The owner
-  tests while Claude drives the console and accepted several relaunches in one evening: say so before each
-  install anyway. `.3ds_ftp_ip` may hold `.141`: pass `--ip`.
-- `192.168.1.141` did not answer on 2026-10-17 afternoon (off or another address); the 2DS `.139` answers
-  `530 Login incorrect`. Their entries below are from 2026-10-15 and may be stale.
-
-**On the owner's consoles before (2026-10-15):**
-- Old 3DS/2DS, **`192.168.1.139`** (the owner calls it "the 2DS"; `.3ds_ftp_ip` holds it): the
-  debug build `0.3.0-dev.47.2+c363f1f` of `fix/states-build-independent` (what v0.3.0 shipped, minus
-  the map chips and the two guards), debug, Full View (`widescreen=1`, `screen_aspect=wide`,
-  `display_style=pixel-perfect`), theme PARCHMENT, **FRAMES = "sin saltos" (the owner set it)**,
-  STEREO 3D ON (default; no effect on a 2DS), VBLANK LOCK OFF, FRAME SYNC OFF, COLOURS as the
-  owner left it (`color_correction=1`), UPDATES channel + BETAS. **RetroAchievements is logged in
-  as the test account `tinaut1986test`** (log in with the real one before playing for real); the
-  data folder has no test ROM and `rom_md5` is the true `2af78edb...`; the owner's ROM is in the
-  upstream app's folder. **`dev-ftp.txt` is there**. Save states: about 25, numbered by recency
-  (`tmc-link.py states`); Claude saved some as "new state" before installs; **never overwrite or
-  delete the owner's**; most were made by dev.42 or older, so loading them in dev.45.x can corrupt
-  memory (#31). `tmc-link.py loadstate N` numbering did not always match the listing during the
-  session: confirm the scene with `state` and a `shot` after loading. Loading a state switches
-  the bottom screen to MAP: tap another tab after it, not before. The recorder (`rec`) must not
-  be left armed: on the Old 3DS it drops the game to ~20 fps.
-- **`192.168.1.141`** (pass `--ip`): **the 2DS** (owner, 2026-10-14; its log says Old 3DS, which a 2DS
-  is to the system: no 3D slider). The owner's console for the title and file select work: a debug
-  build of `fix/zone-tilesets` (`0.2.1-dev.0+42f5761`, the village fix only) with **STEREO 3D =
-  TEST**, Full View, SHOW FPS on, theme default. Its newest states are Claude's, the owner's places
-  in the Minish village before installs (2026-10-14).
-- **`192.168.1.142`** (pass `--ip`): **the New 3DS** (owner, 2026-10-14), a debug build of the code
-  `release/v0.2.1` has since 7a65202 (`0.2.1-dev.0.10+a0bc40c`, from a local test branch since
-  deleted), STEREO 3D used in ON and TEST, FTP server on.
-  The owner's game is in Hyrule Castle (area 0x80); its state 1 is Claude's, the owner's place before
-  the last install.
-  `debug/` holds checks up to `tmc-check-0198` and perf CSVs up to `tmc-perf-0039`.
-- The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP); 16 is
-  the newest on the 2DS (2026-10-15, #31). How to read one: `docs/debug-tools.md`, "Reading a Luma
-  crash dump".
+**On the owner's consoles now (2026-10-20):** ping first, the addresses change with the router (memory).
+- **Old 2DS, `192.168.1.139`** (pass `--ip`; the owner's test console): the debug build of `release/v0.4.1` plus
+  `fix/zz-colour-redraw` at `e5417bd` (it has NOT the blur-all branch; `tmc3ds.ini` keeps `neighbour_rooms=0` from
+  testing, which that build ignores). Settings: VIEW WIDE + BLUR, pixel perfect, FRAME SYNC OFF (default; Claude
+  toggled it for tests and put it back). The owner's game is a new one near the throne room of Hyrule Castle (area 0x80). Save
+  states by recency: **3 = the bedroom with the Zz bubble (80/04), used for the bubble's measurements**; 1, 12 and 14 =
+  the throne room (80/02); the rest are older, many from builds before 2026-10-17 (#31 risk). Never overwrite or delete any;
+  **do not `loadstate` while the owner plays** (it replaced their place twice on 2026-10-20) and **check `state` shows
+  the scene (`ingame=1 area=80 room=04`) before measuring** (six recordings of the title screen were taken as results once).
+  `debug/` still holds the owner's old files and `tmc-check-*`; Claude's `tmc-dump-006x` sets were deleted.
+- **New 3DS, `192.168.1.133`**: untouched today: the debug build of `feat/wide-neighbour-rooms` at 45a90f5
+  (`0.3.3-dev.35.15+45a90f5`), settings as on 2026-10-17 (WIDE + AI YES, pixel-perfect, GBA GRID LOW, TOP HUD AUTO,
+  FRAMES "sin saltos", SHOW FPS, stereo on, COLOURS on). `.3ds_ftp_ip` may hold either console: pass `--ip`.
+- The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP). How to read one:
+  `docs/debug-tools.md`, "Reading a Luma crash dump". The 2DS crash dumps 1 and 2 (588 bytes, kernel mode, `pc` 0xfff1c1d8) and 19 are explained in the decisions log of 2026-10-20. RetroAchievements on the 2DS was logged in as the test
+  account `tinaut1986test` on 2026-10-15 (check before the owner plays for real).
 
 **Older notes (2026-10-12), still open:** check `perf/full-view-old3ds`-era Wide (266x160,
 interiors and map edges) and other areas (Deepwood, Mt. Crenel) on the 2DS; per-frame cost left
@@ -546,6 +537,33 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   prompts, in the five UI languages, `wide_ai_asked`; installs that predate it get the question once).
   *Done when:* the owner sees the question, answers it and sees the setting change the scenes. **Done on
   the New 3DS, 2026-10-17.** mzm's FTP-install progress bar was already here since 2026-10-14.
+
+- [ ] **P4.9** The neighbouring room drawn beyond the room's edge in Full/Wide (owner's request, 2026-10-18).
+  *Spec:* where a room borders another (the overworld's room grid, `RoomHeader.map_x/map_y/pixel_width/
+  pixel_height` in `include/area.h`), the part of the 400x240 (or 266x160) view that lies past the room's
+  edge shows the neighbouring room's two tile layers instead of black or a repeat of the border, at rest
+  and while walking, in every area where it holds (outdoors first; interiors only where rooms really
+  abut). No entities, no collision, no logic of the neighbour: only its map (but for its door frames, the
+  ARCHWAY objects: decisions log, 2026-10-19). The port already keeps the
+  *outgoing* room's tiles for a border scroll (`docs/widescreen-streaming.md`, `Port_Widescreen_BeginScroll`).
+  *Open points:* a neighbour with another `tileSet_id`/palette cannot share the layer's VRAM tiles (leave it
+  as it is now); animated tiles; the Full View camera limits; the cost on the Old 3DS.
+  *Probe (branch `feat/wide-neighbour-rooms`, 2026-10-18):* one outdoor room, what it costs and which rooms
+  fail; findings in the decisions log.
+  *Done when:* the owner walks the overworld and sees the neighbour beyond every edge that has one, with no
+  pop at the scroll and no frame-rate loss.
+- [ ] **P4.9** Blurred border (owner's request, 2026-10-18). *Spec:* FRAME (was GBA FRAME) has three stops, NO /
+  GBA / BLUR (`gba_frame=0..2`); BLUR, in VIEW: ORIGINAL, fills the border of the 240x160 and 360x240 pictures
+  with the picture's colours blurred (an ambilight). VIEW gets WIDE + BLUR (`wide_blur`) between WIDE and
+  WIDE + AI, which does the same in WIDE for the screens the game draws at 240x160 (logos, game over...);
+  WIDE + AI blurs where it has no generated picture (not the portal's strips). In WIDE it also fills the black
+  the game leaves beside a room smaller than the 400x240 view (the Minish Paths corridor, small maps;
+  `Port_Widescreen_ContentRect`), added over the frame where it is black so the HUD keeps its colours. Code: `TopBlur*` in
+  `platform_gpu_3ds.c` (the picture shrunk through four small VRAM targets, every other frame, edge texels
+  carried outwards with a fade to black). *Done when:* the owner has seen it in both views, both presenters
+  and 3D, and the frame rate holds on the Old 3DS (not measured).
+  *2026-10-20: WIDE + BLUR and WIDE + AI's blur are dropped* (cost and stepping while scrolling, decisions log); only
+  FRAME = BLUR in ORIGINAL stays. A wide blur needs a cheaper design that slides with the picture before it comes back.
 
 ## Phase 5: stereoscopic 3D
 
@@ -1133,3 +1151,189 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   gives the plain fade to white. The bars beside a 240x160 view now take the same fade as the picture (the shown
   snapshot, or the GPU's weight and level, quantized to the picture's 5-bit step): they ran a frame ahead and one step
   darker on the plateau. Compared by pixels in a scene recording (`scenerec`), GPU renderer, Full View.
+- **2026-10-18** `v0.3.2` went beta first, then stable. Promotion: `main` was fast to take it (`git merge --no-ff v0.3.2`,
+  push `main`), then the release workflow was dispatched on the tag (channel Release, debug tools off, the release
+  page flips from pre-release to Latest); valid because nothing was committed after the tag. The tag's
+  `docs/release-notes/v0.3.2.md` only lists what is new since the `v0.3.1` beta, and a STABLE-channel updater skips
+  pre-release pages, so a player on `v0.3.0` would miss `v0.3.1`'s notes: the notes block of the release **body** was
+  rewritten with `gh release edit` to six lines covering `v0.3.1` + `v0.3.2` (a commit would have invalidated the
+  promotion). The file in the repo keeps the beta-only list. `../sm-3ds` fixed this in the updater itself
+  (`10aa48d`); ours still needs the port (Status, "Start here" 1).
+- **2026-10-18** The in-game updater, three changes checked by the owner on the New 3DS (a build of the branch with a
+  fake older version, `TMC3DS_VERSION=0.3.0-dev.99` or `0.0.0`, sent over FTP so the updater offers `v0.3.2`):
+  (1) AUTO UPDATE (`auto_update` in `tmc3ds.ini`, on by default; `../sm-3ds` has the same): the check at boot raises a
+  LATER / INSTALL window over every tab with WHAT'S NEW (the changelog); with it off nothing is checked until CHECK is
+  pressed. The window shows a bar for the download, the install and the 10 s wait, with the percentage (seconds on
+  the wait) drawn inside it and recoloured pixel by pixel as it fills. Its repaint has to be asked for
+  (`Port_SecondScreen_3DS_NeedsPeriodicRefresh`): the bottom screen skips unchanged frames, and the window sat at 0%.
+  (2) The game relaunches 10 s after a CIA update (`Platform3DS_RequestRelaunch`, the FTP install's path); it used to
+  close to HOME, inherited from upstream, and an immediate chainload faults the loader (issue #4). A 3DSX update still
+  closes at once. (3) The notes shown after a check cover the betas on the way to the newest stable on the STABLE
+  channel (`../sm-3ds` `10aa48d`), and with no update waiting the whole channel's changelog, as in `../mzm`/`../sm-3ds`.
+  `tools/ui-preview` builds again and takes `UPDATE_PROMPT=ask|work|restart|error`, `NO_WIDE_ASK=1` and `UILANG=2..5`.
+- **2026-10-18** P4.9 probe (branch `feat/wide-neighbour-rooms`, owner's EU ROM, room 0x15 of the Deepwood Shrine's
+  area 0x48, Full View): the neighbouring room's tiles now fill the black beside a narrow room.
+  **How:** `RoomResInfo` gives every room of the area its world rectangle and its `tileSet`/`tiles` definitions;
+  `port/port_neighbour_rooms.c` builds, 8 and 120 ticks after a room starts, a window of 8x8 entries around the
+  room for each layer (the rooms that overlap it and share both definitions: their map chain is decompressed
+  from the ROM, `LZ77UnCompWram`, and expanded with the current layer's `subTiles`, as
+  `RenderMapLayerToSubTileMap` does), and `Port_WidescreenShadow_Populate` reads it where it used to write the
+  blank entry (outside the room's columns and rows). **Cost:** a few thousand cell lookups per room load and
+  a table read per out-of-room cell per frame; the overlay's L/G times did not move (L 0.3-0.4 ms, G 7.4-7.6 ms
+  on the New 3DS); 74 KB of static (two 128+64 x 96+40 windows plus one 8 KB map). **Checked against the room itself:** the
+  first build drew the wrong tiles with black holes (the owner caught it): a room's map is stored with rows of
+  its own width and the game spreads them to 64 after loading (`sub_0807C8B0`); the strip read them as rows
+  of 64. Read with the room's width, the 64 px left of room 0x15 match room 0x14 (reached on the lily pad with
+  the Gust Jar) pixel for pixel but for Link, the lily pad, the debug overlay and the shoreline animation's phase.
+  The 64 px right of room 0x15 stay black: no room of the area lies there.
+  **Border scrolls** (owner's report: room 0x12 down to 0x15, blowing the lily pad with the Gust Jar): the scroll
+  drew only the outgoing room's snapshot and black elsewhere, and the incoming room's window came 8 ticks late.
+  Now the scroll's empty cells come from the incoming room's neighbours (`Port_WidescreenScrollTile`), the
+  window is built on the tick the room changes and is wide enough for a view still in the outgoing room (a
+  whole view each side: 2 x 232 x 160 entries, 148 KB). **The module's statics are left out of save states**
+  (`3dsx.ld`, with `port_zone_tiles`): a state saved by a build with another window size restored it as
+  garbage and kept the stale room key, so nothing rebuilt it. Seen frame by frame (`rec`): no black but where
+  the area has no room (right of 0x12 and 0x15).
+  **Camera off centre where neighbours fill the view** (owner's idea, room 0x07 right into 0x09, 272x208: the
+  scroll first lined the camera up 16 px lower to centre the short room, leaving a black row below where there
+  is no room, while the room above, 0x08, could fill the top): a room smaller than the view on an axis now rests
+  at the position, among those that keep it whole in view, whose margin is most covered by drawable
+  neighbours (`Port_NeighbourRooms_Rest`, by the rooms' rectangles and tile sets, cached per room); centred on a
+  tie or with none, as before. Used at rest (`Port_WidescreenCameraRest*ForMode`), for the scroll's line-up and
+  for its end. Recorded: 0x07 -> 0x09 scrolls straight across with no black.
+  **Line-up order** (owner's report, room 0x00 down into 0x05): two positions tied for the incoming room (both
+  sides covered) and the centred one won, so the line-up moved the view 64 px left first, still in 0x00, where
+  nothing lies beside it. A tie now goes to where the camera already is, and the scroll's line-up
+  (`Port_NeighbourRooms_LineUp`) picks, among the incoming room's best positions, the one that leaves the least
+  black in the outgoing room's view while it lines up. Seen working by the owner.
+  **What fails, from the ROM's room tables (`tools/neighbour-survey/survey.py`):** 402 pairs of rooms share an
+  edge in the whole game, 379 with the same `tileSet_id` (the 23 others stay black: the Beanstalks 8, the Fortress of
+  Winds 8, Hyrule Field 4, and one each in the Minish Village, area 0x47 and the Deepwood Shrine). Counted over the margin
+  of a 400x240 view around every room smaller than that, **21.5 % of the margin cells have a neighbour with
+  the same tile set, 6.2 % one with another, 72.3 % none**: outdoors (Hyrule Field 78 %, Ruins 74 %, the
+  Palace of Winds 73 %, Temple of Droplets 39 %, Hyrule Castle 41 %) it pays, the house interiors almost never
+  (0.9 % to 37 % by area, mostly 0-20 %): those need the AI side strips of P4.6, not a neighbour. Not done:
+  tiles >= 0x4000 (the game's moved or removed tiles) use their plain index; the zone-swapped rooms (Minish
+  village, Hyrule Town) do not carry their variants into the neighbour's cells; scrolls keep the outgoing
+  room's tiles; normal Wide (266) is untouched.
+- **2026-10-19** P4.9 in Link's house (owner's report on the Old 2DS, HOUSE_INTERIORS_2 room 0x11, the Smith's room):
+  (1) **Rooms of other houses showed above** it: an interiors area packs unrelated houses side by side, 16-32 px
+  apart, and the window took every room of the area it overlapped. A neighbour is now drawn (and counted for the
+  camera's rest) only when a chain of shared edges joins it to the current room (`Connected`); a dungeon's or a
+  town's rooms abut, so nothing changes there. (2) **The door between the two rooms showed "カベ" placeholder
+  tiles** on the neighbour's side: a door's frame is an ARCHWAY object (a sprite over those tiles). Inert copies
+  of the drawn neighbours' archways (their room lists 0 and 1, at the neighbour's position) are spawned in the
+  current room, marked by bit 31 of their EntityData's `type2` (the archway reads its low byte), and compared every
+  frame in play (`GAMEMAIN_UPDATE`, or the cutscene below) with the ones the drawn neighbours call for, by world
+  position and frame: replaced only when they differ. The first version deleted them on every room key change:
+  a save state's own copies went away and the placeholders flashed until new ones drew, and after the cutscene
+  the doors stayed placeholders. An AuxCutscene sets the room's entity lists aside and restores them with
+  `gEntCount` at 0 though their entities live (the GBA's own bookkeeping); each deletion took one more off, the
+  count wrapped to 253, and the game found no free slot for anything. A deletion of copies now first raises
+  `gEntCount` to their number when it is lower. This is the one exception to P4.9's "no entities"; every other object
+  of the neighbours stays parked (issue #38). The archway also hides Zelda again where the intro leaves her, half
+  outside the room's left edge, as on the GBA. (3) **Zelda leaving Link's house** (AuxCutscene 5, the entrance
+  room 0x10 shown while the game waits in 0x11) was drawn on the fixed 240x160 canvas; it now takes Full View as
+  AuxCutscene 1 does, with its neighbours and their archways. Checked by the owner on a new game.
+- **2026-10-19** Neighbour rooms, the blurred border and the Zz bubble (owner's reports on the Old 2DS, Hyrule Castle,
+  area 0x80 rooms 02 and 04). Merged into `release/v0.4.1`: `fix/neighbour-connected-cache`, `fix/gpu-split-flush` and
+  `feat/frame-blur-margins` (which holds `origin/feat/frame-blur`, 273ca98, the owner's FRAME NO / GBA / BLUR and WIDE +
+  BLUR, kept until now; its remote branch was left in place).
+  (1) **The left neighbour of room 0x80/04 was never drawn after a fresh load**: `Connected()` cached its mask by
+  (area, room), and the first build of a room runs while the area is still loading (0x0 tiles in the log), so a mask
+  made from the previous area's room table stayed for the whole room. It is now worked out again on every build.
+  (2) **WIDE + BLUR / WIDE + AI laid the blur over rooms**: the content rectangle was always centred and a side with a
+  neighbour was judged as a whole. `Port_Widescreen_ContentRect` now gives the part of the room that really shows
+  (origin minus scroll, cut by the view), the border skips the stretches of the margin a drawn neighbour fills
+  (`Port_NeighbourRooms_CoveredRuns`, so the corner beside the neighbour but past it still gets blur) and there is none
+  during a border scroll. The border is also built from the picture without its outermost 6 pixels (a bright line along
+  the edge streaked across the whole border) and its three levels are weighted by the distance from the picture (rounded
+  corners, weights adding up to 1) instead of nested rectangles; cost on the title about +0.3 ms on the Old 2DS.
+  (3) **The Zz bubble flickered (one 8x8 tile of sprite 1, GPU renderer only)**: a Claude subagent's reading of the
+  libraries' machine code: inside a frame `C3D_SyncDisplayTransfer` splits the command list with flags 0, so GSP runs the
+  PPU's draws without cleaning them from the CPU cache and a stale draw word (indices 1 MiB off, the two vertex buffers
+  alternate) loses a sprite for a frame. `SplitFlushed()` splits with `GX_CMDLIST_FLUSH` first. **Not yet confirmed
+  on the console** (the scene could not be reproduced after the install): look for the bubble with `scenerec`, and
+  `gpucheck` should stop differing. An atlas-slot change that did not help was dropped.
+  (4) **The linker pin moved**: the blur code pushed code and read-only data past `3dsx.ld`'s 0x630000; `.data` is
+  now pinned at 0x634000. Format 2 states carry their globals by name and survive; format 1 ones of the old layout no
+  longer load (`docs/save-states.md`).
+  (5) **Open: a crash on the 2DS** (Luma dump 19, `EraseAllEntities` walking an entity list whose node `next` was
+  0x101e101e, tilemap-like data) in area 0x80 room 04 after a long session; not reproduced, cause unknown; the dumps'
+  addresses came from a build with other code before the pin, so symbols need that build's ELF.
+- **2026-10-20** Neighbours and the blur, second day (owner on the Old 2DS, Hyrule Castle areas 0x80 rooms 01/02/04). On
+  `feat/blur-neighbours-all` (not merged) unless said otherwise.
+  (1) **The border is made from rectangles, one set of stages each** (`BlurSet`, `BLUR_RECTS` = 3): the room that shows
+  (`Port_Widescreen_ContentRects`: origin minus the scroll the frame was drawn with, read from the low four bits of the
+  BG2 offset registers because `scroll_x/y` can be a tick ahead; +8 on y) and up to two drawn neighbours; the borders are
+  added with weights by the distance to each rectangle (`TopBlurWeights`) and drawn where no rectangle is (bands of the
+  uncovered screen, `TopBlurDraw`). Rounded zones come from per-level weight masks (near / mid / far levels adding to 1:
+  `TopBlurMasks`), not from rectangles. Edge inset 20 px: the walls' outline streaked the border. The tick a room changes
+  (`Port_NeighbourRooms_RoomJustChanged`, also while the module's key is stale) the previous rectangles are kept, or the
+  old room was left uncovered for one frame and a white veil covered it; during a border scroll the outgoing room is
+  added as a rectangle. While the camera moves the border is built from the current frame alone (no smoothing), at rest
+  it blends 40/255 per rebuild.
+  (2) **NEIGHBOURS = OFF / ON / BLUR** (`neighbour_rooms`, OPTIONS cell NEIGHBOURS next to FRAME, docs in
+  `platform/3ds/README.md`): OFF stops the module (no tiles, no archway copies, the camera centres the room as before P4.9),
+  BLUR loads as ON and the presenter draws a blurred copy of the picture (four levels, 128x64 down to 16x8, the coarse
+  ones mixed into the finer, `TopBlurNearChain`) over the neighbours' rectangles. **The HUD is not blurred**: when
+  `HudSplitSafe` allows it the PPU draw is split into the base (everything but BG0 and the priority-0 sprites), the blur
+  (`PlatformGpu3DS_BlurOver`, which also draws the ambient border so a dialogue sticking out of the room is not tinted),
+  then the HUD, the same base / front passes the stereo eyes use; with stereo or another layer order it falls back to
+  the presenter's copy. Two bugs found by looking at the screen, not by reasoning: the PPU leaves its program and
+  scissor bound (`C2D_Prepare` and `C3D_SetScissor` before drawing into its target) and the first version only showed a mark.
+  (3) **The blur's cost** (owner: 60 to ~40 fps with any blur): perf CSV columns of heavy against light frames pointed at
+  the CPU side; `sqrtf` per texel and a weights pass per rectangle were replaced (`TopBlurDistance`): 58.6 fps, heavy frames
+  p95 13.8 ms instead of 18.8. Not finished.
+  (4) **The linker pin moved four times** (0x632000, 0x634000 in the release, 0x636000 on the branch) because the read-only
+  segment had no headroom: each blur change that adds code tripped `3dsx.ld`. Format 2 states survive (they carry their
+  globals by name); give the pin a generous step next time.
+  (5) **The Zz bubble is fixed by a workaround, merged** (`fix/zz-colour-redraw`, `e5417bd`, in `release/v0.4.1`): the opaque
+  OBJ batches' colour draw is made twice (`port_ppu_gpu_3ds.c`, the budget counts 3 draws per sprite batch). Measured on
+  the 2DS in the bedroom (area 0x80 room 04, state 3): bad frames of 66 (white pixels of the bubble's right tile) 3, 4, 9 as
+  is; 10, 8, 8 with the depth pre-pass twice; 0, 0, 0 with the colour draw twice, and 0, 0, 0 again on the merged
+  build, 59.8 fps. The root cause is **unknown**: the CPU side is right (>100 live samples of the batch list, quads and
+  both vertex buffers, by a subagent), one fixed draw of sprite 1 is lost on the GPU in bursts, FRAME SYNC ON and
+  GPU CHECK (synchronous) hide it. Ruled out: the model (host replay of a failing dump is correct), the atlas slot
+  refresh, build-ahead (`gPpuGpu3DSSerialBuild`), the command cache clean (`SplitFlushed`, merged and harmless), the
+  command budget (this scene needs ~16k of 262k words). If it comes back, bisect with a poke-able switch as the deleted
+  `fix/zz-diag` did (bit 1 pre-pass twice, bit 2 colour twice). Measuring recipe: `scenerec start 1`, `frames 80`,
+  `scenerec stop`, decode, count frames whose pixels (291..298, 29..35) are not white; **each recording freezes the
+  game 15-30 s on this Wi-Fi (12 MB over the game's FTP)**: few of them, and never while the owner plays.
+  (6) **Crashes of 2026-10-20.** Dumps 1 and 2 (588 bytes, exception type 2, `cpsr` SVC mode, `pc` 0xfff1c1d8, `lr` 0xfff14754,
+  no game stack) are the kernel stopping the process (`svcBreak` or a kernel fault), not the game's code; they came with
+  a diagnostic build whose draws were doubled and a scene recording running; a run of the same diagnostic with the
+  scene checked did not crash again, and the command budget is far from full, so the cause stays open (it could be
+  the recording's 12 MB write, or the GPU). Dump 19 (area 0x80 room 4, `EraseAllEntities` walking a list whose `next` was
+  0x101e101e, tilemap-like data) is still unexplained: the addresses came from a build with other code, so the symbols
+  need that build's ELF (`docs/debug-tools.md`, "Reading a Luma crash dump"); it was not reproduced.
+  (7) **Process lessons** (memory too): never `loadstate` or install over the owner's live game; check the console shows
+  the scene before measuring; `./build_3ds.sh --install` right after a commit looks for a CIA named with the new
+  commit: run `TMC3DS_DEBUG_TOOLS=1 ./platform/3ds/build.sh` first.
+- **2026-10-20** The wide blur dropped (owner, after trying it on the Old 3DS, house and smithy of area 0x22 rooms 10/11).
+  (1) NEIGHBOURS = BLUR's own blurred copy and the ambient border met at a seam; drawing the neighbours from the border's
+  picture removed the seam but showed the border's faults inside the rooms. (2) **Why the wide border "walked"**: the edge
+  inset (20 px) was stretched back over the whole rectangle, so a room the screen cuts changed scale every scroll frame
+  (an accordion; fix: inset only the room's own edges and lay the part read back in place); and every pass shrank too far
+  in one go (a 300 px picture into 64 texels, 64 into 13 of the 32x16 level), so each texel read a few pixels and its
+  colour jumped as the picture moved. Halving steps (128x128 before stage 0; 128x64 and 64x32 before stage 1) cut the
+  frame-to-frame jumps in the border bands from 7.7 to 3.0 (second temporal difference, `scenerec` of the scroll), but
+  the blur with any of it cost too much for the owner (~40 fps in the scrolling frames, `top_ms` 16-20 ms). (3) **Why
+  FRAME = BLUR is smooth**: its rectangle never moves and it always blends each rebuild into the last (40/255);
+  `Port_Widescreen_BlurCameraMoved` only updates in WIDE, which turned the blending off while scrolling. (4) Decision:
+  VIEW is WIDE, WIDE + AI, ORIGINAL (`wide_blur` ignored), WIDE + AI leaves black where it has no picture, NEIGHBOURS is
+  ON / OFF, FRAME = BLUR stays. The branch was shrunk to those two commits; its history is `backup/blur-neighbours-all`
+  (local). The release's multi-rectangle border and `Port_Widescreen_ContentRects` stay, unused. The OPTIONS label is
+  shortened where it did not fit (SALA VECINA, SALLES VOIS., NACHBARN, STANZE VIC.).
+- **2026-10-20** Two small ones, both seen by the owner. (1) **The Minish Paths' leaves jumped into place** when a path
+  room's fade-in ended: the camera snaps into Full View during the fade, when the parallax managers do not run yet, so
+  BG1/BG3 kept the old camera's offsets; their update is run again after the snap (`Port_WidescreenRefreshParallax`).
+  (2) **Stereo 3D for what Link holds up** (a lifted pot, a treasure from a chest) at 4 px: the first sprite-level depth,
+  an OAM mark carried into the GPU batches (`docs/stereo-3d.md`, "What Link holds up"). A sprite's scissor has to move
+  with its own shift, not its layer's: with the layer's (0) a two-piece jar lost 2 px of each half and split down the
+  middle (seen on the New 3DS).
+- **2026-10-20** **AuxCutscene 0 takes the wide view** (the Minish Woods shown when the Deepwood Shrine's big door opens,
+  area 0x48 room 0x17): exempted from the fixed canvas like 1 and 5 (`Port_WidescreenFixedCanvasSubtask`). Its camera is
+  placed by hand while its target is still Link in the shrine, so the snap into Full View centred the woods on Link's
+  shrine coordinates; for this cutscene the snap keeps the GBA picture's centre instead (80 / 40 px). Seen by the owner
+  on the New 3DS.
