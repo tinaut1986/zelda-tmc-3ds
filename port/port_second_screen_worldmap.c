@@ -1107,14 +1107,23 @@ static const uint16_t* MarkerObjPalette(u32 row) {
 
 /* One 32-byte 4bpp tile of a marker sheet, or NULL. See the block comment
  * above for why the region's own group is asked first and group 94 second. */
+static const u8 sMenuObjGfxGroups[] = { 129, 86, 16, 23 };
+
 static const u8* MarkerTile(int32_t region, u32 tileNo) {
     u32 vram = 0x6010000u + tileNo * 32u;
     const u8* tile = NULL;
+    size_t i;
 
     if (region >= 0 && region < WORLDMAP_REGION_COUNT) {
         tile = Port_GetRawGfxSpanForVram(REGION_GFX_GROUP_BASE + (u32)region, vram, 32u);
     }
-    return tile != NULL ? tile : Port_GetRawGfxSpanForVram(WORLDMAP_GFX_GROUP, vram, 32u);
+    if (tile == NULL) tile = Port_GetRawGfxSpanForVram(WORLDMAP_GFX_GROUP, vram, 32u);
+    /* The cursor's tiles (0..63) are not in the map's groups: they come from the pause menu's own OBJ loads,
+     * as on the dungeon map tab (129, 86, then the global 16 and 23). */
+    for (i = 0; tile == NULL && i < sizeof(sMenuObjGfxGroups); i++) {
+        tile = Port_GetRawGfxSpanForVram(sMenuObjGfxGroups[i], vram, 32u);
+    }
+    return tile;
 }
 
 static int32_t FloorPixel(float value) {
@@ -1127,7 +1136,7 @@ static int32_t FloorPixel(float value) {
  * covers span several OAM pieces and differ in size, so drawing their pieces
  * directly avoids a large permanent 17-frame cache. */
 static int DrawWorldMapFrameTransformed(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
-                                        u32 frame, int32_t anchorX, int32_t anchorY, float ox, float oy,
+                                        u32 frame, u32 extra, int32_t anchorX, int32_t anchorY, float ox, float oy,
                                         float scale, int32_t clipX0, int32_t clipY0, int32_t clipX1,
                                         int32_t clipY1) {
     const u8* sizeTab = Port_GetSpriteSizeTable();
@@ -1151,7 +1160,12 @@ static int DrawWorldMapFrameTransformed(uint32_t* pixels, int32_t bufW, int32_t 
         int32_t xoff = (int8_t)fd[0];
         int32_t yoff = (int8_t)fd[1];
         u32 shapeInfo = fd[2];
-        u32 attr2 = (u32)fd[3] | ((u32)fd[4] << 8);
+        /* RenderSpritePieces: the command's _8 is added to the tile byte, its palette bits dropped when
+         * the piece sets shapeInfo bit 0, and the frame's own high byte comes on top. */
+        u32 base2 = (u32)fd[3] + extra;
+        u32 attr2;
+        if (shapeInfo & 1u) base2 &= 0x0FFFu;
+        attr2 = (base2 + ((u32)fd[4] << 8)) & 0xFFFFu;
         u32 tileNo = attr2 & 0x3FFu;
         u32 palRow = attr2 >> 12;
         const u8* se = &sizeTab[(shapeInfo & 0xF0u) >> 2];
@@ -1216,12 +1230,23 @@ int Port_SecondScreenWorldMap_DrawUnrevealedRegions(
         const u8* row;
         if (Port_SecondScreenWorldMap_IsRegionRevealed(windcrests, region)) continue;
         row = gUnk_08128DE8 + region * 8;
-        if (DrawWorldMapFrameTransformed(pixels, bufW, bufH, stride, (u32)(0x28 + 3 * region), row[6],
+        if (DrawWorldMapFrameTransformed(pixels, bufW, bufH, stride, (u32)(0x28 + 3 * region), 0u, row[6],
                                          row[7], ox, oy, scale, clipX0, clipY0, clipX1, clipY1)) {
             count++;
         }
     }
     return count;
+}
+
+int Port_SecondScreenWorldMap_DrawRegionCursor(
+    uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t region, int32_t blink, float ox,
+    float oy, float scale, int32_t clipX0, int32_t clipY0, int32_t clipX1, int32_t clipY1) {
+    const u8* row;
+    if (region < 0 || region >= WORLDMAP_REGION_COUNT) return 0;
+    row = gUnk_08128DE8 + region * 8;
+    /* sub_080A6378: frame field_0x3 * 3 + 0x26, +1 on the half of the blink where bit 4 is clear. */
+    return DrawWorldMapFrameTransformed(pixels, bufW, bufH, stride, (u32)(0x26 + 3 * region + (blink ? 1 : 0)),
+                                        0x7000u, row[6], row[7], ox, oy, scale, clipX0, clipY0, clipX1, clipY1);
 }
 
 /* Decode one frame into `slot` (0 = transparent). Piece walk mirrors

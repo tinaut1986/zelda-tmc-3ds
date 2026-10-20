@@ -52,6 +52,13 @@ int Port_SecondScreenWorldMap_DrawUnrevealedRegions(
     uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, uint32_t windcrests, float ox,
     float oy, float scale, int32_t clipX0, int32_t clipY0, int32_t clipX1, int32_t clipY1);
 
+/* The game's own zoom-grid cursor for one region (the corner brackets pause-menu screen 4 draws on the
+ * cursor's tile, sub_080A6378), transformed with the already-drawn map. blink picks the cursor's second
+ * frame. Returns 1 when drawn. */
+int Port_SecondScreenWorldMap_DrawRegionCursor(
+    uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t region, int32_t blink, float ox,
+    float oy, float scale, int32_t clipX0, int32_t clipY0, int32_t clipX1, int32_t clipY1);
+
 /* Maps an area + area-local player position (pixels) to world-map image
  * pixel coordinates. Returns 1 on success, 0 when the area has no world-map
  * location (interiors, dungeons) — callers keep the last successful fix,
