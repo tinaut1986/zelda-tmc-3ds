@@ -2152,7 +2152,9 @@ static int SettingsPageRows(int page, uint8_t* out) {
 #ifndef TMC_3DS
         out[n++] = SS_SET_CRESTS;
 #endif
+#ifndef TMC_3DS
         out[n++] = SS_SET_FLOOR_RETURN;
+#endif
         out[n++] = SS_SET_VOLUME;
         out[n++] = SS_SET_AUTOSAVE;
         out[n++] = SS_SET_HOLD_ADVANCE;
@@ -3331,7 +3333,11 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     }
 #endif
     int crestCfg = Port_Config_GetSecondScreenCrestPins();
+#ifdef TMC_3DS
+    int returnCfg = 1; /* FLOOR BACK is always on: it was an option nobody needed off */
+#else
     int returnCfg = Port_Config_GetSecondScreenFloorReturn();
+#endif
 
     /* Scale units: u drives the layout (reference design is a 720p min
      * axis), ts is the integer art scale for the decoded menu dressing. */

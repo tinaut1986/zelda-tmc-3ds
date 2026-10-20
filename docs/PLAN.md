@@ -1388,3 +1388,4 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   dragged with the finger (`Port_SecondScreen_OnTouchMove`/`OnTouchRelease`). A tap on the map now picks its tile on
   **release**, since the touch may become a drag (>= 8 px). A session that starts with MAP FOLLOW off opens on the whole map,
   as before. The glide speed (0.22 per paint) was left alone: it is tied to the bottom screen's paint cadence.
+- **2026-10-20** FLOOR BACK dropped from OPTIONS on the 3DS (owner): the dungeon map always returns to Link's floor after 6 s. The config key stays.
