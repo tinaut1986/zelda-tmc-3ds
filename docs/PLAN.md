@@ -42,7 +42,6 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 | Branch | State |
 |---|---|
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
-| `feat/map-zoom-pan` | Checked on the New 3DS (2026-10-20; the owner confirmed the cursor, the drag and the missing chip), not merged yet: bottom overworld map: CREST PINS dropped, the tapped tile shows the game's own cursor, ZOOM independent of MAP FOLLOW, drag pans the zoomed-in map with MAP FOLLOW off. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
