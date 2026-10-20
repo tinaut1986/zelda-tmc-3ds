@@ -1337,3 +1337,10 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   placed by hand while its target is still Link in the shrine, so the snap into Full View centred the woods on Link's
   shrine coordinates; for this cutscene the snap keeps the GBA picture's centre instead (80 / 40 px). Seen by the owner
   on the New 3DS.
+- **2026-10-20** **Picture rooms in Full View** (the Minish houses: Gentari's two halves, area 0x20 rooms 00/01). Their
+  neighbours are now drawn (the picture is the bottom_special tilemap, read as stored). The border scroll between them
+  dropped to 240x160 for its whole length: the rooms set `scroll_flags` bit 0 on load and `Port_Widescreen_BeginScroll`
+  skipped any scroll with it (upstream's guard, kept for the 266 scroll). Their tilemap is in `gMapDataBottomSpecial` at
+  the usual stride once loaded (`sub_0807C5F4`), so the Full View scroll takes them. A camera slide tried first on the
+  belief that these rooms had no border scroll was dropped: it also fed the old room's rest into every scroll's
+  line-up. Seen by the owner on the New 3DS.

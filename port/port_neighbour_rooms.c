@@ -30,7 +30,6 @@ static uint16_t sMeta[2][MAP_STRIDE * MAP_STRIDE];
 static uint16_t sPicture[2][MAP_STRIDE * MAP_STRIDE];
 static u32 sKey = 0xffffffffu;
 static unsigned sTicks;
-static void SlideStep(void);
 static int sActive;
 static PortNeighbourStats sStats;
 static u64 sDrawn; /* the rooms the last build drew */
@@ -295,7 +294,6 @@ void Port_NeighbourRooms_Update(void) {
         sMode = mode;
         sKey = 0xffffffffu;
     }
-    SlideStep();
     if (mode == 0) {
         sActive = 0;
         sDrawn = 0;
@@ -422,67 +420,7 @@ static unsigned RestSlot(unsigned room, int axis, int view) {
     return slot;
 }
 
-/* A room change with no border scroll (the picture rooms: Gentari's two halves) cuts from one room's rest
- * position to the other's, and the abutting rooms jump by the difference. When the rooms are connected the camera
- * starts the new room where the old one rested and slides to the new rest, one step per tick (SlideStep). */
-enum { SLIDE_FRAMES = 20 };
-static struct {
-    unsigned area, room;
-    int last, from, to, shown; /* the last rest returned, the slide's ends, the scroll the slide wrote last */
-    unsigned step;
-    bool seen, sliding;
-} sSlide[2];
-
-static int RestSlid(unsigned room, int axis, int target) {
-    typeof(sSlide[0])* const st = &sSlide[axis & 1];
-    const unsigned area = gRoomControls.area;
-    int out = target;
-    if (st->seen && (st->area != area || st->room != room)) {
-        st->sliding = false;
-        if (Port_Config_GetNeighbourRooms() != 0 && st->area == area && st->room < MAX_ROOMS && ((Connected(room) >> st->room) & 1) && st->last != target) {
-            st->sliding = true;
-            st->from = st->last;
-            st->to = target;
-            st->shown = st->from;
-            st->step = 0;
-            out = st->from;
-        }
-    } else if (st->sliding) {
-        out = st->shown; /* asked again while sliding: keep the slide's own position */
-    }
-    st->area = area;
-    st->room = room;
-    st->seen = true;
-    st->last = st->sliding ? st->to : target;
-    return out;
-}
-
-/* Called every tick: moves the camera along the slide a room change started. */
-static void SlideStep(void) {
-    for (int axis = 0; axis < 2; ++axis) {
-        typeof(sSlide[0])* const st = &sSlide[axis];
-        if (!st->sliding) continue;
-        s16* const scroll = axis ? &gRoomControls.scroll_y : &gRoomControls.scroll_x;
-        /* Someone else moved the camera, or the room changed again: leave it. */
-        if (st->room != gRoomControls.room || st->area != gRoomControls.area || *scroll != st->shown) {
-            st->sliding = false;
-            continue;
-        }
-        ++st->step;
-        const int pos = st->step >= SLIDE_FRAMES ? st->to : st->from + (st->to - st->from) * (int)st->step / SLIDE_FRAMES;
-        if (st->step >= SLIDE_FRAMES) st->sliding = false;
-        st->shown = pos;
-        *scroll = (s16)pos;
-    }
-}
-
-static int RestTarget(unsigned room, int axis, int view, int prefer);
-
 int Port_NeighbourRooms_Rest(unsigned room, int axis, int view, int prefer) {
-    return RestSlid(room, axis, RestTarget(room, axis, view, prefer));
-}
-
-static int RestTarget(unsigned room, int axis, int view, int prefer) {
     const unsigned slot = RestSlot(room, axis, view);
     const int centred = sRestCache[slot].centred;
     if (sRestCache[slot].count == 0 || Port_Config_GetNeighbourRooms() == 0) return centred;
