@@ -273,8 +273,6 @@ void Port_Config_Cycle3DSAspectRatio(void);
 /* WIDE + AI: the scene extensions made with a generative AI are shown (WIDE only). The bottom screen
  * asks once whether to, the first time WIDE is on; the answer is kept (wide_ai, wide_ai_asked). */
 bool Port_Config_GetWideAi(void);
-/* WIDE + BLUR, and WIDE + AI where it has no picture: the border blurred from the picture's colours. */
-bool Port_Config_GetWideBlur(void);
 bool Port_Config_WideAiQuestionDue(void);
 void Port_Config_AnswerWideAi(bool yes);
 /* AUTO UPDATE (3DS): check for a newer build when the game opens and ask whether to install it. */

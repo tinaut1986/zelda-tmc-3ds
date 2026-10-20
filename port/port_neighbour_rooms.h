@@ -28,8 +28,8 @@ int Port_NeighbourRooms_Rest(unsigned room, int axis, int view, int prefer);
 int Port_NeighbourRooms_LineUp(unsigned room, int axis, int view, int prefer, unsigned fromRoom, int otherStart,
                                int otherView);
 /* The rooms drawn beside the current one, each the part that shows in the 400x240 view (view pixels, given the
- * camera's scroll), the largest first, at most `max`: the blurred border (WIDE + BLUR) grows from each of them as
- * from the room itself, and leaves them alone. */
+ * camera's scroll), the largest first, at most `max`: the blurred border of WIDE + BLUR (dropped on 2026-10-20, kept
+ * for a cheaper way back) grew from each of them as from the room itself, and left them alone. */
 typedef struct PortBlurRect {
     int x, y, w, h;
 } PortBlurRect;

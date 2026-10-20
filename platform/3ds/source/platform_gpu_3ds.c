@@ -103,7 +103,6 @@ extern u32 __ctru_linear_heap_size;
 extern bool Port_Config_GetShowFps(void);
 extern bool Port_Config_GetColorCorrection(void);
 extern bool Port_Config_GetWideAi(void);
-extern bool Port_Config_GetWideBlur(void);
 extern int Port_Config_GbaFrameActive(void); /* 0 NO, 1 GBA, 2 BLUR */
 extern void Port_FadedBlackRGB(uint8_t* r, uint8_t* g, uint8_t* b); /* src/fade.c */
 
@@ -477,7 +476,7 @@ static void DrawFrameEdges(const C2D_Image* frame, const C2D_DrawParams* at) {
     ConfigureStandardAlphaBlend();
 }
 
-/* ---- the blurred border (FRAME = BLUR, WIDE + BLUR, WIDE + AI without a picture) ----
+/* ---- the blurred border (FRAME = BLUR) ----
  *
  * An ambilight: the colours of the game's picture, blurred, fill the border it leaves on the 400x240
  * screen, never fading to black (a white screen gets a white border). Near the picture the border is
@@ -635,30 +634,14 @@ typedef struct BlurJob {
 
 static bool TopBlurWanted(const TopView3DSPlan* plan, BlurJob* job) {
     const Port3DSFullViewPresentation* presentation = &plan->source;
-    if (plan->drawWidth >= 400 && plan->drawHeight >= 240) {
-        PortBlurRect found[BLUR_RECTS];
-        const int count = Port_Config_GetWideBlur() ? Port_Widescreen_ContentRects(found, BLUR_RECTS) : 0;
-        if (count <= 0) return false;
-        job->count = count;
-        job->over = true;
-        for (int i = 0; i < count; ++i) {
-            job->rects[i] = (BlurRect){ found[i].x, found[i].y, found[i].w, found[i].h,
-                                        presentation->sourceX + found[i].x, presentation->sourceY + found[i].y };
-        }
-        return true;
-    }
+    /* Only FRAME = BLUR (VIEW ORIGINAL) since 2026-10-20: WIDE + BLUR, and WIDE + AI's blur where it has no picture,
+     * cost the Old 3DS too much while scrolling and were dropped. The rectangles of the view (job->over, more than
+     * one: the room and its neighbours) served them and are kept for a cheaper way back. */
+    if (Port_Config_GbaFrameActive() != 2) return false;
     job->count = 1;
     job->over = false;
     job->rects[0] = (BlurRect){ plan->drawX, plan->drawY, plan->drawWidth, plan->drawHeight, presentation->sourceX,
                                 presentation->sourceY };
-    if (Port_Config_GbaFrameActive() == 2) return true; /* FRAME = BLUR, VIEW ORIGINAL */
-    if (!Port_Config_GetWideBlur()) return false;
-    int pictureX, pictureY;
-    if (Port_Widescreen_CutsceneStrips(&pictureX, &pictureY)) return false;
-    if (plan->drawWidth == 240 && plan->drawHeight == 160) {
-        if (Port_Widescreen_TitleForestShown() && ScenePictures_TitleAvailable()) return false;
-        if (Port_Widescreen_FileSelectCaveShown() && ScenePictures_CaveAvailable()) return false;
-    }
     return true;
 }
 

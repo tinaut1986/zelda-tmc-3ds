@@ -47,9 +47,6 @@ static _Atomic bool sWideAiAsked;
 /* OPTIONS -> UPDATES -> AUTO UPDATE: look for a newer build when the game opens and ask whether to
  * install it (updater.h, "Updater_AutoPrompt"). On unless the player turns it off. */
 static _Atomic bool sAutoUpdate = true;
-/* WIDE + BLUR: the border the game leaves in WIDE (a 240x160 picture with nothing around it) gets the
- * picture's own colours, blurred. WIDE + AI does it too, where it has no generated picture. */
-static _Atomic bool sWideBlur;
 static _Atomic Port3DSDisplayStyle sDisplayStyle = CONFIG_3DS_DEFAULT_DISPLAY;
 /* The desktop file-select overlay is rendered on the gameplay screen and
  * has no useful 3DS interaction path. Keep the native second-screen UI
@@ -195,7 +192,6 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("widescreen=%u\n", sAspectRatio == PORT_3DS_ASPECT_WIDE ? 1u : 0u);
     APPEND("screen_aspect=%s\n", ConfigValues3DS_AspectName(sAspectRatio));
     APPEND("wide_ai=%u\n", sWideAi ? 1u : 0u);
-    APPEND("wide_blur=%u\n", sWideBlur ? 1u : 0u);
     APPEND("wide_ai_asked=%u\n", sWideAiAsked ? 1u : 0u);
     APPEND("auto_update=%u\n", sAutoUpdate ? 1u : 0u);
     APPEND("display_style=%s\n", ConfigValues3DS_DisplayName(sDisplayStyle));
@@ -423,7 +419,6 @@ void Port_Config_Load(const char* path) {
                 sNeighbourRooms = atoi(value) != 0 || ParseBool(value);
             }
             else if (strcmp(key, "wide_ai") == 0) sWideAi = ParseBool(value);
-            else if (strcmp(key, "wide_blur") == 0) sWideBlur = ParseBool(value);
             else if (strcmp(key, "wide_ai_asked") == 0) sWideAiAsked = ParseBool(value);
             else if (strcmp(key, "auto_update") == 0) sAutoUpdate = ParseBool(value);
             else if (strcmp(key, "autosave") == 0) sAutosave = ParseBool(value);
@@ -814,12 +809,9 @@ void Port_Config_SetTurboMultiplier(unsigned multiplier) {
 int Port_Config_Get3DSAspectRatio(void) { return (int)sAspectRatio; }
 const char* Port_Config_Get3DSAspectRatioName(void) {
     static const char* const names[PORT_3DS_ASPECT_COUNT] = { "WIDE", "ORIGINAL" };
-    if (Port_Config_GetWideAi()) return "WIDE + AI";
-    return Port_Config_GetWideBlur() && !Port_Config_GetWideAi() ? "WIDE + BLUR" : names[sAspectRatio];
+    return Port_Config_GetWideAi() ? "WIDE + AI" : names[sAspectRatio];
 }
 bool Port_Config_GetWideAi(void) { return sAspectRatio == PORT_3DS_ASPECT_WIDE && sWideAi; }
-/* WIDE + AI blurs too, where it has no generated picture. */
-bool Port_Config_GetWideBlur(void) { return sAspectRatio == PORT_3DS_ASPECT_WIDE && (sWideBlur || sWideAi); }
 /* WIDE is on and the player was never asked whether to show the generated art. */
 bool Port_Config_WideAiQuestionDue(void) { return sAspectRatio == PORT_3DS_ASPECT_WIDE && !sWideAiAsked; }
 void Port_Config_AnswerWideAi(bool yes) {
@@ -833,18 +825,14 @@ void Port_Config_ToggleAutoUpdate(void) {
     SaveConfig();
 }
 void Port_Config_Cycle3DSAspectRatio(void) {
-    /* WIDE comes three times: plain, WIDE + BLUR (sWideBlur), then WIDE + AI (sWideAi); ORIGINAL after
-     * it. The way back into WIDE is the plain one. */
-    if (sAspectRatio == PORT_3DS_ASPECT_WIDE && !sWideAi && !sWideBlur) {
-        sWideBlur = true;
-    } else if (sAspectRatio == PORT_3DS_ASPECT_WIDE && !sWideAi) {
-        sWideBlur = false;
+    /* WIDE comes twice: plain, then WIDE + AI (sWideAi); ORIGINAL after it. The way back into WIDE is the
+     * plain one. (WIDE + BLUR, between them, was dropped on 2026-10-20: a file's wide_blur is ignored.) */
+    if (sAspectRatio == PORT_3DS_ASPECT_WIDE && !sWideAi) {
         sWideAi = true;
         sWideAiAsked = true; /* choosing it is an answer */
     } else {
         sAspectRatio = (Port3DSAspectRatio)((sAspectRatio + 1) % PORT_3DS_ASPECT_COUNT);
         sWideAi = false;
-        sWideBlur = false;
     }
     SaveConfig();
 }
