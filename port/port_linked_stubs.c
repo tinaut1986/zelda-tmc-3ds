@@ -1261,8 +1261,7 @@ static int Port_WidescreenLineUp(unsigned room, int axis, int view, int prefer, 
 void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
     sWsScroll.valid = 0;
     const int width = Port_Widescreen_GameplayViewWidth();
-    if (direction > 3 || gRoomControls.scrollAction > 1 || gArea.unk_0c_0 || (gRoomControls.scroll_flags & 1) ||
-        room >= MAX_ROOMS)
+    if (direction > 3 || gRoomControls.scrollAction > 1 || gArea.unk_0c_0 || room >= MAX_ROOMS)
         return;
     /* Full View scrolls at 400x240 into a room that can hold that view, interiors included
      * (every room is in Full View since P4.6: the castle's rooms scrolled at 266x160 when
@@ -1270,6 +1269,11 @@ void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
      * else keeps the 266 scroll or none. */
     const int fullView = Port_WidescreenGameplayMode() == PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
                          gRoomControls.area <= AREA_98;
+    /* A room drawn as a picture (scroll_flags bit 0: the Minish houses, Gentari's two halves) keeps its tilemap in
+     * gMapDataBottomSpecial at the same 128-entry stride once loaded (sub_0807C5F4), so the Full View snapshot
+     * holds; the 266 scroll is left without it, as upstream had it. */
+    if (!fullView && (gRoomControls.scroll_flags & 1))
+        return;
     if (!fullView && (width <= 240 || width > 266 || gArea.roomResInfos[room].pixel_width <= 240 ||
                       gArea.roomResInfos[room].pixel_height < 160 || gRoomControls.height < 160))
         return;
@@ -1351,7 +1355,8 @@ static int Port_WidescreenScrollActive(void) {
     return sWsScroll.valid && gMain.task == TASK_GAME && gRoomControls.area == sWsScroll.area &&
            gRoomControls.room == sWsScroll.room && gRoomControls.scroll_direction == sWsScroll.direction &&
            (gRoomControls.scrollAction == 2 || gRoomControls.scrollAction == 0) &&
-           (gRoomControls.scrollSubAction >= 1 || sWsScroll.fullView) && !(gRoomControls.scroll_flags & 1) &&
+           (gRoomControls.scrollSubAction >= 1 || sWsScroll.fullView) &&
+           (sWsScroll.fullView || !(gRoomControls.scroll_flags & 1)) &&
            Port_Config_WidescreenEnabled();
 }
 
