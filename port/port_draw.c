@@ -43,6 +43,9 @@ static int sRenderingPlayer = 0;
 /* The stereo 3D depth of what is being rendered, quarter pixels (virtuappu_mode1_obj_depth, docs/stereo-3d.md):
  * what Link holds up or has just thrown stands out of the screen. */
 static u8 sRenderingDepth = 0;
+/* Set while an entity's pieces are written: the upper pieces of a tall sprite stand out a little (Port_Config_StereoBodyDepthQ),
+ * the lowest stays on the ground's plane, so it leans out instead of floating. */
+static int sRenderingBody = 0;
 
 /* The file select drawn at 400x240 (Port_Widescreen_FileSelectWide): the game keeps placing its
  * sprites on the GBA's 240x160 screen; each drawn thing (an entity, a DrawDirect) is moved into
@@ -451,6 +454,28 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
     u8* oamBase = (u8*)&gOAMControls.oam[0];
     u8* ip = oamBase + updated * 8;
 
+#ifdef TMC_3DS
+    /* The bottom edge of the lowest piece: the sprite's feet. */
+    extern int Port_Config_StereoBodyDepthQ(int height);
+    const int bodyShear = sRenderingBody && count > 1;
+    s32 feetBottom = -0x7fffffff;
+    if (bodyShear) {
+        const u8* scan = data;
+        for (int i = 0; i < count; i++, scan += 5) {
+            s8 scanYoff = (s8)scan[1];
+            if (!(flags & 0x300) && (flags & 0x20000000))
+                scanYoff = -scanYoff;
+            const u32 scanSize = (scan[2] & 0xF0) >> 2;
+            if ((size_t)tableOff + scanSize + 3 >= sizeof(sSizeTable))
+                continue;
+            const u8* scanEntry = sizeTab + scanSize;
+            const s32 bottom = (s32)scanYoff + (s32)baseY - (s32)scanEntry[1] + (s32)scanEntry[3];
+            if (bottom > feetBottom)
+                feetBottom = bottom;
+        }
+    }
+#endif
+
     for (int i = 0; i < count; i++) {
         if (updated >= 0x80) {
             gOAMControls.updated = 0x80;
@@ -486,6 +511,16 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
 
         /* Clipping */
         y -= (s32)se[1]; /* subtract y anchor */
+        u8 pieceDepth = sRenderingDepth;
+#ifdef TMC_3DS
+        if (bodyShear) {
+            const s32 above = feetBottom - (y + (s32)se[3]); /* how far this piece's bottom is over the feet */
+            if (above > 0) {
+                const int sum = (int)pieceDepth + Port_Config_StereoBodyDepthQ((int)above);
+                pieceDepth = (u8)(sum > 20 ? 20 : sum);
+            }
+        }
+#endif
         if (sWideCollect) {
             /* Placed and clipped by WideSpritesEnd. */
             x -= (s32)se[0];
@@ -539,7 +574,7 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
          * clip in ViruaPPU (see RenderSpritePieces top + port_gba_mem). */
         if (sSwampClipActive)
             virtuappu_mode1_obj_clip_mark_staged[updated & 0x7F] = 1;
-        virtuappu_mode1_obj_depth_staged[updated & 0x7F] = sRenderingDepth;
+        virtuappu_mode1_obj_depth_staged[updated & 0x7F] = pieceDepth;
 
         updated++;
     }
@@ -948,14 +983,23 @@ static u8 SpriteDepth(const Entity* entity) {
         }
         return DepthForHeight(entity);
     }
+#ifdef TMC_3DS
+    /* Standing on the ground (z 0) a sprite stays on the ground's plane, so it does not float; raised off it
+     * (jumping, falling, flying) it stands out with its height (stereo_world_height in tmc3ds.ini). */
+    extern int Port_Config_StereoHeightDepthQ(int height);
+    return (u8)Port_Config_StereoHeightDepthQ(-(s32)entity->z.HALF.HI);
+#else
     return 0;
+#endif
 }
 
 static void DrawEntitySpritesOf(Entity* entity, s32 x, s32 y, u32 flags, u16 extra);
 
 static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra) {
     sRenderingDepth = SpriteDepth(entity);
+    sRenderingBody = 1;
     DrawEntitySpritesOf(entity, x, y, flags, extra);
+    sRenderingBody = 0;
     sRenderingDepth = 0; /* what is drawn next (the HUD, DrawDirect) stays on the screen plane */
 }
 

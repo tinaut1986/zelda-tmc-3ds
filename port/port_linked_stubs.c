@@ -1616,6 +1616,9 @@ int Port_Stereo_Scenes(void) {
     /* The game over screen (src/gameOverTask.c): the stone panel and its choices are BGs, the GAME OVER
      * letters are sprites. */
     if (gMain.task == TASK_GAMEOVER) scenes |= PORT_STEREO_SCENE_GAME_OVER;
+    /* Playing: the world itself (stereo_world_* in tmc3ds.ini). The layer over Link and his sprites stand out
+     * of the ground, which stays on the screen plane. */
+    if (gMain.task == TASK_GAME && gMain.substate == GAMEMAIN_UPDATE) scenes |= PORT_STEREO_SCENE_WORLD;
     return scenes;
 #else
     return 0;

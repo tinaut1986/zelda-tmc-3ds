@@ -45,6 +45,7 @@ static const char* const kEntries[][PORT_TEXT_COUNT] = {
     { "DISPLAY STYLE", "STYLE AFFICHAGE", "ANZEIGESTIL", "ESTILO IMAGEN", "STILE VISUALE" },
     { "FRAMES", "IMAGES", "FRAMES", "FOTOGRAMAS", "FRAME" },
     { "NEIGHBOURS", "SALLES VOIS", "NACHBARN", "SALA VECINA", "STANZE VIC." },
+    { "3D WORLD", "MONDE 3D", "3D-WELT", "MUNDO 3D", "MONDO 3D" },
     { "SHOW", "VOIR", "ZEIGEN", "VER", "MOSTRA" },
     { "HIDE", "CACHER", "VERBERGEN", "OCULTAR", "NASCONDI" },
     { "ON", "OUI", "AN", "SÍ", "SÌ" },

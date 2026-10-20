@@ -31,6 +31,19 @@ Written to the SD log as `stereo: scenes N` when it changes.
 | 64 | the game over screen (`TASK_GAMEOVER`): the GAME OVER letters (sprites) at 10 px, the choices (BG0, priority 0) at 6, the stone panel (BG1, BG2) at 3 | OBJ, BG0, BG1, BG2 |
 | 32 | the map hints (`SUBTASK_MAPHINT`, `SUBTASK_LOCALMAPHINT`): the grey that covers what is not unlocked and its frame are BG2 (screen plane, with the backdrop); the unlocked map is BG1 at 2 px, seen through the OBJ-window sprites, which follow BG1 (`Stereo3DS_ObjWindowFollows`); the markers are sprites at 5 px | BG2 0, BG1 2, OBJ 5 |
 
+## The world while playing
+
+While playing (`TASK_GAME`, `GAMEMAIN_UPDATE`; scene bit 128, `PORT_STEREO_SCENE_WORLD`) the layer drawn over Link
+(BG1: tree tops, eaves, roofs) stands out of the screen by `stereo_world_bg1` px (default 2) and Link and the world's
+sprites (priority 1-3; the HUD's are 0 and keep `kDepth`'s 6) by `stereo_world_obj` px (default 0: on the ground a sprite stays on the ground's plane, so it does not float). A sprite raised off the
+ground (Link jumping, a flying enemy) stands out with its height instead: `stereo_world_height` percent of it (default 25:
+16 px up is 4 px out, at most 5), through the per-sprite depth below (`SpriteDepth`). The pieces of a tall sprite (more than one OAM entry) stand out with
+their height over the lowest piece, the feet, which stays on the plane (`stereo_world_body` percent, default 8: a piece
+16 px up is 5 quarter pixels out, at most 3 px), so Link and the characters lean out of the ground instead of floating. The ground (BG2)
+and the sky (BG3) stay on the screen plane. `stereo_world_on=0` in `tmc3ds.ini` (or OPTIONS -> 3D WORLD, OFF / ON) switches both off; a value of 0
+switches that part off (sprites at 0 keep the frame drawn over one base, which costs less on the Old 3DS). The other
+scenes below override it for their layers. The values are in pixels at the full slider, -16 to 16.
+
 ## What Link holds up or throws
 
 A sprite rather than a layer. The treasure Link shows when he gets one (`LINK_HOLDING_ITEM`) stands 4 px in
@@ -49,8 +62,8 @@ eye (reason 4). The software renderer leaves them flat.
 
 - `stereo_3ds.c`, once a frame (`Stereo3DS_BeginFrame` in `PresentFrame`): the setting, the slider,
   and whether any layer has a depth. `Stereo3DS_LayerShift(layer, priority, eye)` is a layer's move
-  in view pixels: depth x slider, half to each eye (the left eye to the right for a positive depth,
-  out of the screen).
+  in whole view pixels: depth x slider, rounded and split between the eyes (the left eye to the right for a positive
+  depth, out of the screen; an odd pixel goes to the left eye, so the smallest disparity is 1 px).
 - The GPU renderer (`port_ppu_gpu_3ds.c`, `PortPpuGpu3DS_DrawPrepared`): each batch of a layer with a
   depth is moved by its layer's shift through the shader's offset, in whole pixels, and its scissor
   with it (or the region edges cut what moved). The right eye has its own output
