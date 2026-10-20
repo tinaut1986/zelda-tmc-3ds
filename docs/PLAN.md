@@ -42,6 +42,7 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 | Branch | State |
 |---|---|
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
+| `feat/map-zoom-pan` | Checked on the New 3DS (2026-10-20; the owner confirmed the cursor, the drag and the missing chip), not merged yet: bottom overworld map: CREST PINS dropped, the tapped tile shows the game's own cursor, ZOOM independent of MAP FOLLOW, drag pans the zoomed-in map with MAP FOLLOW off. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -1380,3 +1381,11 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   it is where it is in both eyes: only a window following a layer that moves refuses now. A semi-transparent sprite with
   no second target in BLDCNT does not blend (the model gives it effect NONE), so only real blends refuse. Drawn over one
   base: 59.8 fps, both eyes identical to the whole draw (FORCE 3D captures). Seen on the owner's New 3DS.
+- **2026-10-20** Bottom overworld map (`feat/map-zoom-pan`, owner's request): CREST PINS removed on the 3DS (chip, pins and
+  the GAMEPLAY row; the config key and the Android path stay). The tile picked by a tap is outlined with the game's own
+  cursor frame (`0x26 + 3 * region`, blinking; `Port_SecondScreenWorldMap_DrawRegionCursor`) instead of the gold box.
+  ZOOM no longer depends on MAP FOLLOW: MAP FOLLOW only says what the close view centres on; with it off the close view is
+  dragged with the finger (`Port_SecondScreen_OnTouchMove`/`OnTouchRelease`). A tap on the map now picks its tile on
+  **release**, since the touch may become a drag (>= 8 px). A session that starts with MAP FOLLOW off opens on the whole map,
+  as before. The glide speed (0.22 per paint) was left alone: it is tied to the bottom screen's paint cadence.
+- **2026-10-20** FLOOR BACK dropped from OPTIONS on the 3DS (owner): the dungeon map always returns to Link's floor after 6 s. The config key stays.

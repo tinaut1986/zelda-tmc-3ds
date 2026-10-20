@@ -314,6 +314,11 @@ static struct {
      * whether a map tap can zoom at all (stub -> plain follow/whole
      * toggle, exactly the behavior before the zoom existed). */
     uint8_t regionGridReady;
+    /* A finger down on the map (3DS): a tap picks a tile only on release, because the same touch may turn
+     * into a drag that pans the zoomed-in map. dragDx/dragDy are screen pixels not yet applied. */
+    uint8_t mapTouch, mapTouchMoved, mapDragging;
+    int32_t mapTouchX0, mapTouchY0, mapTouchLastX, mapTouchLastY;
+    float dragDx, dragDy;
     /* Quest tab: which of its screens is up — the status screen itself or
      * one of the two lists it opens, the same step in the pause menu. */
     uint8_t questView;
@@ -358,6 +363,10 @@ static struct {
  * follow<->whole toggle. Paint-thread private. */
 static SecondScreenCamera sCam;
 #ifdef TMC_3DS
+/* The centre of the zoomed-in view while MAP FOLLOW is off: starts where the follow cam was and is
+ * moved by dragging. Paint-thread private. */
+static struct { int valid; float x, y; } sPan;
+
 /* Published under UI_LOCK; the scheduler must not read paint-owned sCam. */
 static int sMapCameraMoving;
 
@@ -1205,21 +1214,43 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
 
     /* Camera target: follow Link unless the whole map is asked for (or the
      * follow cam is switched off / there is no fix yet). */
+#ifdef TMC_3DS
+    /* The zoom is the chip's alone: MAP FOLLOW only decides what the close view is centred on. */
+    int wantWhole = wholeMap;
+#else
     int wantWhole = wholeMap || !followCfg || !sLastFix.valid;
+#endif
     float tScale = wantWhole ? wholeScale : followScale;
     float tx, ty;
     if (wantWhole) {
 #ifdef TMC_3DS
         tx = WholeMapCenterX(rw, wholeScale);
         ty = WMAP_CROP_Y0 + chh / 2.0f + WHOLE_MAP_CHIP_ROOM / 2.0f / wholeScale;
+        if (followCfg) sPan.valid = 0;
 #else
         tx = WMAP_CROP_X0 + cw / 2.0f;
         ty = WMAP_CROP_Y0 + chh / 2.0f;
 #endif
     } else {
         float halfW = rw / (2.0f * tScale), halfH = rh / (2.0f * tScale);
-        tx = (float)sLastFix.mapX;
-        ty = (float)sLastFix.mapY;
+        tx = sLastFix.valid ? (float)sLastFix.mapX : WMAP_CROP_X0 + cw / 2.0f;
+        ty = sLastFix.valid ? (float)sLastFix.mapY : WMAP_CROP_Y0 + chh / 2.0f;
+#ifdef TMC_3DS
+        if (!followCfg && sPan.valid) {
+            tx = sPan.x;
+            ty = sPan.y;
+        }
+        if (!followCfg) {
+            float ddx, ddy;
+            UI_LOCK();
+            ddx = sUi.dragDx;
+            ddy = sUi.dragDy;
+            sUi.dragDx = sUi.dragDy = 0.0f;
+            UI_UNLOCK();
+            tx -= ddx / tScale;
+            ty -= ddy / tScale;
+        }
+#endif
         if (halfW * 2 < cw) {
             tx = tx < WMAP_CROP_X0 + halfW ? WMAP_CROP_X0 + halfW
                                            : (tx > WMAP_CROP_X1 - halfW ? WMAP_CROP_X1 - halfW : tx);
@@ -1232,11 +1263,28 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
         } else {
             ty = WMAP_CROP_Y0 + chh / 2.0f;
         }
+#ifdef TMC_3DS
+        /* Following keeps the pan centre on Link, so switching MAP FOLLOW off stays where it was. */
+        sPan.valid = 1;
+        sPan.x = tx;
+        sPan.y = ty;
+#endif
     }
 
     /* Smooth glide toward the target (pan and zoom both), snapping on the
      * first frame so a fresh surface doesn't animate in from nowhere. */
 #ifdef TMC_3DS
+    {
+        int dragging;
+        UI_LOCK();
+        dragging = sUi.mapDragging;
+        UI_UNLOCK();
+        /* The map sticks to the finger: no glide while it is being dragged. */
+        if (dragging && !wantWhole && sCam.valid) {
+            sCam.x = tx;
+            sCam.y = ty;
+        }
+    }
     AdvanceMapCamera(tx, ty, tScale);
 #else
     if (!sCam.valid) {
@@ -1320,6 +1368,9 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
     /* Windcrest warp points as small pins (green — the fast-travel accent),
      * gated by the settings toggle. Ids are the bit index within the
      * windcrests word's top byte, exactly what GetWindcrestPin expects. */
+#ifdef TMC_3DS
+    (void)crestCfg; /* the pins were dropped from the 3DS map */
+#else
     if (crestCfg) {
         for (int32_t id = 0; id < 8; id++) {
             int32_t wx, wy;
@@ -1334,6 +1385,7 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
             }
         }
     }
+#endif
 
     /* Player marker: a pulsing gold diamond (live it also blinks white,
      * like the game's own map dot; the frozen doorway fix holds steady). */
@@ -1373,10 +1425,12 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
      * the game's cursor brackets are the model, so the zoom reads as a
      * place you picked rather than a view that just swapped. */
     uint8_t regionState;
+    int32_t cursorRegion;
     float br[4];
     uint32_t sinceTap;
     UI_LOCK();
     regionState = sUi.regionState;
+    cursorRegion = sUi.regionId;
     br[0] = (float)sUi.regionX0;
     br[1] = (float)sUi.regionY0;
     br[2] = (float)sUi.regionX1;
@@ -1388,9 +1442,17 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
         float bx1 = ox + br[2] * sCam.scale, by1 = oy + br[3] * sCam.scale;
         float t = (float)u;
         if (t < 1) t = 1;
+#ifdef TMC_3DS
+        /* The game's own cursor on that tile (red corners, white edge), blinking as it does. */
+        if (!Port_SecondScreenWorldMap_DrawRegionCursor(s->px, s->w, s->h, s->stride, cursorRegion,
+                                                        (int32_t)((sinceTap >> 1) & 1u), ox, oy, sCam.scale,
+                                                        (int32_t)rx0, (int32_t)ry0, (int32_t)rx1, (int32_t)ry1))
+#endif
+        {
         StrokeRoundRect(s, bx0 - t, by0 - t, bx1 + t, by1 + t, 2 * t, t,
                         Port_SecondScreenTheme_Color(SSC_MENU_INK));
         StrokeRoundRect(s, bx0, by0, bx1, by1, 2 * t, t, Port_SecondScreenTheme_Color(SSC_GOLD));
+        }
         if (sinceTap >= SS_REGION_BRACKET_TICKS) {
             UI_LOCK();
             if (sUi.regionState == SS_REGION_BRACKET) {
@@ -1423,22 +1485,23 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
      * finger. It used to toggle the view as well, which meant every tap
      * that missed a rectangle took you somewhere you hadn't asked to go.
      * Added ahead of the map's own target so it wins the hit test. */
-    if (followCfg && sLastFix.valid) {
-        /* With no fix, or the follow cam switched off, the whole map is the
-         * only view there is and the chip would have nothing to step to. */
+#ifndef TMC_3DS
+    /* With no fix, or the follow cam switched off, the whole map is the
+     * only view there is and the chip would have nothing to step to. */
+    if (followCfg && sLastFix.valid)
+#endif
+    {
         float chip[4];
         DrawMapChip(s, "ZOOM", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
         AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPZOOM, 0);
     }
 #ifdef TMC_3DS
-    /* MAP FOLLOW and CREST PINS (they were in OPTIONS): small toggles in the map's corners,
+    /* MAP FOLLOW (it was in OPTIONS): a small toggle in the map's corner,
      * on the ZOOM chip's line. Added ahead of the map's own target so they win the hit test. */
     {
         float chip[4];
         Compact_MapToggleChip(s, "MAP FOLLOW", followCfg != 0, rx0 + 4, ry1 - 12 * u, false, chip);
         AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_SETTING, (uint8_t)SS_SET_FOLLOW);
-        Compact_MapToggleChip(s, "CREST PINS", crestCfg != 0, rx1 - 4, ry1 - 12 * u, true, chip);
-        AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_SETTING, (uint8_t)SS_SET_CRESTS);
     }
 #endif
     AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_MAP, 0);
@@ -2086,8 +2149,12 @@ static int SettingsPageRows(int page, uint8_t* out) {
 #ifdef TMC_3DS
         out[n++] = SS_SET_TURBO;
 #endif
+#ifndef TMC_3DS
         out[n++] = SS_SET_CRESTS;
+#endif
+#ifndef TMC_3DS
         out[n++] = SS_SET_FLOOR_RETURN;
+#endif
         out[n++] = SS_SET_VOLUME;
         out[n++] = SS_SET_AUTOSAVE;
         out[n++] = SS_SET_HOLD_ADVANCE;
@@ -3249,8 +3316,28 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     UI_UNLOCK();
 
     int followCfg = Port_Config_GetSecondScreenFollowCam();
+#ifdef TMC_3DS
+    {
+        /* The close view used to exist only with MAP FOLLOW on; a session that starts with it off still
+         * opens on the whole map. */
+        static int sZoomInit;
+        if (!sZoomInit) {
+            sZoomInit = 1;
+            if (!followCfg) {
+                UI_LOCK();
+                sUi.wholeMap = 1;
+                UI_UNLOCK();
+                wholeMap = 1;
+            }
+        }
+    }
+#endif
     int crestCfg = Port_Config_GetSecondScreenCrestPins();
+#ifdef TMC_3DS
+    int returnCfg = 1; /* FLOOR BACK is always on: it was an option nobody needed off */
+#else
     int returnCfg = Port_Config_GetSecondScreenFloorReturn();
+#endif
 
     /* Scale units: u drives the layout (reference design is a 720p min
      * axis), ts is the integer art scale for the decoded menu dressing. */
@@ -3482,6 +3569,50 @@ int Port_SecondScreen_TapIsTab(int x, int y) {
     UI_UNLOCK();
     return tab;
 }
+
+#ifdef TMC_3DS
+/* The finger moved while it is down on the map. Past a few pixels the touch is a drag, not a tap: it pans
+ * the zoomed-in map (MAP FOLLOW off). Returns 1 when the view needs repainting. */
+int Port_SecondScreen_OnTouchMove(int x, int y) {
+    int changed = 0;
+    UI_LOCK();
+    if (sUi.mapTouch) {
+        if (!sUi.mapTouchMoved) {
+            int ax = x - sUi.mapTouchX0, ay = y - sUi.mapTouchY0;
+            if (ax < 0) ax = -ax;
+            if (ay < 0) ay = -ay;
+            if (ax + ay >= 8) sUi.mapTouchMoved = 1;
+        }
+        if (sUi.mapTouchMoved) {
+            if (!sUi.wholeMap && !Port_Config_GetSecondScreenFollowCam()) {
+                sUi.dragDx += (float)(x - sUi.mapTouchLastX);
+                sUi.dragDy += (float)(y - sUi.mapTouchLastY);
+                sUi.mapDragging = 1;
+                changed = 1;
+            }
+            sUi.mapTouchLastX = x;
+            sUi.mapTouchLastY = y;
+        }
+    }
+    UI_UNLOCK();
+    return changed;
+}
+
+/* The finger left the screen: a touch that never became a drag was a tap on the map. */
+void Port_SecondScreen_OnTouchRelease(void) {
+    int tap = 0, x = 0, y = 0;
+    UI_LOCK();
+    if (sUi.mapTouch) {
+        tap = !sUi.mapTouchMoved;
+        x = sUi.mapTouchX0;
+        y = sUi.mapTouchY0;
+        sUi.mapTouch = 0;
+    }
+    sUi.mapDragging = 0;
+    UI_UNLOCK();
+    if (tap) PickMapRegion(x, y);
+}
+#endif
 
 void Port_SecondScreen_OnTap(int x, int y, int longPress) {
     TapTarget hit;
@@ -3793,9 +3924,21 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             UI_LOCK();
             state = sUi.regionState;
             UI_UNLOCK();
+#ifdef TMC_3DS
+            /* Decided on release (Port_SecondScreen_OnTouchRelease): the touch may become a drag. */
+            if (state == SS_REGION_OFF) {
+                UI_LOCK();
+                sUi.mapTouch = 1;
+                sUi.mapTouchMoved = 0;
+                sUi.mapTouchX0 = sUi.mapTouchLastX = x;
+                sUi.mapTouchY0 = sUi.mapTouchLastY = y;
+                UI_UNLOCK();
+            }
+#else
             if (state == SS_REGION_OFF) {
                 PickMapRegion(x, y);
             }
+#endif
             break;
         }
         case SS_ACT_MAPVIEW:

@@ -130,6 +130,7 @@ enum { PENDING_TAP_TICKS = 45 };
 static struct {
     int x, y, longPress;
     unsigned ticksLeft;
+    int released; /* the finger left before the tap was replayed */
 } sPendingTap;
 
 void Port_SecondScreen_3DS_OnTap(int x, int y, int longPress) {
@@ -164,6 +165,7 @@ void Port_SecondScreen_3DS_OnTap(int x, int y, int longPress) {
         sPendingTap.y = y;
         sPendingTap.longPress = longPress;
         sPendingTap.ticksLeft = PENDING_TAP_TICKS;
+        sPendingTap.released = 0;
         return;
     }
     sPendingTap.ticksLeft = 0;
@@ -183,6 +185,20 @@ void Port_SecondScreen_3DS_ServicePendingTap(void) {
     if (!BottomFrameState3DS_CanDispatchTouch(&sFrameState, currentSnapshot.inGame != 0)) return;
     sPendingTap.ticksLeft = 0;
     Port_SecondScreen_OnTap(sPendingTap.x, sPendingTap.y, sPendingTap.longPress);
+    if (sPendingTap.released) Port_SecondScreen_OnTouchRelease();
+    RequestTouchRefresh();
+}
+
+void Port_SecondScreen_3DS_OnTouchMove(int x, int y) {
+    if (Port_SecondScreen_OnTouchMove(x, y)) RequestTouchRefresh();
+}
+
+void Port_SecondScreen_3DS_OnTouchRelease(void) {
+    if (sPendingTap.ticksLeft != 0) {
+        sPendingTap.released = 1; /* replayed with the tap */
+        return;
+    }
+    Port_SecondScreen_OnTouchRelease();
     RequestTouchRefresh();
 }
 
