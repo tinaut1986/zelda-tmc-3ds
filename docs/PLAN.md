@@ -1349,3 +1349,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   `Port_Widescreen_ResetAfterStateLoad` forgets the room key, and the new-room latch cleared `sWsArrivalFrozenCamera`
   for want of a fade. The first latch after a load now counts as an arrival (`sWsStateLoaded`). Seen by the owner on
   the New 3DS.
+- **2026-10-20** **The world cutscenes keep the wide view through their fade out.** AuxCutscene 0 (the woods when the
+  Deepwood Shrine's big door opens) dropped to 240x160 for ~13 visible frames at its end: the fixed-canvas exemption
+  of AuxCutscenes 0, 1 and 5 covered only `nextToLoad == 2`, and `Subtask_FadeOut` (3) still shows their world. It
+  covers 3 now. The cutscene's ±80/±40 camera shift is limited to `nextToLoad < 4`, so the shrine's restored camera
+  snaps as any room's (checked: the same scroll as before, 832/1344). Seen by the owner on the New 3DS.
