@@ -1388,3 +1388,10 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   **release**, since the touch may become a drag (>= 8 px). A session that starts with MAP FOLLOW off opens on the whole map,
   as before. The glide speed (0.22 per paint) was left alone: it is tied to the bottom screen's paint cadence.
 - **2026-10-20** FLOOR BACK dropped from OPTIONS on the 3DS (owner): the dungeon map always returns to Link's floor after 6 s. The config key stays.
+- **2026-10-20** OPTIONS regrouped under titles (SCREEN, GAME, INTERFACE, SYSTEM) in a scrolling list, and the STATES list
+  scrolls too instead of paging (`feat/options-groups`). Scrolling is by dragging or by the bar on the right (a 12 px strip
+  grabs it; the content gives up 8 px for it while it shows). Because a drag starts as a touch, a tap on a cell of a
+  scrolling panel acts on **release** (`Port_SecondScreen_OnTap` defers it; the tab bar still acts at once). Shared
+  helpers: `CScrollUpdate` / `CScrollBar` / `CScrollTargets` in `bottom_compact_3ds.inc`. STATES keeps 10 card pictures
+  in an LRU cache and reads one per paint, only for visible cards. New translations for the group titles and values.
+

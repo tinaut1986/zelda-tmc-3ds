@@ -71,7 +71,8 @@ int main(void) {
         "VIEW", "STYLE", "FRAMES", "TOP HUD", "TURBO", "VOLUME", "AUTOSAVE", "HOLD TEXT", "MAP FOLLOW",
         "CREST PINS", "FLOOR BACK", "COLOURS", "THEME", "SHOW FPS", "SHOW", "HIDE", "ON", "OFF", "RESTART",
         "ORIGINAL", "STABLE", "SLATE", "PARCHMENT", "NIGHT GOLD", "FOREST", "PATTERN", "NONE", "BACK",
-        "PREV", "NEXT", "SAVE OVER", "DELETE", "LOAD", "SURE?",
+        "PREV", "NEXT", "SAVE OVER", "DELETE", "LOAD", "SURE?", "AUTO", "BILINEAR", "PIXEL P.", "GBA GRID",
+        "INTERFACE", "NEIGHBOURS", "DEPTH", "LAYERS",
     };
     for (size_t i = 0; i < sizeof(kCellWords) / sizeof(kCellWords[0]); i++) {
         for (int lang = PORT_TEXT_FR; lang < PORT_TEXT_COUNT; lang++) {

@@ -499,51 +499,150 @@ static void CSettingCell(const SSurf* s, TargetList* tl, int row, int col, int s
     CSettingCellAt(s, tl, CRowY(row), col, span, name, setting);
 }
 
-static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
-    FillRect(s, 0, CcContentTop(), s->w, CcContentBottom(s->h), CC_BG);
-    /* Screen */
-    CSettingCell(s, tl, 0, 0, 1, "VIEW", SS_SET_ASPECT_RATIO);
-    CSettingCell(s, tl, 0, 1, 1, "STYLE", SS_SET_DISPLAY_STYLE);
-    CSettingCell(s, tl, 0, 2, 1, "FRAMES", SS_SET_FRAMES);
-    CSettingCell(s, tl, 0, 3, 1, "TOP HUD", SS_SET_TOP_HUD);
-    /* Game */
-    CSettingCell(s, tl, 1, 0, 1, "TURBO", SS_SET_TURBO);
-    CSettingCell(s, tl, 1, 1, 1, "VOLUME", SS_SET_VOLUME);
-    CSettingCell(s, tl, 1, 2, 1, "AUTOSAVE", SS_SET_AUTOSAVE);
-    CSettingCell(s, tl, 1, 3, 1, "HOLD TEXT", SS_SET_HOLD_ADVANCE);
-    /* Colours (the map's switches, MAP FOLLOW, CREST PINS and FLOOR BACK, are chips on the map) */
-    CSettingCell(s, tl, 2, 0, 1, "COLOURS", SS_SET_COLOR_CORRECTION);
-    CSettingCell(s, tl, 2, 1, 1, "GBA GRID", SS_SET_GBA_GRID);
-    CSettingCell(s, tl, 2, 2, 1, "FRAME", SS_SET_GBA_FRAME);
-    CSettingCell(s, tl, 2, 3, 1, "NEIGHBOURS", SS_SET_NEIGHBOURS);
-    /* Look and system */
-    {
-        int32_t x, w;
-        CColumn(s->w, 4, 0, 1, &x, &w);
-        CCell(s, tl, x, CRowY(3), w, CC_CELL_H, "THEME", sCc->name, CC_ACCENT, SS_ACT_THEME, 0);
-        CColumn(s->w, 4, 1, 1, &x, &w);
-        CCell(s, tl, x, CRowY(3), w, CC_CELL_H, "TABS", sCcTabsBottom ? "BOTTOM" : "TOP", CC_TEXT, SS_ACT_TABS, 0);
+/* ---- scrolling lists (OPTIONS, STATES) ----
+ * The finger's drag arrives in sUi.dragDy, the scroll bar's position in sUi.scrollFrac
+ * (Port_SecondScreen_OnTouchMove); a list keeps its own offset, clamped here. The bar sits in a gutter on
+ * the right and its strip is a wider target than it looks. */
+enum { CC_SB_GUTTER = 8, CC_SB_GRAB = 12 };
+
+static void CScrollUpdate(float* scroll, float maxScroll) {
+    float drag, frac;
+    UI_LOCK();
+    drag = sUi.dragDy;
+    frac = sUi.scrollFrac;
+    sUi.dragDx = sUi.dragDy = 0.0f;
+    sUi.scrollFrac = -1.0f;
+    UI_UNLOCK();
+    *scroll -= drag;
+    if (frac >= 0.0f) *scroll = frac * maxScroll;
+    if (*scroll > maxScroll) *scroll = maxScroll;
+    if (*scroll < 0.0f) *scroll = 0.0f;
+}
+
+/* Draws the bar in `v` (a view whose top is the screen row `screenTop`) and tells the tap thread where it is. */
+static void CScrollBar(const SSurf* v, int32_t screenTop, float scroll, float maxScroll, int32_t totalH) {
+    if (maxScroll <= 0.0f) return;
+    const int32_t trackH = v->h - 2 * CC_MARGIN;
+    int32_t barH = (int32_t)((float)trackH * (float)v->h / (float)totalH);
+    if (barH < 14) barH = 14;
+    const int32_t barY = CC_MARGIN + (int32_t)((float)(trackH - barH) * scroll / maxScroll);
+    FillRect(v, v->w - 6, CC_MARGIN, v->w - 2, CC_MARGIN + trackH, CC_CELL);
+    FillRect(v, v->w - 6, barY, v->w - 2, barY + barH, CC_DIM);
+    UI_LOCK();
+    sUi.sbMax = maxScroll;
+    sUi.sbX0 = v->w - CC_SB_GRAB;
+    sUi.sbTop = screenTop + CC_MARGIN;
+    sUi.sbTrackH = trackH;
+    sUi.sbBarH = barH;
+    UI_UNLOCK();
+}
+
+/* Moves the hit boxes added since `first` (made in a view's coordinates) onto the screen and cuts them to the view. */
+static void CScrollTargets(TargetList* tl, int first, int32_t top, int32_t bottom) {
+    int kept = first;
+    for (int i = first; i < tl->n; i++) {
+        TapTarget tt = tl->t[i];
+        tt.y0 += top;
+        tt.y1 += top;
+        if (tt.y0 < top) tt.y0 = top;
+        if (tt.y1 > bottom) tt.y1 = bottom;
+        if (tt.y0 < tt.y1) tl->t[kept++] = tt;
     }
-    CSettingCell(s, tl, 4, 0, 1, "SHOW FPS", SS_SET_SHOW_FPS);
+    tl->n = kept;
+}
+
+/* A group heading: its name dimmed, a rule running on to the right. */
+static void COptTitle(const SSurf* s, int32_t y, const char* title) {
+    int32_t w = CText(s, CC_MARGIN + 1, y, CC_DIM, title);
+    FillRect(s, CC_MARGIN + 1 + w + 4, y + 3, s->w - CC_MARGIN - 4, y + 4, CC_CELL_EDGE);
+}
+
+/* The OPTIONS list, grouped, scrolled by dragging (Port_SecondScreen_OnTouchMove): the pixels the
+ * finger moved arrive in sUi.dragDy. Everything is laid out from y = 2 - scroll in a view of its own, so
+ * the tab bar is never painted over and a cell cut by the view is cut cleanly. */
+enum {
+    OPT_TITLE_H = 12,
+    OPT_ROW_H = CC_CELL_H + CC_GAP,
+    OPT_FOOTER_H = 3 * 10 + 6,
+    /* top margin + 4 group titles + 5 rows of cells + the footer + bottom margin */
+    OPT_TOTAL_H = 2 + 4 * OPT_TITLE_H + 5 * OPT_ROW_H + OPT_FOOTER_H + CC_MARGIN,
+};
+static float sOptScroll;
+
+static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
+    const int32_t top = CcContentTop(), bottom = CcContentBottom(s->h);
+    FillRect(s, 0, top, s->w, bottom, CC_BG);
+    SSurf v = *s;
+    v.px = s->px + (size_t)top * (size_t)s->stride;
+    v.h = bottom - top;
+    const float maxScroll = (float)(OPT_TOTAL_H - v.h) > 0.0f ? (float)(OPT_TOTAL_H - v.h) : 0.0f;
+    CScrollUpdate(&sOptScroll, maxScroll);
+    SSurf body = v;
+    body.w = v.w - (maxScroll > 0.0f ? CC_SB_GUTTER : 0);
+
+    const int firstTarget = tl->n;
+    int32_t y = 2 - (int32_t)sOptScroll;
+    const SSurf* t = &body;
+
+    COptTitle(t, y, "SCREEN");
+    y += OPT_TITLE_H;
+    CSettingCellAt(t, tl, y, 0, 1, "VIEW", SS_SET_ASPECT_RATIO);
+    CSettingCellAt(t, tl, y, 1, 1, "STYLE", SS_SET_DISPLAY_STYLE);
+    CSettingCellAt(t, tl, y, 2, 1, "FRAMES", SS_SET_FRAMES);
+    CSettingCellAt(t, tl, y, 3, 1, "TOP HUD", SS_SET_TOP_HUD);
+    y += OPT_ROW_H;
+    CSettingCellAt(t, tl, y, 0, 1, "COLOURS", SS_SET_COLOR_CORRECTION);
+    CSettingCellAt(t, tl, y, 1, 1, "GBA GRID", SS_SET_GBA_GRID);
+    CSettingCellAt(t, tl, y, 2, 1, "FRAME", SS_SET_GBA_FRAME);
+    CSettingCellAt(t, tl, y, 3, 1, "NEIGHBOURS", SS_SET_NEIGHBOURS);
+    y += OPT_ROW_H;
+
+    COptTitle(t, y, "GAME");
+    y += OPT_TITLE_H;
+    CSettingCellAt(t, tl, y, 0, 1, "TURBO", SS_SET_TURBO);
+    CSettingCellAt(t, tl, y, 1, 1, "VOLUME", SS_SET_VOLUME);
+    CSettingCellAt(t, tl, y, 2, 1, "AUTOSAVE", SS_SET_AUTOSAVE);
+    CSettingCellAt(t, tl, y, 3, 1, "HOLD TEXT", SS_SET_HOLD_ADVANCE);
+    y += OPT_ROW_H;
+
+    /* The map's switches (MAP FOLLOW) are chips on the map itself. */
+    COptTitle(t, y, "INTERFACE");
+    y += OPT_TITLE_H;
     {
         int32_t x, w;
-        CColumn(s->w, 4, 2, 2, &x, &w);
+        CColumn(t->w, 4, 0, 1, &x, &w);
+        CCell(t, tl, x, y, w, CC_CELL_H, "THEME", sCc->name, CC_ACCENT, SS_ACT_THEME, 0);
+        CColumn(t->w, 4, 1, 1, &x, &w);
+        CCell(t, tl, x, y, w, CC_CELL_H, "TABS", sCcTabsBottom ? "BOTTOM" : "TOP", CC_TEXT, SS_ACT_TABS, 0);
+    }
+    CSettingCellAt(t, tl, y, 2, 1, "SHOW FPS", SS_SET_SHOW_FPS);
+    y += OPT_ROW_H;
+
+    COptTitle(t, y, "SYSTEM");
+    y += OPT_TITLE_H;
+    {
+        int32_t x, w;
+        CColumn(t->w, 4, 0, 2, &x, &w);
         UpdateStatus st;
         Updater_GetStatus(&st);
         const char* value = st.state == UPDATE_AVAILABLE ? "NEW VERSION" : (st.prerelease ? "+ BETAS" : "STABLE");
-        CCell(s, tl, x, CRowY(3), w, CC_CELL_H, "UPDATES",
-              value, st.state == UPDATE_AVAILABLE ? CC_WARN : CC_TEXT, SS_ACT_SETTINGS_PAGE, SS_SETTINGS_UPDATE);
+        CCell(t, tl, x, y, w, CC_CELL_H, "UPDATES", value, st.state == UPDATE_AVAILABLE ? CC_WARN : CC_TEXT,
+              SS_ACT_SETTINGS_PAGE, SS_SETTINGS_UPDATE);
     }
+    y += OPT_ROW_H;
 
     /* Footer: who we are and what we are built on. */
     char line[64];
-    int32_t y = CcContentBottom(s->h) - 3 * 10 - 2;
-    CTextCentered(s, s->w / 2, y, CC_DIM, "MINISH CAP 3DS");
+    y += 2;
+    CTextCentered(t, t->w / 2, y, CC_DIM, "MINISH CAP 3DS");
     snprintf(line, sizeof(line), "V%s", TMC_PORT_VERSION_LABEL);
-    CTextCentered(s, s->w / 2, y + 10, CC_TEXT, line);
+    CTextCentered(t, t->w / 2, y + 10, CC_TEXT, line);
     snprintf(line, sizeof(line), "BASED ON ESTEBANPDN %s%s", TMC_UPSTREAM_VERSION,
              TMC3DS_DEBUG_TOOLS ? "  - DEBUG BUILD" : "");
-    CTextCentered(s, s->w / 2, y + 20, TMC3DS_DEBUG_TOOLS ? CC_WARN : CC_FAINT, line);
+    CTextCentered(t, t->w / 2, y + 20, TMC3DS_DEBUG_TOOLS ? CC_WARN : CC_FAINT, line);
+
+    CScrollBar(&v, top, sOptScroll, maxScroll, OPT_TOTAL_H);
+    CScrollTargets(tl, firstTarget, top, bottom);
 }
 
 /* ---- toast: one line over the bottom of the content for ~2 s ---- */
@@ -705,20 +804,19 @@ static void Compact_PaintBusy(const SSurf* s, TargetList* tl) {
 
 enum {
     STATES_CMD_NEW = 1,
-    STATES_CMD_PREV,
-    STATES_CMD_NEXT,
     STATES_CMD_BACK,
     STATES_CMD_LOAD,
     STATES_CMD_OVER,
     STATES_CMD_DELETE,
-    STATES_CMD_CARD0 = 16, /* + the card's place on the page */
-    STATES_PER_PAGE = 6,
+    STATES_CMD_CARD0 = 16, /* + the card's place in the list */
+    STATES_MAX_CARDS = 200,
+    STATES_CACHE = 10,     /* pictures kept: what is on screen, and a little more */
     STATES_CARD_THUMB_W = 80,
     STATES_CARD_THUMB_H = 48,
     STATES_ARM_TICKS = 60, /* ~3 s at the ~20 Hz paint rate */
 };
 
-static volatile int sStatesPage;
+static float sStatesScroll;
 static volatile uint32_t sStatesOpenId;   /* 0 = the list */
 static volatile int sStatesArmed;         /* the command waiting for its second tap */
 static volatile uint32_t sStatesArmedAt;
@@ -733,9 +831,11 @@ static uint32_t sStatesBigId;
 static uint8_t sStatesBigOk;
 static struct {
     uint32_t id;
+    uint32_t used; /* the paint it was last drawn in */
     uint8_t ok;
     uint16_t px[STATES_CARD_THUMB_W * STATES_CARD_THUMB_H];
-} sStatesCards[STATES_PER_PAGE];
+} sStatesCards[STATES_CACHE];
+static uint32_t sStatesCardClock;
 static uint32_t sStatesThumbGen = 0xFFFFFFFFu;
 
 static uint32_t Rgb565ToColor(uint16_t v) {
@@ -753,17 +853,25 @@ static void Compact_StatesInvalidateThumbs(void) {
     if (gen == sStatesThumbGen) return;
     sStatesThumbGen = gen; /* an overwrite replaces a picture under the same id */
     sStatesBigId = 0;
-    for (int i = 0; i < STATES_PER_PAGE; ++i) sStatesCards[i].id = 0;
+    for (int i = 0; i < STATES_CACHE; ++i) sStatesCards[i].id = 0;
 }
 
-static const uint16_t* Compact_StatesCardThumb(int slot, uint32_t id, int* loads) {
-    if (sStatesCards[slot].id == id) return sStatesCards[slot].ok ? sStatesCards[slot].px : NULL;
+static const uint16_t* Compact_StatesCardThumb(uint32_t id, int* loads) {
+    int slot = 0;
+    for (int i = 0; i < STATES_CACHE; ++i) {
+        if (sStatesCards[i].id == id) {
+            sStatesCards[i].used = sStatesCardClock;
+            return sStatesCards[i].ok ? sStatesCards[i].px : NULL;
+        }
+        if (sStatesCards[i].used < sStatesCards[slot].used) slot = i;
+    }
     if (*loads <= 0) {
         sStatesThumbPending = 1; /* a later paint reads it: one SD read per paint */
         return NULL;
     }
     --*loads;
     sStatesCards[slot].id = id;
+    sStatesCards[slot].used = sStatesCardClock;
     sStatesCards[slot].ok = SaveState_ReadThumb(id, sStatesBig) ? 1 : 0;
     sStatesBigId = 0; /* sStatesBig was borrowed */
     if (sStatesCards[slot].ok) {
@@ -775,6 +883,10 @@ static const uint16_t* Compact_StatesCardThumb(int slot, uint32_t id, int* loads
     }
     return sStatesCards[slot].ok ? sStatesCards[slot].px : NULL;
 }
+
+/* For the tap thread: whether the list (not a state's detail) is up, and whether an argument is a card. */
+static int Compact_StatesListShown(void) { return sStatesOpenId == 0; }
+static int Compact_StatesIsCard(uint8_t arg) { return arg >= STATES_CMD_CARD0; }
 
 static void Compact_StatesWhen(uint32_t savedAt, char* out, size_t cap) {
     const time_t t = (time_t)savedAt;
@@ -798,22 +910,15 @@ static bool Compact_StatesArmed(int cmd) {
 
 static void Compact_PaintStatesList(const SSurf* s, TargetList* tl) {
     const int32_t top = CcContentTop() + 2, bottom = CcContentBottom(s->h) - CC_MARGIN;
-    const int count = SaveState_Count();
-    const int pages = count > 0 ? (count + STATES_PER_PAGE - 1) / STATES_PER_PAGE : 1;
-    int page = sStatesPage;
-    if (page >= pages) page = sStatesPage = pages - 1;
-    if (page < 0) page = sStatesPage = 0;
+    int count = SaveState_Count();
+    if (count > STATES_MAX_CARDS) count = STATES_MAX_CARDS;
 
     const bool canSave = SaveState_CanSave() && !SaveState_Busy();
     CButton(s, tl, CC_MARGIN, top, 96, 20, "+ NEW STATE", canSave ? CC_ACCENT : CC_FAINT, SS_ACT_STATES,
             STATES_CMD_NEW);
     char line[40];
-    snprintf(line, sizeof(line), "%d %s  %d/%d", count, Port_Text_Tr(count == 1 ? "STATE" : "STATES"), page + 1, pages);
+    snprintf(line, sizeof(line), "%d %s", count, Port_Text_Tr(count == 1 ? "STATE" : "STATES"));
     CText(s, CC_MARGIN + 104, top + 7, CC_DIM, line);
-    CButton(s, tl, s->w - CC_MARGIN - 62, top, 30, 20, "<", page > 0 ? CC_TEXT : CC_FAINT, SS_ACT_STATES,
-            STATES_CMD_PREV);
-    CButton(s, tl, s->w - CC_MARGIN - 30, top, 30, 20, ">", page + 1 < pages ? CC_TEXT : CC_FAINT, SS_ACT_STATES,
-            STATES_CMD_NEXT);
 
     if (count == 0) {
         CTextCentered(s, s->w / 2, (top + bottom) / 2 - 8, CC_DIM, "NO SAVE STATES YET");
@@ -821,33 +926,50 @@ static void Compact_PaintStatesList(const SSurf* s, TargetList* tl) {
                       SaveState_CanSave() ? "+ NEW STATE SAVES ONE" : "LOAD A GAME TO SAVE ONE");
         return;
     }
+    /* The cards scroll in a view of their own below the header; three rows fit at rest. */
     const int32_t gridTop = top + 24;
+    const int32_t viewH = CcContentBottom(s->h) - gridTop;
     const int32_t cardH = (bottom - gridTop - 2 * CC_GAP) / 3;
+    const int rows = (count + 1) / 2;
+    const int32_t totalH = rows * (cardH + CC_GAP) - CC_GAP + 2 * CC_MARGIN;
+    SSurf v = *s;
+    v.px = s->px + (size_t)gridTop * (size_t)s->stride;
+    v.h = viewH;
+    const float maxScroll = (float)(totalH - viewH) > 0.0f ? (float)(totalH - viewH) : 0.0f;
+    CScrollUpdate(&sStatesScroll, maxScroll);
+    SSurf body = v;
+    body.w = v.w - (maxScroll > 0.0f ? CC_SB_GUTTER : 0);
+
+    ++sStatesCardClock;
+    const int firstTarget = tl->n;
     int loads = 1;
-    for (int k = 0; k < STATES_PER_PAGE; ++k) {
+    for (int k = 0; k < count; ++k) {
+        const int32_t y = CC_MARGIN - (int32_t)sStatesScroll + (k / 2) * (cardH + CC_GAP);
+        if (y + cardH <= 0 || y >= viewH) continue; /* off the view: nothing drawn, nothing read */
         SaveStateInfo info;
-        if (!SaveState_InfoAt(page * STATES_PER_PAGE + k, &info)) break;
+        if (!SaveState_InfoAt(k, &info)) break;
         int32_t x, w;
-        CColumn(s->w, 2, k % 2, 1, &x, &w);
-        const int32_t y = gridTop + (k / 2) * (cardH + CC_GAP);
-        CBox(s, x, y, w, cardH, CC_CELL, CC_CELL_EDGE);
+        CColumn(body.w, 2, k % 2, 1, &x, &w);
+        CBox(&body, x, y, w, cardH, CC_CELL, CC_CELL_EDGE);
         const int32_t ty = y + (cardH - STATES_CARD_THUMB_H) / 2;
-        const uint16_t* thumb = info.hasThumb ? Compact_StatesCardThumb(k, info.id, &loads) : NULL;
-        if (thumb) BlitRgb565(s, x + 3, ty, thumb, STATES_CARD_THUMB_W, STATES_CARD_THUMB_H);
-        else FillRect(s, x + 3, ty, x + 3 + STATES_CARD_THUMB_W, ty + STATES_CARD_THUMB_H, CC_BG);
+        const uint16_t* thumb = info.hasThumb ? Compact_StatesCardThumb(info.id, &loads) : NULL;
+        if (thumb) BlitRgb565(&body, x + 3, ty, thumb, STATES_CARD_THUMB_W, STATES_CARD_THUMB_H);
+        else FillRect(&body, x + 3, ty, x + 3 + STATES_CARD_THUMB_W, ty + STATES_CARD_THUMB_H, CC_BG);
         const int32_t tx = x + STATES_CARD_THUMB_W + 7;
         char when[16], area[16], buf[24];
         Compact_StatesWhen(info.savedAt, when, sizeof(when));
-        snprintf(buf, sizeof(buf), "#%d", page * STATES_PER_PAGE + k + 1);
-        CText(s, tx, y + 5, CC_ACCENT, buf);
+        snprintf(buf, sizeof(buf), "#%d", k + 1);
+        CText(&body, tx, y + 5, CC_ACCENT, buf);
         snprintf(area, sizeof(area), "%.11s", Compact_StatesArea(info.area, buf, sizeof(buf)));
-        CText(s, tx, y + 16, info.compatible ? CC_TEXT : CC_BAD, area);
+        CText(&body, tx, y + 16, info.compatible ? CC_TEXT : CC_BAD, area);
         snprintf(buf, sizeof(buf), "HP %u/%u", info.health / 8u, info.maxHealth / 8u);
-        CText(s, tx, y + 27, CC_DIM, buf);
-        CText(s, tx, y + 38, CC_FAINT, when + 6); /* the time; the date is in the detail */
+        CText(&body, tx, y + 27, CC_DIM, buf);
+        CText(&body, tx, y + 38, CC_FAINT, when + 6); /* the time; the date is in the detail */
         AddTarget(tl, (float)x, (float)y, (float)(x + w), (float)(y + cardH), SS_ACT_STATES,
                   (uint8_t)(STATES_CMD_CARD0 + k));
     }
+    CScrollBar(&v, gridTop, sStatesScroll, maxScroll, totalH);
+    CScrollTargets(tl, firstTarget, gridTop, CcContentBottom(s->h));
 }
 
 static void Compact_PaintStatesDetail(const SSurf* s, TargetList* tl, uint32_t id) {
@@ -951,21 +1073,17 @@ static int Compact_StatesNeedsPaint(void) {
 /* SS_ACT_STATES taps (main thread). */
 static void Compact_StatesCommand(int cmd) {
     const uint32_t id = sStatesOpenId;
-    if (cmd >= STATES_CMD_CARD0 && cmd < STATES_CMD_CARD0 + STATES_PER_PAGE) {
+    if (cmd >= STATES_CMD_CARD0 && cmd < STATES_CMD_CARD0 + STATES_MAX_CARDS) {
         SaveStateInfo info;
-        if (SaveState_InfoAt(sStatesPage * STATES_PER_PAGE + (cmd - STATES_CMD_CARD0), &info)) sStatesOpenId = info.id;
+        if (SaveState_InfoAt(cmd - STATES_CMD_CARD0, &info)) sStatesOpenId = info.id;
         sStatesArmed = 0;
         return;
     }
     switch (cmd) {
         case STATES_CMD_NEW:
             if (!SaveState_CanSave()) Compact_Toast("LOAD A GAME FIRST");
-            else if (SaveState_Request(SAVE_STATE_JOB_SAVE_NEW, 0)) sStatesPage = 0;
+            else if (SaveState_Request(SAVE_STATE_JOB_SAVE_NEW, 0)) sStatesScroll = 0.0f;
             return;
-        case STATES_CMD_PREV:
-            if (sStatesPage > 0) --sStatesPage;
-            return;
-        case STATES_CMD_NEXT: ++sStatesPage; return;
         case STATES_CMD_BACK:
             sStatesOpenId = 0;
             sStatesArmed = 0;
