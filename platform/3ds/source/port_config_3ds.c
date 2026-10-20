@@ -1,6 +1,7 @@
 #include "port_runtime_config.h"
 #include "platform_3ds.h"
 #include "config_values_3ds.h"
+#include "stereo_3ds.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -140,6 +141,17 @@ static int sAppCpuLimit = 0;
 static bool sGpuStaticQuad = false;
 /* Stereoscopic 3D (stereo_3ds.h): always on, and only while the console's 3D slider is up. */
 static bool sStereo3D = true;
+/* Depth of the world while playing, in pixels at the full slider (stereo_3ds.c): the layer over Link (BG1) and the
+ * sprites. 0 switches that part off; stereo_world_on=0 switches both off. */
+static bool sStereoWorld = true;
+static int sStereoWorldBg1 = 2;
+static int sStereoWorldObj = 0;
+/* How much of its height over the ground a raised sprite (Link jumping, a flying enemy) stands out, in percent:
+ * 25 puts a sprite 16 px up 4 px out of the screen. 0 switches it off. */
+static int sStereoWorldHeight = 25;
+/* How much of a sprite piece's height over the sprite's feet it stands out, in percent (25: a piece 16 px up, 4 px out). The lowest
+ * piece (the feet, the shadow) stays on the ground's plane, so Link and the characters lean out instead of floating. */
+static int sStereoWorldBody = 8;
 static bool sBottomRgb565 = false;
 static bool sGpuShortVertices = false;
 /* Stored research choices. E10 disables both routes on every console because
@@ -223,6 +235,11 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("app_cpu_limit=%d\n", sAppCpuLimit);
     APPEND("gpu_static_quad=%u\n", sGpuStaticQuad ? 1u : 0u);
     APPEND("stereo_3d_on=%u\n", sStereo3D ? 1u : 0u);
+    APPEND("stereo_world_on=%u\n", sStereoWorld ? 1u : 0u);
+    APPEND("stereo_world_bg1=%d\n", sStereoWorldBg1);
+    APPEND("stereo_world_obj=%d\n", sStereoWorldObj);
+    APPEND("stereo_world_height=%d\n", sStereoWorldHeight);
+    APPEND("stereo_world_body=%d\n", sStereoWorldBody);
     APPEND("bottom_rgb565=%u\n", sBottomRgb565 ? 1u : 0u);
     APPEND("gpu_short_vertices=%u\n", sGpuShortVertices ? 1u : 0u);
     APPEND("audio_dsp=%u\n", sAudioDsp ? 1u : 0u);
@@ -394,6 +411,11 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "app_cpu_limit") == 0) sAppCpuLimit = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "gpu_static_quad") == 0) sGpuStaticQuad = ParseBool(value);
             else if (strcmp(key, "stereo_3d_on") == 0) sStereo3D = ParseBool(value);
+            else if (strcmp(key, "stereo_world_on") == 0) sStereoWorld = ParseBool(value);
+            else if (strcmp(key, "stereo_world_bg1") == 0) sStereoWorldBg1 = (int)strtol(value, NULL, 10);
+            else if (strcmp(key, "stereo_world_obj") == 0) sStereoWorldObj = (int)strtol(value, NULL, 10);
+            else if (strcmp(key, "stereo_world_height") == 0) sStereoWorldHeight = (int)strtol(value, NULL, 10);
+            else if (strcmp(key, "stereo_world_body") == 0) sStereoWorldBody = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "bottom_rgb565") == 0) sBottomRgb565 = ParseBool(value);
             else if (strcmp(key, "gpu_short_vertices") == 0) sGpuShortVertices = ParseBool(value);
             else if (strcmp(key, "audio_dsp") == 0) sAudioDsp = ParseBool(value);
@@ -483,6 +505,29 @@ bool Port_Config_CompactUpload(void) { return sCompactUpload; }
 int Port_Config_AppCpuLimit(void) { return sAppCpuLimit; }
 bool Port_Config_GpuStaticQuad(void) { return sGpuStaticQuad; }
 bool Port_Config_Stereo3D(void) { return sStereo3D; }
+int Port_Config_StereoWorldDepth(int which) {
+    if (!sStereoWorld) return 0;
+    const int depth = which == 0 ? sStereoWorldBg1 : sStereoWorldObj;
+    return depth < -16 ? -16 : depth > 16 ? 16 : depth;
+}
+/* The depth of a sprite `height` px over the ground, in quarter pixels at the full slider (PpuGpu3DSBatch.depth). */
+int Port_Config_StereoHeightDepthQ(int height) {
+    if (!sStereo3D || !sStereoWorld || sStereoWorldHeight <= 0 || height <= 0 || !Stereo3DS_Active()) return 0;
+    const int q = height * sStereoWorldHeight / 25;
+    return q > 20 ? 20 : q;
+}
+/* The depth of a sprite piece whose bottom edge is `height` px over the sprite's feet, in quarter pixels at the full slider. */
+int Port_Config_StereoBodyDepthQ(int height) {
+    if (!sStereo3D || !sStereoWorld || sStereoWorldBody <= 0 || height <= 0 || !Stereo3DS_Active()) return 0;
+    const int q = height * sStereoWorldBody / 25;
+    return q > 12 ? 12 : q;
+}
+int Port_Config_GetStereoWorld(void) { return sStereoWorld ? 1 : 0; }
+const char* Port_Config_GetStereoWorldName(void) { return sStereoWorld ? "ON" : "OFF"; }
+void Port_Config_CycleStereoWorld(void) {
+    sStereoWorld = !sStereoWorld;
+    SaveConfig();
+}
 bool Port_Config_BottomRgb565(void) { return sBottomRgb565; }
 bool Port_Config_GpuShortVertices(void) { return sGpuShortVertices; }
 bool Port_Config_AudioDsp(void) {

@@ -1137,7 +1137,9 @@ static bool sFrontHasObj;
 
 static bool IsFrontBatch(const PpuGpu3DSBatch* batch) {
     /* Its eye's shift is the other's negated: in front for both or for neither. */
-    if (batch->depth != 0) return SpritePx(batch) != 0;
+    /* Decided from the left eye's move, which is nonzero whenever the disparity is (the right eye's can be 0 for
+     * a 1 px disparity), whichever eye is being drawn. */
+    if (batch->depth != 0) return Stereo3DS_SpriteShift(batch->depth, STEREO3DS_LEFT) != 0.0f;
     return batch->layer <= PPU_GPU3DS_OBJ && sFrontLayer[batch->layer][batch->priority & 3u];
 }
 

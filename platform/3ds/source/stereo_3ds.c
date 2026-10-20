@@ -11,7 +11,8 @@
 
 extern bool Port_Config_Stereo3D(void);
 extern int Port_Stereo_Scenes(void); /* PORT_STEREO_SCENE_* of port_widescreen.h */
-enum { SCENE_TITLE_RAYS = 1, SCENE_LIGHT_RAYS = 2, SCENE_PATH_LEAVES = 4, SCENE_FILE_SELECT = 8, SCENE_LOGOS = 16, SCENE_MAP_HINT = 32, SCENE_GAME_OVER = 64 };
+extern int Port_Config_StereoWorldDepth(int which); /* 0: the layer over the playfield (BG1), 1: sprites (not the HUD's) */
+enum { SCENE_TITLE_RAYS = 1, SCENE_LIGHT_RAYS = 2, SCENE_PATH_LEAVES = 4, SCENE_FILE_SELECT = 8, SCENE_LOGOS = 16, SCENE_MAP_HINT = 32, SCENE_GAME_OVER = 64, SCENE_WORLD = 128 };
 
 /* Pixels at the full slider, by layer (BG0..BG3, OBJ) and priority (docs/stereo-3d.md). In front of
  * the screen: BG0 at priority 0, the HUD and the text boxes, and the sprites at priority 0, the HUD's
@@ -71,6 +72,13 @@ bool Stereo3DS_HasDepth(void) { return sHasDepth; }
 static int DepthFor(int scenes, unsigned layer, unsigned priority) {
     if (layer > PPU_GPU3DS_OBJ || priority > 3) return 0;
     int depth = kDepth[layer][priority];
+    /* Playing: the layer drawn over Link (tree tops, eaves, roofs) stands furthest out, Link and the world's
+     * sprites (priority 1-3; the HUD's are 0) a little, the ground and the sky stay on the screen plane. The
+     * scenes below override it. */
+    if (scenes & SCENE_WORLD) {
+        if (layer == PPU_GPU3DS_BG1) depth = Port_Config_StereoWorldDepth(0);
+        else if (layer == PPU_GPU3DS_OBJ && priority >= 1) depth = Port_Config_StereoWorldDepth(1);
+    }
     if (((scenes & SCENE_TITLE_RAYS) && layer == PPU_GPU3DS_BG0 && priority == 2) ||
         ((scenes & SCENE_LIGHT_RAYS) && layer == PPU_GPU3DS_BG3 && priority == 0))
         depth = RAYS_DEPTH;
@@ -109,17 +117,28 @@ int Stereo3DS_LayerDepth(unsigned layer, unsigned priority) {
     return DepthFor(sScenesAny, layer, priority);
 }
 
+/* The move of an eye, in whole view pixels, for a total disparity `disparity` (depth x slider, pixels): the
+ * disparity is rounded to whole pixels and split between the eyes, the left eye taking the larger half of an
+ * odd one (1 px: left 1, right 0). Whole pixels keep the art unscaled; splitting the odd pixel makes the
+ * smallest step 1 px of disparity instead of 2, which is what keeps a small depth (Link, a roof) from floating.
+ * The left eye's move is nonzero whenever the disparity is: the renderer decides from it which layers move. */
+static float EyeMove(float disparity, Stereo3DSEye eye) {
+    const float magnitude = disparity < 0.0f ? -disparity : disparity;
+    const int total = (int)(magnitude + 0.5f);
+    const int left = (total + 1) / 2;
+    const int move = eye == STEREO3DS_LEFT ? left : -(total - left);
+    return disparity < 0.0f ? (float)-move : (float)move;
+}
+
 float Stereo3DS_LayerShift(unsigned layer, unsigned priority, Stereo3DSEye eye) {
     if (!sHasDepth || layer > PPU_GPU3DS_OBJ || priority > 3) return 0.0f;
     const int depth = DepthFor(sScenes, layer, priority);
-    const float half = 0.5f * (float)depth * sSlider;
-    return eye == STEREO3DS_LEFT ? half : -half;
+    return EyeMove((float)depth * sSlider, eye);
 }
 
 float Stereo3DS_SpriteShift(unsigned depthQuarters, Stereo3DSEye eye) {
     if (!sHasDepth) return 0.0f;
-    const float half = 0.125f * (float)depthQuarters * sSlider;
-    return eye == STEREO3DS_LEFT ? half : -half;
+    return EyeMove(0.25f * (float)depthQuarters * sSlider, eye);
 }
 
 /* The sprites of a map hint in OBJ-window mode mark the parts still covered (BG1, the map, is hidden inside them and BG2,

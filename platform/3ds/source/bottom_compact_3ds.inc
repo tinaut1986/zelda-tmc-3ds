@@ -525,6 +525,7 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
         CCell(s, tl, x, CRowY(3), w, CC_CELL_H, "TABS", sCcTabsBottom ? "BOTTOM" : "TOP", CC_TEXT, SS_ACT_TABS, 0);
     }
     CSettingCell(s, tl, 4, 0, 1, "SHOW FPS", SS_SET_SHOW_FPS);
+    CSettingCell(s, tl, 4, 1, 1, "3D WORLD", SS_SET_STEREO_WORLD);
     {
         int32_t x, w;
         CColumn(s->w, 4, 2, 2, &x, &w);

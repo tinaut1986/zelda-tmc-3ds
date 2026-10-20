@@ -220,6 +220,7 @@ enum {
     SS_SET_GBA_GRID,      /* gba_grid: OFF / LOW / MED / HIGH (gba_look_3ds.h) */
     SS_SET_GBA_FRAME,     /* gba_frame: the console's body around a 240x160 / 360x240 picture */
     SS_SET_NEIGHBOURS,    /* neighbour_rooms: OFF / ON */
+    SS_SET_STEREO_WORLD,  /* stereo_world_on: OFF / ON (the world's depth while playing, 3D slider up) */
 #endif
     SS_SET_COUNT
 };
@@ -2016,7 +2017,7 @@ static const char* const kSettingLabels[SS_SET_COUNT] = {
     "RANDOMIZER",       "PANEL BACKDROP",     "SWAP SCREENS",
 #ifdef TMC_3DS
     "ASPECT RATIO",     "DISPLAY STYLE",    "FRAMES",
-    "GBA GRID",         "FRAME",         "NEIGHBOURS",
+    "GBA GRID",         "FRAME",         "NEIGHBOURS",      "3D WORLD",
 #endif
 };
 
@@ -2331,6 +2332,9 @@ static int GetSettingState(int row, char* out, int outCap) {
         case SS_SET_NEIGHBOURS:
             snprintf(out, (size_t)outCap, "%s", Port_Text_Tr(Port_Config_GetNeighbourRoomsName()));
             return Port_Config_GetNeighbourRooms() != 0;
+        case SS_SET_STEREO_WORLD:
+            snprintf(out, (size_t)outCap, "%s", Port_Text_Tr(Port_Config_GetStereoWorldName()));
+            return Port_Config_GetStereoWorld() != 0;
         case SS_SET_FRAMES: {
             static const char* const kPacing[PORT_3DS_PACING_COUNT] = { "AUTO", "LOCK 30", "NO SKIP" };
             int pacing = Port_Config_GetFramePacing();
@@ -3698,6 +3702,9 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
                     break;
                 case SS_SET_NEIGHBOURS:
                     Port_Config_CycleNeighbourRooms();
+                    break;
+                case SS_SET_STEREO_WORLD:
+                    Port_Config_CycleStereoWorld();
                     break;
                 case SS_SET_FRAMES: {
                     int next = (Port_Config_GetFramePacing() + 1) % PORT_3DS_PACING_COUNT;

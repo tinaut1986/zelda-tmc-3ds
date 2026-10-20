@@ -16,7 +16,8 @@ bool Stereo3DS_Active(void);
 bool Stereo3DS_HasDepth(void);
 /* How far, in view pixels, a GBA layer (PPU_GPU3DS_BG0..BG3, PPU_GPU3DS_OBJ) at a priority
  * (0 front .. 3 back) is moved for an eye: depth (positive: out of the screen) times the
- * slider, half to each eye, the left eye to the right. 0 when not active. */
+ * slider, rounded to whole pixels and split between the eyes (an odd pixel to the left eye), the left eye to the right.
+ * 0 when not active. */
 float Stereo3DS_LayerShift(unsigned layer, unsigned priority, Stereo3DSEye eye);
 /* The move of a sprite with a depth of its own (PpuGpu3DSBatch.depth, quarter pixels at the full slider): what Link
  * holds up or has thrown. */
