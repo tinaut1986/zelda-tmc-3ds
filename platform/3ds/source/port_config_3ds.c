@@ -143,7 +143,8 @@ static bool sGpuStaticQuad = false;
 static bool sStereo3D = true;
 /* Depth of the world while playing, in pixels at the full slider (stereo_3ds.c): the layer over Link (BG1) and the
  * sprites. 0 switches that part off; stereo_world_on=0 switches both off. */
-static bool sStereoWorld = true;
+static bool sStereoWorld = false; /* off until the player has been asked once (Port_Config_StereoWorldQuestionDue) */
+static _Atomic bool sStereoWorldAsked;
 static int sStereoWorldBg1 = 2;
 static int sStereoWorldObj = 0;
 /* How much of its height over the ground a raised sprite (Link jumping, a flying enemy) stands out, in percent:
@@ -236,6 +237,7 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("gpu_static_quad=%u\n", sGpuStaticQuad ? 1u : 0u);
     APPEND("stereo_3d_on=%u\n", sStereo3D ? 1u : 0u);
     APPEND("stereo_world_on=%u\n", sStereoWorld ? 1u : 0u);
+    APPEND("stereo_world_asked=%u\n", sStereoWorldAsked ? 1u : 0u);
     APPEND("stereo_world_bg1=%d\n", sStereoWorldBg1);
     APPEND("stereo_world_obj=%d\n", sStereoWorldObj);
     APPEND("stereo_world_height=%d\n", sStereoWorldHeight);
@@ -412,6 +414,7 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "gpu_static_quad") == 0) sGpuStaticQuad = ParseBool(value);
             else if (strcmp(key, "stereo_3d_on") == 0) sStereo3D = ParseBool(value);
             else if (strcmp(key, "stereo_world_on") == 0) sStereoWorld = ParseBool(value);
+            else if (strcmp(key, "stereo_world_asked") == 0) sStereoWorldAsked = ParseBool(value);
             else if (strcmp(key, "stereo_world_bg1") == 0) sStereoWorldBg1 = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "stereo_world_obj") == 0) sStereoWorldObj = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "stereo_world_height") == 0) sStereoWorldHeight = (int)strtol(value, NULL, 10);
@@ -524,8 +527,17 @@ int Port_Config_StereoBodyDepthQ(int height) {
 }
 int Port_Config_GetStereoWorld(void) { return sStereoWorld ? 1 : 0; }
 const char* Port_Config_GetStereoWorldName(void) { return sStereoWorld ? "ON" : "OFF"; }
+/* The player was never asked whether to turn on the depth of the world (the game was drawn for flat 2D and some scenes
+ * show graphic errors with it). */
+bool Port_Config_StereoWorldQuestionDue(void) { return !sStereoWorldAsked; }
+void Port_Config_AnswerStereoWorld(bool yes) {
+    sStereoWorld = yes;
+    sStereoWorldAsked = true;
+    SaveConfig();
+}
 void Port_Config_CycleStereoWorld(void) {
     sStereoWorld = !sStereoWorld;
+    sStereoWorldAsked = true; /* choosing it is an answer */
     SaveConfig();
 }
 bool Port_Config_BottomRgb565(void) { return sBottomRgb565; }

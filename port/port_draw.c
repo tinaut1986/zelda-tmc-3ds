@@ -31,6 +31,7 @@
 #include "port_rom.h"
 #include "cpu/mode1.h"
 
+extern int Port_Config_GetStereoWorld(void); /* 3D WORLD on (stereo_world_on); only the 3DS build defines it */
 #include <setjmp.h>
 #include <stdio.h>
 #include <string.h>
@@ -661,7 +662,7 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
         if (((attr2 >> 10) & 3u) == 0) pieceDepth = pieceDepthTop = sRenderingDepth;
         /* Every piece of the big Chuchu is drawn with the layers in front (bit 7), moved or not: split between the base and
          * the front, its parts would cover one another in the wrong order. */
-        virtuappu_mode1_obj_depth_staged[updated & 0x7F] = (u8)(pieceDepth | (sRenderingBoss ? 0x80 : 0));
+        virtuappu_mode1_obj_depth_staged[updated & 0x7F] = (u8)(pieceDepth | (sRenderingBoss && Port_Config_GetStereoWorld() ? 0x80 : 0));
         virtuappu_mode1_obj_depth_top_staged[updated & 0x7F] = pieceDepthTop;
         virtuappu_mode1_obj_group_staged[updated & 0x7F] = sRenderingGroup;
 

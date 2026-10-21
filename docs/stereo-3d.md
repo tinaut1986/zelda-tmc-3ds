@@ -63,6 +63,9 @@ scenes below override it for their layers. The values are in pixels at the full 
   in the other eye. In the world scene each eye draws such a layer twice, the unmoved copy first (`IsGhostBatch`): the strip
   shows the layer's own pixels, so its edge is a pixel thicker on that side.
 - PLANE TINT -> DEPTH paints a sprite by its own depth.
+- **A question at the start** (`stereo_world_asked`, `Port_Config_StereoWorldQuestionDue`, after the WIDE + AI one): 3D WORLD is off
+  until the player has been asked once. The game was drawn for flat 2D and some scenes show graphic errors that are hard to fix, the
+  message says so and asks whether to turn it on anyway. The answer is kept; OPTIONS -> 3D WORLD changes it and counts as an answer.
 - **Sprite depth corrections** (`platform/3ds/source/port_sprite_depth.inc`, optional, hand-curated, in the manner of the
   sibling ports): `PORT_SPRITE_DEPTH(kind, id, type, mode)` per kind of entity. `PORT_DEPTH_INVERT`: a sprite that hangs
   from its top edge (the boss door in a south wall) has its ground at the top of its pieces and the depth grows downwards

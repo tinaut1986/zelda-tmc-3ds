@@ -170,6 +170,7 @@ enum {
     SS_ACT_NOTICE_CLOSE,
 #ifdef TMC_3DS
     SS_ACT_WIDEAI_NO, SS_ACT_WIDEAI_YES, /* the one-time question about WIDE + AI */
+    SS_ACT_STEREOWORLD_NO, SS_ACT_STEREOWORLD_YES, /* the one-time question about 3D WORLD */
     SS_ACT_UPDATE_CHANNEL, SS_ACT_UPDATE_RELEASE, SS_ACT_UPDATE_ACTION,
     SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT, SS_ACT_UPDATE_AUTO,
     SS_ACT_AUTOUPD_NO, SS_ACT_AUTOUPD_YES, SS_ACT_AUTOUPD_NEWS, /* the prompt after the boot check found a newer build */
@@ -2650,6 +2651,17 @@ static void PaintWideAiQuestion(const SSurf* s, TargetList* tl) {
     Compact_PaintModal(s, tl, "WIDE VIEW", kLines, 6, "NO", SS_ACT_WIDEAI_NO, "YES", SS_ACT_WIDEAI_YES);
 }
 
+static void PaintStereoWorldQuestion(const SSurf* s, TargetList* tl) {
+    /* Asked once (Port_Config_StereoWorldQuestionDue): the 3D slider can give depth to the world while playing, but
+     * the game was drawn for flat 2D and some scenes show graphic errors that are hard to fix. YES turns it on. */
+    static const char* const kLines[] = {
+        "THE 3D SLIDER CAN GIVE DEPTH TO THE", "WORLD WHILE YOU PLAY. THE GAME WAS", "DRAWN FOR FLAT 2D, SO SOME SCENES MAY",
+        "SHOW GRAPHIC ERRORS THAT ARE HARD TO", "FIX. THE REST LOOKS GREAT.", "TURN IT ON ANYWAY?",
+        "(YOU CAN CHANGE IT IN OPTIONS)",
+    };
+    Compact_PaintModal(s, tl, "3D WORLD", kLines, 7, "NO", SS_ACT_STEREOWORLD_NO, "YES", SS_ACT_STEREOWORLD_YES);
+}
+
 /* A label centred on a bar: light over the empty part, dark over the filled one, pixel by pixel, so the
  * text stays readable as the bar grows under it. */
 static void CBarLabel(const SSurf* s, int32_t barX, int32_t barY, int32_t barW, int32_t barH, int32_t fillEnd,
@@ -3515,6 +3527,8 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
         }
     } else if (Port_Config_WideAiQuestionDue()) {
         PaintWideAiQuestion(&s, &tl);
+    } else if (Port_Config_StereoWorldQuestionDue()) {
+        PaintStereoWorldQuestion(&s, &tl);
     }
     Compact_PaintBusy(&s, &tl);
 #endif
@@ -3772,6 +3786,12 @@ static void DispatchTap(int x, int y, int longPress) {
             break;
         case SS_ACT_WIDEAI_YES:
             Port_Config_AnswerWideAi(true);
+            break;
+        case SS_ACT_STEREOWORLD_NO:
+            Port_Config_AnswerStereoWorld(false);
+            break;
+        case SS_ACT_STEREOWORLD_YES:
+            Port_Config_AnswerStereoWorld(true);
             break;
 #endif
         case SS_ACT_QUESTVIEW:
