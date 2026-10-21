@@ -20,7 +20,7 @@ Only what no other place records. Bugs: the open GitHub issues. Tasks: the untic
 boxes below. History: `git log` and the decisions log.
 
 **Release line:** `release/v0.4.4` (renamed from `release/v0.4.3` right after the `v0.4.3` tag). Published:
-**`v0.4.3`** (2026-10-21, **beta**: 3D WORLD, from PR #47 by bheppe, with the owner's corrections and a question at the start; the bottom map's cursor, zoom and drag;
+**`v0.4.3`** (2026-10-21, **stable**: first a beta, then promoted by merging the release into `main`, `544da18`, and re-running the workflow on the tag; 3D WORLD, from PR #47 by bheppe, with the owner's corrections and a question at the start; the bottom map's cursor, zoom and drag;
 OPTIONS in groups and scrolling lists; `docs/release-notes/v0.4.3.md`),
 **`v0.4.2`** (2026-10-20, **stable**, straight to stable at the owner's request: `release/v0.4.2` merged `--no-ff` into
 `main` and tagged there; the betas' contents plus 3D by height for what Link lifts or throws, which was not seen on
@@ -57,7 +57,7 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 
 **Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
 
-**What `v0.4.3` holds beyond `v0.4.2` (2026-10-20 and 21, all seen by the owner on the New 3DS, not on the Old 3DS/2DS; the whole of 3D WORLD and the strips' double draw not on the Old 3DS/2DS at all):** the 3D WORLD work (decisions log of 2026-10-21; PR #47 stays open until `main` reaches it), the bottom map's cursor, zoom and drag, OPTIONS in groups and the scrolling STATES list (decisions logs of 2026-10-20 and 21); and, as before:
+**What `v0.4.3` holds beyond `v0.4.2` (2026-10-20 and 21, all seen by the owner on the New 3DS, not on the Old 3DS/2DS; the whole of 3D WORLD and the strips' double draw not on the Old 3DS/2DS at all):** the 3D WORLD work (decisions log of 2026-10-21; PR #47, merged), the bottom map's cursor, zoom and drag, OPTIONS in groups and the scrolling STATES list (decisions logs of 2026-10-20 and 21); and, as before:
 Gentari's two halves (picture rooms) scroll in Full View and show their neighbours; a state saved with the camera
 frozen loads in Full View; the Deepwood door cutscene keeps the wide view through its fade out; no HUD keys over the
 pause menu; GOD MODE in debug builds (a heart beside the rupees); the map screens at 60 fps in 3D. One entry each in
@@ -1404,6 +1404,6 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   layout does not load). Details: `docs/stereo-3d.md`, "What was added on top of PR #47". Open: the Minish village's leaf blocks
   (BG2, sunk) and dungeon effects. The PR's comment 1 text is in `build-3ds/3d-world-captures/pr47-comment-1.md` (ignored by git).
 - **2026-10-21** `v0.4.3` (**beta**) cut from `release/v0.4.3`: everything of `feat/stereo-world`, `feat/options-groups` and `feat/map-zoom-pan` merged `--no-ff`. PR #47
-  (bheppe, 3D WORLD) is in the release by its own commits but stays **open** on GitHub: its base is `main`, and a PR is marked merged when `main`
-  contains its commits, which happens when a stable release merges into `main`. The branch was renamed to `release/v0.4.4` right after the tag.
+  (bheppe, 3D WORLD) was marked **Merged** by GitHub when the release reached `main` (its base) the same day, when `v0.4.3` was promoted to stable (`544da18`);
+  until then it stayed open. The branch was renamed to `release/v0.4.4` right after the tag. The owner asked for the promotion so that Old 3DS/2DS owners can test it.
 
