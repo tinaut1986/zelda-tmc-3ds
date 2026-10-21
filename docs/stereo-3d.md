@@ -63,6 +63,13 @@ scenes below override it for their layers. The values are in pixels at the full 
   in the other eye. In the world scene each eye draws such a layer twice, the unmoved copy first (`IsGhostBatch`): the strip
   shows the layer's own pixels, so its edge is a pixel thicker on that side.
 - PLANE TINT -> DEPTH paints a sprite by its own depth.
+- **The big Chuchu** (`feat/stereo-boss`): it is three entities stacked 14-18 px apart, each piece of them a rotated or scaled
+  (affine) 64 px sprite. Its ground is the lowest bottom edge among its pieces (the frame before), and the rise from feet to
+  head is spread over its whole height (`sBossGround`/`sBossTop` in `port_draw.c`, 16 quarters at most; its jump counts 4 at
+  most, so the ramp survives a jump). Affine pieces are cut in rows of tiles by where the middle of each tile lands on the
+  screen. The piece that touches the ground (its shadow) stays at 0, and every piece of the boss is drawn with the layers in
+  front (`PpuGpu3DSBatch.front`, bit 7 of the OAM entry's depth) so the base/front split cannot invert what covers what.
+  Known: once in ~18 frames, in the right eye with the boss high on the screen, two rows of tiles of its legs are missing.
 
 ## What Link holds up or throws
 

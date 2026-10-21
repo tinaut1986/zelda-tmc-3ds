@@ -2092,7 +2092,7 @@ static bool batches_extend(const PpuGpu3DSBatch* a, const PpuGpu3DSBatch* b) {
            a->priority == b->priority && a->windowControl == b->windowControl && a->target2 == b->target2 &&
            a->effect == b->effect && a->eva == b->eva && a->evb == b->evb && a->evy == b->evy &&
            a->objectIndex == b->objectIndex && a->color == b->color && a->objWindow == b->objWindow &&
-           a->semiTransparent == b->semiTransparent && a->depth == b->depth && a->texture == b->texture && a->offsetX == b->offsetX &&
+           a->semiTransparent == b->semiTransparent && a->depth == b->depth && a->front == b->front && a->texture == b->texture && a->offsetX == b->offsetX &&
            a->offsetY == b->offsetY;
 }
 
@@ -3229,12 +3229,15 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
      * out (its tiles over a roof take the roof's depth, the lean starting from there). Each run of tiles with the
      * same depth, in drawing order, is a batch of its own, so the depth changes one tile at a time (8 px) rather
      * than one piece at a time. */
-    enum { LEAN_MAX_RUNS = 12, OBJ_MAX_TILES = 64 };
-    const unsigned depthBottom = !stencilOnly && frame->objDepth != NULL ? frame->objDepth[obj->index] : 0u;
-    const unsigned depthTop = !stencilOnly && frame->objDepthTop != NULL ? frame->objDepthTop[obj->index] : depthBottom;
+    enum { LEAN_MAX_RUNS = 20, OBJ_MAX_TILES = 64 };
+    const unsigned depthRaw = !stencilOnly && frame->objDepth != NULL ? frame->objDepth[obj->index] : 0u;
+    const bool forceFront = (depthRaw & 0x80u) != 0;
+    const unsigned depthBottom = depthRaw & 0x7fu;
+    const unsigned depthTop = !stencilOnly && frame->objDepthTop != NULL ? (frame->objDepthTop[obj->index] & 0x7fu) : depthBottom;
     const bool leans = depthTop > depthBottom;
     const unsigned support = supportQ != NULL && !stencilOnly ? supportQ[obj->index] : 0u;
-    const bool perTile = !obj->affine && !mosaicEnabled && (leans || support != 0u) &&
+    const bool perTile = !mosaicEnabled && (leans || support != 0u) &&
+                         (!obj->affine || determinant != 0) &&
                          obj->width / PPU_GPU3DS_TILE_SIDE * (obj->height / PPU_GPU3DS_TILE_SIDE) <= OBJ_MAX_TILES;
     uint8_t tileDepth[OBJ_MAX_TILES];
     size_t runStart[LEAN_MAX_RUNS];
@@ -3251,9 +3254,23 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                 const int screenCol = obj->hflip ? cols - 1 - col : col;
                 unsigned depth = depthBottom;
                 if (leans) {
-                    const unsigned heightMid = (unsigned)(rows - 1 - screenRow) * PPU_GPU3DS_TILE_SIDE +
-                                               PPU_GPU3DS_TILE_SIDE / 2u;
-                    depth += (depthTop - depthBottom) * heightMid / ((unsigned)rows * PPU_GPU3DS_TILE_SIDE);
+                    unsigned heightMid = (unsigned)(rows - 1 - screenRow) * PPU_GPU3DS_TILE_SIDE +
+                                         PPU_GPU3DS_TILE_SIDE / 2u;
+                    unsigned span = (unsigned)rows * PPU_GPU3DS_TILE_SIDE;
+                    if (obj->affine) {
+                        /* Rotated or scaled: how high the middle of the tile lands over the bottom of the piece's
+                         * bounds on the screen (the same inverse mapping as the geometry below), not its row. */
+                        const float centerY = obj->y + obj->boundsHeight * 0.5f + 0.5f;
+                        const int sx = (col * PPU_GPU3DS_TILE_SIDE + PPU_GPU3DS_TILE_SIDE / 2 - obj->width / 2) * 512 - 1;
+                        const int sy = (row * PPU_GPU3DS_TILE_SIDE + PPU_GPU3DS_TILE_SIDE / 2 - obj->height / 2) * 512 - 1;
+                        const float py = centerY + (float)(-(int64_t)obj->pc * sx + (int64_t)obj->pa * sy) /
+                                                           (2.0f * (float)determinant);
+                        float above = (float)(obj->y + obj->boundsHeight) - py;
+                        if (above < 0.0f) above = 0.0f;
+                        span = (unsigned)obj->boundsHeight > 0u ? (unsigned)obj->boundsHeight : span;
+                        heightMid = above > (float)span ? span : (unsigned)above;
+                    }
+                    depth += (depthTop - depthBottom) * heightMid / span;
                 }
                 depth += support;
                 /* Never past the HUD's 6 px (24 quarters): the HUD is always in front. */
@@ -3458,6 +3475,7 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
         .objWindow = stencilOnly,
         .semiTransparent = obj->mode == 1u,
         .depth = (uint8_t)depthBottom,
+        .front = forceFront,
     };
     if (perTile && runCount == 1) base.depth = runDepth[0];
     if (perTile && runCount > 1) {
@@ -4537,7 +4555,10 @@ static void compute_obj_support(const PpuGpu3DSFrameView* frame, const PpuGpu3DS
     memset(group, 0, sizeof(group));
     for (unsigned entry = 0; entry < oam->count; ++entry) {
         const PpuGpu3DSObj* obj = &oam->entries[entry];
-        if (obj->affine || obj->mode == 2u || obj->priority == 0) continue;
+        /* Not for what no entity wrote (the shadows, DrawDirect): a shadow in front of its sprite's feet would hide them. */
+        if (obj->affine || obj->mode == 2u || obj->priority == 0 ||
+            frame->objGroup == NULL || frame->objGroup[obj->index] == 0u)
+            continue;
         const int middle = obj->y + obj->boundsHeight / 2;
         const PpuGpu3DSBand* band = &bands[0];
         for (size_t b = 0; b < bandCount; ++b)

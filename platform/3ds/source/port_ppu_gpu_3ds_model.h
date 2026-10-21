@@ -350,6 +350,9 @@ typedef struct PpuGpu3DSBatch {
     bool objWindow, semiTransparent;
     /* A sprite's own stereo 3D depth, quarter pixels (objDepth; 0: its layer's). */
     uint8_t depth;
+    /* Drawn with the layers in front even with no depth of its own (the pieces of one big sprite stay in one pass, so
+     * what the game draws over what keeps its order); bit 7 of the OAM entry's depth (virtuappu_mode1_obj_depth). */
+    bool front;
     /* 0 samples the tile atlas; 1 + n samples view ring n (bg * 2 + variant). */
     uint8_t texture;
     /* Added to every vertex position by the shader. Zero except for
