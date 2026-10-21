@@ -41,6 +41,10 @@ void Port_DebugAction_SetNoclip(int on);
 int  Port_DebugQuery_Noclip(void);
 int  Port_Debug_NoclipEnabled(void);
 
+/* God mode: no damage to Link (ModHealth ignores negative deltas). */
+void Port_DebugAction_SetGodMode(int on);
+int  Port_Debug_GodModeEnabled(void);
+
 /* Minish transformation debug toggles. */
 void Port_DebugAction_ToggleMinish(void);
 int  Port_DebugQuery_IsMinish(void);

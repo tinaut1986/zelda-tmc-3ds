@@ -1261,8 +1261,7 @@ static int Port_WidescreenLineUp(unsigned room, int axis, int view, int prefer, 
 void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
     sWsScroll.valid = 0;
     const int width = Port_Widescreen_GameplayViewWidth();
-    if (direction > 3 || gRoomControls.scrollAction > 1 || gArea.unk_0c_0 || (gRoomControls.scroll_flags & 1) ||
-        room >= MAX_ROOMS)
+    if (direction > 3 || gRoomControls.scrollAction > 1 || gArea.unk_0c_0 || room >= MAX_ROOMS)
         return;
     /* Full View scrolls at 400x240 into a room that can hold that view, interiors included
      * (every room is in Full View since P4.6: the castle's rooms scrolled at 266x160 when
@@ -1270,6 +1269,11 @@ void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
      * else keeps the 266 scroll or none. */
     const int fullView = Port_WidescreenGameplayMode() == PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
                          gRoomControls.area <= AREA_98;
+    /* A room drawn as a picture (scroll_flags bit 0: the Minish houses, Gentari's two halves) keeps its tilemap in
+     * gMapDataBottomSpecial at the same 128-entry stride once loaded (sub_0807C5F4), so the Full View snapshot
+     * holds; the 266 scroll is left without it, as upstream had it. */
+    if (!fullView && (gRoomControls.scroll_flags & 1))
+        return;
     if (!fullView && (width <= 240 || width > 266 || gArea.roomResInfos[room].pixel_width <= 240 ||
                       gArea.roomResInfos[room].pixel_height < 160 || gRoomControls.height < 160))
         return;
@@ -1351,7 +1355,8 @@ static int Port_WidescreenScrollActive(void) {
     return sWsScroll.valid && gMain.task == TASK_GAME && gRoomControls.area == sWsScroll.area &&
            gRoomControls.room == sWsScroll.room && gRoomControls.scroll_direction == sWsScroll.direction &&
            (gRoomControls.scrollAction == 2 || gRoomControls.scrollAction == 0) &&
-           (gRoomControls.scrollSubAction >= 1 || sWsScroll.fullView) && !(gRoomControls.scroll_flags & 1) &&
+           (gRoomControls.scrollSubAction >= 1 || sWsScroll.fullView) &&
+           (sWsScroll.fullView || !(gRoomControls.scroll_flags & 1)) &&
            Port_Config_WidescreenEnabled();
 }
 
@@ -1477,6 +1482,9 @@ static int sWsRoomLoadGraceTicks; /* past sWsRoomLoadTicks: the hold may go on w
 /* A door's arrival with the camera still frozen (no camera_target): Link coming out of the stairs. Cleared when the
  * game gives the camera a target, or the room changes again. */
 static int sWsArrivalFrozenCamera;
+/* A save state was just loaded: the room key is forgotten (Port_Widescreen_ResetAfterStateLoad), and a state saved
+ * while the camera was frozen (Link still walking in, no camera_target) is an arrival like a door's, not a scroll. */
+static int sWsStateLoaded;
 static int sWsFadeRecent;    /* ticks left since a fade was last on: a door, not a border scroll */
 static int sWsChangeRoomTicks; /* UpdateShadows ticks spent in GAMEMAIN_CHANGEROOM so far */
 static Port3DSFullViewMode sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
@@ -1608,6 +1616,9 @@ int Port_Stereo_Scenes(void) {
     /* The game over screen (src/gameOverTask.c): the stone panel and its choices are BGs, the GAME OVER
      * letters are sprites. */
     if (gMain.task == TASK_GAMEOVER) scenes |= PORT_STEREO_SCENE_GAME_OVER;
+    /* Playing: the world itself (stereo_world_* in tmc3ds.ini). The layer over Link and his sprites stand out
+     * of the ground, which stays on the screen plane. */
+    if (gMain.task == TASK_GAME && gMain.substate == GAMEMAIN_UPDATE) scenes |= PORT_STEREO_SCENE_WORLD;
     return scenes;
 #else
     return 0;
@@ -1853,9 +1864,11 @@ static int Port_WidescreenFixedCanvasSubtask(void) {
      * AuxCutscene 5, Zelda leaving Link's house through its entrance room (HOUSE_INTERIORS_2
      * room 0x10) while the game waits in the Smith's room next door: drawn at 240x160 it
      * lost the neighbour rooms the play around it shows. AuxCutscene 0 too: the Minish Woods seen from outside the
-     * Deepwood Shrine when its big door opens (area 0x48 room 0x17), the woods as in play. */
+     * Deepwood Shrine when its big door opens (area 0x48 room 0x17), the woods as in play. Their fade out
+     * (Subtask_FadeOut, nextToLoad 3) is still that world: as the fixed canvas it dropped to 240x160 for its last
+     * frames before the game came back. */
     if (gUI.lastState == SUBTASK_AUXCUTSCENE && (gUI.field_0x3 == 0 || gUI.field_0x3 == 1 || gUI.field_0x3 == 5) &&
-        gUI.nextToLoad == 2) {
+        (gUI.nextToLoad == 2 || gUI.nextToLoad == 3)) {
         return 0;
     }
     /* Pause/inventory replace the world with a fixed GBA canvas. State 3 is
@@ -2105,6 +2118,7 @@ void Port_Widescreen_ResetAfterStateLoad(void) {
     sWsContentHeightPx = 0;
     sWsExperimentalCameraRoomKey = 0xffffffffu;
     sWsExperimentalCameraSnapArmed = 1;
+    sWsStateLoaded = 1;
     Port_WidescreenPublish3DSView(0xffffffffu, PORT_3DS_FULL_VIEW_FALLBACK);
     virtuappu_mode1_ws_full_view = 0;
 }
@@ -2331,9 +2345,10 @@ static void Port_WidescreenSnapGameplayCamera(Port3DSFullViewMode mode) {
     sWsGameplayMode = mode;
     /* AuxCutscene 0 (the Minish Woods seen when the Deepwood Shrine's big door opens) places its camera by hand and
      * its camera target is still Link, in the shrine: the 400x240 view keeps the centre of the GBA's 240x160 picture
-     * instead (80 and 40 px more on each side), and gives it back on the way out. */
+     * instead (80 and 40 px more on each side), and gives it back on the way out. Only while the woods are shown:
+     * from Subtask_Die (nextToLoad 4) the shrine's own camera is back and snaps as any room's. */
     if (gMain.substate == GAMEMAIN_SUBTASK && gUI.lastState == SUBTASK_AUXCUTSCENE && gUI.field_0x3 == 0 &&
-        previous != mode) {
+        gUI.nextToLoad < 4 && previous != mode) {
         const int sign = mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X ? -1 : previous == PORT_3DS_FULL_VIEW_OUTDOOR_1X ? 1 : 0;
         gRoomControls.scroll_x = (s16)(gRoomControls.scroll_x + sign * 80);
         gRoomControls.scroll_y = (s16)(gRoomControls.scroll_y + sign * 40);
@@ -2807,7 +2822,8 @@ void Port_Widescreen_UpdateShadows(void) {
         const int carry = Port_WidescreenScrollCarriesFullView();
         sWsRoomLoadTicks = sWsFadeRecent > 0 ? 16 : 0;
         sWsRoomLoadGraceTicks = sWsFadeRecent > 0 ? 16 + 24 : 0;
-        sWsArrivalFrozenCamera = sWsFadeRecent > 0;
+        sWsArrivalFrozenCamera = sWsFadeRecent > 0 || sWsStateLoaded;
+        sWsStateLoaded = 0;
         sWsGameplayRoomKey = roomKey;
         sWsGameplayMode = carry ? PORT_3DS_FULL_VIEW_OUTDOOR_1X : PORT_3DS_FULL_VIEW_FALLBACK;
         sWsProducerPendingRoomKey = 0xffffffffu;

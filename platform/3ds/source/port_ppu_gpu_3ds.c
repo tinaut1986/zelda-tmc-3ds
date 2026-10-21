@@ -107,6 +107,8 @@ static C3D_Tex sOutputRightTexture;
 static C3D_RenderTarget* sOutputRightTarget;
 static bool sRightReady;
 static bool sEyeShifting;
+/* While a ghost copy is drawn (IsGhostBatch) nothing moves. */
+static bool sNoShift;
 static float sEyeShiftNdc[PPU_GPU3DS_OBJ + 1][4];
 /* The eye the shifts are for, and pixels to NDC: a sprite with a depth of its own (PpuGpu3DSBatch.depth) is moved
  * by its own shift (SpritePx). */
@@ -863,12 +865,16 @@ static uint32_t TintOf(const PpuGpu3DSBatch* batch) {
         g = kRgb[batch->layer][1] * kScale[priority] / 256u;
         b = kRgb[batch->layer][2] * kScale[priority] / 256u;
     } else {
-        int depth = Stereo3DS_LayerDepth(batch->layer, priority);
-        depth = depth < -4 ? -4 : depth > 8 ? 8 : depth;
-        const unsigned t = (unsigned)(depth + 4); /* 0..12 */
-        r = t * 5u;
-        g = t * 10u;
-        b = 40u + t * 17u;
+        /* A sprite with a depth of its own (PpuGpu3DSBatch.depth, quarter pixels) is where that puts it, not on its
+         * layer's: tall sprites show their lean, tile row by tile row. */
+        float depth = batch->depth != 0 && batch->layer == PPU_GPU3DS_OBJ
+                              ? 0.25f * (float)batch->depth
+                              : (float)Stereo3DS_LayerDepth(batch->layer, priority);
+        depth = depth < -4.0f ? -4.0f : depth > 8.0f ? 8.0f : depth;
+        const float t = depth + 4.0f; /* 0..12 */
+        r = (unsigned)(t * 5.0f);
+        g = (unsigned)(t * 10.0f);
+        b = 40u + (unsigned)(t * 17.0f);
     }
     return 0x1000000u | r | (g << 8u) | (b << 16u);
 }
@@ -1027,7 +1033,7 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
                        : batch->texture == PPU_GPU3DS_PICTURE_TEXTURE ? &sPictureTex
                                                                       : &sRingTex[batch->texture - 1u]);
     }
-    SetBatchOffset(batch->offsetX + (sEyeShifting && batch->layer <= PPU_GPU3DS_OBJ
+    SetBatchOffset(batch->offsetX + (sEyeShifting && !sNoShift && batch->layer <= PPU_GPU3DS_OBJ
                                              ? (batch->objWindow && sEyeWindowFollows ? sEyeWindowNdc
                                                 : batch->depth != 0 ? (float)SpritePx(batch) * sEyeToNdc
                                                         : sEyeShiftNdc[batch->layer][batch->priority & 3u])
@@ -1059,7 +1065,7 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
         }
     }
     u32 left = batch->scissorLeft, right = batch->scissorRight;
-    if (sEyeShifting && batch->layer <= PPU_GPU3DS_OBJ) {
+    if (sEyeShifting && !sNoShift && batch->layer <= PPU_GPU3DS_OBJ) {
         const int shift = batch->objWindow && sEyeWindowFollows ? sEyeWindowPx
                           : batch->depth != 0                   ? SpritePx(batch)
                                                                  : sEyeShiftPx[batch->layer][batch->priority & 3u];
@@ -1136,9 +1142,22 @@ static bool sFrontLayer[PPU_GPU3DS_OBJ + 1][4];
 static bool sFrontHasObj;
 
 static bool IsFrontBatch(const PpuGpu3DSBatch* batch) {
+    /* An OBJ window that follows a layer (Stereo3DS_ObjWindowFollows) moves with that layer, not with the sprites'. */
+    if (batch->objWindow && sEyeWindowFollows) return sEyeWindowPx != 0;
     /* Its eye's shift is the other's negated: in front for both or for neither. */
-    if (batch->depth != 0) return SpritePx(batch) != 0;
+    /* Decided from the left eye's move, which is nonzero whenever the disparity is (the right eye's can be 0 for
+     * a 1 px disparity), whichever eye is being drawn. */
+    if (batch->front) return true;
+    if (batch->depth != 0) return Stereo3DS_SpriteShift(batch->depth, STEREO3DS_LEFT) != 0.0f;
     return batch->layer <= PPU_GPU3DS_OBJ && sFrontLayer[batch->layer][batch->priority & 3u];
+}
+
+/* A batch forced to the layers in front (the big Chuchu's pieces) is not depth tested: the colour pass of a sprite draws
+ * only where the depth the pre-pass wrote is equal, and with many small batches of one sprite some of those draws were
+ * lost (two rows of tiles of its legs, in one eye, about one frame in twelve). Its batches are already in the order
+ * the game draws them, back to front. */
+static bool IsPainterBatch(const PpuGpu3DSBatch* batch) {
+    return batch->front && batch->layer == PPU_GPU3DS_OBJ && !batch->semiTransparent;
 }
 
 static bool PassDraws(OutputPass pass, const PpuGpu3DSBatch* batch) {
@@ -1196,6 +1215,16 @@ static void ClearDepthPlane(void) {
     C3D_StencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_KEEP);
     C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_DEPTH);
     C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, sIndices + PPU_GPU3DS_CLEAR_FIRST_INDEX);
+}
+
+/* A background layer that stands out of the screen leaves, where it moves, a strip of whatever is under it: a hole
+ * (the arch of a door sits on a layer, the ground under it has none: black) or the outline of the layer below, which
+ * the moved layer used to hide. Each eye draws such a layer (BG1-BG3 in front, the world only) twice, the unmoved copy
+ * first: the strip then shows the layer's own pixels (its edge, as if it were one pixel thicker), not black. */
+static bool sUnderlay;
+static bool IsGhostBatch(const PpuGpu3DSBatch* batch) {
+    return sUnderlay && !batch->objWindow && batch->depth == 0 && batch->layer >= PPU_GPU3DS_BG1 &&
+           batch->layer <= PPU_GPU3DS_BG3 && sFrontLayer[batch->layer][batch->priority & 3u];
 }
 
 /* The prepared frame drawn on one output target, each layer moved by its eye's shift
@@ -1278,6 +1307,7 @@ static bool DrawOutput(C3D_RenderTarget* target, OutputPass pass) {
     for (size_t i = 1; i < sCommands.batchCount; ++i) {
         const PpuGpu3DSBatch* batch = &sCommands.batches[i];
         if (batch->layer != PPU_GPU3DS_OBJ || batch->objWindow || !PassDraws(pass, batch)) continue;
+        if (IsPainterBatch(batch)) continue; /* no depth: it is drawn in the order the list has them */
         ResetTev(batch);
         ResetBlend(batch);
         C3D_AlphaTest(true, GPU_GREATER, 0);
@@ -1305,9 +1335,14 @@ static bool DrawOutput(C3D_RenderTarget* target, OutputPass pass) {
         C3D_AlphaTest(true, GPU_GREATER, 0);
         SetColorStencil(batch);
         if (batch->layer == PPU_GPU3DS_OBJ)
-            C3D_DepthTest(true, GPU_EQUAL, GPU_WRITE_COLOR);
+            C3D_DepthTest(true, IsPainterBatch(batch) ? GPU_ALWAYS : GPU_EQUAL, GPU_WRITE_COLOR);
         else
             C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_COLOR);
+        if (pass != PASS_BASE && IsGhostBatch(batch)) {
+            sNoShift = true;
+            DrawBatch(batch);
+            sNoShift = false;
+        }
         DrawBatch(batch);
         /* A sprite's colour draw is sometimes lost on the Old 3DS (the Zz bubble's one tile in Hyrule Castle's
          * bedroom, about one frame in four): measured on the console, drawing the opaque OBJ batches twice
@@ -1451,14 +1486,16 @@ enum { SPLIT_OK, SPLIT_WINDOW_FOLLOWS, SPLIT_FRONT_WINDOW, SPLIT_FRONT_BLENDED_O
  * frame can be drawn as one base picture with them over it, each eye moving only those (DrawEyesOverBase), or,
  * SPLIT_NOTHING_IN_FRONT, needs one picture for both eyes (no batch is on a layer in front: the HUD hidden).
  * It can when nothing on the screen plane is drawn after a layer in front on the same lines, no OBJ window
- * moves, and no sprite in front is semi-transparent: the GBA blends a sprite with the background under it,
+ * moves, and no sprite in front blends: the GBA blends a sprite with the background under it,
  * never with a lower sprite, which the base would have drawn there. The lines are a batch's only while the scissor
  * cuts them (gpu_scissor_mode 0 lets a band's tile rows overhang). */
 static int EyesOverBaseRefusal(void) {
     for (unsigned layer = 0; layer <= PPU_GPU3DS_OBJ; ++layer)
         for (unsigned priority = 0; priority < 4; ++priority)
             sFrontLayer[layer][priority] = sEyeShiftPx[layer][priority] != 0;
-    if (sEyeWindowFollows) return SPLIT_WINDOW_FOLLOWS;
+    /* A window that follows a layer on the screen plane (the map screens' cut-out stays with their grey, BG2) is
+     * where it is in both eyes: the base draws it and its marks serve both. */
+    if (sEyeWindowFollows && sEyeWindowPx != 0) return SPLIT_WINDOW_FOLLOWS;
     if (Port_Config_GpuScissorMode() == 0) return SPLIT_LINES_UNCLIPPED;
     sFrontHasObj = false;
     uint32_t frontLines[(PPU_GPU3DS_OUTPUT_HEIGHT + 31) / 32] = { 0 };
@@ -1470,9 +1507,10 @@ static int EyesOverBaseRefusal(void) {
         if (end > PPU_GPU3DS_OUTPUT_HEIGHT) end = PPU_GPU3DS_OUTPUT_HEIGHT;
         if (IsFrontBatch(batch)) {
             if (batch->objWindow) return SPLIT_FRONT_WINDOW;
+            /* A semi-transparent sprite with no second target to blend with (BLDCNT 0: the map screens' cursor) is
+             * drawn opaque, effect NONE (append_layer_batches): only a real blend needs what is under it. */
             if (batch->layer == PPU_GPU3DS_OBJ &&
-                (batch->effect == PPU_GPU3DS_EFFECT_ALPHA || batch->semiTransparent ||
-                 (batch->color & PPU_GPU3DS_ALPHA_COMPLEMENT) != 0))
+                (batch->effect == PPU_GPU3DS_EFFECT_ALPHA || (batch->color & PPU_GPU3DS_ALPHA_COMPLEMENT) != 0))
                 return SPLIT_FRONT_BLENDED_OBJ;
             for (unsigned line = first; line < end; ++line)
                 frontLines[line / 32u] |= 1u << (line % 32u);
@@ -1531,6 +1569,7 @@ bool PortPpuGpu3DS_DrawPrepared(void) {
     /* With a layer off the screen plane each eye gets its own picture; otherwise the presenter
      * shows this one to both. */
     const bool stereo = Stereo3DS_HasDepth();
+    sUnderlay = stereo && Stereo3DS_WorldScene();
     SetEyeShifts(stereo, STEREO3DS_LEFT);
     bool drawn;
     const int refusal = !stereo ? SPLIT_OK : gPpuGpu3DSEyesWhole ? SPLIT_FORCED_WHOLE : EyesOverBaseRefusal();

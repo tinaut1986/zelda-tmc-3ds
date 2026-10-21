@@ -2092,7 +2092,7 @@ static bool batches_extend(const PpuGpu3DSBatch* a, const PpuGpu3DSBatch* b) {
            a->priority == b->priority && a->windowControl == b->windowControl && a->target2 == b->target2 &&
            a->effect == b->effect && a->eva == b->eva && a->evb == b->evb && a->evy == b->evy &&
            a->objectIndex == b->objectIndex && a->color == b->color && a->objWindow == b->objWindow &&
-           a->semiTransparent == b->semiTransparent && a->depth == b->depth && a->texture == b->texture && a->offsetX == b->offsetX &&
+           a->semiTransparent == b->semiTransparent && a->depth == b->depth && a->front == b->front && a->texture == b->texture && a->offsetX == b->offsetX &&
            a->offsetY == b->offsetY;
 }
 
@@ -3132,9 +3132,57 @@ static bool build_mosaic_obj_geometry(
     return true;
 }
 
+/* Whether background `bg` has an opaque pixel at the view pixel (x, y), as the band's registers draw it. */
+static bool bg_opaque_at(const PpuGpu3DSFrameView* frame, const PpuGpu3DSBand* band, unsigned bg, int x, int y) {
+    if (x < 0 || y < 0 || x >= (int)frame->width || y >= (int)frame->height) return false;
+    if ((frame->dispcntPerLine[band->firstLine] & (0x100u << bg)) == 0) return false;
+    const uint8_t* io = frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;
+    const uint16_t bgcnt = read16(io, MODE1_IO_BG0CNT + bg * 2u);
+    const uint32_t charBase = ((bgcnt >> 2u) & 3u) * 0x4000u;
+    const bool bpp8 = ((bgcnt >> 7u) & 1u) != 0;
+    const uint32_t screenBase = ((bgcnt >> 8u) & 0x1fu) * 0x800u;
+    const unsigned size = (bgcnt >> 14u) & 3u;
+    PpuGpu3DSTextSample sample;
+    if (!text_bg_sample(frame, bg, charBase, screenBase, bpp8, (size & 1u) ? 64u : 32u, (size & 2u) ? 64u : 32u,
+                        read16(io, MODE1_IO_BG0HOFS + bg * 4u) & 0x1ffu,
+                        read16(io, MODE1_IO_BG0VOFS + bg * 4u) & 0x1ffu, 1u, 1u, (unsigned)x, (unsigned)y,
+                        &sample) ||
+        !sample.visible)
+        return false;
+    const uint32_t bytes = bpp8 ? 64u : 32u;
+    if (sample.key.vramOffset > MODE1_VRAM_SIZE - bytes) return false;
+    const uint8_t* tile = frame->memory.vram + sample.key.vramOffset;
+    if (bpp8) return tile[sample.pixelY * 8u + sample.pixelX] != 0;
+    const uint8_t packed = tile[sample.pixelY * 4u + sample.pixelX / 2u];
+    return ((sample.pixelX & 1u) ? (packed >> 4u) : (packed & 0xfu)) != 0;
+}
+
+/* The depth, in quarter pixels, a sprite takes from what it rests on at the view pixel (x, y): the frontmost opaque
+ * background layer behind it (priority at or after its own). 0 where a layer in front covers it (it is behind that
+ * layer there) or the layer under it has no depth. */
+static unsigned obj_support_depth(const PpuGpu3DSFrameView* frame, const PpuGpu3DSBand* band, unsigned objPriority,
+                                  int x, int y) {
+    int best = -1;
+    unsigned bestPriority = 4;
+    const uint8_t* io = frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;
+    for (unsigned bg = 1; bg < 4u; ++bg) {
+        const unsigned priority = read16(io, MODE1_IO_BG0CNT + bg * 2u) & 3u;
+        if (priority < objPriority) {
+            if (bg_opaque_at(frame, band, bg, x, y)) return 0;
+            continue;
+        }
+        if (priority >= bestPriority) continue;
+        if (bg_opaque_at(frame, band, bg, x, y)) {
+            best = (int)bg;
+            bestPriority = priority;
+        }
+    }
+    return best < 0 ? 0u : frame->bgDepthQ[best][bestPriority];
+}
+
 static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                       uint16_t* atlas, PpuGpu3DSCommandBuffer* cmd,
-                      const PpuGpu3DSBand* band, const PpuGpu3DSObj* obj,
+                      const PpuGpu3DSBand* band, const PpuGpu3DSObj* obj, const uint8_t* supportQ,
                       const PpuGpu3DSRegion* regions, size_t regionCount,
                       bool stencilOnly, bool emit, size_t* vertexCursor,
                       size_t* indexCursor, size_t* batchCursor) {
@@ -3176,6 +3224,67 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     const bool mosaicEnabled =
             (frame->memory.oam_mem[obj->index * 4u] & (1u << 12u)) != 0 &&
             ((mosaic & 0x0f00u) != 0 || (mosaic & 0xf000u) != 0);
+    /* A sprite with a depth of its own per tile (stereo 3D): one that leans out of the screen (a tall one's upper
+     * pieces: the depth rises from its bottom row of tiles to the top one) and one resting on a layer that stands
+     * out (its tiles over a roof take the roof's depth, the lean starting from there). Each run of tiles with the
+     * same depth, in drawing order, is a batch of its own, so the depth changes one tile at a time (8 px) rather
+     * than one piece at a time. */
+    enum { LEAN_MAX_RUNS = 20, OBJ_MAX_TILES = 64 };
+    const unsigned depthRaw = !stencilOnly && frame->objDepth != NULL ? frame->objDepth[obj->index] : 0u;
+    const bool forceFront = (depthRaw & 0x80u) != 0;
+    const unsigned depthBottom = depthRaw & 0x7fu;
+    const unsigned depthTop = !stencilOnly && frame->objDepthTop != NULL ? (frame->objDepthTop[obj->index] & 0x7fu) : depthBottom;
+    const bool leans = depthTop != depthBottom; /* up (a standing sprite) or down (one that hangs, PORT_DEPTH_INVERT) */
+    const unsigned support = supportQ != NULL && !stencilOnly ? supportQ[obj->index] : 0u;
+    const bool perTile = !mosaicEnabled && (leans || support != 0u) &&
+                         (!obj->affine || determinant != 0) &&
+                         obj->width / PPU_GPU3DS_TILE_SIDE * (obj->height / PPU_GPU3DS_TILE_SIDE) <= OBJ_MAX_TILES;
+    uint8_t tileDepth[OBJ_MAX_TILES];
+    size_t runStart[LEAN_MAX_RUNS];
+    uint8_t runDepth[LEAN_MAX_RUNS];
+    int runCount = 0;
+    if (perTile) {
+        const int rows = obj->height / PPU_GPU3DS_TILE_SIDE, cols = obj->width / PPU_GPU3DS_TILE_SIDE;
+        int runs = 0;
+        unsigned tallest = 0;
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < cols; ++col) {
+                /* The tile's place on the screen (a flipped sprite has its rows and columns the other way round). */
+                const int screenRow = obj->vflip ? rows - 1 - row : row;
+                const int screenCol = obj->hflip ? cols - 1 - col : col;
+                int depthI = (int)depthBottom;
+                if (leans) {
+                    unsigned heightMid = (unsigned)(rows - 1 - screenRow) * PPU_GPU3DS_TILE_SIDE +
+                                         PPU_GPU3DS_TILE_SIDE / 2u;
+                    unsigned span = (unsigned)rows * PPU_GPU3DS_TILE_SIDE;
+                    if (obj->affine) {
+                        /* Rotated or scaled: how high the middle of the tile lands over the bottom of the piece's
+                         * bounds on the screen (the same inverse mapping as the geometry below), not its row. */
+                        const float centerY = obj->y + obj->boundsHeight * 0.5f + 0.5f;
+                        const int sx = (col * PPU_GPU3DS_TILE_SIDE + PPU_GPU3DS_TILE_SIDE / 2 - obj->width / 2) * 512 - 1;
+                        const int sy = (row * PPU_GPU3DS_TILE_SIDE + PPU_GPU3DS_TILE_SIDE / 2 - obj->height / 2) * 512 - 1;
+                        const float py = centerY + (float)(-(int64_t)obj->pc * sx + (int64_t)obj->pa * sy) /
+                                                           (2.0f * (float)determinant);
+                        float above = (float)(obj->y + obj->boundsHeight) - py;
+                        if (above < 0.0f) above = 0.0f;
+                        span = (unsigned)obj->boundsHeight > 0u ? (unsigned)obj->boundsHeight : span;
+                        heightMid = above > (float)span ? span : (unsigned)above;
+                    }
+                    depthI += ((int)depthTop - (int)depthBottom) * (int)heightMid / (int)span;
+                }
+                unsigned depth = (unsigned)(depthI < 0 ? 0 : depthI) + support;
+                /* Never past the HUD's 6 px (24 quarters): the HUD is always in front. */
+                if (depth > 20u) depth = 20u;
+                tileDepth[row * cols + col] = (uint8_t)depth;
+                if (depth > tallest) tallest = depth;
+            }
+        }
+        /* Too many changes of depth for one sprite (each is a batch): one depth, the highest. */
+        for (int tile = 0; tile < rows * cols; ++tile)
+            if (tile == 0 || tileDepth[tile] != tileDepth[tile - 1]) ++runs;
+        if (runs > LEAN_MAX_RUNS)
+            for (int tile = 0; tile < rows * cols; ++tile) tileDepth[tile] = (uint8_t)tallest;
+    }
     if (mosaicEnabled) {
         if (!build_mosaic_obj_geometry(
                     frame, cache, atlas, cmd, band, obj, clipLeft, clipRight,
@@ -3189,6 +3298,14 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
             obj->bpp8 ? (uint16_t)(obj->baseTile & ~1u) : obj->baseTile;
     for (int tileRow = 0; tileRow < tilesHigh; ++tileRow) {
         for (int tileCol = 0; tileCol < tilesWide; ++tileCol) {
+            if (perTile) {
+                const unsigned rowDepth = tileDepth[tileRow * tilesWide + tileCol];
+                if (runCount == 0 || (runDepth[runCount - 1] != rowDepth && runCount < LEAN_MAX_RUNS)) {
+                    runStart[runCount] = *indexCursor;
+                    runDepth[runCount] = (uint8_t)rowDepth;
+                    ++runCount;
+                }
+            }
             const bool obj1d =
                     (frame->dispcntPerLine[band->firstLine] &
                      MODE1_DISP_OBJ_1D) != 0;
@@ -3335,7 +3452,7 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     const uint8_t* io =
             frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;
     const uint16_t bldcnt = read16(io, MODE1_IO_BLDCNT);
-    const PpuGpu3DSBatch base = {
+    PpuGpu3DSBatch base = {
         .firstIndex = (uint32_t)firstIndex,
         .indexCount = (uint32_t)(*indexCursor - firstIndex),
         .firstLine = (uint16_t)clipTop,
@@ -3357,9 +3474,21 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
         .objectIndex = obj->index,
         .objWindow = stencilOnly,
         .semiTransparent = obj->mode == 1u,
-        .depth = !stencilOnly && frame->objDepth != NULL ? frame->objDepth[obj->index] : 0,
+        .depth = (uint8_t)depthBottom,
+        .front = forceFront,
     };
-    if (stencilOnly) {
+    if (perTile && runCount == 1) base.depth = runDepth[0];
+    if (perTile && runCount > 1) {
+        for (int run = 0; run < runCount; ++run) {
+            PpuGpu3DSBatch part = base;
+            part.firstIndex = (uint32_t)runStart[run];
+            part.indexCount = (uint32_t)((run + 1 < runCount ? runStart[run + 1] : *indexCursor) - runStart[run]);
+            part.depth = runDepth[run];
+            append_layer_batches(cmd, &part, regions, regionCount, bldcnt,
+                                 read16(io, MODE1_IO_BLDALPHA),
+                                 read16(io, MODE1_IO_BLDY), emit, batchCursor);
+        }
+    } else if (stencilOnly) {
         store_batch(cmd, *batchCursor, &base, emit);
         ++*batchCursor;
     } else {
@@ -4414,6 +4543,51 @@ static bool build_bg_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCac
     return true;
 }
 
+/* The 3D depth every OAM entry takes from what it rests on, in quarter pixels (obj_support_depth at the middle of
+ * each of its tiles, the highest): the tiles of a sprite that overhangs the thing it stands on (balloons over a roof's
+ * edge) then share one depth, and so do the entries of one entity (objGroup), which are one object. The HUD's
+ * sprites (priority 0) take none. */
+static void compute_obj_support(const PpuGpu3DSFrameView* frame, const PpuGpu3DSOamSet* oam, const PpuGpu3DSBand* bands,
+                                size_t bandCount, uint8_t out[MODE1_GBA_OAM_COUNT]) {
+    memset(out, 0, MODE1_GBA_OAM_COUNT);
+    if (!frame->objSupport || bandCount == 0) return;
+    uint8_t group[256];
+    memset(group, 0, sizeof(group));
+    for (unsigned entry = 0; entry < oam->count; ++entry) {
+        const PpuGpu3DSObj* obj = &oam->entries[entry];
+        /* Not for what no entity wrote (the shadows, DrawDirect): a shadow in front of its sprite's feet would hide them. */
+        if (obj->affine || obj->mode == 2u || obj->priority == 0 ||
+            frame->objGroup == NULL || frame->objGroup[obj->index] == 0u)
+            continue;
+        const int middle = obj->y + obj->boundsHeight / 2;
+        const PpuGpu3DSBand* band = &bands[0];
+        for (size_t b = 0; b < bandCount; ++b)
+            if (middle >= (int)bands[b].firstLine && middle < (int)bands[b].firstLine + (int)bands[b].lineCount) {
+                band = &bands[b];
+                break;
+            }
+        const int rows = obj->height / PPU_GPU3DS_TILE_SIDE, cols = obj->width / PPU_GPU3DS_TILE_SIDE;
+        unsigned best = 0;
+        for (int row = 0; row < rows; ++row)
+            for (int col = 0; col < cols; ++col) {
+                const unsigned depth = obj_support_depth(frame, band, obj->priority,
+                                                         obj->x + col * PPU_GPU3DS_TILE_SIDE + PPU_GPU3DS_TILE_SIDE / 2,
+                                                         obj->y + row * PPU_GPU3DS_TILE_SIDE + PPU_GPU3DS_TILE_SIDE / 2);
+                if (depth > best) best = depth;
+            }
+        out[obj->index] = (uint8_t)best;
+        const unsigned g = frame->objGroup != NULL ? frame->objGroup[obj->index] : 0u;
+        if (g != 0u && best > group[g]) group[g] = (uint8_t)best;
+    }
+    if (frame->objGroup == NULL) return;
+    for (unsigned entry = 0; entry < oam->count; ++entry) {
+        const PpuGpu3DSObj* obj = &oam->entries[entry];
+        const unsigned g = frame->objGroup[obj->index];
+        if (g != 0u && !obj->affine && obj->mode != 2u && obj->priority != 0 && group[g] > out[obj->index])
+            out[obj->index] = group[g];
+    }
+}
+
 static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                         uint16_t* atlas, PpuGpu3DSCommandBuffer* cmd,
                         const PpuGpu3DSOamSet* oam, const PpuGpu3DSBand* bands,
@@ -4421,6 +4595,8 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                         size_t* vertexCursor, size_t* indexCursor,
                         size_t* batchCursor) {
     PpuGpu3DSRegion regions[PPU_GPU3DS_ATLAS_SIDE * 2u];
+    uint8_t supportQ[MODE1_GBA_OAM_COUNT];
+    compute_obj_support(frame, oam, bands, bandCount, supportQ);
     /* Function-local so these lists stay off the 3DS thread stack. */
     static PpuGpu3DSBand layerBands[PPU_GPU3DS_LAYER_BAND_COUNT]
                                    [MODE1_GBA_HEIGHT];
@@ -4501,7 +4677,7 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
         for (int entry = (int)oam->count - 1; entry >= 0; --entry) {
             const PpuGpu3DSObj* obj = &oam->entries[entry];
             if (obj->mode == 2u &&
-                !build_obj(frame, cache, atlas, cmd, band, obj, NULL, 0, true,
+                !build_obj(frame, cache, atlas, cmd, band, obj, NULL, NULL, 0, true,
                            emit, vertexCursor, indexCursor, batchCursor))
                 return false;
         }
@@ -4593,7 +4769,7 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
             const size_t regionCount = build_regions(frame, oam, band, regions);
             for (unsigned slot = 0; slot < listCount; ++slot) {
                 const PpuGpu3DSObj* obj = &oam->entries[list[slot]];
-                if (!build_obj(frame, cache, atlas, cmd, band, obj, regions,
+                if (!build_obj(frame, cache, atlas, cmd, band, obj, supportQ, regions,
                                regionCount, false, emit, vertexCursor,
                                indexCursor, batchCursor))
                     return false;

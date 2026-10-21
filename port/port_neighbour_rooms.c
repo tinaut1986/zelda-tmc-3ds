@@ -9,6 +9,7 @@
 #include "object.h"
 #include "room.h"
 #include "subtask.h"
+#include "tileMap.h"
 #include "port_generic_entity.h"
 #include "port_rom.h"
 #include "port_runtime_config.h"
@@ -25,6 +26,8 @@ enum { NO_TILE = 0xFFFF, MAP_STRIDE = 64 };
 
 static uint16_t sWin[2][WIN_ROWS][WIN_COLS];
 static uint16_t sMeta[2][MAP_STRIDE * MAP_STRIDE];
+/* A picture room's tilemaps (see ReadMeta): up to four 32x32 blocks per layer, as stored. */
+static uint16_t sPicture[2][MAP_STRIDE * MAP_STRIDE];
 static u32 sKey = 0xffffffffu;
 static unsigned sTicks;
 static int sActive;
@@ -36,30 +39,52 @@ static u32 RoomKey(void) {
     return ((u32)gRoomControls.area << 8) | gRoomControls.room;
 }
 
-/* The two layer maps of a room's map definition chain, decompressed: sMeta[0] bottom, sMeta[1] top. */
-static bool ReadMeta(const RoomResInfo* info) {
+enum { META_NONE, META_TILES, META_PICTURE };
+
+/* The two layer maps of a room's map definition chain, decompressed: sMeta[0] bottom, sMeta[1] top. A room drawn
+ * as a picture (the Minish houses: a bottom map of 0xFFFF and no top) has no metatile map; its picture is the
+ * tilemap of its bottom_special entry, as stored (LoadRoomGfx spreads it with sub_0807C5F4), into sPicture. */
+static int ReadMeta(const RoomResInfo* info) {
     const MapDataDefinition* def = info->map;
-    if (def == NULL) return false;
+    if (def == NULL) return META_NONE;
     const bool packed = gRomData != NULL && (const u8*)def >= gRomData && (const u8*)def < gRomData + gRomSize;
     const size_t step = packed ? 12 : sizeof(MapDataDefinition);
-    bool got[2] = { false, false };
+    bool got[2] = { false, false }, picture[2] = { false, false };
     for (int i = 0; i < 16; ++i) {
         MapDataDefinition entry;
         Port_DecodeMapDataDefinition((const u8*)def + i * step, &entry);
         if (entry.dest != NULL) {
             const int layer = entry.dest == (void*)gMapBottom.mapData ? 0 : entry.dest == (void*)gMapTop.mapData ? 1 : -1;
-            if (layer >= 0 && (entry.size & MAP_COMPRESSED) != 0) {
+            const int special = entry.dest == (void*)gMapDataBottomSpecial ? 0 : entry.dest == (void*)gMapDataTopSpecial ? 1 : -1;
+            if ((layer >= 0 || special >= 0) && (entry.size & MAP_COMPRESSED) != 0) {
                 const u8* src = (entry.src & MAP_SRC_FILE) != 0 ? NULL : gMapData + (entry.src & 0x7fffffff);
-                if (src == NULL) return false;
-                LZ77UnCompWram(src, sMeta[layer]);
-                got[layer] = true;
+                if (src == NULL) return META_NONE;
+                if (layer >= 0) {
+                    LZ77UnCompWram(src, sMeta[layer]);
+                    got[layer] = true;
+                } else {
+                    LZ77UnCompWram(src, sPicture[special]);
+                    picture[special] = true;
+                }
             } else if (layer >= 0) {
-                return false; /* stored uncompressed: not seen in the area maps, left to a later look */
+                return META_NONE; /* stored uncompressed: not seen in the area maps, left to a later look */
             }
         }
         if ((entry.src & MAP_MULTIPLE) == 0) break;
     }
-    return got[0] && got[1];
+    /* A first entry of 0xFFFF marks a room drawn as a picture, not a map (LoadRoomGfx's clearBottomMap). */
+    if (got[0] && sMeta[0][0] == 0xFFFF) return picture[0] ? META_PICTURE : META_NONE;
+    return got[0] && got[1] ? META_TILES : META_NONE;
+}
+
+/* A picture room's cell at (cx, cy) tiles from its origin: sub_0807C5F4's blocks, one 32x32 block for the
+ * first 32 columns and rows, then the one for the next 32 columns, the next 32 rows, the corner. */
+static uint16_t PictureCell(const uint16_t* pic, const RoomResInfo* nb, int cx, int cy) {
+    const bool wide = nb->pixel_width > 0xff, tall = nb->pixel_height > 0xff;
+    const int bx = cx >> 5, by = cy >> 5;
+    if (bx > 1 || by > 1 || (bx && !wide) || (by && !tall)) return NO_TILE;
+    const int block = by == 0 ? bx : bx == 0 ? (wide ? 2 : 1) : 3;
+    return pic[block * 32 * 32 + (cy & 31) * 32 + (cx & 31)];
 }
 
 static bool SharesEdge(const RoomResInfo* a, const RoomResInfo* b) {
@@ -125,10 +150,10 @@ static void Build(void) {
             ++sStats.otherTileset;
             continue;
         }
-        /* A first entry of 0xFFFF marks a room drawn as a picture, not a map (LoadRoomMapData's clearBottomMap). */
         const unsigned metaCols = nb->pixel_width / 16u;
-        if (metaCols == 0 || metaCols > MAP_STRIDE || nb->pixel_height / 16u > MAP_STRIDE || !ReadMeta(nb) ||
-            sMeta[0][0] == 0xFFFF) {
+        const int kind = (metaCols == 0 || metaCols > MAP_STRIDE || nb->pixel_height / 16u > MAP_STRIDE) ? META_NONE
+                                                                                                         : ReadMeta(nb);
+        if (kind == META_NONE) {
             ++sStats.unreadable;
             continue;
         }
@@ -145,6 +170,11 @@ static void Build(void) {
                 for (int layer = 0; layer < 2; ++layer) {
                     uint16_t* cell = &sWin[layer][row + MARGIN_Y][col + MARGIN_X];
                     if (*cell != NO_TILE) continue; /* a nearer neighbour got it */
+                    if (kind == META_PICTURE) {
+                        *cell = PictureCell(sPicture[layer], nb, px >> 3, py >> 3);
+                        if (*cell != NO_TILE) ++sStats.cells;
+                        continue;
+                    }
                     /* As stored: rows of the room's own width (the game spreads them to MAP_STRIDE after
                      * loading, sub_0807C8B0). */
                     const unsigned meta = sMeta[layer][(py >> 4) * metaCols + (px >> 4)];

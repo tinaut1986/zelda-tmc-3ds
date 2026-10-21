@@ -312,6 +312,16 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     view->objClipMark = virtuappu_mode1_obj_clip_mark;
     view->objClipY = virtuappu_mode1_obj_clip_y;
     view->objDepth = virtuappu_mode1_obj_depth;
+    view->objDepthTop = virtuappu_mode1_obj_depth_top;
+    view->objSupport = Stereo3DS_WorldScene();
+    view->objGroup = virtuappu_mode1_obj_group;
+    if (view->objSupport) {
+        for (unsigned bg = 1; bg < 4; ++bg)
+            for (unsigned priority = 0; priority < 4; ++priority) {
+                const int depth = Stereo3DS_LayerDepth(PPU_GPU3DS_BG0 + bg, priority);
+                view->bgDepthQ[bg][priority] = (uint8_t)(depth > 0 ? (depth > 30 ? 30 : depth) * 4 : 0);
+            }
+    }
     bool anyShadow = false;
     bool anyZone = false;
     for (unsigned bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {

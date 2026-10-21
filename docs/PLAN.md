@@ -14,12 +14,14 @@ change (what goes where: the table in `CLAUDE.md`).
   audio offload, an updater, a quick memory dump (L+R+A) and an experimental New 3DS
   "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors; the 2x indoor zoom is gone, see the decisions log).
 
-## Status (2026-10-20)
+## Status (2026-10-21)
 
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.4.3` (renamed from `release/v0.4.2` right after the `v0.4.2` tag). Published:
+**Release line:** `release/v0.4.4` (renamed from `release/v0.4.3` right after the `v0.4.3` tag). Published:
+**`v0.4.3`** (2026-10-21, **beta**: 3D WORLD, from PR #47 by bheppe, with the owner's corrections and a question at the start; the bottom map's cursor, zoom and drag;
+OPTIONS in groups and scrolling lists; `docs/release-notes/v0.4.3.md`),
 **`v0.4.2`** (2026-10-20, **stable**, straight to stable at the owner's request: `release/v0.4.2` merged `--no-ff` into
 `main` and tagged there; the betas' contents plus 3D by height for what Link lifts or throws, which was not seen on
 the console before the tag; `docs/release-notes/v0.4.2.md`), **`v0.4.1`** (2026-10-20, **beta**: FRAME = BLUR, NEIGHBOURS ON / OFF, 3D for what Link holds up, the Deepwood door
@@ -54,6 +56,13 @@ frame, WIDE + AI, the Minish Paths corridor centred, the 3D of P5.1, the heart i
 Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU build ahead, the grid on HIGH (frame rate), WIDE + AI.
 
 **Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
+
+**What `v0.4.3` holds beyond `v0.4.2` (2026-10-20 and 21, all seen by the owner on the New 3DS, not on the Old 3DS/2DS; the whole of 3D WORLD and the strips' double draw not on the Old 3DS/2DS at all):** the 3D WORLD work (decisions log of 2026-10-21; PR #47 stays open until `main` reaches it), the bottom map's cursor, zoom and drag, OPTIONS in groups and the scrolling STATES list (decisions logs of 2026-10-20 and 21); and, as before:
+Gentari's two halves (picture rooms) scroll in Full View and show their neighbours; a state saved with the camera
+frozen loads in Full View; the Deepwood door cutscene keeps the wide view through its fade out; no HUD keys over the
+pause menu; GOD MODE in debug builds (a heart beside the rupees); the map screens at 60 fps in 3D. One entry each in
+the decisions log of 2026-10-20 (the last six). Release notes: `docs/release-notes/v0.4.3.md`. Open: #46 (a state saved in the pause menu
+leaves pots unliftable).
 
 **Start here (2026-10-20):** `v0.4.1` (beta, tagged on what `release/v0.4.2` starts from) holds, on top of `v0.4.0`, the neighbour-list fix, the GPU split
 flush, the Zz bubble fix, the NEIGHBOURS setting (ON / OFF) and the drop of WIDE + BLUR (decisions log of 2026-10-19 and
@@ -121,9 +130,12 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
   **do not `loadstate` while the owner plays** (it replaced their place twice on 2026-10-20) and **check `state` shows
   the scene (`ingame=1 area=80 room=04`) before measuring** (six recordings of the title screen were taken as results once).
   `debug/` still holds the owner's old files and `tmc-check-*`; Claude's `tmc-dump-006x` sets were deleted.
-- **New 3DS, `192.168.1.133`**: untouched today: the debug build of `feat/wide-neighbour-rooms` at 45a90f5
-  (`0.3.3-dev.35.15+45a90f5`), settings as on 2026-10-17 (WIDE + AI YES, pixel-perfect, GBA GRID LOW, TOP HUD AUTO,
-  FRAMES "sin saltos", SHOW FPS, stereo on, COLOURS on). `.3ds_ftp_ip` may hold either console: pass `--ip`.
+- **New 3DS, `192.168.1.133`**: the debug build `0.4.3-dev.11+dbe9c18` (the code of `release/v0.4.3` at `9078959`, built
+  before that commit), installed by Claude on 2026-10-20; FORCE 3D off. Settings as on 2026-10-17 (WIDE + AI YES,
+  pixel-perfect, TOP HUD AUTO, SHOW FPS, stereo on, NEIGHBOURS ON). The owner's states are theirs (they deleted and
+  re-made several on 2026-10-20); the newest ones are the Deepwood boss room (49/00, one of them made by Claude in the
+  pause menu: #46, do not use it) and the Minish Woods before the shrine door cutscene (00/00). Left in the pause
+  menu's world map of the Gentari house state.
 - The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP). How to read one:
   `docs/debug-tools.md`, "Reading a Luma crash dump". The 2DS crash dumps 1 and 2 (588 bytes, kernel mode, `pc` 0xfff1c1d8) and 19 are explained in the decisions log of 2026-10-20. RetroAchievements on the 2DS was logged in as the test
   account `tinaut1986test` on 2026-10-15 (check before the owner plays for real).
@@ -1337,3 +1349,61 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   placed by hand while its target is still Link in the shrine, so the snap into Full View centred the woods on Link's
   shrine coordinates; for this cutscene the snap keeps the GBA picture's centre instead (80 / 40 px). Seen by the owner
   on the New 3DS.
+- **2026-10-20** **Picture rooms in Full View** (the Minish houses: Gentari's two halves, area 0x20 rooms 00/01). Their
+  neighbours are now drawn (the picture is the bottom_special tilemap, read as stored). The border scroll between them
+  dropped to 240x160 for its whole length: the rooms set `scroll_flags` bit 0 on load and `Port_Widescreen_BeginScroll`
+  skipped any scroll with it (upstream's guard, kept for the 266 scroll). Their tilemap is in `gMapDataBottomSpecial` at
+  the usual stride once loaded (`sub_0807C5F4`), so the Full View scroll takes them. A camera slide tried first on the
+  belief that these rooms had no border scroll was dropped: it also fed the old room's rest into every scroll's
+  line-up. Seen by the owner on the New 3DS.
+- **2026-10-20** **A save state made with the camera frozen loads in Full View.** A state saved while Link was still
+  walking into a room (no `camera_target`) loaded at 266x160 (`player-invalid`) until the camera got a target again:
+  `Port_Widescreen_ResetAfterStateLoad` forgets the room key, and the new-room latch cleared `sWsArrivalFrozenCamera`
+  for want of a fade. The first latch after a load now counts as an arrival (`sWsStateLoaded`). Seen by the owner on
+  the New 3DS.
+- **2026-10-20** **The world cutscenes keep the wide view through their fade out.** AuxCutscene 0 (the woods when the
+  Deepwood Shrine's big door opens) dropped to 240x160 for ~13 visible frames at its end: the fixed-canvas exemption
+  of AuxCutscenes 0, 1 and 5 covered only `nextToLoad == 2`, and `Subtask_FadeOut` (3) still shows their world. It
+  covers 3 now. The cutscene's ±80/±40 camera shift is limited to `nextToLoad < 4`, so the shrine's restored camera
+  snaps as any room's (checked: the same scroll as before, 832/1344). Seen by the owner on the New 3DS.
+- **2026-10-20** **No HUD keys over the pause menu.** In Full View the pause screen showed half of the dungeon keys'
+  icon and count by its bottom-right corner: the pause menu calls `UpdateUIElements`, whose
+  `Port_UI_PrepareGameplayGeometry` saw the view drop from 400 to 240 and repainted the BG0 rupees and keys at the
+  GBA's offset, over the menu. It no longer repaints while a menu runs (`GAMEMAIN_SUBTASK`, `nextToLoad == 2`);
+  `DrawUI` repaints them when play resumes. Checked with the top HUD shown and hidden.
+- **2026-10-20** **God mode for debug builds** (owner's request): a heart button beside the rupees in the MAP tab's
+  sidebar, compiled only with `TMC3DS_DEBUG_TOOLS`; `ModHealth` ignores negative deltas while it is on
+  (`docs/debug-tools.md`). Asked for while checking the 3D of a lifted pot against the Deepwood boss: there the pot is
+  drawn over the ChuChu by the game itself (both renderers, 2D too), so it is not a 3D bug and the stereo change
+  tried for it was dropped.
+- **2026-10-20** **The map screens at 60 fps in 3D.** The pause menu's world map ran at ~50 fps with the slider up
+  (GPU 17.3 ms): drawn whole for each eye, first because its OBJ window "follows" a layer (refusal 1) and then because
+  the cursor and Link's icon are semi-transparent sprites in front (3). The window follows BG2, which has no depth, so
+  it is where it is in both eyes: only a window following a layer that moves refuses now. A semi-transparent sprite with
+  no second target in BLDCNT does not blend (the model gives it effect NONE), so only real blends refuse. Drawn over one
+  base: 59.8 fps, both eyes identical to the whole draw (FORCE 3D captures). Seen on the owner's New 3DS.
+- **2026-10-20** Bottom overworld map (`feat/map-zoom-pan`, owner's request): CREST PINS removed on the 3DS (chip, pins and
+  the GAMEPLAY row; the config key and the Android path stay). The tile picked by a tap is outlined with the game's own
+  cursor frame (`0x26 + 3 * region`, blinking; `Port_SecondScreenWorldMap_DrawRegionCursor`) instead of the gold box.
+  ZOOM no longer depends on MAP FOLLOW: MAP FOLLOW only says what the close view centres on; with it off the close view is
+  dragged with the finger (`Port_SecondScreen_OnTouchMove`/`OnTouchRelease`). A tap on the map now picks its tile on
+  **release**, since the touch may become a drag (>= 8 px). A session that starts with MAP FOLLOW off opens on the whole map,
+  as before. The glide speed (0.22 per paint) was left alone: it is tied to the bottom screen's paint cadence.
+- **2026-10-20** FLOOR BACK dropped from OPTIONS on the 3DS (owner): the dungeon map always returns to Link's floor after 6 s. The config key stays.
+- **2026-10-20** OPTIONS regrouped under titles (SCREEN, GAME, INTERFACE, SYSTEM) in a scrolling list, and the STATES list
+  scrolls too instead of paging (`feat/options-groups`). Scrolling is by dragging or by the bar on the right (a 12 px strip
+  grabs it; the content gives up 8 px for it while it shows). Because a drag starts as a touch, a tap on a cell of a
+  scrolling panel acts on **release** (`Port_SecondScreen_OnTap` defers it; the tab bar still acts at once). Shared
+  helpers: `CScrollUpdate` / `CScrollBar` / `CScrollTargets` in `bottom_compact_3ds.inc`. STATES keeps 10 card pictures
+  in an LRU cache and reads one per paint, only for visible cards. New translations for the group titles and values.
+- **2026-10-21** PR #47 (3D WORLD) integrated on `feat/stereo-world` with the owner's corrections: depth of a sprite from its
+  height/body only in the world scene (the title lost its logo's depth otherwise), lean per tile row, support depth from the
+  layer under a sprite per entity (objects on roofs sat behind them), the HUD never behind (priority 0 untouched, world depth
+  capped at 5 px), the double draw of moved BG layers that hides the strips they uncover (black lines above doors, both eyes),
+  PLANE TINT DEPTH by sprite depth, and `3dsx.ld` pinned at 0x638000 (the read-only segment overflowed; a state of an older
+  layout does not load). Details: `docs/stereo-3d.md`, "What was added on top of PR #47". Open: the Minish village's leaf blocks
+  (BG2, sunk) and dungeon effects. The PR's comment 1 text is in `build-3ds/3d-world-captures/pr47-comment-1.md` (ignored by git).
+- **2026-10-21** `v0.4.3` (**beta**) cut from `release/v0.4.3`: everything of `feat/stereo-world`, `feat/options-groups` and `feat/map-zoom-pan` merged `--no-ff`. PR #47
+  (bheppe, 3D WORLD) is in the release by its own commits but stays **open** on GitHub: its base is `main`, and a PR is marked merged when `main`
+  contains its commits, which happens when a stable release merges into `main`. The branch was renamed to `release/v0.4.4` right after the tag.
+

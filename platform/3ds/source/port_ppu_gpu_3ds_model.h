@@ -262,6 +262,16 @@ typedef struct PpuGpu3DSFrameView {
     int objClipY;
     /* Each OAM entry's stereo 3D depth, quarter pixels (virtuappu_mode1_obj_depth): what Link holds up or threw. */
     const uint8_t* objDepth;
+    /* The same at each entry's top edge (virtuappu_mode1_obj_depth_top): the depth of a tile row goes from objDepth
+     * at the entry's bottom to this at its top; NULL or equal: one depth for the entry. */
+    const uint8_t* objDepthTop;
+    /* Stereo 3D "support": a sprite resting on a background layer that stands out (the objects on a roof) takes that
+     * layer's depth for its tiles over it. bgDepthQ[bg][priority] is the layer's depth in quarter pixels at the full
+     * slider (0 behind the screen plane); objSupport is false when no such depth applies (3D off, or not the world). */
+    bool objSupport;
+    /* Which entity wrote each OAM entry (virtuappu_mode1_obj_group; 0: none): an entity's entries share one support. */
+    const uint8_t* objGroup;
+    uint8_t bgDepthQ[4][4];
     /* A uniform screen fade the renderer applies itself (docs/gpu-fade.md):
      * `memory`'s palettes are then the unfaded ones and the finished picture is
      * blended toward grey `fadeLevel` by fadeWeight/255. 0 weight: none. */
@@ -340,6 +350,9 @@ typedef struct PpuGpu3DSBatch {
     bool objWindow, semiTransparent;
     /* A sprite's own stereo 3D depth, quarter pixels (objDepth; 0: its layer's). */
     uint8_t depth;
+    /* Drawn with the layers in front even with no depth of its own (the pieces of one big sprite stay in one pass, so
+     * what the game draws over what keeps its order); bit 7 of the OAM entry's depth (virtuappu_mode1_obj_depth). */
+    bool front;
     /* 0 samples the tile atlas; 1 + n samples view ring n (bg * 2 + variant). */
     uint8_t texture;
     /* Added to every vertex position by the shader. Zero except for

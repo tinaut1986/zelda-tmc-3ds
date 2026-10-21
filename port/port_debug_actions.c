@@ -568,6 +568,18 @@ int Port_Debug_NoclipEnabled(void) {
     return (sNoclip && !Port_Config_GetConsoleParity()) ? 1 : 0;
 }
 
+/* God mode: Link takes no damage (ModHealth drops negative deltas; knockback stays). In-memory only, toggled from
+ * the 3DS bottom screen's sidebar in debug-tools builds. */
+static bool sGodMode = false;
+
+void Port_DebugAction_SetGodMode(int on) {
+    sGodMode = on != 0;
+}
+
+int Port_Debug_GodModeEnabled(void) {
+    return sGodMode ? 1 : 0;
+}
+
 void Port_DebugAction_ToggleMinish(void) {
     if (gMain.task != TASK_GAME)
         return;

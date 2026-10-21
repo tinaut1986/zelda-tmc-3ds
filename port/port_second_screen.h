@@ -66,6 +66,10 @@ void Port_SecondScreen_OnSurfaceLost(void);
  * slot an armed ring selected). Compiled on all platforms so a host
  * harness can drive the same layout the device shows. */
 void Port_SecondScreen_OnTap(int x, int y, int longPress);
+#ifdef TMC_3DS
+int Port_SecondScreen_OnTouchMove(int x, int y);
+void Port_SecondScreen_OnTouchRelease(void);
+#endif
 
 #ifdef PORT_SECOND_SCREEN_TEST
 typedef struct PortSecondScreenTestLoadStateLayout {

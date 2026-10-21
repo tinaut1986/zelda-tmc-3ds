@@ -295,6 +295,14 @@ void Port_Config_CycleGbaFrame(void);
 int Port_Config_GetNeighbourRooms(void);
 const char* Port_Config_GetNeighbourRoomsName(void);
 void Port_Config_CycleNeighbourRooms(void);
+/* 3D WORLD (stereo_world_on): the depth the world has while playing with the 3D slider up (docs/stereo-3d.md): 0 OFF, 1 ON. */
+int Port_Config_GetStereoWorld(void);
+/* Asked once at the start: the world's depth shows graphic errors in some scenes (the game was drawn for flat 2D); the answer
+ * is kept (stereo_world_on, stereo_world_asked). */
+bool Port_Config_StereoWorldQuestionDue(void);
+void Port_Config_AnswerStereoWorld(bool yes);
+const char* Port_Config_GetStereoWorldName(void);
+void Port_Config_CycleStereoWorld(void);
 /* The frame is for VIEW: ORIGINAL only (WIDE fills the border with world): locked and off otherwise,
  * whatever gba_frame says; Active is what the presenter draws. */
 bool Port_Config_GbaFrameAvailable(void);

@@ -889,7 +889,12 @@ static void PollInput(void) {
         touchPosition touch;
         hidTouchRead(&touch);
         Port_SecondScreen_3DS_OnTap(touch.px, touch.py, 0);
+    }    else if (sHeld & KEY_TOUCH) {
+        touchPosition touch;
+        hidTouchRead(&touch);
+        Port_SecondScreen_3DS_OnTouchMove(touch.px, touch.py);
     }
+    if (hidKeysUp() & KEY_TOUCH) Port_SecondScreen_3DS_OnTouchRelease();
 }
 
 /* The main thread can stop advancing while audio keeps playing -- both screens
