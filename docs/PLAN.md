@@ -14,12 +14,14 @@ change (what goes where: the table in `CLAUDE.md`).
   audio offload, an updater, a quick memory dump (L+R+A) and an experimental New 3DS
   "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors; the 2x indoor zoom is gone, see the decisions log).
 
-## Status (2026-10-20)
+## Status (2026-10-21)
 
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.4.3` (renamed from `release/v0.4.2` right after the `v0.4.2` tag). Published:
+**Release line:** `release/v0.4.4` (renamed from `release/v0.4.3` right after the `v0.4.3` tag). Published:
+**`v0.4.3`** (2026-10-21, **beta**: 3D WORLD, from PR #47 by bheppe, with the owner's corrections and a question at the start; the bottom map's cursor, zoom and drag;
+OPTIONS in groups and scrolling lists; `docs/release-notes/v0.4.3.md`),
 **`v0.4.2`** (2026-10-20, **stable**, straight to stable at the owner's request: `release/v0.4.2` merged `--no-ff` into
 `main` and tagged there; the betas' contents plus 3D by height for what Link lifts or throws, which was not seen on
 the console before the tag; `docs/release-notes/v0.4.2.md`), **`v0.4.1`** (2026-10-20, **beta**: FRAME = BLUR, NEIGHBOURS ON / OFF, 3D for what Link holds up, the Deepwood door
@@ -42,7 +44,6 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 | Branch | State |
 |---|---|
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
-| `feat/stereo-world` (local only, not pushed) | PR #47 (bheppe, 3D WORLD) merged here plus our fixes (decisions log 2026-10-21): checked on the New 3DS by the owner as it went, **not on the Old 3DS/2DS** (the strips' double draw costs about 1 ms of GPU on the New 3DS). Comment 1 is on the PR; more to come (Minish village, dungeons). Not merged into the release. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -56,7 +57,7 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 
 **Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
 
-**Since `v0.4.2`, on `release/v0.4.3` (2026-10-20, all seen by the owner on the New 3DS, not on the Old 3DS/2DS):**
+**What `v0.4.3` holds beyond `v0.4.2` (2026-10-20 and 21, all seen by the owner on the New 3DS, not on the Old 3DS/2DS; the whole of 3D WORLD and the strips' double draw not on the Old 3DS/2DS at all):** the 3D WORLD work (decisions log of 2026-10-21; PR #47 stays open until `main` reaches it), the bottom map's cursor, zoom and drag, OPTIONS in groups and the scrolling STATES list (decisions logs of 2026-10-20 and 21); and, as before:
 Gentari's two halves (picture rooms) scroll in Full View and show their neighbours; a state saved with the camera
 frozen loads in Full View; the Deepwood door cutscene keeps the wide view through its fade out; no HUD keys over the
 pause menu; GOD MODE in debug builds (a heart beside the rupees); the map screens at 60 fps in 3D. One entry each in
@@ -1402,4 +1403,7 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   PLANE TINT DEPTH by sprite depth, and `3dsx.ld` pinned at 0x638000 (the read-only segment overflowed; a state of an older
   layout does not load). Details: `docs/stereo-3d.md`, "What was added on top of PR #47". Open: the Minish village's leaf blocks
   (BG2, sunk) and dungeon effects. The PR's comment 1 text is in `build-3ds/3d-world-captures/pr47-comment-1.md` (ignored by git).
+- **2026-10-21** `v0.4.3` (**beta**) cut from `release/v0.4.3`: everything of `feat/stereo-world`, `feat/options-groups` and `feat/map-zoom-pan` merged `--no-ff`. PR #47
+  (bheppe, 3D WORLD) is in the release by its own commits but stays **open** on GitHub: its base is `main`, and a PR is marked merged when `main`
+  contains its commits, which happens when a stable release merges into `main`. The branch was renamed to `release/v0.4.4` right after the tag.
 
