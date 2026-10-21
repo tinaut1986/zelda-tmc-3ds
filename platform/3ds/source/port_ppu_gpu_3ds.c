@@ -1152,6 +1152,14 @@ static bool IsFrontBatch(const PpuGpu3DSBatch* batch) {
     return batch->layer <= PPU_GPU3DS_OBJ && sFrontLayer[batch->layer][batch->priority & 3u];
 }
 
+/* A batch forced to the layers in front (the big Chuchu's pieces) is not depth tested: the colour pass of a sprite draws
+ * only where the depth the pre-pass wrote is equal, and with many small batches of one sprite some of those draws were
+ * lost (two rows of tiles of its legs, in one eye, about one frame in twelve). Its batches are already in the order
+ * the game draws them, back to front. */
+static bool IsPainterBatch(const PpuGpu3DSBatch* batch) {
+    return batch->front && batch->layer == PPU_GPU3DS_OBJ && !batch->semiTransparent;
+}
+
 static bool PassDraws(OutputPass pass, const PpuGpu3DSBatch* batch) {
     return pass == PASS_ALL || (pass == PASS_BASE) != IsFrontBatch(batch);
 }
@@ -1299,6 +1307,7 @@ static bool DrawOutput(C3D_RenderTarget* target, OutputPass pass) {
     for (size_t i = 1; i < sCommands.batchCount; ++i) {
         const PpuGpu3DSBatch* batch = &sCommands.batches[i];
         if (batch->layer != PPU_GPU3DS_OBJ || batch->objWindow || !PassDraws(pass, batch)) continue;
+        if (IsPainterBatch(batch)) continue; /* no depth: it is drawn in the order the list has them */
         ResetTev(batch);
         ResetBlend(batch);
         C3D_AlphaTest(true, GPU_GREATER, 0);
@@ -1326,7 +1335,7 @@ static bool DrawOutput(C3D_RenderTarget* target, OutputPass pass) {
         C3D_AlphaTest(true, GPU_GREATER, 0);
         SetColorStencil(batch);
         if (batch->layer == PPU_GPU3DS_OBJ)
-            C3D_DepthTest(true, GPU_EQUAL, GPU_WRITE_COLOR);
+            C3D_DepthTest(true, IsPainterBatch(batch) ? GPU_ALWAYS : GPU_EQUAL, GPU_WRITE_COLOR);
         else
             C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_COLOR);
         if (pass != PASS_BASE && IsGhostBatch(batch)) {

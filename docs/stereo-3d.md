@@ -69,7 +69,10 @@ scenes below override it for their layers. The values are in pixels at the full 
   most, so the ramp survives a jump). Affine pieces are cut in rows of tiles by where the middle of each tile lands on the
   screen. The piece that touches the ground (its shadow) stays at 0, and every piece of the boss is drawn with the layers in
   front (`PpuGpu3DSBatch.front`, bit 7 of the OAM entry's depth) so the base/front split cannot invert what covers what.
-  Known: once in ~18 frames, in the right eye with the boss high on the screen, two rows of tiles of its legs are missing.
+  Its batches are not depth tested (`IsPainterBatch`): they skip the depth pre-pass and are drawn with the depth test off, in the
+  order of the list (back to front). With the pre-pass, the colour pass of a sprite drew only where the depth was equal, and with
+  the boss cut into many small batches some of those draws were lost (two rows of tiles of its legs, in one eye, in ~4 % of the
+  frames; 0 of 116 with the change, 5 of 122 without, alternating the two on the console).
 
 ## What Link holds up or throws
 
