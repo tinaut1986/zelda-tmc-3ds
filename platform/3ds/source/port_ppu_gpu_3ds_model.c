@@ -3234,7 +3234,7 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     const bool forceFront = (depthRaw & 0x80u) != 0;
     const unsigned depthBottom = depthRaw & 0x7fu;
     const unsigned depthTop = !stencilOnly && frame->objDepthTop != NULL ? (frame->objDepthTop[obj->index] & 0x7fu) : depthBottom;
-    const bool leans = depthTop > depthBottom;
+    const bool leans = depthTop != depthBottom; /* up (a standing sprite) or down (one that hangs, PORT_DEPTH_INVERT) */
     const unsigned support = supportQ != NULL && !stencilOnly ? supportQ[obj->index] : 0u;
     const bool perTile = !mosaicEnabled && (leans || support != 0u) &&
                          (!obj->affine || determinant != 0) &&
@@ -3252,7 +3252,7 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                 /* The tile's place on the screen (a flipped sprite has its rows and columns the other way round). */
                 const int screenRow = obj->vflip ? rows - 1 - row : row;
                 const int screenCol = obj->hflip ? cols - 1 - col : col;
-                unsigned depth = depthBottom;
+                int depthI = (int)depthBottom;
                 if (leans) {
                     unsigned heightMid = (unsigned)(rows - 1 - screenRow) * PPU_GPU3DS_TILE_SIDE +
                                          PPU_GPU3DS_TILE_SIDE / 2u;
@@ -3270,9 +3270,9 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                         span = (unsigned)obj->boundsHeight > 0u ? (unsigned)obj->boundsHeight : span;
                         heightMid = above > (float)span ? span : (unsigned)above;
                     }
-                    depth += (depthTop - depthBottom) * heightMid / span;
+                    depthI += ((int)depthTop - (int)depthBottom) * (int)heightMid / (int)span;
                 }
-                depth += support;
+                unsigned depth = (unsigned)(depthI < 0 ? 0 : depthI) + support;
                 /* Never past the HUD's 6 px (24 quarters): the HUD is always in front. */
                 if (depth > 20u) depth = 20u;
                 tileDepth[row * cols + col] = (uint8_t)depth;

@@ -56,6 +56,40 @@ static int sRenderingBoss = 0;
 static s32 sBossGround = -0x7fffffff, sBossGroundNext = -0x7fffffff;
 static s32 sBossTop = 0x7fffffff, sBossTopNext = 0x7fffffff; /* and its highest top edge, the same way */
 
+#ifdef TMC_3DS
+/* Per-entity corrections of the stereo depth, hand-curated (platform/3ds/source/port_sprite_depth.inc, optional):
+ *   PORT_SPRITE_DEPTH(kind, id, type, mode)   kind: ENEMY, OBJECT...; id: the kind's own id (BOSS_DOOR...);
+ *                                             type: the entity's type or PORT_ANY_TYPE
+ *   PORT_DEPTH_INVERT: the sprite hangs from the top edge (a door in a south wall): the ground is the top of its
+ *                      pieces and the depth rises downwards, not upwards
+ *   PORT_DEPTH_FLAT:   no lean at all */
+enum { PORT_DEPTH_INVERT = 1, PORT_DEPTH_FLAT = 2, PORT_ANY_TYPE = 0xff };
+typedef struct { u8 kind, id, type, mode; } PortSpriteDepthFix;
+#if defined(__has_include)
+#if __has_include("../platform/3ds/source/port_sprite_depth.inc")
+#define PORT_SPRITE_DEPTH(kind, id, type, mode) { (u8)(kind), (u8)(id), (u8)(type), (u8)(mode) },
+static const PortSpriteDepthFix sSpriteDepthFixes[] = {
+#include "../platform/3ds/source/port_sprite_depth.inc"
+};
+#undef PORT_SPRITE_DEPTH
+#define PORT_SPRITE_FIXES ((int)(sizeof(sSpriteDepthFixes) / sizeof(sSpriteDepthFixes[0])))
+#endif
+#endif
+#ifndef PORT_SPRITE_FIXES
+static const PortSpriteDepthFix sSpriteDepthFixes[1];
+#define PORT_SPRITE_FIXES 0
+#endif
+static int sRenderingInvert = 0, sRenderingFlat = 0;
+static int SpriteDepthMode(const Entity* entity) {
+    for (int i = 0; i < PORT_SPRITE_FIXES; ++i) {
+        const PortSpriteDepthFix* f = &sSpriteDepthFixes[i];
+        if (f->kind == entity->kind && f->id == entity->id && (f->type == PORT_ANY_TYPE || f->type == entity->type))
+            return f->mode;
+    }
+    return 0;
+}
+#endif
+
 /* The file select drawn at 400x240 (Port_Widescreen_FileSelectWide): the game keeps placing its
  * sprites on the GBA's 240x160 screen; each drawn thing (an entity, a DrawDirect) is moved into
  * the middle of the view as one, after its pieces are written (WideSpritesEnd). Its pieces are
@@ -474,8 +508,9 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
     extern int Port_Config_StereoBodyDepthQ(int height);
     /* A sprite of several pieces leans out with its height over its feet; so does a single tall piece (the big Chuchu is
      * one 64 px piece per part): see the per-piece test below. */
-    const int bodyShear = sRenderingBody;
+    const int bodyShear = sRenderingBody && !sRenderingFlat;
     s32 feetBottom = -0x7fffffff;
+    s32 topMin = 0x7fffffff; /* the highest top edge of its pieces: the ground of a sprite that hangs (PORT_DEPTH_INVERT) */
     if (bodyShear) {
         const u8* scan = data;
         for (int i = 0; i < count; i++, scan += 5) {
@@ -489,6 +524,8 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
             const s32 bottom = (s32)scanYoff + (s32)baseY - (s32)scanEntry[1] + (s32)scanEntry[3];
             if (bottom > feetBottom)
                 feetBottom = bottom;
+            if (bottom - (s32)scanEntry[3] < topMin)
+                topMin = bottom - (s32)scanEntry[3];
             if (sRenderingBoss && bottom - (s32)scanEntry[3] < sBossTopNext)
                 sBossTopNext = bottom - (s32)scanEntry[3];
         }
@@ -539,7 +576,7 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
         u8 pieceDepth = sRenderingDepth;
         u8 pieceDepthTop = sRenderingDepth;
 #ifdef TMC_3DS
-        if (bodyShear && (count > 1 || se[3] > 16)) {
+        if (bodyShear && (count > 1 || se[3] > 16 || sRenderingInvert)) {
             /* The depth rises with the height over the feet: at the piece's bottom edge, and at its top edge, so the
              * GPU renderer can give each tile row of the piece its own (the lean is then not one step per piece). */
             const s32 above = feetBottom - (y + (s32)se[3]); /* how far this piece's bottom is over the feet */
@@ -553,7 +590,13 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
              * it stays at 0; otherwise it would be drawn in front of the feet that stand on it. */
             const int topQ = sRenderingBoss && above <= 0 ? 0 : bossHeight > 16 ? (int)(aboveTop * 16 / bossHeight > 16 ? 16 : aboveTop * 16 / bossHeight)
                                              : Port_Config_StereoBodyDepthQ(aboveTop);
-            const int sumBottom = (int)sRenderingDepth + bottomQ, sumTop = (int)sRenderingDepth + topQ;
+            int sumBottom = (int)sRenderingDepth + bottomQ, sumTop = (int)sRenderingDepth + topQ;
+            if (sRenderingInvert) {
+                /* Hanging from its top edge: the depth is nil there and grows downwards. */
+                const int belowTop = (int)(y - topMin > 0 ? y - topMin : 0);
+                sumBottom = (int)sRenderingDepth + Port_Config_StereoBodyDepthQ(belowTop + (int)se[3]);
+                sumTop = (int)sRenderingDepth + Port_Config_StereoBodyDepthQ(belowTop);
+            }
             pieceDepth = (u8)(sumBottom > 20 ? 20 : sumBottom);
             pieceDepthTop = (u8)(sumTop > 20 ? 20 : sumTop);
             /* ...and it does not rise with the boss's jump either: its shadow stays where the ground is. */
@@ -1047,6 +1090,7 @@ static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra
     sRenderingDepth = SpriteDepth(entity);
     sRenderingBody = 1;
     sRenderingBoss = entity->kind == ENEMY && entity->id == CHUCHU_BOSS;
+    { const int mode = SpriteDepthMode(entity); sRenderingInvert = mode == PORT_DEPTH_INVERT; sRenderingFlat = mode == PORT_DEPTH_FLAT; }
     /* Its jump (1 px at most) must not use up the room the rise from feet to head needs under the world's cap: with the
      * whole of it, every part reached the cap at the top of a jump and the ramp was lost. */
     if (sRenderingBoss && sRenderingDepth > 4) sRenderingDepth = 4;
@@ -1056,6 +1100,7 @@ static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra
     sRenderingGroup = 0;
     sRenderingBody = 0;
     sRenderingBoss = 0;
+    sRenderingInvert = sRenderingFlat = 0;
     sRenderingDepth = 0; /* what is drawn next (the HUD, DrawDirect) stays on the screen plane */
 }
 

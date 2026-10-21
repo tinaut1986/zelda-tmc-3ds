@@ -63,6 +63,12 @@ scenes below override it for their layers. The values are in pixels at the full 
   in the other eye. In the world scene each eye draws such a layer twice, the unmoved copy first (`IsGhostBatch`): the strip
   shows the layer's own pixels, so its edge is a pixel thicker on that side.
 - PLANE TINT -> DEPTH paints a sprite by its own depth.
+- **Sprite depth corrections** (`platform/3ds/source/port_sprite_depth.inc`, optional, hand-curated, in the manner of the
+  sibling ports): `PORT_SPRITE_DEPTH(kind, id, type, mode)` per kind of entity. `PORT_DEPTH_INVERT`: a sprite that hangs
+  from its top edge (the boss door in a south wall) has its ground at the top of its pieces and the depth grows downwards
+  (the pieces carry a bottom depth higher than the top one, and the model's rows follow either way). `PORT_DEPTH_FLAT`: no
+  lean. To find the kind and id of a sprite on screen, read the OAM entry's group (`virtuappu_mode1_obj_group`) against the
+  entity that wrote it (kind, id and type are in `Entity`); BOSS_DOOR is `OBJECT`, 57.
 - **The big Chuchu** (`feat/stereo-boss`): it is three entities stacked 14-18 px apart, each piece of them a rotated or scaled
   (affine) 64 px sprite. Its ground is the lowest bottom edge among its pieces (the frame before), and the rise from feet to
   head is spread over its whole height (`sBossGround`/`sBossTop` in `port_draw.c`, 16 quarters at most; its jump counts 4 at
