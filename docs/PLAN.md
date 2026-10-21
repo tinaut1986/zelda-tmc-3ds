@@ -61,8 +61,8 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 Gentari's two halves (picture rooms) scroll in Full View and show their neighbours; a state saved with the camera
 frozen loads in Full View; the Deepwood door cutscene keeps the wide view through its fade out; no HUD keys over the
 pause menu; GOD MODE in debug builds (a heart beside the rupees); the map screens at 60 fps in 3D. One entry each in
-the decisions log of 2026-10-20 (the last six). No release notes yet: write `docs/release-notes/v0.4.3.md` before the
-tag. Open from today: #46 (a state saved in the pause menu leaves pots unliftable).
+the decisions log of 2026-10-20 (the last six). Release notes: `docs/release-notes/v0.4.3.md`. Open: #46 (a state saved in the pause menu
+leaves pots unliftable).
 
 **Start here (2026-10-20):** `v0.4.1` (beta, tagged on what `release/v0.4.2` starts from) holds, on top of `v0.4.0`, the neighbour-list fix, the GPU split
 flush, the Zz bubble fix, the NEIGHBOURS setting (ON / OFF) and the drop of WIDE + BLUR (decisions log of 2026-10-19 and
