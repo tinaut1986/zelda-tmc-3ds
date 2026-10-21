@@ -512,13 +512,13 @@ int Port_Config_StereoWorldDepth(int which) {
 }
 /* The depth of a sprite `height` px over the ground, in quarter pixels at the full slider (PpuGpu3DSBatch.depth). */
 int Port_Config_StereoHeightDepthQ(int height) {
-    if (!sStereo3D || !sStereoWorld || sStereoWorldHeight <= 0 || height <= 0 || !Stereo3DS_Active()) return 0;
+    if (!sStereo3D || !sStereoWorld || sStereoWorldHeight <= 0 || height <= 0 || !Stereo3DS_WorldScene()) return 0;
     const int q = height * sStereoWorldHeight / 25;
     return q > 20 ? 20 : q;
 }
 /* The depth of a sprite piece whose bottom edge is `height` px over the sprite's feet, in quarter pixels at the full slider. */
 int Port_Config_StereoBodyDepthQ(int height) {
-    if (!sStereo3D || !sStereoWorld || sStereoWorldBody <= 0 || height <= 0 || !Stereo3DS_Active()) return 0;
+    if (!sStereo3D || !sStereoWorld || sStereoWorldBody <= 0 || height <= 0 || !Stereo3DS_WorldScene()) return 0;
     const int q = height * sStereoWorldBody / 25;
     return q > 12 ? 12 : q;
 }

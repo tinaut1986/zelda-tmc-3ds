@@ -122,6 +122,10 @@ extern int virtuappu_mode1_obj_clip_enable_staged;
 /* Each OAM entry's stereo 3D depth, quarter pixels (what Link holds up or has thrown). */
 extern uint8_t virtuappu_mode1_obj_depth[MODE1_GBA_OAM_COUNT];
 extern uint8_t virtuappu_mode1_obj_depth_staged[MODE1_GBA_OAM_COUNT];
+/* The same at the top edge of each OAM entry: a tall sprite's pieces lean out, so the depth rises from the entry's
+ * bottom row (obj_depth) to its top (obj_depth_top), tile row by tile row. Equal: the entry stays flat. */
+extern uint8_t virtuappu_mode1_obj_depth_top[MODE1_GBA_OAM_COUNT];
+extern uint8_t virtuappu_mode1_obj_depth_top_staged[MODE1_GBA_OAM_COUNT];
 void virtuappu_mode1_commit_obj_metadata(void);
 
 /* Runtime WIP widescreen HUD anchor. BG0 stays 32 tiles wide, but gameplay

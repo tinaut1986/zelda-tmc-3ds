@@ -3176,6 +3176,16 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     const bool mosaicEnabled =
             (frame->memory.oam_mem[obj->index * 4u] & (1u << 12u)) != 0 &&
             ((mosaic & 0x0f00u) != 0 || (mosaic & 0xf000u) != 0);
+    /* A sprite that leans out of the screen (stereo 3D, a tall one's upper pieces): its depth rises from the bottom
+     * row of tiles to the top one, so each row of tiles is a run of its own and the lean is one step per tile row
+     * (8 px) instead of one per piece. Runs of equal depth are one batch. */
+    enum { LEAN_MAX_RUNS = 9 };
+    const unsigned depthBottom = !stencilOnly && frame->objDepth != NULL ? frame->objDepth[obj->index] : 0u;
+    const unsigned depthTop = !stencilOnly && frame->objDepthTop != NULL ? frame->objDepthTop[obj->index] : depthBottom;
+    const bool leans = depthTop > depthBottom && !obj->affine;
+    size_t runStart[LEAN_MAX_RUNS];
+    uint8_t runDepth[LEAN_MAX_RUNS];
+    int runCount = 0;
     if (mosaicEnabled) {
         if (!build_mosaic_obj_geometry(
                     frame, cache, atlas, cmd, band, obj, clipLeft, clipRight,
@@ -3189,6 +3199,20 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
             obj->bpp8 ? (uint16_t)(obj->baseTile & ~1u) : obj->baseTile;
     for (int tileRow = 0; tileRow < tilesHigh; ++tileRow) {
         for (int tileCol = 0; tileCol < tilesWide; ++tileCol) {
+            if (leans) {
+                /* The depth at the middle of this tile row: tiles count from the screen's top, a flipped sprite
+                 * having its rows the other way round in the object. */
+                const int screenRow = obj->vflip ? tilesHigh - 1 - tileRow : tileRow;
+                const unsigned heightMid = (unsigned)(tilesHigh - 1 - screenRow) * PPU_GPU3DS_TILE_SIDE +
+                                           PPU_GPU3DS_TILE_SIDE / 2u;
+                const unsigned rowDepth =
+                        depthBottom + (depthTop - depthBottom) * heightMid / ((unsigned)tilesHigh * PPU_GPU3DS_TILE_SIDE);
+                if (runCount == 0 || (runDepth[runCount - 1] != rowDepth && runCount < LEAN_MAX_RUNS)) {
+                    runStart[runCount] = *indexCursor;
+                    runDepth[runCount] = (uint8_t)rowDepth;
+                    ++runCount;
+                }
+            }
             const bool obj1d =
                     (frame->dispcntPerLine[band->firstLine] &
                      MODE1_DISP_OBJ_1D) != 0;
@@ -3335,7 +3359,7 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     const uint8_t* io =
             frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;
     const uint16_t bldcnt = read16(io, MODE1_IO_BLDCNT);
-    const PpuGpu3DSBatch base = {
+    PpuGpu3DSBatch base = {
         .firstIndex = (uint32_t)firstIndex,
         .indexCount = (uint32_t)(*indexCursor - firstIndex),
         .firstLine = (uint16_t)clipTop,
@@ -3357,9 +3381,20 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
         .objectIndex = obj->index,
         .objWindow = stencilOnly,
         .semiTransparent = obj->mode == 1u,
-        .depth = !stencilOnly && frame->objDepth != NULL ? frame->objDepth[obj->index] : 0,
+        .depth = (uint8_t)depthBottom,
     };
-    if (stencilOnly) {
+    if (leans && runCount == 1) base.depth = runDepth[0];
+    if (!stencilOnly && !mosaicEnabled && leans && runCount > 1) {
+        for (int run = 0; run < runCount; ++run) {
+            PpuGpu3DSBatch part = base;
+            part.firstIndex = (uint32_t)runStart[run];
+            part.indexCount = (uint32_t)((run + 1 < runCount ? runStart[run + 1] : *indexCursor) - runStart[run]);
+            part.depth = runDepth[run];
+            append_layer_batches(cmd, &part, regions, regionCount, bldcnt,
+                                 read16(io, MODE1_IO_BLDALPHA),
+                                 read16(io, MODE1_IO_BLDY), emit, batchCursor);
+        }
+    } else if (stencilOnly) {
         store_batch(cmd, *batchCursor, &base, emit);
         ++*batchCursor;
     } else {

@@ -437,6 +437,7 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
         memset(virtuappu_mode1_obj_clip_mark_staged, 0, MODE1_GBA_OAM_COUNT);
         memset(virtuappu_mode1_obj_y_negative_staged, 0, MODE1_GBA_OAM_COUNT);
         memset(virtuappu_mode1_obj_depth_staged, 0, MODE1_GBA_OAM_COUNT);
+        memset(virtuappu_mode1_obj_depth_top_staged, 0, MODE1_GBA_OAM_COUNT);
         virtuappu_mode1_obj_clip_enable_staged = 0;
     }
     int sSwampClipActive = (sRenderingPlayer && gPlayerState.floor_type == SURFACE_SWAMP &&
@@ -512,13 +513,17 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
         /* Clipping */
         y -= (s32)se[1]; /* subtract y anchor */
         u8 pieceDepth = sRenderingDepth;
+        u8 pieceDepthTop = sRenderingDepth;
 #ifdef TMC_3DS
         if (bodyShear) {
+            /* The depth rises with the height over the feet: at the piece's bottom edge, and at its top edge, so the
+             * GPU renderer can give each tile row of the piece its own (the lean is then not one step per piece). */
             const s32 above = feetBottom - (y + (s32)se[3]); /* how far this piece's bottom is over the feet */
-            if (above > 0) {
-                const int sum = (int)pieceDepth + Port_Config_StereoBodyDepthQ((int)above);
-                pieceDepth = (u8)(sum > 20 ? 20 : sum);
-            }
+            const int bottomQ = above > 0 ? Port_Config_StereoBodyDepthQ((int)above) : 0;
+            const int topQ = Port_Config_StereoBodyDepthQ((int)(above > 0 ? above : 0) + (int)se[3]);
+            const int sumBottom = (int)sRenderingDepth + bottomQ, sumTop = (int)sRenderingDepth + topQ;
+            pieceDepth = (u8)(sumBottom > 20 ? 20 : sumBottom);
+            pieceDepthTop = (u8)(sumTop > 20 ? 20 : sumTop);
         }
 #endif
         if (sWideCollect) {
@@ -575,6 +580,7 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
         if (sSwampClipActive)
             virtuappu_mode1_obj_clip_mark_staged[updated & 0x7F] = 1;
         virtuappu_mode1_obj_depth_staged[updated & 0x7F] = pieceDepth;
+        virtuappu_mode1_obj_depth_top_staged[updated & 0x7F] = pieceDepthTop;
 
         updated++;
     }
@@ -634,6 +640,7 @@ static void WideSpritesEnd(int first) {
         virtuappu_mode1_obj_y_negative_staged[out] = y < 0;
         virtuappu_mode1_obj_clip_mark_staged[out] = virtuappu_mode1_obj_clip_mark_staged[i];
         virtuappu_mode1_obj_depth_staged[out] = virtuappu_mode1_obj_depth_staged[i];
+        virtuappu_mode1_obj_depth_top_staged[out] = virtuappu_mode1_obj_depth_top_staged[i];
         out++;
     }
     gOAMControls.updated = (u8)out;

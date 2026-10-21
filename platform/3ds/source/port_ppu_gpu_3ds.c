@@ -863,12 +863,16 @@ static uint32_t TintOf(const PpuGpu3DSBatch* batch) {
         g = kRgb[batch->layer][1] * kScale[priority] / 256u;
         b = kRgb[batch->layer][2] * kScale[priority] / 256u;
     } else {
-        int depth = Stereo3DS_LayerDepth(batch->layer, priority);
-        depth = depth < -4 ? -4 : depth > 8 ? 8 : depth;
-        const unsigned t = (unsigned)(depth + 4); /* 0..12 */
-        r = t * 5u;
-        g = t * 10u;
-        b = 40u + t * 17u;
+        /* A sprite with a depth of its own (PpuGpu3DSBatch.depth, quarter pixels) is where that puts it, not on its
+         * layer's: tall sprites show their lean, tile row by tile row. */
+        float depth = batch->depth != 0 && batch->layer == PPU_GPU3DS_OBJ
+                              ? 0.25f * (float)batch->depth
+                              : (float)Stereo3DS_LayerDepth(batch->layer, priority);
+        depth = depth < -4.0f ? -4.0f : depth > 8.0f ? 8.0f : depth;
+        const float t = depth + 4.0f; /* 0..12 */
+        r = (unsigned)(t * 5.0f);
+        g = (unsigned)(t * 10.0f);
+        b = 40u + (unsigned)(t * 17.0f);
     }
     return 0x1000000u | r | (g << 8u) | (b << 16u);
 }

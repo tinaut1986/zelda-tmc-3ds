@@ -312,6 +312,7 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     view->objClipMark = virtuappu_mode1_obj_clip_mark;
     view->objClipY = virtuappu_mode1_obj_clip_y;
     view->objDepth = virtuappu_mode1_obj_depth;
+    view->objDepthTop = virtuappu_mode1_obj_depth_top;
     bool anyShadow = false;
     bool anyZone = false;
     for (unsigned bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {

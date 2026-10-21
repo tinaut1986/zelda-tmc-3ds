@@ -14,6 +14,9 @@ bool Stereo3DS_Active(void);
 /* Some layer is off the screen plane this frame, so the renderer draws a picture per eye;
  * otherwise both eyes show the same one. */
 bool Stereo3DS_HasDepth(void);
+/* The world is being played (the scene of docs/stereo-3d.md, "The world while playing"): the depth a sprite takes from its
+ * height or its pieces' (stereo_world_*) belongs to it alone, never to the title, the file select or the game over. */
+bool Stereo3DS_WorldScene(void);
 /* How far, in view pixels, a GBA layer (PPU_GPU3DS_BG0..BG3, PPU_GPU3DS_OBJ) at a priority
  * (0 front .. 3 back) is moved for an eye: depth (positive: out of the screen) times the
  * slider, rounded to whole pixels and split between the eyes (an odd pixel to the left eye), the left eye to the right.

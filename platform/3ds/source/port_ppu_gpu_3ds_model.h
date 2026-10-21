@@ -262,6 +262,9 @@ typedef struct PpuGpu3DSFrameView {
     int objClipY;
     /* Each OAM entry's stereo 3D depth, quarter pixels (virtuappu_mode1_obj_depth): what Link holds up or threw. */
     const uint8_t* objDepth;
+    /* The same at each entry's top edge (virtuappu_mode1_obj_depth_top): the depth of a tile row goes from objDepth
+     * at the entry's bottom to this at its top; NULL or equal: one depth for the entry. */
+    const uint8_t* objDepthTop;
     /* A uniform screen fade the renderer applies itself (docs/gpu-fade.md):
      * `memory`'s palettes are then the unfaded ones and the finished picture is
      * blended toward grey `fadeLevel` by fadeWeight/255. 0 weight: none. */

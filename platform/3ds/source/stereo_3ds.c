@@ -69,6 +69,8 @@ bool Stereo3DS_Active(void) { return sActive; }
 
 bool Stereo3DS_HasDepth(void) { return sHasDepth; }
 
+bool Stereo3DS_WorldScene(void) { return sActive && (sScenesAny & SCENE_WORLD) != 0; }
+
 static int DepthFor(int scenes, unsigned layer, unsigned priority) {
     if (layer > PPU_GPU3DS_OBJ || priority > 3) return 0;
     int depth = kDepth[layer][priority];
