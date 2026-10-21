@@ -519,6 +519,8 @@ uint8_t virtuappu_mode1_obj_depth[MODE1_GBA_OAM_COUNT];
 uint8_t virtuappu_mode1_obj_depth_staged[MODE1_GBA_OAM_COUNT];
 uint8_t virtuappu_mode1_obj_depth_top[MODE1_GBA_OAM_COUNT];
 uint8_t virtuappu_mode1_obj_depth_top_staged[MODE1_GBA_OAM_COUNT];
+uint8_t virtuappu_mode1_obj_group[MODE1_GBA_OAM_COUNT];
+uint8_t virtuappu_mode1_obj_group_staged[MODE1_GBA_OAM_COUNT];
 
 void virtuappu_mode1_commit_obj_metadata(void) {
     memcpy(virtuappu_mode1_obj_clip_mark, virtuappu_mode1_obj_clip_mark_staged,
@@ -531,6 +533,7 @@ void virtuappu_mode1_commit_obj_metadata(void) {
            sizeof(virtuappu_mode1_obj_depth));
     memcpy(virtuappu_mode1_obj_depth_top, virtuappu_mode1_obj_depth_top_staged,
            sizeof(virtuappu_mode1_obj_depth_top));
+    memcpy(virtuappu_mode1_obj_group, virtuappu_mode1_obj_group_staged, sizeof(virtuappu_mode1_obj_group));
 }
 
 uint16_t virtuappu_mode1_io_read16(uint16_t offset) {

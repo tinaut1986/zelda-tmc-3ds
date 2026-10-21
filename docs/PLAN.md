@@ -42,6 +42,7 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 | Branch | State |
 |---|---|
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
+| `feat/stereo-world` (local only, not pushed) | PR #47 (bheppe, 3D WORLD) merged here plus our fixes (decisions log 2026-10-21): checked on the New 3DS by the owner as it went, **not on the Old 3DS/2DS** (the strips' double draw costs about 1 ms of GPU on the New 3DS). Comment 1 is on the PR; more to come (Minish village, dungeons). Not merged into the release. |
 | `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -1394,4 +1395,11 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   scrolling panel acts on **release** (`Port_SecondScreen_OnTap` defers it; the tab bar still acts at once). Shared
   helpers: `CScrollUpdate` / `CScrollBar` / `CScrollTargets` in `bottom_compact_3ds.inc`. STATES keeps 10 card pictures
   in an LRU cache and reads one per paint, only for visible cards. New translations for the group titles and values.
+- **2026-10-21** PR #47 (3D WORLD) integrated on `feat/stereo-world` with the owner's corrections: depth of a sprite from its
+  height/body only in the world scene (the title lost its logo's depth otherwise), lean per tile row, support depth from the
+  layer under a sprite per entity (objects on roofs sat behind them), the HUD never behind (priority 0 untouched, world depth
+  capped at 5 px), the double draw of moved BG layers that hides the strips they uncover (black lines above doors, both eyes),
+  PLANE TINT DEPTH by sprite depth, and `3dsx.ld` pinned at 0x638000 (the read-only segment overflowed; a state of an older
+  layout does not load). Details: `docs/stereo-3d.md`, "What was added on top of PR #47". Open: the Minish village's leaf blocks
+  (BG2, sunk) and dungeon effects. The PR's comment 1 text is in `build-3ds/3d-world-captures/pr47-comment-1.md` (ignored by git).
 

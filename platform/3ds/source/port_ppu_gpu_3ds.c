@@ -107,6 +107,8 @@ static C3D_Tex sOutputRightTexture;
 static C3D_RenderTarget* sOutputRightTarget;
 static bool sRightReady;
 static bool sEyeShifting;
+/* While a ghost copy is drawn (IsGhostBatch) nothing moves. */
+static bool sNoShift;
 static float sEyeShiftNdc[PPU_GPU3DS_OBJ + 1][4];
 /* The eye the shifts are for, and pixels to NDC: a sprite with a depth of its own (PpuGpu3DSBatch.depth) is moved
  * by its own shift (SpritePx). */
@@ -1031,7 +1033,7 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
                        : batch->texture == PPU_GPU3DS_PICTURE_TEXTURE ? &sPictureTex
                                                                       : &sRingTex[batch->texture - 1u]);
     }
-    SetBatchOffset(batch->offsetX + (sEyeShifting && batch->layer <= PPU_GPU3DS_OBJ
+    SetBatchOffset(batch->offsetX + (sEyeShifting && !sNoShift && batch->layer <= PPU_GPU3DS_OBJ
                                              ? (batch->objWindow && sEyeWindowFollows ? sEyeWindowNdc
                                                 : batch->depth != 0 ? (float)SpritePx(batch) * sEyeToNdc
                                                         : sEyeShiftNdc[batch->layer][batch->priority & 3u])
@@ -1063,7 +1065,7 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
         }
     }
     u32 left = batch->scissorLeft, right = batch->scissorRight;
-    if (sEyeShifting && batch->layer <= PPU_GPU3DS_OBJ) {
+    if (sEyeShifting && !sNoShift && batch->layer <= PPU_GPU3DS_OBJ) {
         const int shift = batch->objWindow && sEyeWindowFollows ? sEyeWindowPx
                           : batch->depth != 0                   ? SpritePx(batch)
                                                                  : sEyeShiftPx[batch->layer][batch->priority & 3u];
@@ -1206,6 +1208,16 @@ static void ClearDepthPlane(void) {
     C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, sIndices + PPU_GPU3DS_CLEAR_FIRST_INDEX);
 }
 
+/* A background layer that stands out of the screen leaves, where it moves, a strip of whatever is under it: a hole
+ * (the arch of a door sits on a layer, the ground under it has none: black) or the outline of the layer below, which
+ * the moved layer used to hide. Each eye draws such a layer (BG1-BG3 in front, the world only) twice, the unmoved copy
+ * first: the strip then shows the layer's own pixels (its edge, as if it were one pixel thicker), not black. */
+static bool sUnderlay;
+static bool IsGhostBatch(const PpuGpu3DSBatch* batch) {
+    return sUnderlay && !batch->objWindow && batch->depth == 0 && batch->layer >= PPU_GPU3DS_BG1 &&
+           batch->layer <= PPU_GPU3DS_BG3 && sFrontLayer[batch->layer][batch->priority & 3u];
+}
+
 /* The prepared frame drawn on one output target, each layer moved by its eye's shift
  * (sEyeShiftNdc, none for a single picture); `pass` says which part of it (OutputPass). */
 static bool DrawOutput(C3D_RenderTarget* target, OutputPass pass) {
@@ -1316,6 +1328,11 @@ static bool DrawOutput(C3D_RenderTarget* target, OutputPass pass) {
             C3D_DepthTest(true, GPU_EQUAL, GPU_WRITE_COLOR);
         else
             C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_COLOR);
+        if (pass != PASS_BASE && IsGhostBatch(batch)) {
+            sNoShift = true;
+            DrawBatch(batch);
+            sNoShift = false;
+        }
         DrawBatch(batch);
         /* A sprite's colour draw is sometimes lost on the Old 3DS (the Zz bubble's one tile in Hyrule Castle's
          * bedroom, about one frame in four): measured on the console, drawing the opaque OBJ batches twice
@@ -1542,6 +1559,7 @@ bool PortPpuGpu3DS_DrawPrepared(void) {
     /* With a layer off the screen plane each eye gets its own picture; otherwise the presenter
      * shows this one to both. */
     const bool stereo = Stereo3DS_HasDepth();
+    sUnderlay = stereo && Stereo3DS_WorldScene();
     SetEyeShifts(stereo, STEREO3DS_LEFT);
     bool drawn;
     const int refusal = !stereo ? SPLIT_OK : gPpuGpu3DSEyesWhole ? SPLIT_FORCED_WHOLE : EyesOverBaseRefusal();

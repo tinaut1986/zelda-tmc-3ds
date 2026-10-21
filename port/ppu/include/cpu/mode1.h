@@ -126,6 +126,10 @@ extern uint8_t virtuappu_mode1_obj_depth_staged[MODE1_GBA_OAM_COUNT];
  * bottom row (obj_depth) to its top (obj_depth_top), tile row by tile row. Equal: the entry stays flat. */
 extern uint8_t virtuappu_mode1_obj_depth_top[MODE1_GBA_OAM_COUNT];
 extern uint8_t virtuappu_mode1_obj_depth_top_staged[MODE1_GBA_OAM_COUNT];
+/* Which entity wrote each OAM entry (0: none of its own): the entries of one entity are one object for the 3D depth
+ * they take from what they rest on. */
+extern uint8_t virtuappu_mode1_obj_group[MODE1_GBA_OAM_COUNT];
+extern uint8_t virtuappu_mode1_obj_group_staged[MODE1_GBA_OAM_COUNT];
 void virtuappu_mode1_commit_obj_metadata(void);
 
 /* Runtime WIP widescreen HUD anchor. BG0 stays 32 tiles wide, but gameplay

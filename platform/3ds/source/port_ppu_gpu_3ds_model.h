@@ -265,6 +265,13 @@ typedef struct PpuGpu3DSFrameView {
     /* The same at each entry's top edge (virtuappu_mode1_obj_depth_top): the depth of a tile row goes from objDepth
      * at the entry's bottom to this at its top; NULL or equal: one depth for the entry. */
     const uint8_t* objDepthTop;
+    /* Stereo 3D "support": a sprite resting on a background layer that stands out (the objects on a roof) takes that
+     * layer's depth for its tiles over it. bgDepthQ[bg][priority] is the layer's depth in quarter pixels at the full
+     * slider (0 behind the screen plane); objSupport is false when no such depth applies (3D off, or not the world). */
+    bool objSupport;
+    /* Which entity wrote each OAM entry (virtuappu_mode1_obj_group; 0: none): an entity's entries share one support. */
+    const uint8_t* objGroup;
+    uint8_t bgDepthQ[4][4];
     /* A uniform screen fade the renderer applies itself (docs/gpu-fade.md):
      * `memory`'s palettes are then the unfaded ones and the finished picture is
      * blended toward grey `fadeLevel` by fadeWeight/255. 0 weight: none. */

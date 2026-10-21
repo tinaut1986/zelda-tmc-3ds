@@ -44,6 +44,26 @@ and the sky (BG3) stay on the screen plane. `stereo_world_on=0` in `tmc3ds.ini` 
 switches that part off (sprites at 0 keep the frame drawn over one base, which costs less on the Old 3DS). The other
 scenes below override it for their layers. The values are in pixels at the full slider, -16 to 16.
 
+### What was added on top of PR #47 (feat/stereo-world, local)
+
+- **Only in the world scene.** The height and body depths of a sprite (`Port_Config_StereoHeightDepthQ` / `StereoBodyDepthQ`)
+  apply only while `Stereo3DS_WorldScene()` (scene bit 128 and the slider up): a sprite with a depth of its own ignores its
+  layer's, so in the title, the file select and GAME OVER they flattened what those scenes tune by hand.
+- **Lean per tile row.** Each OAM entry carries the depth at its bottom (`virtuappu_mode1_obj_depth`) and at its top edge
+  (`virtuappu_mode1_obj_depth_top`); `build_obj` gives each row of tiles (8 px) the depth in between and batches runs of equal
+  depth (at most 12 per sprite, else one depth, the highest).
+- **Support.** A sprite takes the depth of the background layer it rests on (the roof under a statue): `compute_obj_support`
+  samples the frontmost opaque BG1-BG3 layer behind it (priority at or after its own) at the middle of each tile with
+  `text_bg_sample`, takes the highest of the entry's tiles and the highest of the entries of one entity
+  (`virtuappu_mode1_obj_group`, the entity that wrote them). A layer in front of the sprite gives nothing.
+- **The HUD is in front.** Sprites at priority 0 take nothing from their pieces' height and the world's sum is capped at
+  5 px, under the HUD's 6.
+- **Strips a moved layer leaves.** BG1-BG3 in front move one pixel per eye; where the art relies on them covering a hole
+  (a door's arch over ground that has none) or the outline of the layer below, a black line showed at one side, the other
+  in the other eye. In the world scene each eye draws such a layer twice, the unmoved copy first (`IsGhostBatch`): the strip
+  shows the layer's own pixels, so its edge is a pixel thicker on that side.
+- PLANE TINT -> DEPTH paints a sprite by its own depth.
+
 ## What Link holds up or throws
 
 A sprite rather than a layer. The treasure Link shows when he gets one (`LINK_HOLDING_ITEM`) stands 4 px in

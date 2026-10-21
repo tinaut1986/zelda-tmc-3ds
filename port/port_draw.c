@@ -46,6 +46,8 @@ static u8 sRenderingDepth = 0;
 /* Set while an entity's pieces are written: the upper pieces of a tall sprite stand out a little (Port_Config_StereoBodyDepthQ),
  * the lowest stays on the ground's plane, so it leans out instead of floating. */
 static int sRenderingBody = 0;
+/* The entity whose pieces are being written (1..255, 0 outside one): its OAM entries are tagged with it. */
+static u8 sRenderingGroup = 0;
 
 /* The file select drawn at 400x240 (Port_Widescreen_FileSelectWide): the game keeps placing its
  * sprites on the GBA's 240x160 screen; each drawn thing (an entity, a DrawDirect) is moved into
@@ -438,6 +440,7 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
         memset(virtuappu_mode1_obj_y_negative_staged, 0, MODE1_GBA_OAM_COUNT);
         memset(virtuappu_mode1_obj_depth_staged, 0, MODE1_GBA_OAM_COUNT);
         memset(virtuappu_mode1_obj_depth_top_staged, 0, MODE1_GBA_OAM_COUNT);
+        memset(virtuappu_mode1_obj_group_staged, 0, MODE1_GBA_OAM_COUNT);
         virtuappu_mode1_obj_clip_enable_staged = 0;
     }
     int sSwampClipActive = (sRenderingPlayer && gPlayerState.floor_type == SURFACE_SWAMP &&
@@ -579,8 +582,12 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
          * clip in ViruaPPU (see RenderSpritePieces top + port_gba_mem). */
         if (sSwampClipActive)
             virtuappu_mode1_obj_clip_mark_staged[updated & 0x7F] = 1;
+        /* The HUD's sprites (priority 0) take no depth from their pieces' height: they keep the entity's own (none for a HUD element), and with it the
+         * layer's, which is in front of the world's whatever the world does. */
+        if (((attr2 >> 10) & 3u) == 0) pieceDepth = pieceDepthTop = sRenderingDepth;
         virtuappu_mode1_obj_depth_staged[updated & 0x7F] = pieceDepth;
         virtuappu_mode1_obj_depth_top_staged[updated & 0x7F] = pieceDepthTop;
+        virtuappu_mode1_obj_group_staged[updated & 0x7F] = sRenderingGroup;
 
         updated++;
     }
@@ -641,6 +648,7 @@ static void WideSpritesEnd(int first) {
         virtuappu_mode1_obj_clip_mark_staged[out] = virtuappu_mode1_obj_clip_mark_staged[i];
         virtuappu_mode1_obj_depth_staged[out] = virtuappu_mode1_obj_depth_staged[i];
         virtuappu_mode1_obj_depth_top_staged[out] = virtuappu_mode1_obj_depth_top_staged[i];
+        virtuappu_mode1_obj_group_staged[out] = virtuappu_mode1_obj_group_staged[i];
         out++;
     }
     gOAMControls.updated = (u8)out;
@@ -1005,7 +1013,10 @@ static void DrawEntitySpritesOf(Entity* entity, s32 x, s32 y, u32 flags, u16 ext
 static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra) {
     sRenderingDepth = SpriteDepth(entity);
     sRenderingBody = 1;
+    static u8 sNextGroup = 0;
+    sRenderingGroup = (u8)(++sNextGroup == 0 ? ++sNextGroup : sNextGroup);
     DrawEntitySpritesOf(entity, x, y, flags, extra);
+    sRenderingGroup = 0;
     sRenderingBody = 0;
     sRenderingDepth = 0; /* what is drawn next (the HUD, DrawDirect) stays on the screen plane */
 }
