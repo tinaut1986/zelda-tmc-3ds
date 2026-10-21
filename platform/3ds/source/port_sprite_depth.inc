@@ -11,3 +11,5 @@
  * The file is optional: without it every sprite follows the normal rule.
  */
 PORT_SPRITE_DEPTH(OBJECT, BOSS_DOOR, PORT_ANY_TYPE, PORT_DEPTH_INVERT)
+/* The big Chuchu's shadow is an entity of its own (the same graphics as its body with a dark palette): flat on the ground. */
+PORT_SPRITE_DEPTH(OBJECT, CHUCHU_BOSS_START_PARTICLE, PORT_ANY_TYPE, PORT_DEPTH_FLAT)
