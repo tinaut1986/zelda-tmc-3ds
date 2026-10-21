@@ -68,6 +68,12 @@ static int sNeighbourRooms = 1;
 int Port_Config_GetNeighbourRooms(void) { return sNeighbourRooms; }
 const char* Port_Config_GetNeighbourRoomsName(void) { return sNeighbourRooms ? "ON" : "OFF"; }
 void Port_Config_CycleNeighbourRooms(void) { sNeighbourRooms = !sNeighbourRooms; }
+static int sStereoWorld = 1;
+bool Port_Config_StereoWorldQuestionDue(void) { return false; }
+void Port_Config_AnswerStereoWorld(bool yes) { sStereoWorld = yes; }
+int Port_Config_GetStereoWorld(void) { return sStereoWorld; }
+const char* Port_Config_GetStereoWorldName(void) { return sStereoWorld ? "ON" : "OFF"; }
+void Port_Config_CycleStereoWorld(void) { sStereoWorld = !sStereoWorld; }
 int Port_Config_GetGbaFrame(void) { return sGbaFrame; }
 const char* Port_Config_GetGbaFrameName(void) { static const char* const n[] = { "NO", "GBA", "BLUR" }; return n[sGbaFrame]; }
 bool Port_Config_GbaFrameAvailable(void) { return sAspect == 1; }

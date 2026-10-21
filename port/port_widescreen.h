@@ -143,7 +143,7 @@ int Port_Widescreen_TitleViewLive(void);
 enum { PORT_STEREO_SCENE_TITLE_RAYS = 1, PORT_STEREO_SCENE_LIGHT_RAYS = 2,
        PORT_STEREO_SCENE_PATH_LEAVES = 4, PORT_STEREO_SCENE_FILE_SELECT = 8,
        PORT_STEREO_SCENE_LOGOS = 16, PORT_STEREO_SCENE_MAP_HINT = 32,
-       PORT_STEREO_SCENE_GAME_OVER = 64 };
+       PORT_STEREO_SCENE_GAME_OVER = 64, PORT_STEREO_SCENE_WORLD = 128 };
 int Port_Stereo_Scenes(void);
 /* The parts of the 400x240 view the rooms paint (the rest is black), for the presenter's blurred border: the
  * room first, then the neighbouring rooms drawn beside it; how many (at most `max`), or 0 when the room fills

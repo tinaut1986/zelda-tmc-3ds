@@ -564,8 +564,8 @@ enum {
     OPT_TITLE_H = 12,
     OPT_ROW_H = CC_CELL_H + CC_GAP,
     OPT_FOOTER_H = 3 * 10 + 6,
-    /* top margin + 4 group titles + 5 rows of cells + the footer + bottom margin */
-    OPT_TOTAL_H = 2 + 4 * OPT_TITLE_H + 5 * OPT_ROW_H + OPT_FOOTER_H + CC_MARGIN,
+    /* top margin + 4 group titles + 6 rows of cells + the footer + bottom margin */
+    OPT_TOTAL_H = 2 + 4 * OPT_TITLE_H + 6 * OPT_ROW_H + OPT_FOOTER_H + CC_MARGIN,
 };
 static float sOptScroll;
 
@@ -595,6 +595,8 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
     CSettingCellAt(t, tl, y, 1, 1, "GBA GRID", SS_SET_GBA_GRID);
     CSettingCellAt(t, tl, y, 2, 1, "FRAME", SS_SET_GBA_FRAME);
     CSettingCellAt(t, tl, y, 3, 1, "NEIGHBOURS", SS_SET_NEIGHBOURS);
+    y += OPT_ROW_H;
+    CSettingCellAt(t, tl, y, 0, 1, "3D WORLD", SS_SET_STEREO_WORLD);
     y += OPT_ROW_H;
 
     COptTitle(t, y, "GAME");

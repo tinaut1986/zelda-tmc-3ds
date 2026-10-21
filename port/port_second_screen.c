@@ -170,6 +170,7 @@ enum {
     SS_ACT_NOTICE_CLOSE,
 #ifdef TMC_3DS
     SS_ACT_WIDEAI_NO, SS_ACT_WIDEAI_YES, /* the one-time question about WIDE + AI */
+    SS_ACT_STEREOWORLD_NO, SS_ACT_STEREOWORLD_YES, /* the one-time question about 3D WORLD */
     SS_ACT_UPDATE_CHANNEL, SS_ACT_UPDATE_RELEASE, SS_ACT_UPDATE_ACTION,
     SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT, SS_ACT_UPDATE_AUTO,
     SS_ACT_AUTOUPD_NO, SS_ACT_AUTOUPD_YES, SS_ACT_AUTOUPD_NEWS, /* the prompt after the boot check found a newer build */
@@ -220,6 +221,7 @@ enum {
     SS_SET_GBA_GRID,      /* gba_grid: OFF / LOW / MED / HIGH (gba_look_3ds.h) */
     SS_SET_GBA_FRAME,     /* gba_frame: the console's body around a 240x160 / 360x240 picture */
     SS_SET_NEIGHBOURS,    /* neighbour_rooms: OFF / ON */
+    SS_SET_STEREO_WORLD,  /* stereo_world_on: OFF / ON (the world's depth while playing, 3D slider up) */
 #endif
     SS_SET_COUNT
 };
@@ -2085,7 +2087,7 @@ static const char* const kSettingLabels[SS_SET_COUNT] = {
     "RANDOMIZER",       "PANEL BACKDROP",     "SWAP SCREENS",
 #ifdef TMC_3DS
     "ASPECT RATIO",     "DISPLAY STYLE",    "FRAMES",
-    "GBA GRID",         "FRAME",         "NEIGHBOURS",
+    "GBA GRID",         "FRAME",         "NEIGHBOURS",      "3D WORLD",
 #endif
 };
 
@@ -2404,6 +2406,9 @@ static int GetSettingState(int row, char* out, int outCap) {
         case SS_SET_NEIGHBOURS:
             snprintf(out, (size_t)outCap, "%s", Port_Text_Tr(Port_Config_GetNeighbourRoomsName()));
             return Port_Config_GetNeighbourRooms() != 0;
+        case SS_SET_STEREO_WORLD:
+            snprintf(out, (size_t)outCap, "%s", Port_Text_Tr(Port_Config_GetStereoWorldName()));
+            return Port_Config_GetStereoWorld() != 0;
         case SS_SET_FRAMES: {
             static const char* const kPacing[PORT_3DS_PACING_COUNT] = { "AUTO", "LOCK 30", "NO SKIP" };
             int pacing = Port_Config_GetFramePacing();
@@ -2644,6 +2649,17 @@ static void PaintWideAiQuestion(const SSurf* s, TargetList* tl) {
         "AI TO FILL THE WIDE SCREEN.", "SHOW THESE EDGES?", "(YOU CAN CHANGE IT IN VIEW)",
     };
     Compact_PaintModal(s, tl, "WIDE VIEW", kLines, 6, "NO", SS_ACT_WIDEAI_NO, "YES", SS_ACT_WIDEAI_YES);
+}
+
+static void PaintStereoWorldQuestion(const SSurf* s, TargetList* tl) {
+    /* Asked once (Port_Config_StereoWorldQuestionDue): the 3D slider can give depth to the world while playing, but
+     * the game was drawn for flat 2D and some scenes show graphic errors that are hard to fix. YES turns it on. */
+    static const char* const kLines[] = {
+        "THE 3D SLIDER CAN GIVE DEPTH TO THE", "WORLD WHILE YOU PLAY. THE GAME WAS", "DRAWN FOR FLAT 2D, SO SOME SCENES MAY",
+        "SHOW GRAPHIC ERRORS THAT ARE HARD TO", "FIX. THE REST LOOKS GREAT.", "TURN IT ON ANYWAY?",
+        "(YOU CAN CHANGE IT IN OPTIONS)",
+    };
+    Compact_PaintModal(s, tl, "3D WORLD", kLines, 7, "NO", SS_ACT_STEREOWORLD_NO, "YES", SS_ACT_STEREOWORLD_YES);
 }
 
 /* A label centred on a bar: light over the empty part, dark over the filled one, pixel by pixel, so the
@@ -3511,6 +3527,8 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
         }
     } else if (Port_Config_WideAiQuestionDue()) {
         PaintWideAiQuestion(&s, &tl);
+    } else if (Port_Config_StereoWorldQuestionDue()) {
+        PaintStereoWorldQuestion(&s, &tl);
     }
     Compact_PaintBusy(&s, &tl);
 #endif
@@ -3769,6 +3787,12 @@ static void DispatchTap(int x, int y, int longPress) {
         case SS_ACT_WIDEAI_YES:
             Port_Config_AnswerWideAi(true);
             break;
+        case SS_ACT_STEREOWORLD_NO:
+            Port_Config_AnswerStereoWorld(false);
+            break;
+        case SS_ACT_STEREOWORLD_YES:
+            Port_Config_AnswerStereoWorld(true);
+            break;
 #endif
         case SS_ACT_QUESTVIEW:
             UI_LOCK();
@@ -3857,6 +3881,9 @@ static void DispatchTap(int x, int y, int longPress) {
                     break;
                 case SS_SET_NEIGHBOURS:
                     Port_Config_CycleNeighbourRooms();
+                    break;
+                case SS_SET_STEREO_WORLD:
+                    Port_Config_CycleStereoWorld();
                     break;
                 case SS_SET_FRAMES: {
                     int next = (Port_Config_GetFramePacing() + 1) % PORT_3DS_PACING_COUNT;

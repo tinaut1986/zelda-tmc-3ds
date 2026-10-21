@@ -31,6 +31,58 @@ Written to the SD log as `stereo: scenes N` when it changes.
 | 64 | the game over screen (`TASK_GAMEOVER`): the GAME OVER letters (sprites) at 10 px, the choices (BG0, priority 0) at 6, the stone panel (BG1, BG2) at 3 | OBJ, BG0, BG1, BG2 |
 | 32 | the map hints (`SUBTASK_MAPHINT`, `SUBTASK_LOCALMAPHINT`): the grey that covers what is not unlocked and its frame are BG2 (screen plane, with the backdrop); the unlocked map is BG1 at 2 px, seen through the OBJ-window sprites, which follow BG1 (`Stereo3DS_ObjWindowFollows`); the markers are sprites at 5 px | BG2 0, BG1 2, OBJ 5 |
 
+## The world while playing
+
+While playing (`TASK_GAME`, `GAMEMAIN_UPDATE`; scene bit 128, `PORT_STEREO_SCENE_WORLD`) the layer drawn over Link
+(BG1: tree tops, eaves, roofs) stands out of the screen by `stereo_world_bg1` px (default 2) and Link and the world's
+sprites (priority 1-3; the HUD's are 0 and keep `kDepth`'s 6) by `stereo_world_obj` px (default 0: on the ground a sprite stays on the ground's plane, so it does not float). A sprite raised off the
+ground (Link jumping, a flying enemy) stands out with its height instead: `stereo_world_height` percent of it (default 25:
+16 px up is 4 px out, at most 5), through the per-sprite depth below (`SpriteDepth`). The pieces of a tall sprite (more than one OAM entry) stand out with
+their height over the lowest piece, the feet, which stays on the plane (`stereo_world_body` percent, default 8: a piece
+16 px up is 5 quarter pixels out, at most 3 px), so Link and the characters lean out of the ground instead of floating. The ground (BG2)
+and the sky (BG3) stay on the screen plane. `stereo_world_on=0` in `tmc3ds.ini` (or OPTIONS -> 3D WORLD, OFF / ON) switches both off; a value of 0
+switches that part off (sprites at 0 keep the frame drawn over one base, which costs less on the Old 3DS). The other
+scenes below override it for their layers. The values are in pixels at the full slider, -16 to 16.
+
+### What was added on top of PR #47 (feat/stereo-world, local)
+
+- **Only in the world scene.** The height and body depths of a sprite (`Port_Config_StereoHeightDepthQ` / `StereoBodyDepthQ`)
+  apply only while `Stereo3DS_WorldScene()` (scene bit 128 and the slider up): a sprite with a depth of its own ignores its
+  layer's, so in the title, the file select and GAME OVER they flattened what those scenes tune by hand.
+- **Lean per tile row.** Each OAM entry carries the depth at its bottom (`virtuappu_mode1_obj_depth`) and at its top edge
+  (`virtuappu_mode1_obj_depth_top`); `build_obj` gives each row of tiles (8 px) the depth in between and batches runs of equal
+  depth (at most 12 per sprite, else one depth, the highest).
+- **Support.** A sprite takes the depth of the background layer it rests on (the roof under a statue): `compute_obj_support`
+  samples the frontmost opaque BG1-BG3 layer behind it (priority at or after its own) at the middle of each tile with
+  `text_bg_sample`, takes the highest of the entry's tiles and the highest of the entries of one entity
+  (`virtuappu_mode1_obj_group`, the entity that wrote them). A layer in front of the sprite gives nothing.
+- **The HUD is in front.** Sprites at priority 0 take nothing from their pieces' height and the world's sum is capped at
+  5 px, under the HUD's 6.
+- **Strips a moved layer leaves.** BG1-BG3 in front move one pixel per eye; where the art relies on them covering a hole
+  (a door's arch over ground that has none) or the outline of the layer below, a black line showed at one side, the other
+  in the other eye. In the world scene each eye draws such a layer twice, the unmoved copy first (`IsGhostBatch`): the strip
+  shows the layer's own pixels, so its edge is a pixel thicker on that side.
+- PLANE TINT -> DEPTH paints a sprite by its own depth.
+- **A question at the start** (`stereo_world_asked`, `Port_Config_StereoWorldQuestionDue`, after the WIDE + AI one): 3D WORLD is off
+  until the player has been asked once. The game was drawn for flat 2D and some scenes show graphic errors that are hard to fix, the
+  message says so and asks whether to turn it on anyway. The answer is kept; OPTIONS -> 3D WORLD changes it and counts as an answer.
+- **Sprite depth corrections** (`platform/3ds/source/port_sprite_depth.inc`, optional, hand-curated, in the manner of the
+  sibling ports): `PORT_SPRITE_DEPTH(kind, id, type, mode)` per kind of entity. `PORT_DEPTH_INVERT`: a sprite that hangs
+  from its top edge (the boss door in a south wall) has its ground at the top of its pieces and the depth grows downwards
+  (the pieces carry a bottom depth higher than the top one, and the model's rows follow either way). `PORT_DEPTH_FLAT`: no
+  lean. To find the kind and id of a sprite on screen, read the OAM entry's group (`virtuappu_mode1_obj_group`) against the
+  entity that wrote it (kind, id and type are in `Entity`); BOSS_DOOR is `OBJECT`, 57.
+- **The big Chuchu** (`feat/stereo-boss`): it is three entities stacked 14-18 px apart, each piece of them a rotated or scaled
+  (affine) 64 px sprite. Its ground is the lowest bottom edge among its pieces (the frame before), and the rise from feet to
+  head is spread over its whole height (`sBossGround`/`sBossTop` in `port_draw.c`, 16 quarters at most; its jump counts 4 at
+  most, so the ramp survives a jump). Affine pieces are cut in rows of tiles by where the middle of each tile lands on the
+  screen. The piece that touches the ground (its shadow) stays at 0, and every piece of the boss is drawn with the layers in
+  front (`PpuGpu3DSBatch.front`, bit 7 of the OAM entry's depth) so the base/front split cannot invert what covers what.
+  Its batches are not depth tested (`IsPainterBatch`): they skip the depth pre-pass and are drawn with the depth test off, in the
+  order of the list (back to front). With the pre-pass, the colour pass of a sprite drew only where the depth was equal, and with
+  the boss cut into many small batches some of those draws were lost (two rows of tiles of its legs, in one eye, in ~4 % of the
+  frames; 0 of 116 with the change, 5 of 122 without, alternating the two on the console).
+
 ## What Link holds up or throws
 
 A sprite rather than a layer. The treasure Link shows when he gets one (`LINK_HOLDING_ITEM`) stands 4 px in
@@ -49,8 +101,8 @@ eye (reason 4). The software renderer leaves them flat.
 
 - `stereo_3ds.c`, once a frame (`Stereo3DS_BeginFrame` in `PresentFrame`): the setting, the slider,
   and whether any layer has a depth. `Stereo3DS_LayerShift(layer, priority, eye)` is a layer's move
-  in view pixels: depth x slider, half to each eye (the left eye to the right for a positive depth,
-  out of the screen).
+  in whole view pixels: depth x slider, rounded and split between the eyes (the left eye to the right for a positive
+  depth, out of the screen; an odd pixel goes to the left eye, so the smallest disparity is 1 px).
 - The GPU renderer (`port_ppu_gpu_3ds.c`, `PortPpuGpu3DS_DrawPrepared`): each batch of a layer with a
   depth is moved by its layer's shift through the shader's offset, in whole pixels, and its scissor
   with it (or the region edges cut what moved). The right eye has its own output

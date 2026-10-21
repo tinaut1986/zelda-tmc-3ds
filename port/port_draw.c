@@ -16,6 +16,7 @@
 
 #include "color.h"
 #include "entity.h"
+#include "enemy.h"
 #include "global.h"
 #include "main.h"
 #include "room.h"
@@ -30,6 +31,7 @@
 #include "port_rom.h"
 #include "cpu/mode1.h"
 
+extern int Port_Config_GetStereoWorld(void); /* 3D WORLD on (stereo_world_on); only the 3DS build defines it */
 #include <setjmp.h>
 #include <stdio.h>
 #include <string.h>
@@ -43,6 +45,51 @@ static int sRenderingPlayer = 0;
 /* The stereo 3D depth of what is being rendered, quarter pixels (virtuappu_mode1_obj_depth, docs/stereo-3d.md):
  * what Link holds up or has just thrown stands out of the screen. */
 static u8 sRenderingDepth = 0;
+/* Set while an entity's pieces are written: the upper pieces of a tall sprite stand out a little (Port_Config_StereoBodyDepthQ),
+ * the lowest stays on the ground's plane, so it leans out instead of floating. */
+static int sRenderingBody = 0;
+/* The entity whose pieces are being written (1..255, 0 outside one): its OAM entries are tagged with it. */
+static u8 sRenderingGroup = 0;
+/* The big Chuchu is three entities stacked 14-18 px apart, each with its own feet: measured from those, the depth would
+ * start again at 0 in every part. Its ground is the lowest bottom edge among its pieces (the shadow's), taken from the
+ * frame before (the draw order of the parts is not known) and refreshed as they are drawn. */
+static int sRenderingBoss = 0;
+static s32 sBossGround = -0x7fffffff, sBossGroundNext = -0x7fffffff;
+static s32 sBossTop = 0x7fffffff, sBossTopNext = 0x7fffffff; /* and its highest top edge, the same way */
+
+#ifdef TMC_3DS
+/* Per-entity corrections of the stereo depth, hand-curated (platform/3ds/source/port_sprite_depth.inc, optional):
+ *   PORT_SPRITE_DEPTH(kind, id, type, mode)   kind: ENEMY, OBJECT...; id: the kind's own id (BOSS_DOOR...);
+ *                                             type: the entity's type or PORT_ANY_TYPE
+ *   PORT_DEPTH_INVERT: the sprite hangs from the top edge (a door in a south wall): the ground is the top of its
+ *                      pieces and the depth rises downwards, not upwards
+ *   PORT_DEPTH_FLAT:   no lean at all */
+enum { PORT_DEPTH_INVERT = 1, PORT_DEPTH_FLAT = 2, PORT_ANY_TYPE = 0xff };
+typedef struct { u8 kind, id, type, mode; } PortSpriteDepthFix;
+#if defined(__has_include)
+#if __has_include("../platform/3ds/source/port_sprite_depth.inc")
+#define PORT_SPRITE_DEPTH(kind, id, type, mode) { (u8)(kind), (u8)(id), (u8)(type), (u8)(mode) },
+static const PortSpriteDepthFix sSpriteDepthFixes[] = {
+#include "../platform/3ds/source/port_sprite_depth.inc"
+};
+#undef PORT_SPRITE_DEPTH
+#define PORT_SPRITE_FIXES ((int)(sizeof(sSpriteDepthFixes) / sizeof(sSpriteDepthFixes[0])))
+#endif
+#endif
+#ifndef PORT_SPRITE_FIXES
+static const PortSpriteDepthFix sSpriteDepthFixes[1];
+#define PORT_SPRITE_FIXES 0
+#endif
+static int sRenderingInvert = 0, sRenderingFlat = 0;
+static int SpriteDepthMode(const Entity* entity) {
+    for (int i = 0; i < PORT_SPRITE_FIXES; ++i) {
+        const PortSpriteDepthFix* f = &sSpriteDepthFixes[i];
+        if (f->kind == entity->kind && f->id == entity->id && (f->type == PORT_ANY_TYPE || f->type == entity->type))
+            return f->mode;
+    }
+    return 0;
+}
+#endif
 
 /* The file select drawn at 400x240 (Port_Widescreen_FileSelectWide): the game keeps placing its
  * sprites on the GBA's 240x160 screen; each drawn thing (an entity, a DrawDirect) is moved into
@@ -431,9 +478,15 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
      * first emitted sprite has updated==0, since FlushSprites zeroes it). */
     extern PlayerEntity gPlayerEntity;
     if (updated == 0) {
+        sBossGround = sBossGroundNext;
+        sBossGroundNext = -0x7fffffff;
+        sBossTop = sBossTopNext;
+        sBossTopNext = 0x7fffffff;
         memset(virtuappu_mode1_obj_clip_mark_staged, 0, MODE1_GBA_OAM_COUNT);
         memset(virtuappu_mode1_obj_y_negative_staged, 0, MODE1_GBA_OAM_COUNT);
         memset(virtuappu_mode1_obj_depth_staged, 0, MODE1_GBA_OAM_COUNT);
+        memset(virtuappu_mode1_obj_depth_top_staged, 0, MODE1_GBA_OAM_COUNT);
+        memset(virtuappu_mode1_obj_group_staged, 0, MODE1_GBA_OAM_COUNT);
         virtuappu_mode1_obj_clip_enable_staged = 0;
     }
     int sSwampClipActive = (sRenderingPlayer && gPlayerState.floor_type == SURFACE_SWAMP &&
@@ -450,6 +503,41 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
     /* OAM entries start at offset 0x20 in OAMControls, each 8 bytes */
     u8* oamBase = (u8*)&gOAMControls.oam[0];
     u8* ip = oamBase + updated * 8;
+
+#ifdef TMC_3DS
+    /* The bottom edge of the lowest piece: the sprite's feet. */
+    extern int Port_Config_StereoBodyDepthQ(int height);
+    /* A sprite of several pieces leans out with its height over its feet; so does a single tall piece (the big Chuchu is
+     * one 64 px piece per part): see the per-piece test below. */
+    const int bodyShear = sRenderingBody && !sRenderingFlat;
+    s32 feetBottom = -0x7fffffff;
+    s32 topMin = 0x7fffffff; /* the highest top edge of its pieces: the ground of a sprite that hangs (PORT_DEPTH_INVERT) */
+    if (bodyShear) {
+        const u8* scan = data;
+        for (int i = 0; i < count; i++, scan += 5) {
+            s8 scanYoff = (s8)scan[1];
+            if (!(flags & 0x300) && (flags & 0x20000000))
+                scanYoff = -scanYoff;
+            const u32 scanSize = (scan[2] & 0xF0) >> 2;
+            if ((size_t)tableOff + scanSize + 3 >= sizeof(sSizeTable))
+                continue;
+            const u8* scanEntry = sizeTab + scanSize;
+            const s32 bottom = (s32)scanYoff + (s32)baseY - (s32)scanEntry[1] + (s32)scanEntry[3];
+            if (bottom > feetBottom)
+                feetBottom = bottom;
+            if (bottom - (s32)scanEntry[3] < topMin)
+                topMin = bottom - (s32)scanEntry[3];
+            if (sRenderingBoss && bottom - (s32)scanEntry[3] < sBossTopNext)
+                sBossTopNext = bottom - (s32)scanEntry[3];
+        }
+        if (sRenderingBoss) {
+            if (feetBottom > sBossGroundNext)
+                sBossGroundNext = feetBottom;
+            if (sBossGround > feetBottom)
+                feetBottom = sBossGround;
+        }
+    }
+#endif
 
     for (int i = 0; i < count; i++) {
         if (updated >= 0x80) {
@@ -486,6 +574,36 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
 
         /* Clipping */
         y -= (s32)se[1]; /* subtract y anchor */
+        u8 pieceDepth = sRenderingDepth;
+        u8 pieceDepthTop = sRenderingDepth;
+#ifdef TMC_3DS
+        if (bodyShear && (count > 1 || se[3] > 16 || sRenderingInvert)) {
+            /* The depth rises with the height over the feet: at the piece's bottom edge, and at its top edge, so the
+             * GPU renderer can give each tile row of the piece its own (the lean is then not one step per piece). */
+            const s32 above = feetBottom - (y + (s32)se[3]); /* how far this piece's bottom is over the feet */
+            /* The big Chuchu spreads the same rise over its whole height (ground to the top of its head). */
+            const s32 bossHeight = sRenderingBoss && sBossGround > sBossTop ? sBossGround - sBossTop : 0;
+            const int aboveBottom = (int)(above > 0 ? above : 0), aboveTop = aboveBottom + (int)se[3];
+            const int bottomQ = above <= 0 ? 0
+                                : bossHeight > 16 ? (int)(aboveBottom * 16 / bossHeight > 16 ? 16 : aboveBottom * 16 / bossHeight)
+                                                  : Port_Config_StereoBodyDepthQ(aboveBottom);
+            /* The lowest piece of the boss is its shadow (a dark ellipse in a 64 px piece of its own): flat on the ground, so
+             * it stays at 0; otherwise it would be drawn in front of the feet that stand on it. */
+            const int topQ = sRenderingBoss && above <= 0 ? 0 : bossHeight > 16 ? (int)(aboveTop * 16 / bossHeight > 16 ? 16 : aboveTop * 16 / bossHeight)
+                                             : Port_Config_StereoBodyDepthQ(aboveTop);
+            int sumBottom = (int)sRenderingDepth + bottomQ, sumTop = (int)sRenderingDepth + topQ;
+            if (sRenderingInvert) {
+                /* Hanging from its top edge: the depth is nil there and grows downwards. */
+                const int belowTop = (int)(y - topMin > 0 ? y - topMin : 0);
+                sumBottom = (int)sRenderingDepth + Port_Config_StereoBodyDepthQ(belowTop + (int)se[3]);
+                sumTop = (int)sRenderingDepth + Port_Config_StereoBodyDepthQ(belowTop);
+            }
+            pieceDepth = (u8)(sumBottom > 20 ? 20 : sumBottom);
+            pieceDepthTop = (u8)(sumTop > 20 ? 20 : sumTop);
+            /* ...and it does not rise with the boss's jump either: its shadow stays where the ground is. */
+            if (sRenderingBoss && above <= 0) pieceDepth = pieceDepthTop = 0;
+        }
+#endif
         if (sWideCollect) {
             /* Placed and clipped by WideSpritesEnd. */
             x -= (s32)se[0];
@@ -539,7 +657,14 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
          * clip in ViruaPPU (see RenderSpritePieces top + port_gba_mem). */
         if (sSwampClipActive)
             virtuappu_mode1_obj_clip_mark_staged[updated & 0x7F] = 1;
-        virtuappu_mode1_obj_depth_staged[updated & 0x7F] = sRenderingDepth;
+        /* The HUD's sprites (priority 0) take no depth from their pieces' height: they keep the entity's own (none for a HUD element), and with it the
+         * layer's, which is in front of the world's whatever the world does. */
+        if (((attr2 >> 10) & 3u) == 0) pieceDepth = pieceDepthTop = sRenderingDepth;
+        /* Every piece of the big Chuchu is drawn with the layers in front (bit 7), moved or not: split between the base and
+         * the front, its parts would cover one another in the wrong order. */
+        virtuappu_mode1_obj_depth_staged[updated & 0x7F] = (u8)(pieceDepth | (sRenderingBoss && Port_Config_GetStereoWorld() ? 0x80 : 0));
+        virtuappu_mode1_obj_depth_top_staged[updated & 0x7F] = pieceDepthTop;
+        virtuappu_mode1_obj_group_staged[updated & 0x7F] = sRenderingGroup;
 
         updated++;
     }
@@ -599,6 +724,8 @@ static void WideSpritesEnd(int first) {
         virtuappu_mode1_obj_y_negative_staged[out] = y < 0;
         virtuappu_mode1_obj_clip_mark_staged[out] = virtuappu_mode1_obj_clip_mark_staged[i];
         virtuappu_mode1_obj_depth_staged[out] = virtuappu_mode1_obj_depth_staged[i];
+        virtuappu_mode1_obj_depth_top_staged[out] = virtuappu_mode1_obj_depth_top_staged[i];
+        virtuappu_mode1_obj_group_staged[out] = virtuappu_mode1_obj_group_staged[i];
         out++;
     }
     gOAMControls.updated = (u8)out;
@@ -948,14 +1075,33 @@ static u8 SpriteDepth(const Entity* entity) {
         }
         return DepthForHeight(entity);
     }
+#ifdef TMC_3DS
+    /* Standing on the ground (z 0) a sprite stays on the ground's plane, so it does not float; raised off it
+     * (jumping, falling, flying) it stands out with its height (stereo_world_height in tmc3ds.ini). */
+    extern int Port_Config_StereoHeightDepthQ(int height);
+    return (u8)Port_Config_StereoHeightDepthQ(-(s32)entity->z.HALF.HI);
+#else
     return 0;
+#endif
 }
 
 static void DrawEntitySpritesOf(Entity* entity, s32 x, s32 y, u32 flags, u16 extra);
 
 static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra) {
     sRenderingDepth = SpriteDepth(entity);
+    sRenderingBody = 1;
+    sRenderingBoss = entity->kind == ENEMY && entity->id == CHUCHU_BOSS;
+    { const int mode = SpriteDepthMode(entity); sRenderingInvert = mode == PORT_DEPTH_INVERT; sRenderingFlat = mode == PORT_DEPTH_FLAT; }
+    /* Its jump (1 px at most) must not use up the room the rise from feet to head needs under the world's cap: with the
+     * whole of it, every part reached the cap at the top of a jump and the ramp was lost. */
+    if (sRenderingBoss && sRenderingDepth > 4) sRenderingDepth = 4;
+    static u8 sNextGroup = 0;
+    sRenderingGroup = (u8)(++sNextGroup == 0 ? ++sNextGroup : sNextGroup);
     DrawEntitySpritesOf(entity, x, y, flags, extra);
+    sRenderingGroup = 0;
+    sRenderingBody = 0;
+    sRenderingBoss = 0;
+    sRenderingInvert = sRenderingFlat = 0;
     sRenderingDepth = 0; /* what is drawn next (the HUD, DrawDirect) stays on the screen plane */
 }
 
