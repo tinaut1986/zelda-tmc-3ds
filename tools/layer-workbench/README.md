@@ -3,21 +3,25 @@
 Stage 1 of a desktop layer workbench for The Minish Cap, like the ones in
 `../mzm/tools/layer-workbench` and `../sm-3ds/tools/layer-workbench`: the data
 extractor and its tests. Stage 2 is the read-only HTML viewer (`serve.py` + `index.html`, see "Viewer").
-Stage 2b adds sprites as pictures for a curated list of entity families
-(`sprites.py` -> `sprites.json`, see "Sprites").
+Stage 2b adds sprites as pictures (`sprites.py` -> `sprites.json`, see "Sprites"): a curated rule per family
+where the init code is known, and the default sprite of the definition table for every other object, enemy, NPC and
+projectile. Stage 3 adds two editing aids, neither of which touches the game itself: a sprite picker (preview only,
+choices kept in `sprite_view.json`) and a 3D DEPTH panel that edits the port's `port_sprite_depth.inc` (see "Sprite
+picker" and "3D depth panel").
 
 ```sh
 export TMC_ROM=/path/to/the-minish-cap.gba    # USA (BZME) or EU (BZMP)
-python3 tools/layer-workbench/build_maps.py   # writes maps.json, maps.json.gz and sprites.json (~5 s)
-python3 tools/layer-workbench/test_maps.py    # ~2.2 million checks (~5 s)
+python3 tools/layer-workbench/build_maps.py   # writes maps.json, maps.json.gz, sprites.json, sprites_tiles.json.gz (~7 s)
+python3 tools/layer-workbench/test_maps.py    # ~2.3 million checks (~6 s)
+python3 tools/layer-workbench/test_depth_inc.py   # the .inc reader/writer and the two write endpoints (temp copies only)
 python3 tools/layer-workbench/render_room.py 0x20 0 /tmp/room.png [--entities]
 ```
 
 `--rom PATH` works in place of `TMC_ROM`. Python 3 standard library only;
 `render_room.py` and the visual test also use PIL when it is installed.
 
-**`maps.json` and `sprites.json` are the game's art** (tiles, palettes, maps, sprite
-pictures), and so is any PNG rendered from them. They are gitignored here; never commit, package or share them.
+**`maps.json`, `sprites.json` and `sprites_tiles.json.gz` are the game's art** (tiles, palettes, maps, sprite
+pictures and tile data), and so is any PNG rendered from them. They are gitignored here; never commit, package or share them.
 The repository's top `.gitignore` hides `*.py`; this folder's `.gitignore`
 un-hides its scripts, so `git add tools/layer-workbench` picks them up.
 
@@ -27,10 +31,13 @@ un-hides its scripts, so `git add tools/layer-workbench` picks them up.
 |---|---|
 | `tmcdata.py` | Readers: the ROM (pointer tables, LZ77, map definitions, palette groups), the enums in `include/`, the label layout of `data/map/entity_headers.s`, the entity loads in `src/roomInit.c`. |
 | `build_maps.py` | Walks every area and room and writes `maps.json` (and, through `sprites.py`, `sprites.json`; `--no-sprites` skips it). |
-| `sprites.py` | The OBJ side: object definitions, sprite/animation/frame tables, OAM pieces, tiles and palettes read from the ROM, plus the per-family rules (which animation/frame/flip the entity's init code picks) that give each entity a picture. |
+| `sprites.py` | The OBJ side: object and NPC definitions, sprite/animation/frame tables, OAM pieces, tiles and palettes read from the ROM, the per-family rules (which animation/frame/flip the entity's init code picks) and the default sprite of every other entity; also the catalog of animations and frames the picker draws alternatives from. |
+| `entdefs.py` | The enemy and projectile definition tables (`src/enemy.c`, `src/projectile.c`): a small C preprocessor and table parser, and the ROM lookup by content. |
+| `depth_inc.py` | Reader and minimal-diff writer of `platform/3ds/source/port_sprite_depth.inc`. |
 | `render_room.py` | Draws one room from `maps.json` as the BG hardware would. Also the reference for the viewer. |
-| `test_maps.py` | The checks (below). |
-| `serve.py`, `index.html` | The desktop viewer (see "Viewer"). |
+| `test_maps.py`, `test_depth_inc.py` | The checks (below). |
+| `serve.py`, `index.html` | The desktop viewer (see "Viewer"); `serve.py` also serves the two write endpoints. |
+| `sprite_view.json` | The sprite picker's choices (committed, no art; created by the first choice). |
 
 ## How the data is read
 
@@ -194,10 +201,11 @@ An exit (`Transition`, 20 bytes, `include/transitions.h`): `warpType`(`Name`), `
 
 ```sh
 python3 tools/layer-workbench/serve.py [--rom PATH] [--port 8765] [--no-browser] [--rebuild]
+                                       [--depth-inc PATH] [--sprite-view PATH]
 ```
 
 Serves this folder on `127.0.0.1:8765` and opens the browser. `maps.json` (and
-`sprites.json`) are built first (`TMC_ROM` or `--rom`) when missing or older than
+`sprites.json`, `sprites_tiles.json.gz`) are built first (`TMC_ROM` or `--rom`) when missing or older than
 `build_maps.py` / `tmcdata.py` / `sprites.py`; a lone `maps.json.gz` is accepted too,
 and the viewer works without `sprites.json` (markers only). Standard library only, and one
 self-contained `index.html` (no CDN). Opened from `file://` the page cannot read
@@ -207,8 +215,10 @@ self-contained `index.html` (no CDN). Opened from `file://` the page cannot read
 address follows the room you open. `index.html?test` runs the self-checks: counts,
 and the composite of 14 rooms (all layers, flips, palettes, special mode) hashed
 against `render_room.py`'s output, the pictures of `sprites.json` (hashes in
-`EXPECT_SPR`), that RESULT draws a sprite when SPRITES is on, and that a hidden layer's
-window starts minimised; the result shows in a box and as the page title
+`EXPECT_SPR`, curated and default), that the viewer's own `renderFrame` reproduces every distinct
+picture, the picker's transforms and precedence, the depth panel's logic (first match, what is and is not
+written, the illustration's direction, the jump), that RESULT draws a sprite when SPRITES is on, and that a hidden layer's
+window starts minimised. They never write a file (use `serve.py --depth-inc TEMP` anyway when running them); the result shows in a box and as the page title
 (`TEST PASS`). After changing `build_maps.py`, `sprites.py` or `render_room.py`,
 regenerate the hashes in `EXPECT` / `EXPECT_SPR`.
 
@@ -225,11 +235,12 @@ kept in `localStorage`; RELAYOUT restores the default arrangement.
 
 | Window | What |
 |---|---|
-| RESULT | The room composed, with the curated sprites over it (SPRITES); a checkbox per layer (BG1/BG2/BG3). Layers the game hides in that room are marked and need "show layers the game hides". |
+| RESULT | The room composed, with the sprites over it (SPRITES) and, when the 3D DEPTH window is open, the depth illustration of the selected entities; a checkbox per layer (BG1/BG2/BG3). Layers the game hides in that room are marked and need "show layers the game hides". |
 | BG2 / BG1 / BG3 LAYER | One layer alone over a checkerboard. BG3's control is set by managers at runtime, so it has a char-base selector (a guess to try). A layer the game does not show in the room (`visible: false`, e.g. BG1 of the Minish houses) starts **minimised** (RELAYOUT and room changes keep that rule; it reopens in the next room that shows it) and, when opened, is drawn dimmed under a "NOT SHOWN BY THE GAME IN THIS ROOM, data may not be a drawable map" notice. RESULT keeps ignoring such layers unless "show layers the game hides" is ticked. |
 | MAP | The rooms of the current area at their world positions; click opens; the current room is outlined; visited rooms show their picture. |
 | ENTITIES | Markers switch, SPRITES switch, text filter, one checkbox per kind (ENEMY, OBJECT, NPC, MANAGER, ..., plus TILE for tile entities and EXIT), and the list. Click selects (Ctrl adds), double click centres the views on it. |
-| INFO | The selection: for an entity with a sprite record, the picture and **why it is drawn that way** (the rule and the repo function it comes from, animation/frame, flips, offset, tiles, palette, and the runtime state the pose assumes); then every field of the objects, the metatile index, type and the four tile entries of each block (with a preview). COPY INFO and CLEAR SELECTION. |
+| INFO | The selection: for an entity with a sprite record, the **sprite picker** (below), the picture and **why it is drawn that way** (the rule and the repo function it comes from, or "default (not curated)" and the definition table; animation/frame, flips, offset, tiles, palette, and the runtime state the pose assumes); then every field of the objects, the metatile index, type and the four tile entries of each block (with a preview). COPY INFO and CLEAR SELECTION. |
+| 3D DEPTH | The selected entity's stereo depth mode from `port_sprite_depth.inc`, a selector to change it, the list of all entries, SAVE (below). |
 
 The left list groups rooms by area (collapsible, remembered); search takes a name, a
 hex area (`48`, `0x48`) or `AA-RR`. The top bar shows area/room, size, mode, each layer's
@@ -255,6 +266,9 @@ windows show one layer); the markers stay, switch them off with ENTITIES / marke
 | E, P, L, G, Y, F, B | entity markers, sprites, labels, grid, sync pan, fit, room list |
 | Ctrl+C with no text selected, COPY INFO | room + selection as plain text for a chat (blocks up to 256) |
 
+Entities without a picture keep their marker. Clicking a sprite selects its entity. If you opened the viewer before the 3D DEPTH window existed,
+RELAYOUT puts the windows in the new default arrangement.
+
 Panning and zooming the image windows is synchronised (SYNC PAN, on by default); the
 MAP window is independent. Metatile indices past the loaded set are flagged in the top
 bar and in INFO. Read-only: editing and saving are a later stage.
@@ -262,54 +276,160 @@ bar and in INFO. Read-only: editing and saving are a later stage.
 ## Sprites
 
 Entities are positions in `maps.json`; what they look like is decided by their own
-init code. `sprites.py` covers a curated list of families where that is certain and
-writes `sprites.json` (`tmc-layer-workbench-sprites`):
+init code. `sprites.py` draws two kinds of picture and writes `sprites.json`
+(`tmc-layer-workbench-sprites`, version 2):
+
+- **curated**: a family with a rule (`RULES`) that states which animation, frame, flips and offset its init
+  code picks, citing the function;
+- **default (not curated)**: every other positioned `OBJECT`, `ENEMY`, `NPC` and `PROJECTILE` whose kind has a
+  definition table in the ROM gets the table's sprite, palette and tiles, drawn as animation 0's first frame with
+  no entity flips. INFO says "DEFAULT (not curated)" and names the table. It is the sprite the entity is *made
+  of*, not necessarily the pose its code shows (an octorok faces down here whatever it does in play): use the
+  picker for the other animations. A curated rule always wins over the default.
 
 ```js
-{ "pictures": { "<hash>": { "w": 32, "h": 64, "ox": -14, "oy": -32, "rgba": "<base64 w*h*4>" } },
-  "rooms": { "20-00": { "1": { "family": "OBJECT/GENTARI_CURTAIN", "pic": "<hash>",
+{ "version": 2, "pictures": { "<hash>": { "w": 32, "h": 64, "ox": -14, "oy": -32, "rgba": "<base64 w*h*4>" } },
+  "rooms": { "20-00": { "1": { "family": "OBJECT/GENTARI_CURTAIN", "pic": "<hash>", "src": "<source>",
         "rule": "GentariCurtain_Init (src/object/gentariCurtain.c)", "sprite": 134,
-        "anim": 0, "frame": 0, "flipX": 0, "flipY": 0, "dx": 2, "dy": 0,
+        "anim": 0, "frame": 0, "flipX": 0, "flipY": 0, "baseFlipX": 0, "baseFlipY": 0, "dx": 2, "dy": 0,
         "gfx": "swapped, frame 0 of sprite 134", "palette": 132,
         "why": ["x += 2 (GentariCurtain_Init)", "..."], "state": "shut pose; ..." } } },
+  "sizeTable": [240 numbers],                    // OBJ size table: piece anchors and sizes per flip
+  "sprites": { "134": { "frames": { "0": [[x, y, shape, size, flags, tile, palAdd], ...] },   // OAM pieces per listed frame
+                        "anims": [ { "f": [[frameIndex, duration, settings, flags], ...], "l": loopTarget } ],
+                        "swap": { "0": [numTiles, firstTile] } } },   // swapped sprites: tiles per frame
+  "sources": { "<key>": { "s": 134, "m": 1, "t": "f12", "r": [[16 colours]...], "a": [6 absolute OBJ rows] } },
+  "tilesets": { "f12": "<base64 of a fixed gfx blob>" },
   "notCovered": { "OBJECT/SPECIAL_CHEST": "reason" }, "stats": {}, "skips": {} }
 ```
 
-Room keys are the viewer's (`AA-RR`, hex); the inner key is the entity's index in the
-room's `entities`. A picture is pre-rendered RGBA (the OAM pieces of the frame, tiles
-and palette resolved, flips applied) whose top-left is (`ox`, `oy`) from the entity's
-`x`, `y`. A record with `skipped` instead of `pic` says why it has none.
+Room keys are the viewer's (`AA-RR`, hex); the inner key is the entity's index in the room's `entities`. A picture
+is pre-rendered RGBA (the OAM pieces of the frame, tiles and palette resolved, flips applied) whose top-left is
+(`ox`, `oy`) from the entity's `x`, `y`; pictures are deduplicated (445 for ~2900 entities). A record with
+`skipped` instead of `pic` says why it has none. `src` points at what the picker needs to draw any other frame of
+the same sprite the way this entity would: the sprite's frames and animations, the tiles (a fixed gfx blob, or the
+sprite's own swapped tiles), and the palette rows. The swapped tiles are 15 MB of base64 and live in
+`sprites_tiles.json.gz`, loaded the first time a picture needs them; `sprites.json` itself is ~7 MB. The viewer's
+`renderFrame` is a port of `render_pieces` and is checked against every picture (below).
 
-How an object is drawn, and where `sprites.py` reads each step (the ROM, the way the
+How a sprite is drawn, and where `sprites.py` reads each step (the ROM, the way the
 port reads it, never the decomp's compiled USA tables):
 
 | Step | Source |
 |---|---|
-| sprite index, OBJ palette id, gfx index and type | `gObjectDefinitions[id]` (`LoadObjectSprite`, `src/objectUtils.c`): 8 bytes per id, not in `RomOffsets`, so found by content in the ROM (the 4 plain records after id 2) and compared entry by entry with `src/objectDefinitions_data.inc` (EU pass) by the tests |
-| animation / frame / flips / offset | the family's init code (`RULES` in `sprites.py`; each rule cites its function and the tests check its lines still exist) |
-| first frame of an animation | `InitializeAnimation` / `FrameZero` (`port/port_animation.c`): `gSpritePtrs[sprite].animations[anim]`, 4-byte frames; the frame's spriteSettings flip bits XOR the entity's |
+| sprite index, OBJ palette id, gfx index and type | **objects**: `gObjectDefinitions[id]` (`LoadObjectSprite`, `src/objectUtils.c`); **NPCs**: `gNPCDefinitions[id]` (`NPCInit`, `src/npcUtils.c`); both 8 bytes per record, not in `RomOffsets`, so found by content in the ROM (the first run of four plain records) and compared entry by entry with `src/objectDefinitions_data.inc` / `src/npcDefinitions_data.inc` (EU pass) by the tests; a MULTI_FORM entry points at a table of forms picked by the entity's type, whose length comes from the source (a type past it is left as a marker). **Enemies and projectiles**: `gEnemyDefinitions` (`EnemyInit` / `LoadEnemySprite`, `src/enemy.c`) and `gProjectileDefinitions` (`src/projectile.c`), 16 bytes per record (`entdefs.py`): the C source is preprocessed for the ROM's region, the ROM is searched for the whole table with the hitbox pointer and sprite index as wildcards (exactly one match), then every record and form is compared with the source and the sprite indices with `enum Sprites` in the EU layout. `gfx` there: 0 none, bit 15 tiles already in VRAM, bit 14 swapped, else a fixed gfx index |
+| animation / frame / flips / offset | curated: the family's init code (`RULES`); default: animation 0 |
+| first frame of an animation | `InitializeAnimation` / `FrameZero` (`port/port_animation.c`): `gSpritePtrs[sprite].animations[anim]`, 4-byte frames (frame 0xFF draws nothing; bit 7 of the flags byte ends the animation and the next byte is the loop-back distance); the frame's spriteSettings flip bits XOR the entity's |
 | OAM pieces | `gFrameObjLists[sprite]` -> frame table -> `{count, 5 bytes per piece}` (`LookupFrameData`, `RenderSpritePieces`, `port/port_draw.c`); the OBJ size table (`overlaySizeTable`) gives anchors, which is how a flip mirrors a piece |
 | tiles | type 0: `gFixedTypeGfxData[gfx]` (`LoadFixedGFX`, `sub_080ADDD8`); type 1: the frame's tiles from `gSpritePtrs[sprite]` (`UpdateSpriteGfxSlot`); type 2 (already in VRAM) is not modelled |
 | palette | `LoadObjPalette` / `LoadObjPaletteAtIndex` (`src/color.c`): ids 0-5 are the room's OBJ rows 0-5, 6-0x14 BG palette id-6 of the room, 0x16+ `objPalettes` in the ROM; a piece's palette addend selects the row |
 
-Families drawn (EU ROM, rest pose; see each record's `state` for what it assumes):
+Curated families (EU ROM, rest pose; see each record's `state` for what it assumes):
 `BOSS_DOOR` (animation `type & 0x1f`), `LOCKED_DOOR` (`frameIndex = type & 3`, `|= 4`
 for key locks; gfx by area from `gUnk_0811F690`, read from the ROM), `MINECART_DOOR`
 (same gfx; `frameIndex = type`), `METAL_DOOR` (`flipY`), `GENTARI_CURTAIN` (animation 0,
 x + 2), `CHEST_SPAWNER` types 2-5 (animation 0), `LIGHT_DOOR` type 0, `TRAPDOOR`
-(animation 0). Seen and left as markers: `SPECIAL_CHEST` (no sprite in its definition),
-`CHEST_SPAWNER` types 0, 1, 6, 7 (a BG tile set at runtime), `HOUSE_DOOR_EXT/INT`
-(spawners driven by the room's property table), `ROTATING_TRAPDOOR` (transient).
-Small and big chests (`SMALL_CHEST`, `BIG_CHEST` tile entities) are BG tiles already in
-the maps, not sprites. A wrong picture is worse than a marker: anything a rule cannot
-resolve (a palette that is runtime state, a position outside the room, gfx already in
-VRAM) is skipped with the reason.
+(animation 0).
+
+Left as markers (a wrong picture is worse than a marker; the reason is in INFO and `skips`). Curated families
+the rules do not draw: `SPECIAL_CHEST` (no sprite in its definition), `CHEST_SPAWNER` types 0, 1, 6, 7 (a BG tile
+set at runtime), `HOUSE_DOOR_EXT/INT` (spawners driven by the room's property table; their default frame depends
+on runtime state, so they are in `NOT_COVERED` and get no default either), `ROTATING_TRAPDOOR` (transient). Default
+sprites: 1337 of 4052 candidate entities, by reason: tiles already in VRAM, loaded by something else (object gfx
+type 2: 646; enemy common gfx: 26; an enemy gfx of 0: 13), the animation starts on frame 255 (draws nothing: 150) or on a frame past
+its sprite's frame table (20), the definition has no sprite (136 objects and NPCs: drawn by their own code), a frame
+without OAM pieces (132), a palette that is runtime state or an absolute OBJ row the room did not load (140), a fixed gfx index with no
+data (23), a position outside the room (51, the data quirks below). Small and big chests (`SMALL_CHEST`, `BIG_CHEST` tile entities) are BG tiles already in the maps, not sprites.
+
+The frames the picker lists are the ones an animation names, the ones a record draws and, for a sprite without
+animations, its first raw frames. The frame tables of `gFrameObjLists` have no stored length: they are laid out
+one after the other, so a table runs up to the next sprite's table (where the order breaks, mostly sprites past
+330, the length is unknown); a frame index past that reads another sprite's table, so such frames are not listed.
 
 Adding a family: write a rule (cite the init function), add the regexes it relies on
 to `RULE_SOURCES`, run `build_maps.py`, `test_maps.py`, and paste the new counts and
 checksums after looking at the rooms.
 
+## Sprite picker
+
+In INFO, for a selected entity that has a drawn sprite (curated or default), the **SPRITE PICKER** shows, under the
+line *PREVIEW ONLY: these choices change what this viewer draws. They do not change the game*:
+
+- **animation** and **frame** dropdowns: every animation of the entity's sprite (with its step count and loop), and the
+  steps of the chosen one (frame, duration, the frame's own flips); or the frames listed for the sprite (raw);
+- **FLIP H**, **FLIP V** (mirror about the entity's position) and **ROTATE 90** (clockwise, about the picture's
+  centre): previews only, applied on top of what the game does for that frame (the entity's own flips XOR the
+  frame's spriteSettings), so you can see how the sprite would look; the game never does that;
+- **apply to**: every entity of this kind/id/type (default), every entity of this kind/id (any type), or this entity
+  only (with several selected, the ones that use the same sprite; others are left alone). Precedence: this entity >
+  exact type > any type > the default sprite;
+- **RESET TO DEFAULT**: drops the entity's, its kind/id/type's and its kind/id's choices.
+
+RESULT redraws the sprite at the entity's position at once, and INFO's `PREVIEW` line (and COPY INFO) says a choice is active.
+Choices are saved by `serve.py` to `sprite_view.json` (`GET`/`POST /sprite-view`, atomic write, sorted keys so diffs
+stay small) a moment after each change; without `serve.py` they stay in this browser only and the picker says so.
+The file holds settings only, never art:
+
+```js
+{ "format": "tmc-sprite-view", "version": 1,
+  "rules":    [ { "kind": "ENEMY", "id": "KEATON", "type": 0 /* null: any type */, "anim": 1, "step": 0, "flipX": 1, "rot": 90 } ],
+  "entities": [ { "room": "20-00", "index": 1, "frame": 4 } ] }      // "frame": a raw frame instead of "anim"
+```
+
+None of it reaches the game: it exists so a sprite can be inspected, and so the depth panel can be tried on the sprite as
+it would look in another orientation.
+
+## 3D depth panel
+
+The port's stereo depth for a sprite follows its entry in `platform/3ds/source/port_sprite_depth.inc`
+(`PORT_SPRITE_DEPTH(kind, id, type, mode)`, `docs/stereo-3d.md`, "Sprite depth corrections"). The modes are `UP` (the
+normal rule: the ground is the sprite's bottom edge and the depth grows upwards; what an entity without an entry
+gets), `DOWN` (hangs from the top edge, the depth grows downwards; written `PORT_DEPTH_DOWN`, the old
+`PORT_DEPTH_INVERT` is read as the same thing), `LEFT` (the right edge is the ground, the depth grows towards the left:
+a sprite on a left wall), `RIGHT` (the mirror) and `FLAT` (no lean). **The port takes the first entry of the file
+that matches** (`SpriteDepthMode`, `port/port_draw.c`: same kind and id, and the type equal or `PORT_ANY_TYPE`), not
+the most specific one.
+
+The **3D DEPTH** window works on the first selected entity that has a name:
+
+- the **effective mode**, and whether it comes from an entry for exactly that type, from a `PORT_ANY_TYPE` entry (with its
+  line in the file) or is `UP (default)`; an exact entry that sits after an any-type one is flagged as never reached;
+- a selector (UP / DOWN / LEFT / RIGHT / FLAT) and **applies to**: this type only, or any type. Changing it edits a
+  working copy at once. An entry that would only restate what the entity gets anyway is **not written** (an exact entry equal
+  to the any-type one, UP for any type) unless "write even if it equals the default" is ticked;
+- the **illustration** in RESULT: over the sprite's opaque pixels, a gradient from clear at the ground edge to red at the
+  far edge, and an arrow along the direction the depth grows, labelled "illustration, not a render" (flat: a grey wash).
+  It follows the flips and turns chosen in the sprite picker (tick off to keep it in screen terms), and can be shown for
+  every entity of the room that has an entry;
+- the **list of all entries**, in file order: click to jump to an example room (and select the entity), **x** to remove
+  (marked changed / new / shadowed); lines the tool does not understand are listed read-only;
+- **SAVE**, **REVERT** and an **UNSAVED CHANGES (n)** badge. SAVE sends the difference (what to set, what to remove) to
+  `serve.py` (`GET`/`POST /sprite-depth`), which edits **the file as it is on disk now** through `depth_inc.py`, atomically.
+  SAVE changes the port's next build; nothing in this viewer does.
+
+`depth_inc.py` is a minimal-diff editor, not a serialiser: the header block, comments, blank lines, entries it cannot read
+(an unknown mode or a symbolic type), the line ending and the final newline are kept byte for byte. A changed entry keeps
+its indentation and trailing comment; `INVERT` stays `INVERT` unless its mode changes. The comment lines directly above an
+entry (`//` or a one-line `/* */`, no blank line between; a multi-line block is the header and never attached) belong to
+it: removing the entry removes them, changing it keeps them. A new entry goes after the last entry, but an exact type goes
+just before the first any-type entry of its kind and id, because it would never be reached after it. Entries inside a
+block comment are not entries.
+
+`--depth-inc PATH` makes both the panel and the tests work on another copy of the file (`--sprite-view PATH` likewise for
+the picker); `test_depth_inc.py` and any experiment should use a copy. The endpoints accept only `application/json`
+POSTs whose Host is local, up to 1 MB, and only these two paths.
+
 ## Decisions
+
+- **Default sprites mark themselves.** A record made by the default path says `default (not curated)`, never carries a
+  curated rule's `why`, and is skipped, with the reason, where its tiles or palette cannot be known; a curated rule
+  always wins; a family in `NOT_COVERED` gets neither.
+- **The catalog is sparse and the tiles are lazy.** A frame table has no stored length, so only frames something names are
+  listed; the 15 MB of swapped tiles are a separate gzip file the viewer fetches on demand, which keeps `sprites.json` at ~7 MB.
+- **Picker flips are bitmap mirrors about the entity's position** (identical to the game's own flip, checked on 1074
+  frames), rotation is about the picture's centre; both are previews and are stored as settings only.
+- **The depth writer never rewrites the file.** It applies set/remove operations to whatever is on disk, and it keeps the
+  port's first-match rule in the way it places new entries.
 
 - **The ROM, not the compiled tables.** The decomp's C/asm tables are the USA
   layout and the port remaps them for EU at runtime; walking the retail ROM's own
@@ -367,8 +487,12 @@ need it.
   the differences are sprites and HUD: Link, Gentari, the red curtain
   (`OBJECT GENTARI_CURTAIN` at 24,80, which hides a doorway in the BG), the two
   `MINISH_SIZED_ARCHWAY` glows, the item icons. Skipped without the file or PIL.
-- Sprites (`sprites.json`): the object definition table found in the ROM equals
-  `src/objectDefinitions_data.inc` entry by entry; sprite pointer count, OBJ size
+- Sprites (`sprites.json`): the object and NPC definition tables found in the ROM equal their `.inc` files entry by
+  entry, forms included; the enemy and projectile tables (213 and 79 records, forms included) equal the C source in
+  gfx, palette, flags, health, speed, damage, mask and (for the symbolic ones) sprite index; every OBJECT / ENEMY / NPC /
+  PROJECTILE entity that is positioned has a sprite or a stated reason; pinned counts of default sprites per kind and of
+  markers; the **catalog** (frames, animations, sources, tiles) is within bounds and re-renders every stored picture
+  (2924) byte for byte from the JSON alone, which is the data the viewer's renderer works from; sprite pointer count, OBJ size
   table, `gUnk_0811F690` against the port / the source; every record names a
   positioned entity of its family; every drawn piece lies inside the gfx it reads
   (and OBJ VRAM) and inside the palette rows it uses, and re-rendering gives the
@@ -376,8 +500,13 @@ need it.
   48 px of a room edge face that edge (`type & 3`); a south boss door is the
   vertical mirror of the north one; the curtain of room `20-00` lies on pixels where the
   console screenshot differs from the layers (97.7% of its pixels).
+- `test_depth_inc.py` (73 checks): the `.inc` parser and writer: header comment and entries inside comments are not
+  entries, unknown lines are reported, INVERT and DOWN, any and exact types, attached comments, replace / remove / add and
+  where, CRLF, the identity round trip on a sample and on the port's real file, three-way application of a change to a
+  file that moved meanwhile, validation; and the two endpoints against temp copies (and that the real `.inc` and
+  `sprite_view.json` are untouched).
 - Regression checksums of layers, entities, tile entities, exits, gfx, metatiles
-  and the sprite records and pictures. They say nothing changed by accident, not that it is right; on a
+  and the sprite records, pictures, catalog and swapped tiles. They say nothing changed by accident, not that it is right; on a
   deliberate change the test prints the new values to paste.
 
 ## What the data shows that one would not expect
@@ -397,8 +526,9 @@ need it.
 
 ## Not covered
 
-- **Sprites of other families** (enemies, NPCs, most objects), **animation** (only a
-  still pose is drawn), **OAM priority** (sprites are drawn over every layer, sorted
+- **The right pose of a default sprite** (it is animation 0's first frame; the init code decides the real one),
+  the sprites of the entities listed under "Left as markers", **animation** (only a still pose is drawn, the picker steps
+  through frames by hand), **sprites with several parts** (`SetExtraSpriteFrame`, multi-part entities), **OAM priority** (sprites are drawn over every layer, sorted
   by y), shadows and anything tied to the player or runtime state: see "Sprites".
 - **Runtime map changes**: `SetTile` from entities (opened chests, pushed blocks,
   special tiles 0x4000+, none of which are in the static maps), destructible
@@ -410,4 +540,7 @@ need it.
   (HUD, items), which BG1 and BG2 cannot reach.
 - **Collision maps** and tile types beyond copying the type tables.
 - **The USA ROM** is supported by the code (its offsets are in `port/port_rom.c`)
-  but untested: the counts and checksums in `test_maps.py` are for EU only.
+  but untested: the counts and checksums in `test_maps.py` are for EU only. The enemy/projectile table reader
+  preprocesses the source for EU (`EU` defined, no `MULTI_REGION`); the USA branch is untried.
+- **The depth modes' effect**: the panel writes the file and draws an illustration; whether the renderer does what the
+  mode says is for the console to show (3D WORLD on, FORCE 3D).

@@ -589,10 +589,15 @@ def write_sprites(rom, builder, areas, path):
     text = json.dumps(sb.result(), separators=(",", ":"))
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
+    tiles = json.dumps(sb.tiles_result(), separators=(",", ":"))
+    with gzip.open(os.path.join(os.path.dirname(path), "sprites_tiles.json.gz"), "wt", encoding="utf-8") as f:
+        f.write(tiles)
     st = sb.stats
-    print("%s: %d sprites drawn (%s), %d skipped, %d pictures, %.2f MB"
+    print("%s: %d curated sprites drawn (%s), %d skipped; %d default sprites drawn (%s), %d skipped; %d pictures, "
+          "%d sprites in the catalog, %.2f MB (+ %.2f MB of swapped tiles in sprites_tiles.json.gz, loaded on demand)"
           % (os.path.basename(path), st["drawn"], ", ".join("%s %d" % kv for kv in sorted(st["byFamily"].items())),
-             st["skipped"], len(sb.pictures), len(text) / 1048576))
+             st["skipped"], st["defaultDrawn"], ", ".join("%s %d" % kv for kv in sorted(st["defaultByKind"].items())),
+             st["defaultSkipped"], len(sb.pictures), len(sb.sprite_cat), len(text) / 1048576, len(tiles) / 1048576))
     for k, n in sorted(sb.skips.items()):
         print("  not drawn x%d: %s" % (n, k))
 

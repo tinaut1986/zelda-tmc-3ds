@@ -48,6 +48,8 @@ import tmcdata as T  # noqa: E402
 import build_maps as B  # noqa: E402
 import render_room as R  # noqa: E402
 import sprites as SP  # noqa: E402
+import entdefs as ED  # noqa: E402
+import gzip  # noqa: E402
 
 FAILS = []
 CHECKS = [0]
@@ -87,6 +89,14 @@ def load_sprites(rom_path):
         subprocess.run([sys.executable, os.path.join(HERE, "build_maps.py"), "--rom", rom_path],
                        check=True, stdout=subprocess.DEVNULL)
     with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_tiles():
+    path = os.path.join(HERE, "sprites_tiles.json.gz")
+    if not os.path.isfile(path):
+        return None
+    with gzip.open(path, "rt", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -522,6 +532,10 @@ SPRITE_COUNTS = {
            "OBJECT/LIGHT_DOOR": 4, "OBJECT/LOCKED_DOOR": 141, "OBJECT/METAL_DOOR": 1,
            "OBJECT/MINECART_DOOR": 14, "OBJECT/TRAPDOOR": 1},
 }
+# Default sprites (kinds with a definition table) per kind, and how many entities of those kinds got none, pinned.
+DEFAULT_COUNTS = {
+    "EU": {"drawn": {"ENEMY": 1047, "NPC": 406, "OBJECT": 1197, "PROJECTILE": 65}, "skipped": 1337},
+}
 OBJ_TILES_FREE = 0x400 - 0x180      # OBJ VRAM tiles from the first gfx slot (slot 4: 0x140 + 4 * 0x10)
 MAX_PIECES = 0x80                   # gOAMControls.oam entries
 
@@ -532,7 +546,7 @@ def _mirror_v(pic):
     return b"".join(raw[(h - 1 - y) * w * 4:(h - y) * w * 4] for y in range(h))
 
 
-def test_sprites(rom, maps, spr):
+def test_sprites(rom, maps, spr, tiles=None):
     print("sprites")
     equal(spr["format"], "tmc-layer-workbench-sprites", "sprites.json format")
     equal(spr["rom"]["sha1"], maps["rom"]["sha1"], "sprites.json was built from the same ROM as maps.json")
@@ -561,25 +575,56 @@ def test_sprites(rom, maps, spr):
             if not check(pic is not None, "sprites %s#%s: picture %s missing" % (key, idx, rec["pic"])):
                 continue
             drawn.setdefault(rec["family"], []).append((key, idx, rec, pic, e, room))
+            check(rec.get("default", False) == (rec["family"].split("/")[0] in SP.DEFAULT_KINDS and
+                                                tuple(rec["family"].split("/", 1)) not in SP.RULES),
+                  "sprites %s#%s: default flag does not match the family having a curated rule" % (key, idx))
+            check(("src" in rec) and rec["src"] in spr["sources"], "sprites %s#%s: no source for the picker" % (key, idx))
             raw = base64.b64decode(pic["rgba"])
             check(len(raw) == pic["w"] * pic["h"] * 4, "sprites %s#%s: picture data length" % (key, idx))
-            check(1 <= pic["w"] <= 128 and 1 <= pic["h"] <= 128 and abs(pic["ox"]) <= 128 and abs(pic["oy"]) <= 128,
+            check(1 <= pic["w"] <= 256 and 1 <= pic["h"] <= 256 and abs(pic["ox"]) <= 256 and abs(pic["oy"]) <= 256,
                   "sprites %s#%s: picture size/offset %dx%d at %d,%d" % (key, idx, pic["w"], pic["h"], pic["ox"], pic["oy"]))
             alphas = set(raw[3::4])
             check(alphas <= {0, 255} and 255 in alphas, "sprites %s#%s: picture is empty or has partial alpha" % (key, idx))
             x0, y0 = e["x"] + pic["ox"], e["y"] + pic["oy"]
             check(x0 < room["width"] and y0 < room["height"] and x0 + pic["w"] > 0 and y0 + pic["h"] > 0,
                   "sprites %s#%s: picture does not touch the room" % (key, idx))
-            for k in ("rule", "why", "state", "sprite", "frame", "flipX", "flipY", "gfx", "palette"):
+            if rec.get("default"):
+                check(rec["rule"].startswith("default (not curated): "), "sprites %s#%s: a default record must say so" % (key, idx))
+            for k in ("rule", "why", "state", "sprite", "frame", "flipX", "flipY", "gfx", "palette", "baseFlipX", "baseFlipY", "dx", "dy"):
                 check(k in rec, "sprites %s#%s: record lacks %s" % (key, idx, k))
             check(rec["why"] and all(isinstance(w, str) for w in rec["why"]), "sprites %s#%s: empty why" % (key, idx))
     want = SPRITE_COUNTS.get(maps["rom"]["region"])
-    got = {f: len(v) for f, v in drawn.items()}
+    got = {f: len(v) for f, v in drawn.items() if not v[0][2].get("default")}
     if want is not None:
-        equal(got, want, "drawn sprites per family")
+        equal(got, want, "drawn curated sprites per family")
     for fam in ("%s/%s" % k for k in SP.RULES):
         check(fam in drawn, "sprites: no %s drawn at all" % fam)
-    print("  %d records, %d drawn, %d pictures" % (n_rec, sum(got.values()), len(spr["pictures"])))
+    by_kind = {}
+    for f, v in drawn.items():
+        if v[0][2].get("default"):
+            by_kind[f.split("/")[0]] = by_kind.get(f.split("/")[0], 0) + len(v)
+    skipped_default = sum(1 for recs in spr["rooms"].values() for r in recs.values() if r.get("default") and "skipped" in r)
+    wd = DEFAULT_COUNTS.get(maps["rom"]["region"])
+    if wd is not None:
+        equal(by_kind, wd["drawn"], "default sprites drawn per kind")
+        equal(skipped_default, wd["skipped"], "default sprites left as markers")
+    # every named OBJECT / ENEMY / NPC / PROJECTILE entity that is positioned has a record, except the families
+    # NOT_COVERED names (they keep their marker and say why)
+    missing = 0
+    for key, room in rooms.items():
+        recs = spr["rooms"].get(key, {})
+        for i, e in enumerate(room["entities"]):
+            if e["positioned"] and e["kindName"] in SP.DEFAULT_KINDS and (e["kindName"], e["idName"]) not in SP.NOT_COVERED \
+                    and str(i) not in recs:
+                missing += 1
+    equal(missing, 0, "entities of a kind with a definition table that have neither a sprite nor a stated reason")
+    for fam in SP.NOT_COVERED:
+        check(not any(r.get("default") and r["family"] == "%s/%s" % fam for recs in spr["rooms"].values() for r in recs.values()),
+              "sprites: %s is NOT_COVERED and must stay a marker" % (fam,))
+    print("  %d records, %d drawn (%d default: %s), %d default entities left as markers, %d pictures"
+          % (n_rec, sum(got.values()) + sum(by_kind.values()), sum(by_kind.values()),
+             ", ".join("%s %d" % kv for kv in sorted(by_kind.items())), skipped_default, len(spr["pictures"])))
+    test_catalog(spr, tiles, drawn, SP.SpriteTables(rom) if rom is not None else None)
 
     # --- every rule's lines still exist in the decomp
     for fam, checks in SP.RULE_SOURCES.items():
@@ -632,6 +677,35 @@ def test_sprites(rom, maps, spr):
             mism += 1
     equal(mism, 0, "gObjectDefinitions in the ROM vs the source, entries that differ")
     check(sum(1 for n in inc if n is not None) > 100, "object definitions compared")
+    # NPCs: same record and form rules as objects, from src/npcDefinitions_data.inc
+    npc = SP.NPCDefinitions(rom)
+    equal(len(npc.inc), len(maps["enums"]["ids"]["NPC"]), "npcDefinitions_data.inc has one entry per NPC id")
+    mism = sum(1 for i, n in enumerate(npc.inc)
+               if n is not None and SP.encode_definition(n) != bytes(rom.data[npc.base + 8 * i:npc.base + 8 * i + 8]))
+    equal(mism, 0, "gNPCDefinitions in the ROM vs the source, entries that differ")
+    for tag, tbl in (("object", t.defs), ("NPC", npc)):
+        bad = n = 0
+        for i, name in enumerate(tbl.multi):
+            if not name:
+                continue
+            at = rom.read_ptr(tbl.base + 8 * i + 4)
+            check(at is not None, "%s definition %d: form table pointer" % (tag, i))
+            for k, f in enumerate(tbl.forms[name]):
+                if f is not None:
+                    n += 1
+                    bad += SP.encode_definition(f) != bytes(rom.data[at + 8 * k:at + 8 * k + 8])
+        check(n > 100, "%s forms compared: %d" % (tag, n))
+        equal(bad, 0, "%s forms in the ROM vs the source, entries that differ" % tag)
+    # enemies and projectiles: 16-byte records located by content, then compared entry by entry
+    for kind, floor in (("ENEMY", 200), ("PROJECTILE", 70)):
+        cd = ED.CDefinitions(rom, kind)
+        check(len(maps["enums"]["ids"][kind]) - 1 <= len(cd.items) <= len(maps["enums"]["ids"][kind]),
+              "%s: the C table has one entry per id (%d for %d ids)" % (kind, len(cd.items), len(maps["enums"]["ids"][kind])))
+        compared, lits, problems = cd.compare_with_source()
+        equal(problems, [], "%s definitions in the ROM vs the source" % kind)
+        check(compared >= floor, "%s records compared: %d" % (kind, compared))
+        print("  %s definitions at 0x%X: %d records compared with the source (%d sprite literals not comparable)"
+              % (kind, cd.base, compared, lits))
     spp = SP.port_config_defines()
     equal(t.sprite_ptr_count, spp["PORT_%s_SPRITE_PTR_COUNT" % rom.region], "gSpritePtrs entries vs port_config.h")
     text = T.strip_c_comments(T.read_text("port/port_rom_tables.c"))
@@ -654,7 +728,7 @@ def test_sprites(rom, maps, spr):
             tag = "%s %s#%s" % (fam, key, idx)
             sprite, frame = rec["sprite"], rec["frame"]
             extent = t.frame_table_extent(sprite)
-            check(frame < extent, "%s: frame %d past the %d frames of sprite %d" % (tag, frame, extent, sprite))
+            check(extent is None or frame < extent, "%s: frame %d past the %s frames of sprite %d" % (tag, frame, extent, sprite))
             pcs = t.pieces(sprite, frame)
             if not check(pcs, "%s: no pieces" % tag):
                 continue
@@ -689,6 +763,84 @@ def test_sprites(rom, maps, spr):
                   and base64.b64encode(again[4]).decode("ascii") == pic["rgba"], "%s: picture differs from a fresh render" % tag)
     print("  %d OAM pieces checked against their gfx and palette" % pieces_total)
     return drawn
+
+
+class _CatalogTables:
+    """What render_pieces needs of SpriteTables, from the JSON alone (the way the viewer has it)."""
+
+    def __init__(self, spr, src):
+        self.size_table = bytes(spr["sizeTable"])
+        self._abs = src.get("a")
+
+    def abs_palette_row(self, row, pal, loaded):
+        return self._abs[row] if self._abs and row < len(self._abs) else None
+
+
+def rebuild_picture(spr, tiles, rec):
+    """The record's picture re-rendered from sprites.json's catalog (frames, animations, sources, tilesets) and the
+    swapped pools of sprites_tiles.json.gz: what the viewer's own renderer works from. Returns (w, h, ox, oy, rgba)
+    or None."""
+    src = spr["sources"][rec["src"]]
+    cat = spr["sprites"][str(src["s"])]
+    pieces = [{"x": p[0], "y": p[1], "shape": p[2], "size": p[3], "hflip": p[4] & 1, "vflip": (p[4] >> 1) & 1,
+               "clearPal": (p[4] >> 2) & 1, "tile": p[5], "palAdd": p[6]} for p in cat["frames"][str(rec["frame"])]]
+    if src["m"] == 0:
+        blob = base64.b64decode(spr["tilesets"][src["t"]])
+    else:
+        n, first = cat["swap"][str(rec["frame"])]
+        blob = base64.b64decode(tiles["pools"][str(src["s"])])[32 * first:32 * (first + n)]
+    pic, _ = SP.render_pieces(_CatalogTables(spr, src), pieces, blob, {"rows": src["r"], "pal": None, "loaded": 0},
+                              rec["flipX"], rec["flipY"], rec["dx"], rec["dy"])
+    return pic
+
+
+def test_catalog(spr, tiles, drawn, tables=None):
+    """The data the sprite picker draws alternatives from: bounds, and that it reproduces every stored picture."""
+    print("sprite catalog")
+    cats, srcs = spr["sprites"], spr["sources"]
+    equal(len(spr["sizeTable"]), 240, "size table length")
+    n_frames = n_pieces = n_anims = unlisted = 0
+    for k, c in cats.items():
+        for f, pcs in c["frames"].items():
+            n_frames += 1
+            for p in pcs:
+                n_pieces += 1
+                check(len(p) == 7 and p[2] in (0, 1, 2) and 0 <= p[3] <= 3 and 0 <= p[4] <= 7 and 0 <= p[5] < 1024 and 0 <= p[6] < 16
+                      and -128 <= p[0] < 128 and -128 <= p[1] < 128, "catalog sprite %s frame %s: bad piece %r" % (k, f, p))
+        check(0 < len(c["frames"]) <= 256 and all(0 <= int(f) < 255 for f in c["frames"]), "catalog sprite %s: %d frames" % (k, len(c["frames"])))
+        for a in c["anims"]:
+            n_anims += 1
+            check(1 <= len(a["f"]) <= 64 and 0 <= a["l"] <= len(a["f"]) and all(len(x) == 4 and all(0 <= v < 256 for v in x) for x in a["f"]),
+                  "catalog sprite %s: bad animation" % k)
+            if tables is not None:      # a frame an animation names is listed, 0xFF (draws nothing), or past the sprite's table
+                ext = tables.frame_table_extent(int(k))
+                unlisted += sum(1 for x in a["f"] if str(x[0]) not in c["frames"] and x[0] != 255 and not (ext is not None and x[0] >= ext))
+        if "swap" in c:
+            check(set(c["swap"]) == set(c["frames"]), "catalog sprite %s: swap table does not cover the listed frames" % k)
+    equal(unlisted, 0, "animation frames that are neither listed, 255, nor past their sprite's frame table")
+    for key, s in srcs.items():
+        check(str(s["s"]) in cats, "source %s: sprite %d not in the catalog" % (key, s["s"]))
+        check(s["m"] in (0, 1) and s["r"] and all(len(r) == 16 for r in s["r"]), "source %s: bad rows" % key)
+        if s["m"] == 0:
+            check(s["t"] in spr["tilesets"], "source %s: tileset %s missing" % (key, s["t"]))
+        else:
+            check("swap" in cats[str(s["s"])], "source %s: swapped but its sprite has no swap table" % key)
+            check(tiles is None or str(s["s"]) in tiles["pools"], "source %s: swapped tiles missing from sprites_tiles.json.gz" % key)
+    print("  %d sprites, %d frames, %d OAM pieces, %d animations, %d sources, %d fixed tile sets" %
+          (len(cats), n_frames, n_pieces, n_anims, len(srcs), len(spr["tilesets"])))
+    if tiles is None:
+        print("  re-rendering from the catalog: skipped (no sprites_tiles.json.gz)")
+        return
+    equal(tiles["rom"], spr["rom"], "sprites_tiles.json.gz was built with sprites.json")
+    n = 0
+    for fam, lst in drawn.items():
+        for key, idx, rec, pic, e, room in lst:
+            n += 1
+            got = rebuild_picture(spr, tiles, rec)
+            check(got is not None and (got[0], got[1], got[2], got[3]) == (pic["w"], pic["h"], pic["ox"], pic["oy"])
+                  and base64.b64encode(got[4]).decode("ascii") == pic["rgba"],
+                  "%s %s#%s: the catalog does not reproduce the stored picture" % (fam, key, idx))
+    print("  %d pictures re-rendered from the catalog alone: identical" % n)
 
 
 def test_visual_sprites(maps, spr):
@@ -738,8 +890,10 @@ CHECKSUMS = {
         "exits": "f59377de2e74c421",
         "gfx": "7dd7faf036efa825",
         "metatiles": "b13c7823c5eb8c91",
-        "spriteRecords": "82e8b1b342d064ed",
-        "spritePictures": "f4cfe7a76a4c53bd",
+        "spriteRecords": "0a1c144002a71a25",
+        "spritePictures": "d7a9e266789ee1bd",
+        "spriteCatalog": "ff258a59108eb216",
+        "spriteTiles": "350297beda7afc32",
     },
 }
 
@@ -748,7 +902,7 @@ def digest(obj):
     return hashlib.sha1(json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
 
 
-def test_checksums(maps, spr=None):
+def test_checksums(maps, spr=None, tiles=None):
     print("checksums (regression)")
     got = {
         "layers": digest([(a["id"], r["id"], r["width"], r["height"], r["mode"], r["gfx"],
@@ -765,6 +919,9 @@ def test_checksums(maps, spr=None):
     if spr is not None:
         got["spriteRecords"] = digest(spr["rooms"])
         got["spritePictures"] = digest(spr["pictures"])
+        got["spriteCatalog"] = digest([spr["sizeTable"], spr["sprites"], spr["sources"], spr["tilesets"]])
+    if tiles is not None:
+        got["spriteTiles"] = digest(tiles["pools"])
     want = CHECKSUMS.get(maps["rom"]["region"], {})
     changed = {k: v for k, v in got.items() if want.get(k) != v}
     for k in got:
@@ -781,6 +938,7 @@ def main():
     a = ap.parse_args()
     maps = load(a.rom)
     spr = load_sprites(a.rom)
+    tiles = load_tiles() if spr is not None else None
     test_structure(maps)
     test_names(maps)
     if a.rom:
@@ -796,11 +954,11 @@ def main():
     test_exits(maps)
     test_visual(maps)
     if spr is not None:
-        test_sprites(rom, maps, spr)
+        test_sprites(rom, maps, spr, tiles)
         test_visual_sprites(maps, spr)
     else:
         print("sprites: skipped (no sprites.json and no --rom / TMC_ROM to build it)")
-    test_checksums(maps, spr)
+    test_checksums(maps, spr, tiles)
     print()
     if FAILS:
         for f in FAILS[:60]:

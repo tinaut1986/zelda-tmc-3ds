@@ -47,7 +47,7 @@ import struct
 
 import tmcdata as T
 
-SPRITES_VERSION = 1
+SPRITES_VERSION = 2
 
 # --------------------------------------------------------------------------- ROM tables
 
@@ -62,30 +62,41 @@ class ObjectDefinitions:
         u16      gfx:10, gfx_type:2, unk2:4
         u16      paletteIndex:10, unk:2, shadow:2, unk2:2
         u16      spriteIndex:10, spritePriority:3, draw:3
+
+    NPCs use the very same record (NPCDefinitions below, src/npcDefinitions_data.inc).
     """
+
+    SOURCE = "src/objectDefinitions_data.inc"
+    TABLE = "gObjectDefinitions"
+    PASS_MACRO = "OBJDEF_EU_PASS"
 
     def __init__(self, rom):
         self.rom = rom
-        self.inc = parse_inc_table(rom.region == "EU")
+        self.inc, self.multi, self.forms = parse_inc_tables(self.SOURCE, self.TABLE, self.PASS_MACRO, rom.region == "EU")
         self.base = self.locate()
 
     def locate(self):
         # Entries 3..6 of the table are plain records in both regions (not
         # forms): search the ROM for their bytes, which the source file gives.
-        first = 3
+        # (NPCs: the first run of four plain records.)
         run = []
-        for e in self.inc[first:]:
-            if e is None:
-                break
+        first = None
+        for i, e in enumerate(self.inc):
+            if e is None or any(not isinstance(x, int) for x in e):
+                run = []
+                first = None
+                continue
+            if first is None:
+                first = i
             run.append(e)
             if len(run) == 4:
                 break
         if len(run) < 4:
-            raise ValueError("objectDefinitions_data.inc: no run of plain entries to anchor on")
+            raise ValueError("%s: no run of plain entries to anchor on" % self.SOURCE)
         pat = b"".join(encode_definition(e) for e in run)
         at = self.rom.data.find(pat)
         if at < 0 or self.rom.data.find(pat, at + 1) >= 0:
-            raise ValueError("gObjectDefinitions not found (or not unique) in the ROM")
+            raise ValueError("%s not found (or not unique) in the ROM" % self.TABLE)
         return at - first * 8
 
     def record(self, o):
@@ -100,36 +111,56 @@ class ObjectDefinitions:
             "raw": d[o:o + 8].hex(),
         }
 
+    def n_forms(self, obj_id):
+        """How many forms entry obj_id has (1 for a plain record), from the source."""
+        if obj_id >= len(self.multi) or self.multi[obj_id] is None:
+            return 1
+        return len(self.forms[self.multi[obj_id]])
+
     def get(self, obj_id, etype):
-        """LoadObjectSprite: the record the game uses for (id, entity type)."""
+        """LoadObjectSprite: the record the game uses for (id, entity type). None when the entry
+        has no forms for that type (the game would read past the form table) or no pointer."""
         o = self.base + 8 * obj_id
         rec = self.record(o)
         if rec["type"] in (2, 3):
             ptr = self.rom.read_ptr(o + 4)
             if ptr is None:
                 return None
+            if obj_id < len(self.multi) and self.multi[obj_id] is not None and etype >= self.n_forms(obj_id):
+                return None
             rec = self.record(ptr + 8 * etype)
             rec["form"] = etype
         return rec
 
 
-def parse_inc_table(eu):
-    """The top-level array of src/objectDefinitions_data.inc for one region:
-    a list with, per object id, the record's numbers
-    (type, flags, unk, hitbox, gfx, gfx_type, unk2, pal, unk, shadow, unk2,
-    sprite, prio, draw) or None for a MULTI_FORM entry."""
-    text = T.read_text("src/objectDefinitions_data.inc")
-    m = re.search(r"gObjectDefinitions\)\[\]\s*=\s*\{", text)
-    if not m:
-        raise ValueError("objectDefinitions_data.inc: no gObjectDefinitions")
-    out = []
+class NPCDefinitions(ObjectDefinitions):
+    """gNPCDefinitions (NPCInit, src/npcUtils.c): the object definition's record and form rule
+    (a form per entity type when type == 2); there is no 'flags' use and no gfx type 2 difference."""
+    SOURCE = "src/npcDefinitions_data.inc"
+    TABLE = "gNPCDefinitions"
+    PASS_MACRO = "NPCDEF_EU_PASS"
+
+
+_INC_ITEM = re.compile(r"MULTI_FORM\(\s*NAME\(\s*(\w+)\s*\)\s*\)|\{\s*\{([^{}]*)\}\s*,\s*\{([^{}]*)\}\s*\}")
+
+
+def parse_inc_tables(rel, table, macro, eu):
+    """src/*Definitions_data.inc for one region: (top, multi, forms).
+    top[id]    the plain record's 14 numbers (type, flags, unk, hitbox, gfx, gfx_type, unk2, pal, unk,
+               shadow, unk2, sprite, prio, draw), None for a MULTI_FORM entry (or numbers that are symbols)
+    multi[id]  the form array's name for a MULTI_FORM entry, else None
+    forms      {array name: [numbers or None per form]}"""
+    text = T.read_text(rel)
+    top, multi, forms = [], [], {}
     stack = []          # active? per #if level
-    for line in text[m.end():].splitlines():
+    cur = None          # name of the array being read
+    for line in text.splitlines():
         s = line.strip()
-        if s.startswith("};"):
-            break
-        if s.startswith("#ifdef OBJDEF_EU_PASS"):
+        if s.startswith("#ifdef " + macro):
             stack.append(eu)
+            continue
+        if s.startswith("#ifndef " + macro):
+            stack.append(not eu)
             continue
         if s.startswith("#else"):
             stack[-1] = not stack[-1]
@@ -138,19 +169,46 @@ def parse_inc_table(eu):
             stack.pop()
             continue
         if s.startswith("#"):
-            raise ValueError("unexpected directive in gObjectDefinitions: %r" % s)
+            raise ValueError("unexpected directive in %s: %r" % (rel, s))
         if stack and not all(stack):
             continue
-        if s.startswith("MULTI_FORM"):
-            out.append(None)
+        m = re.search(r"NAME\(\s*(\w+)\s*\)\s*\[\]\s*=\s*\{", s)
+        if m:
+            cur = m.group(1)
+            if cur != table:
+                forms[cur] = []
             continue
-        mm = re.match(r"\{\s*\{([^}]*)\}\s*,\s*\{([^}]*)\}\s*\}", s)
-        if mm:
-            nums = [int(x) for x in (mm.group(1) + "," + mm.group(2)).split(",")]
-            if len(nums) != 14:
-                raise ValueError("bad definition line %r" % s)
-            out.append(nums)
-    return out
+        if s.startswith("};"):
+            cur = None
+            continue
+        if cur is None:
+            continue
+        for mm in _INC_ITEM.finditer(s):
+            if mm.group(1):
+                if cur != table:
+                    raise ValueError("%s: MULTI_FORM inside %s" % (rel, cur))
+                top.append(None)
+                multi.append(mm.group(1))
+                continue
+            try:
+                nums = [int(x) for x in (mm.group(2) + "," + mm.group(3)).split(",")]
+                if len(nums) != 14:
+                    raise ValueError("bad definition line %r" % s)
+            except ValueError as e:
+                if "bad definition" in str(e):
+                    raise
+                nums = None     # a symbolic sprite index (SPRITE_X): only the count matters
+            if cur == table:
+                top.append(nums)
+                multi.append(None)
+            else:
+                forms[cur].append(nums)
+    return top, multi, forms
+
+
+def parse_inc_table(eu):
+    """The object table alone (kept for the tests): list per id of the 14 numbers or None."""
+    return parse_inc_tables(ObjectDefinitions.SOURCE, ObjectDefinitions.TABLE, ObjectDefinitions.PASS_MACRO, eu)[0]
 
 
 def encode_definition(n):
@@ -250,13 +308,18 @@ class SpriteTables:
         return out
 
     def frame_table_extent(self, sprite):
-        """Number of frames of a sprite: entries of its frame table up to the
-        first data offset it points to (the table is followed by the data)."""
+        """Number of frames of a sprite, or None when it cannot be told. The frame tables of gFrameObjLists
+        are laid out one after the other, in sprite order, ahead of all the frame data, so a table runs up to the
+        next sprite's table; where the order breaks (55 sprites, mostly past 330) or for the last sprite the
+        length is not stored anywhere and is unknown. A frame index at or past the end reads another sprite's
+        table (the game does that for the bytes animations name, not meaning them as frames)."""
         base = self.frame_lists
         d = self.rom.data
+        if sprite + 1 >= self.frame_lists_count:
+            return None
         tbl = struct.unpack_from("<I", d, base + 4 * sprite)[0]
-        first = struct.unpack_from("<I", d, base + tbl)[0]
-        return max(0, (first - tbl) // 4)
+        nxt = struct.unpack_from("<I", d, base + 4 * (sprite + 1))[0]
+        return (nxt - tbl) // 4 if nxt > tbl else None
 
     # ---- tiles
     def fixed_blob(self, gfx):
@@ -632,6 +695,14 @@ def locked_door_gfx_table(rom):
 # --------------------------------------------------------------------------- build
 
 
+DEFAULT_KINDS = ("OBJECT", "ENEMY", "NPC", "PROJECTILE")
+
+
+def b64(data):
+    import base64
+    return base64.b64encode(data).decode("ascii")
+
+
 class SpriteBuilder:
     def __init__(self, rom, enums):
         self.rom = rom
@@ -640,24 +711,113 @@ class SpriteBuilder:
         gfx_vals, self.door_table_at = locked_door_gfx_table(rom)
         self.door_gfx = gfx_vals
         self.tables.locked_door_gfx_by_area = lambda a: self.door_gfx[a - 0x40] if a - 0x40 < len(self.door_gfx) else 0xA
+        self.npc_defs = NPCDefinitions(rom)
+        import entdefs
+        self.c_defs = {k: entdefs.CDefinitions(rom, k) for k in ("ENEMY", "PROJECTILE")}
         self.pictures = {}          # key -> picture dict
         self.rooms = {}             # "AA-RR" -> {entity index: record}
-        self.stats = {"drawn": 0, "skipped": 0, "byFamily": {}}
+        self.sources = {}           # key -> what the viewer needs to draw any frame of a sprite as this entity
+        self.sprite_cat = {}        # sprite index -> frames, animations (and the swapped tile pool)
+        self.tilesets = {}          # "f<gfx>" -> base64 of a fixed gfx blob
+        self.swap_sprites = set()
+        self.pools = {}             # sprite index -> base64 of its swapped tile pool (sprites_tiles.json.gz, loaded lazily)
+        self.stats = {"drawn": 0, "skipped": 0, "byFamily": {}, "defaultDrawn": 0, "defaultSkipped": 0,
+                      "defaultByKind": {}}
         self.skips = {}             # reason -> count
 
     def pic_key(self, pic):
         w, h, ox, oy, rgba = pic
         k = hashlib.sha1(rgba + struct.pack("<4h", w, h, ox, oy)).hexdigest()[:12]
         if k not in self.pictures:
-            import base64
-            self.pictures[k] = {"w": w, "h": h, "ox": ox, "oy": oy, "rgba": base64.b64encode(rgba).decode("ascii")}
+            self.pictures[k] = {"w": w, "h": h, "ox": ox, "oy": oy, "rgba": b64(rgba)}
         return k
 
+    # ---- the catalog the picker draws alternatives from
+    def catalog(self, sprite):
+        """The animations of one sprite and the frames they use: the same tables the renderer reads, as small
+        arrays. frames is sparse, {frame index: OAM pieces}: the frame tables of gFrameObjLists have no stored
+        length (a frame index is a byte, 0xFF means 'draw nothing' and some animations name frames far past their
+        neighbour's table), so only the frames an animation names, the ones a record draws, and, for a sprite
+        without animations, the first few raw frames are listed."""
+        c = self.sprite_cat.get(sprite)
+        if c is not None:
+            return c
+        t = self.tables
+        anims, refs = [], set()
+        sp = t.sprite_ptr(sprite)
+        if sp is not None and sp[0] is not None:
+            d = self.rom.data
+            for a in range(t.animation_count(sprite)):
+                at = self.rom.read_ptr(sp[0] + 4 * a)
+                fl, loop = [], 0
+                for _ in range(64):
+                    if at + 4 > len(d):
+                        break
+                    fi, dur, ss, fg = d[at:at + 4]
+                    fl.append([fi, dur, ss, fg])
+                    refs.add(fi)
+                    at += 4
+                    if fg & 0x80:
+                        loop = max(0, len(fl) - d[at]) if at < len(d) else 0
+                        break
+                anims.append({"f": fl, "l": loop})
+        elif sprite < t.frame_lists_count:
+            refs.update(range(min(t.frame_table_extent(sprite) or 16, 16)))
+        c = {"frames": {}, "anims": anims}
+        self.sprite_cat[sprite] = c
+        for f in sorted(refs):
+            self.add_frame(sprite, f)
+        return c
+
+    def add_frame(self, sprite, f):
+        c = self.sprite_cat[sprite]
+        ext = self.tables.frame_table_extent(sprite)
+        if f in c["frames"] or f == 0xFF or (ext is not None and f >= ext):
+            return
+        pcs = self.tables.pieces(sprite, f) if sprite < self.tables.frame_lists_count else None
+        c["frames"][f] = [[p["x"], p["y"], p["shape"], p["size"], p["hflip"] | p["vflip"] << 1 | p["clearPal"] << 2,
+                           p["tile"], p["palAdd"]] for p in (pcs or [])]
+
+    def add_source(self, sprite, frame, mode, gfx, rows, gs):
+        """Register what is needed to draw any frame of `sprite` the way an entity with these tiles and
+        palette would. mode 0: fixed gfx blob; 1: swapped, tiles per frame from the sprite's own pool."""
+        t = self.tables
+        self.catalog(sprite)
+        self.add_frame(sprite, frame)
+        src = {"s": sprite, "m": mode, "r": rows,
+               "a": [t.abs_palette_row(r, gs["palettes"], gs["mask"]) for r in range(6)]}
+        if mode == 0:
+            self.tilesets["f%d" % gfx] = b64(t.fixed_blob(gfx))
+            src["t"] = "f%d" % gfx
+        else:
+            self.swap_sprites.add(sprite)
+        key = hashlib.sha1(repr(sorted(src.items())).encode()).hexdigest()[:10]
+        self.sources.setdefault(key, src)
+        return key
+
+    def swap_pool(self, sprite):
+        """The tiles a swapped sprite loads, per listed frame (UpdateSpriteGfxSlot): {frame: [n, first]} and the
+        pool bytes those cover."""
+        t = self.tables
+        sp = t.sprite_ptr(sprite)
+        tab, end = {}, 0
+        for f in sorted(self.sprite_cat[sprite]["frames"]):
+            n, _u, first = struct.unpack_from("<BBH", self.rom.data, sp[1] + 4 * f)
+            tab[f] = [n, first]
+            end = max(end, first + n)
+        end = min(end, (len(self.rom.data) - sp[2]) // 32)
+        return tab, b64(bytes(self.rom.data[sp[2]:sp[2] + 32 * end]))
+
+    # ---- one entity
     def entity(self, area, room_rec, gfx_set, idx, e):
         fam = (e["kindName"], e["idName"])
-        rule = RULES.get(fam)
-        if rule is None or not e.get("positioned"):
+        if not e.get("positioned"):
             return None
+        rule = RULES.get(fam)
+        if rule is None:
+            if e["kindName"] not in DEFAULT_KINDS or fam in NOT_COVERED:
+                return None
+            return self.default_entity(area, room_rec, gfx_set, e)
         name = "%s/%s" % fam
         rec = {"family": name}
         if not (0 <= e["x"] <= room_rec["width"] and 0 <= e["y"] <= room_rec["height"]):
@@ -676,6 +836,7 @@ class SpriteBuilder:
         # frame and flips
         flip_x = pose.get("flipX", 0)
         flip_y = pose.get("flipY", 0)
+        rec["baseFlipX"], rec["baseFlipY"] = flip_x, flip_y
         if "anim" in pose:
             ff = t.first_frame(sprite, pose["anim"])
             if ff is None:
@@ -720,14 +881,134 @@ class SpriteBuilder:
         rec["pieces"] = len(pieces)
         rec["dx"] = pose.get("dx", 0)
         rec["dy"] = pose.get("dy", 0)
+        rec["src"] = self.add_source(sprite, frame, gfx_type, gfx, rows["rows"], gfx_set)
         self.stats["drawn"] += 1
         self.stats["byFamily"][name] = self.stats["byFamily"].get(name, 0) + 1
         return rec
 
-    def skip(self, rec, name, reason):
+    # ---- the default sprite of a kind with a definition table
+    def definition_of(self, e):
+        """(source text, record or None, gfx mode, gfx, palette, sprite, why lines) for an entity of a kind with a
+        definition table; mode None when the tiles cannot be modelled (reason in the text slot)."""
+        kind, i, ty = e["kindName"], e["id"], e["type"]
+        if kind in ("OBJECT", "NPC"):
+            tbl = self.tables.defs if kind == "OBJECT" else self.npc_defs
+            src = ("gObjectDefinitions (src/objectDefinitions_data.inc, LoadObjectSprite)" if kind == "OBJECT"
+                   else "gNPCDefinitions (src/npcDefinitions_data.inc, NPCInit)")
+            if i >= len(tbl.inc):
+                return src, None, "id %d is past the table" % i
+            d = tbl.get(i, ty)
+            if d is None:
+                return src, None, "type %d is past the %d form(s) of this id" % (ty, tbl.n_forms(i))
+            if d["type"] == 0:
+                return src, None, "the definition has no sprite (type 0): the entity is drawn by its own code, if at all"
+            if d["gfxType"] == 2:
+                return src, d, "gfx type 2: tiles already in VRAM, loaded by something else (not modelled)"
+            return src, d, None
+        tbl = self.c_defs[kind]
+        src = ("gEnemyDefinitions (src/enemy.c, EnemyInit/LoadEnemySprite)" if kind == "ENEMY"
+               else "gProjectileDefinitions (src/projectile.c, ProjectileInit/LoadProjectileSprite)")
+        if i >= len(tbl.items):
+            return src, None, "id %d is past the table" % i
+        d = tbl.get(i, ty)
+        if d is None:
+            return src, None, "type %d is past the %d form(s) of this id" % (ty, tbl.n_forms(i))
+        g = d["gfx"]
+        if g == 0:
+            return src, d, "gfx 0: the definition loads no tiles (the entity's code does)"
+        if g & 0x8000:
+            return src, d, "gfx 0x%04X: common gfx already in VRAM (not modelled)" % g
+        d = dict(d)
+        d["gfxType"] = 1 if g & 0x4000 else 0
+        d["gfx"] = g
+        return src, d, None
+
+    def default_entity(self, area, room_rec, gfx_set, e):
+        kind = e["kindName"]
+        name = "%s/%s" % (kind, e["idName"])
+        rec = {"family": name, "default": True}
+        if not (0 <= e["x"] <= room_rec["width"] and 0 <= e["y"] <= room_rec["height"]):
+            return self.skip(rec, name, "position %d,%d is outside the room (data quirk): marker only" % (e["x"], e["y"]), True)
+        src, d, bad = self.definition_of(e)
+        rec["rule"] = "default (not curated): " + src
+        if bad:
+            return self.skip(rec, name, bad, True)
+        t = self.tables
+        sprite = d["sprite"]
+        rec.update({"sprite": sprite, "definition": d["raw"]})
+        why = ["default (not curated): %s gives sprite %d, OBJ palette id %d, %s" %
+               (src.split(" (")[0], sprite, d["palette"],
+                "fixed gfx %d" % d["gfx"] if d["gfxType"] == 0 else "swapped gfx")]
+        if d.get("form") is not None:
+            why.append("a MULTI_FORM entry: form %d picked by the entity's type" % d["form"])
+        if sprite >= t.frame_lists_count:
+            return self.skip(rec, name, "sprite index %d is past gFrameObjLists (%d)" % (sprite, t.frame_lists_count), True)
+        ff = t.first_frame(sprite, 0)
+        rec["baseFlipX"] = rec["baseFlipY"] = 0
+        flip_x = flip_y = 0
+        if ff is not None:
+            frame = ff["frameIndex"]
+            flip_x, flip_y = (ff["settings"] >> 6) & 1, (ff["settings"] >> 7) & 1
+            rec["anim"] = 0
+            why.append("animation 0 first frame: frameIndex %d, duration %d, spriteSettings 0x%02X, flags 0x%02X"
+                       % (frame, ff["duration"], ff["settings"], ff["flags"]))
+            state = ("animation 0, first frame, no entity flips. The init code of this kind may pick another animation "
+                     "(direction, form, state), flip or palette: use the sprite picker for the alternatives")
+        else:
+            if d["gfxType"] == 1:
+                return self.skip(rec, name, "swapped gfx but sprite %d has no animation table" % sprite, True)
+            frame = 0
+            why.append("sprite %d has no animation table: frame 0" % sprite)
+            state = "frame 0 (the sprite has no animations); the entity's own code decides what it shows"
+        if d.get("draw") == 0:
+            state += "; its definition starts it undrawn (draw 0), the init code shows it later"
+        rec["frame"] = frame
+        rec["flipX"], rec["flipY"] = flip_x, flip_y
+        if frame == 0xFF:
+            return self.skip(rec, name, "animation 0 starts on frame 255, which the game does not draw", True)
+        ext = t.frame_table_extent(sprite)
+        if ext is not None and frame >= ext:
+            return self.skip(rec, name, "animation 0 starts on frame %d, past the %d frames of sprite %d (not a plain frame)"
+                             % (frame, ext, sprite), True)
+        pieces = t.pieces(sprite, frame)
+        if not pieces:
+            return self.skip(rec, name, "sprite %d frame %d has no pieces in gFrameObjLists" % (sprite, frame), True)
+        gfx_type, gfx = d["gfxType"], d["gfx"]
+        if gfx_type == 0:
+            tiles = t.fixed_blob(gfx)
+            rec["gfx"] = "fixed %d" % gfx
+        else:
+            tiles = t.swap_tiles(sprite, frame)
+            rec["gfx"] = "swapped, frame %d of sprite %d" % (frame, sprite)
+        if tiles is None:
+            return self.skip(rec, name, "gfx %s not available" % rec["gfx"], True)
+        pal_id = d["palette"]
+        rec["palette"] = pal_id
+        rows = {"rows": t.obj_palette(pal_id, gfx_set["palettes"], gfx_set["mask"]),
+                "pal": gfx_set["palettes"], "loaded": gfx_set["mask"]}
+        if rows["rows"] is None:
+            return self.skip(rec, name, "OBJ palette %d not known statically in this room" % pal_id, True)
+        pic, problems = render_pieces(t, pieces, tiles, rows, flip_x, flip_y, 0, 0)
+        if pic is None:
+            return self.skip(rec, name, "; ".join(problems) or "no pieces", True)
+        rec["why"] = why
+        rec["state"] = state
+        rec["pic"] = self.pic_key(pic)
+        rec["pieces"] = len(pieces)
+        rec["dx"] = rec["dy"] = 0
+        rec["src"] = self.add_source(sprite, frame, gfx_type, gfx, rows["rows"], gfx_set)
+        self.stats["defaultDrawn"] += 1
+        self.stats["defaultByKind"][kind] = self.stats["defaultByKind"].get(kind, 0) + 1
+        return rec
+
+    def skip(self, rec, name, reason, default=False):
         rec["skipped"] = reason
-        self.stats["skipped"] += 1
-        key = "%s: %s" % (name, reason)
+        if default:
+            self.stats["defaultSkipped"] += 1
+            key = "%s (default): %s" % (name.split("/")[0], re.sub(r"\d+", "N", reason))
+        else:
+            self.stats["skipped"] += 1
+            key = "%s: %s" % (name, reason)
         self.skips[key] = self.skips.get(key, 0) + 1
         return rec
 
@@ -745,12 +1026,30 @@ class SpriteBuilder:
                     self.rooms["%02X-%02X" % (a["id"], r["id"])] = out
 
     def result(self):
+        sprites = {}
+        for sprite, c in sorted(self.sprite_cat.items()):
+            ent = {"frames": {str(k): v for k, v in sorted(c["frames"].items())}, "anims": c["anims"]}
+            if sprite in self.swap_sprites:
+                swap, pool = self.swap_pool(sprite)
+                ent["swap"] = {str(k): v for k, v in swap.items()}
+                self.pools[str(sprite)] = pool
+            sprites[str(sprite)] = ent
         return {
             "format": "tmc-layer-workbench-sprites", "version": SPRITES_VERSION,
             "rom": {"region": self.rom.region, "sha1": self.rom.sha1},
             "pictures": self.pictures,
             "rooms": self.rooms,   # "AA-RR" (hex, as the viewer's room keys) -> {entity index in the room: record}
+            "sizeTable": list(self.tables.size_table),
+            "sprites": sprites,    # sprite index -> frames (OAM pieces), animations, swapped tile pool
+            "sources": self.sources,   # source key -> {s sprite, m mode, t tileset, r palette rows, a absolute rows}
+            "tilesets": self.tilesets,
             "notCovered": {"%s/%s" % k: v for k, v in NOT_COVERED.items()},
             "stats": self.stats,
             "skips": self.skips,
         }
+
+    def tiles_result(self):
+        """The swapped tile pools: 20 MB of base64 that only the sprite picker needs, so they live in their own
+        file (gzipped) that the viewer loads on first use. Call after result()."""
+        return {"format": "tmc-layer-workbench-sprite-tiles", "version": SPRITES_VERSION,
+                "rom": {"region": self.rom.region, "sha1": self.rom.sha1}, "pools": self.pools}
