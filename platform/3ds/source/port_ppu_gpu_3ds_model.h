@@ -263,7 +263,8 @@ typedef struct PpuGpu3DSFrameView {
     /* Each OAM entry's stereo 3D depth, quarter pixels (virtuappu_mode1_obj_depth): what Link holds up or threw. */
     const uint8_t* objDepth;
     /* The same at each entry's top edge (virtuappu_mode1_obj_depth_top): the depth of a tile row goes from objDepth
-     * at the entry's bottom to this at its top; NULL or equal: one depth for the entry. */
+     * at the entry's bottom to this at its top; NULL or equal: one depth for the entry. With bit 7 set (and bit 6 for
+     * the direction) the entry leans across its columns instead (sprite_lean_3ds.h). */
     const uint8_t* objDepthTop;
     /* Stereo 3D "support": a sprite resting on a background layer that stands out (the objects on a roof) takes that
      * layer's depth for its tiles over it. bgDepthQ[bg][priority] is the layer's depth in quarter pixels at the full
@@ -353,6 +354,9 @@ typedef struct PpuGpu3DSBatch {
     /* Drawn with the layers in front even with no depth of its own (the pieces of one big sprite stay in one pass, so
      * what the game draws over what keeps its order); bit 7 of the OAM entry's depth (virtuappu_mode1_obj_depth). */
     bool front;
+    /* A sprite that leans across its columns (SPRITE_LEAN_3DS_SIDE_*, sprite_lean_3ds.h): its shift goes to one eye
+     * only (SpriteLean3DS_EyeShift), so its columns never part. 0 for everything else. */
+    uint8_t side;
     /* 0 samples the tile atlas; 1 + n samples view ring n (bg * 2 + variant). */
     uint8_t texture;
     /* Added to every vertex position by the shader. Zero except for

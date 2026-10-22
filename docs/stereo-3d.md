@@ -51,7 +51,9 @@ scenes below override it for their layers. The values are in pixels at the full 
   layer's, so in the title, the file select and GAME OVER they flattened what those scenes tune by hand.
 - **Lean per tile row.** Each OAM entry carries the depth at its bottom (`virtuappu_mode1_obj_depth`) and at its top edge
   (`virtuappu_mode1_obj_depth_top`); `build_obj` gives each row of tiles (8 px) the depth in between and batches runs of equal
-  depth (at most 12 per sprite, else one depth, the highest).
+  depth (at most 20 per sprite, `SPRITE_LEAN_3DS_MAX_RUNS`, else one depth, the highest; sprites of up to 64 tiles). The
+  per-tile depths are `SpriteLean3DS_Fill` (`platform/3ds/source/sprite_lean_3ds.h`, host test
+  `platform/3ds/tests/sprite_lean_3ds_test.c`).
 - **Support.** A sprite takes the depth of the background layer it rests on (the roof under a statue): `compute_obj_support`
   samples the frontmost opaque BG1-BG3 layer behind it (priority at or after its own) at the middle of each tile with
   `text_bg_sample`, takes the highest of the entry's tiles and the highest of the entries of one entity
@@ -67,10 +69,37 @@ scenes below override it for their layers. The values are in pixels at the full 
   until the player has been asked once. The game was drawn for flat 2D and some scenes show graphic errors that are hard to fix, the
   message says so and asks whether to turn it on anyway. The answer is kept; OPTIONS -> 3D WORLD changes it and counts as an answer.
 - **Sprite depth corrections** (`platform/3ds/source/port_sprite_depth.inc`, optional, hand-curated, in the manner of the
-  sibling ports): `PORT_SPRITE_DEPTH(kind, id, type, mode)` per kind of entity. `PORT_DEPTH_INVERT`: a sprite that hangs
-  from its top edge (the boss door in a south wall) has its ground at the top of its pieces and the depth grows downwards
-  (the pieces carry a bottom depth higher than the top one, and the model's rows follow either way). `PORT_DEPTH_FLAT`: no
-  lean. To find the kind and id of a sprite on screen, read the OAM entry's group (`virtuappu_mode1_obj_group`) against the
+  sibling ports): `PORT_SPRITE_DEPTH(kind, id, type, mode)` per kind of entity. The mode says where the sprite meets the
+  ground; the depth is nil there and grows across the sprite by the normal rule's amount (`Port_Config_StereoBodyDepthQ` of
+  the distance from that edge, 12 quarters at most, 20 with its height). `PORT_DEPTH_UP` (0) is the normal rule, what an
+  entity without an entry gets: ground at the bottom of its pieces, the depth grows upwards. `PORT_DEPTH_DOWN` (alias
+  `PORT_DEPTH_INVERT`): a sprite that hangs from its top edge (the boss door in a south wall) has its ground at the top of
+  its pieces and the depth grows downwards (the pieces carry a bottom depth higher than the top one, and the model's rows
+  follow either way). `PORT_DEPTH_LEFT`: a sprite on a wall to its left (the curtain, `GENTARI_CURTAIN`, on the west wall of
+  area 0x20 room 00) has its ground at the right edge of its pieces and the depth grows towards the left of the screen;
+  `PORT_DEPTH_RIGHT` is the mirror. A side lean is written per OAM entry as the depth at its right edge (`obj_depth`) and at
+  its left edge (`obj_depth_top`, with bit 7, `SPRITE_LEAN_3DS_COLUMNS`, set on every piece of the sprite, even one whose
+  edges are equal, and bit 6, `SPRITE_LEAN_3DS_RISES_RIGHT`, for `PORT_DEPTH_RIGHT`); `build_obj` gives each column of tiles the
+  depth at its middle, in screen coordinates (an h-flipped entry has its columns reversed, an affine one is measured where
+  the middle of each tile lands), and draws such an entry column by column, so its runs of equal depth are its columns (8 at
+  most). An affine entry rotated off the axes makes more runs and may hit the cap (one depth, the highest). Each run keeps
+  the entry's scissor moved by its own shift, as a row lean does. Its batches carry the side (`PpuGpu3DSBatch.side`) and
+  the renderer gives each the whole disparity in one eye and none in the other (`SpriteLean3DS_EyeShift`, from
+  `SpritePx`): with the normal split two neighbouring columns (of one entry or of two) that rounded to different shifts
+  parted by a pixel in the eye that moves the higher one away from the lower one, a dark seam down the curtain in the
+  right eye (owner, 2026-10-22). Now the fixed eye has every column at 0 and the moving one is the eye that takes the
+  higher columns towards the ground edge, so neighbours overlap (by the step of their disparity; the normal split
+  already overlapped them in that eye) and never part, at any slider, in or out of the screen. The disparity of each
+  column, which is what is seen as depth, is the same as before; the sprite's middle sits half of it (a pixel or two at
+  most) towards the ground edge. Rows keep the normal split: they only move sideways, so they never part. The host test
+  (`platform/3ds/tests/sprite_lean_3ds_test.c`) measures the gap between every pair of neighbouring columns, both
+  eyes, every slider from -1 to 1. `PORT_DEPTH_FLAT`: no lean. `PORT_DEPTH_RAISED` (5): no lean either, the whole sprite at
+  one depth, the one the normal rule gives its top edge: the entity's own depth plus `Port_Config_StereoBodyDepthQ` of its
+  whole height (feet to the top of its highest piece, 12 quarters at most), 20 quarters at most
+  (`SpriteLean3DS_RaisedDepth`), even for a sprite the normal rule would not lean (one piece 16 px tall or less). Every
+  piece carries it at both edges, so each is one batch (affine and flipped ones too). For the small archway in a wall
+  (`MINISH_SIZED_ARCHWAY` type 2, left of the curtain in area 0x20 room 00). Every mode leaves the HUD's sprites
+  (priority 0) alone. To find the kind and id of a sprite on screen, read the OAM entry's group (`virtuappu_mode1_obj_group`) against the
   entity that wrote it (kind, id and type are in `Entity`); BOSS_DOOR is `OBJECT`, 57.
 - **The big Chuchu** (`feat/stereo-boss`): it is three entities stacked 14-18 px apart, each piece of them a rotated or scaled
   (affine) 64 px sprite. Its ground is the lowest bottom edge among its pieces (the frame before), and the rise from feet to

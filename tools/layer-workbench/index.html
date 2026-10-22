@@ -1,0 +1,2044 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TMC Layer Workbench</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --bg:#14161a; --panel:#1c1f26; --panel2:#232733; --line:#343a48; --fg:#d8dce6; --dim:#8a92a6;
+  --acc:#ffd24a; --acc2:#5ad2ff; --bad:#ff6060; --ok:#6dff9a;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:12px/1.35 ui-monospace,Menlo,Consolas,"DejaVu Sans Mono",monospace;overflow:hidden}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--panel2);border:1px solid var(--line);border-radius:3px;padding:2px 8px;cursor:pointer}
+button:hover{border-color:var(--acc2)}
+button.on{background:#2d4a63;border-color:var(--acc2)}
+input[type=text],input[type=search]{background:#0f1115;border:1px solid var(--line);border-radius:3px;padding:3px 6px;min-width:0}
+select{background:#0f1115;border:1px solid var(--line);border-radius:3px}
+label{cursor:pointer;user-select:none;white-space:nowrap}
+#app{display:flex;flex-direction:column;height:100%}
+#top{background:var(--panel);border-bottom:1px solid var(--line);padding:4px 8px;display:flex;flex-direction:column;gap:3px;flex:none}
+#top .row{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center}
+#tbRoom{font-size:13px}
+#tbRoom b{color:var(--acc)}
+#tbLayers span{margin-right:10px;color:var(--dim)}
+#tbLayers span b{color:var(--fg)}
+#main{display:flex;flex:1;min-height:0}
+#left{width:270px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+#left .hd{padding:6px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:4px}
+#left .hd .r{display:flex;gap:6px;align-items:center}
+#q{flex:1}
+#count{color:var(--dim)}
+#list{flex:1;overflow:auto;padding-bottom:20px}
+.grp{cursor:pointer;padding:3px 6px;background:var(--panel2);border-top:1px solid var(--line);position:sticky;top:0;z-index:1;display:flex;justify-content:space-between}
+.grp .n{color:var(--dim)}
+.grp:hover{color:var(--acc2)}
+.rm{padding:2px 6px 2px 18px;cursor:pointer;display:flex;gap:8px;white-space:nowrap}
+.rm:hover{background:#262c3a}
+.rm.cur{background:#3a3515;color:var(--acc)}
+.rm .id{color:var(--dim);width:22px;flex:none}
+.rm .nm{flex:1;overflow:hidden;text-overflow:ellipsis}
+.rm .sz{color:var(--dim)}
+.rm .sp{color:var(--acc2)}
+#wsWrap{flex:1;position:relative;min-width:0;display:flex;flex-direction:column}
+#ws{position:relative;flex:1;overflow:hidden;background:
+  repeating-conic-gradient(#181a20 0% 25%,#15171c 0% 50%) 0 0/24px 24px}
+#mini{flex:none;height:26px;background:var(--panel);border-top:1px solid var(--line);display:flex;gap:4px;padding:2px 4px;align-items:center}
+#mini button{padding:1px 8px}
+.win{position:absolute;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);box-shadow:0 4px 14px #0008;resize:both;overflow:hidden;min-width:160px;min-height:80px}
+.win.front{border-color:#56627a}
+.win .hd{flex:none;display:flex;align-items:center;gap:6px;padding:2px 4px 2px 8px;background:var(--panel2);cursor:move;user-select:none;border-bottom:1px solid var(--line)}
+.win .hd .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:bold}
+.win .hd button{padding:0 6px;line-height:16px}
+.win .bd{flex:1;min-height:0;display:flex;flex-direction:column}
+.tb{flex:none;display:flex;flex-wrap:wrap;gap:4px 10px;padding:3px 6px;border-bottom:1px solid var(--line);align-items:center}
+.cv{flex:1;min-height:0;position:relative;background:#0b0c0f}
+.cv canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
+.st{flex:none;padding:2px 6px;border-top:1px solid var(--line);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scroll{flex:1;overflow:auto;min-height:0}
+table.f{border-collapse:collapse;width:100%}
+table.f td{padding:0 6px;border-bottom:1px solid #262a35;vertical-align:top}
+table.f td:first-child{color:var(--dim);white-space:nowrap;width:1%}
+.sec{background:#262c3a;padding:2px 6px;color:var(--acc2);font-weight:bold;position:sticky;top:0}
+.er{padding:1px 6px;cursor:pointer;white-space:nowrap;display:flex;gap:8px}
+.er:hover{background:#262c3a}
+.er.sel{background:#173a4d;color:#fff}
+.er .k{width:10px;height:10px;margin-top:2px;flex:none;border:1px solid #000}
+.er .p{color:var(--dim)}
+.er .bad{color:var(--bad)}
+.chips{display:flex;flex-wrap:wrap;gap:2px 8px}
+.warn{color:var(--bad)}
+#toast{position:fixed;right:14px;bottom:36px;background:#173a4d;border:1px solid var(--acc2);padding:6px 12px;border-radius:4px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:99999}
+#toast.on{opacity:1}
+#msg{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#14161acc;z-index:99998;text-align:center}
+#msg div{background:var(--panel);border:1px solid var(--line);padding:18px 26px;max-width:560px;line-height:1.6}
+#testbox{position:fixed;left:280px;top:60px;z-index:99997;background:#0b0c0f;border:2px solid var(--acc);padding:8px 12px;max-height:80%;overflow:auto;white-space:pre}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <div class="row"><span id="tbRoom">loading...</span></div>
+    <div class="row" id="tbLayers"></div>
+    <div class="row" id="tbCtl"></div>
+  </div>
+  <div id="main">
+    <div id="left">
+      <div class="hd">
+        <div class="r"><input type="search" id="q" placeholder="search: 20-00, 0x48, name"><span id="count"></span></div>
+        <div class="r"><button id="expandAll">EXPAND</button><button id="collapseAll">COLLAPSE</button></div>
+      </div>
+      <div id="list"></div>
+    </div>
+    <div id="wsWrap"><div id="ws"></div><div id="mini"></div></div>
+  </div>
+</div>
+<div id="toast"></div>
+<div id="msg"><div id="msgb">Loading maps.json ...</div></div>
+
+<script>
+'use strict';
+/* TMC layer workbench, stage 2: read-only viewer for maps.json (see README.md).
+   The compositing mirrors render_room.py: BG entries, flips, palettes and the
+   per-room gfx set come from the file; nothing is read from the ROM here. */
+
+// ---------------------------------------------------------------- helpers
+const $ = (s, e) => (e || document).querySelector(s);
+const hex = (n, w = 2) => (n < 0 ? '-' : '') + Math.abs(n).toString(16).toUpperCase().padStart(w, '0');
+function el(tag, cls, ...kids) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  for (const k of kids) if (k != null) e.append(k);
+  return e;
+}
+function store(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem('tmcwb.' + k)); localStorage.setItem('tmcwb.' + k, JSON.stringify(v)); } catch (e) { return null; } }
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function toast(t) { const e = $('#toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.remove('on'), 1800); }
+
+const S = {
+  maps: null, areas: [], byKey: new Map(), room: null, key: null,
+  layerOn: { BG1: true, BG2: true, BG3: true }, showHidden: false,
+  entities: true, labels: true, grid: false, sync: true,
+  kindOff: new Set(store('kindOff') || []), filter: '',
+  sel: { blocks: [], objs: new Set() },
+  bg3cb: 0, objs: [], objByKey: new Map(),
+  views: [], cache: [], groupsOpen: store('groupsOpen') || {},
+  sprOn: true, spr: { state: 'idle', data: null, pics: new Map(), err: '', views: new Map(), tiles: new Map(), poolDec: new Map(), pools: null },
+};
+const roomKey = (a, r) => hex(a) + '-' + hex(r);
+
+// ---------------------------------------------------------------- data decoding
+function b64(s) { const bin = atob(s), u = new Uint8Array(bin.length); for (let i = 0; i < u.length; i++) u[i] = bin.charCodeAt(i); return u; }
+function u16(s) { const b = b64(s); return new Uint16Array(b.buffer, 0, b.length >> 1); }
+function bgr555(c) {
+  let r = c & 31, g = (c >> 5) & 31, b = (c >> 10) & 31;
+  r = r << 3 | r >> 2; g = g << 3 | g >> 2; b = b << 3 | b >> 2;
+  return (0xFF000000 | b << 16 | g << 8 | r) >>> 0;
+}
+const gfxCache = new Map(), metaCache = new Map();
+function getGfx(id) {
+  let g = gfxCache.get(id);
+  if (!g) {
+    const raw = S.maps.gfx[id];
+    const p = u16(raw.palettes), pal = new Uint32Array(p.length);
+    for (let i = 0; i < p.length; i++) pal[i] = bgr555(p[i]);
+    g = { vram: b64(raw.vram), pal };
+    gfxCache.set(id, g);
+  }
+  return g;
+}
+function getMeta(room, set) {
+  const k = room.metatiles + '/' + set;
+  let m = metaCache.get(k);
+  if (!m) {
+    const a = S.maps.metatiles[room.metatiles];
+    m = a && a[set] ? u16(a[set]) : new Uint16Array(0);
+    metaCache.set(k, m);
+  }
+  return m;
+}
+function getTypes(room, set) {
+  const k = room.metatiles + '/' + set + 'Types';
+  let m = metaCache.get(k);
+  if (!m) {
+    const a = S.maps.metatiles[room.metatiles];
+    m = a && a[set + 'Types'] ? u16(a[set + 'Types']) : new Uint16Array(0);
+    metaCache.set(k, m);
+  }
+  return m;
+}
+function layerData(L) { return L.__d || (L.__d = u16(L.data)); }
+
+// A layer as BG screen entries (RenderMapLayerToSubTileMap for metatile layers).
+function tilemapOf(room, L) {
+  if (L.__tm) return L.__tm;
+  const data = layerData(L);
+  let tm;
+  if (L.format === 'tilemap') tm = { w8: L.w, h8: L.h, entries: data, oob: 0 };
+  else {
+    const sub = getMeta(room, L.metatileSet), w = L.w, h = L.h, out = new Uint16Array(w * 2 * h * 2);
+    let oob = 0;
+    for (let my = 0; my < h; my++) for (let mx = 0; mx < w; mx++) {
+      const base = (data[my * w + mx] & 0x3FFF) * 4;
+      if (base + 4 > sub.length) { oob++; continue; }
+      const o = my * 2 * w * 2 + mx * 2;
+      out[o] = sub[base]; out[o + 1] = sub[base + 1]; out[o + w * 2] = sub[base + 2]; out[o + w * 2 + 1] = sub[base + 3];
+    }
+    tm = { w8: w * 2, h8: h * 2, entries: out, oob };
+  }
+  L.__tm = tm;
+  return tm;
+}
+
+// Cached per room: {layers: {BGn: {canvas, buf, w, h}}, comp: {sig: canvas}}
+function roomCache(room) {
+  if (!room.__c) {
+    room.__c = { layers: {}, comp: {} };
+    S.cache.push(room);
+    while (S.cache.length > 10) { const old = S.cache.shift(); if (old !== S.room) old.__c = null; else S.cache.push(old); }
+  }
+  return room.__c;
+}
+function layerFor(room, bg) {
+  const L = room.layers[bg];
+  if (!L || !L.data) return null;
+  if (bg === 'BG3') return Object.assign({}, L, { charBase: S.bg3cb, colors: 16, w: L.w, h: L.h, __d: layerData(L), __tm: L.__tm });
+  return L;
+}
+function getLayer(room, bg) {
+  const c = roomCache(room), ck = bg === 'BG3' ? 'BG3/' + S.bg3cb : bg;
+  if (c.layers[ck]) return c.layers[ck];
+  const L = layerFor(room, bg);
+  if (!L) return null;
+  const gfx = getGfx(room.gfx), vram = gfx.vram, pal = gfx.pal;
+  const tm = tilemapOf(room, L);
+  if (bg === 'BG3') room.layers.BG3.__tm = tm;
+  const W = tm.w8 * 8, H = tm.h8 * 8;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d'), img = ctx.createImageData(W, H), buf = new Uint32Array(img.data.buffer);
+  const cb = (L.charBase || 0) * 0x4000, c256 = L.colors === 256, ent = tm.entries;
+  for (let ty = 0; ty < tm.h8; ty++) for (let tx = 0; tx < tm.w8; tx++) {
+    const e = ent[ty * tm.w8 + tx], t = e & 0x3FF, hf = (e >> 10) & 1, vf = (e >> 11) & 1, pb = (e >> 12) * 16;
+    for (let y = 0; y < 8; y++) {
+      const sy = vf ? 7 - y : y, row = (ty * 8 + y) * W + tx * 8;
+      for (let x = 0; x < 8; x++) {
+        const sx = hf ? 7 - x : x;
+        let i;
+        if (c256) { const o = cb + t * 64 + sy * 8 + sx; i = o < vram.length ? vram[o] : 0; }
+        else {
+          const o = cb + t * 32 + sy * 4 + (sx >> 1);
+          i = o < vram.length ? (vram[o] >> (4 * (sx & 1))) & 15 : 0;
+          if (i) i += pb;
+        }
+        if (i) buf[row + x] = pal[i];
+      }
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const r = { canvas: cv, buf, w: W, h: H, tm };
+  c.layers[ck] = r;
+  return r;
+}
+const bgNum = bg => +bg.slice(2);
+function layerIsOn(room, bg) {
+  const L = room.layers[bg];
+  if (!L || !L.data || !S.layerOn[bg]) return false;
+  return L.visible !== false || S.showHidden;
+}
+// Back to front: higher priority number is further back; at equal priority the higher BG number is behind.
+function enabledOrder(room) {
+  const a = Object.keys(room.layers).filter(bg => layerIsOn(room, bg));
+  const pr = bg => room.layers[bg].priority == null ? 3 : room.layers[bg].priority;
+  a.sort((x, y) => (pr(y) - pr(x)) || (bgNum(y) - bgNum(x)));
+  return a;
+}
+function getComposite(room) {
+  const order = enabledOrder(room), sig = order.join(',') + (order.includes('BG3') ? '/' + S.bg3cb : '');
+  const c = roomCache(room);
+  if (c.comp[sig]) return c.comp[sig];
+  const cv = document.createElement('canvas'); cv.width = room.width; cv.height = room.height;
+  const ctx = cv.getContext('2d'), gfx = getGfx(room.gfx), p0 = gfx.pal[0];
+  ctx.fillStyle = 'rgb(' + (p0 & 255) + ',' + (p0 >> 8 & 255) + ',' + (p0 >> 16 & 255) + ')';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  for (const bg of order) { const l = getLayer(room, bg); if (l) ctx.drawImage(l.canvas, 0, 0); }
+  c.comp = {}; c.comp[sig] = cv;
+  return cv;
+}
+
+// ---------------------------------------------------------------- sprites (sprites.json, built by sprites.py)
+// Entities of a few curated families come with a pre-rendered picture and the reason it looks that way; every other
+// OBJECT / ENEMY / NPC / PROJECTILE gets the default sprite of its definition table, marked "default (not curated)".
+// The file also carries, per sprite, every animation and frame, so the picker can draw alternatives here (renderFrame,
+// a port of render_pieces in sprites.py, checked against its pictures by ?test). The tiles of swapped sprites are
+// 20 MB and live in sprites_tiles.json.gz, loaded the first time a picture needs them.
+// The files are loaded lazily and are optional: without them the markers are all there is.
+function ensureSprites() { return S.spr.promise || (S.spr.promise = loadSprites()); }
+async function loadSprites() {
+  const sp = S.spr;
+  sp.state = 'loading'; syncCtl();
+  try {
+    const r = await fetch('sprites.json', { cache: 'no-cache' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    setSprites(await r.json());
+  } catch (e) { sp.state = 'missing'; sp.err = e.message; syncCtl(); }
+}
+function setSprites(d) {
+  if (d.format !== 'tmc-layer-workbench-sprites') throw new Error('not a sprites.json of this tool');
+  if (d.version !== 2) throw new Error('sprites.json is version ' + d.version + ', this viewer needs 2: run build_maps.py again');
+  const sp = S.spr;
+  sp.data = d; sp.state = 'ready'; sp.pics.clear(); sp.views.clear(); sp.err = '';
+  sp.tiles.clear(); sp.poolDec.clear();
+  syncCtl(); repaintAll(); renderInfo(); renderEntityList(true);
+}
+// The swapped tile pools, on first use.
+function loadPools() {
+  const sp = S.spr;
+  if (sp.poolP) return sp.poolP;
+  sp.poolP = (async () => {
+    const r = await fetch('sprites_tiles.json.gz', { cache: 'no-cache' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await gunzipJson(r.body);
+    if (d.format !== 'tmc-layer-workbench-sprite-tiles') throw new Error('not a sprites_tiles.json.gz of this tool');
+    sp.pools = d.pools;
+  })().catch(e => { sp.poolErr = e.message; sp.pools = {}; });
+  return sp.poolP;
+}
+function poolBytes(sprite) {
+  const sp = S.spr;
+  if (!sp.pools) return null;
+  let b = sp.poolDec.get(sprite);
+  if (!b) { b = sp.pools[sprite] ? b64(sp.pools[sprite]) : new Uint8Array(0); sp.poolDec.set(sprite, b); }
+  return b;
+}
+function tilesBytes(key) {
+  const sp = S.spr;
+  let b = sp.tiles.get(key);
+  if (!b) { b = b64(sp.data.tilesets[key]); sp.tiles.set(key, b); }
+  return b;
+}
+// render_pieces (sprites.py) for one frame of a source: {w, h, ox, oy, rgba} or {err, wait}.
+function renderFrame(src, frame, flipX, flipY, dx, dy) {
+  const D = S.spr.data, cat = D.sprites[src.s];
+  if (!cat) return { err: 'sprite ' + src.s + ' is not in the catalog' };
+  const pieces = cat.frames[frame];
+  if (!pieces || !pieces.length) return { err: 'frame ' + frame + ' has no OAM pieces' };
+  let tiles;
+  if (src.m === 0) tiles = tilesBytes(src.t);
+  else {
+    const pool = poolBytes(src.s);
+    if (!pool) return { err: 'loading the swapped tiles ...', wait: true };
+    const sw = cat.swap && cat.swap[frame];
+    if (!sw || !sw[0]) return { err: 'frame ' + frame + ' loads no tiles' };
+    tiles = pool.subarray(sw[1] * 32, (sw[1] + sw[0]) * 32);
+  }
+  const st = D.sizeTable, sub = (flipX ? 0x30 : 0) + (flipY ? 0x60 : 0), placed = [];
+  for (const p of pieces) {
+    if (p[2] === 3) return { err: 'invalid OBJ shape 3' };
+    let x = p[0], y = p[1];
+    if (flipY) y = -y;
+    if (flipX) x = -x;
+    const o = sub + 4 * (p[2] * 4 + p[3]);
+    placed.push({ x: x - st[o] + dx, y: y - st[o + 1] + dy, w: st[o + 2], h: st[o + 3], hf: (p[4] & 1) ^ flipX, vf: ((p[4] >> 1) & 1) ^ flipY, clr: (p[4] >> 2) & 1, tile: p[5], pal: p[6] });
+  }
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const q of placed) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x + q.w); y1 = Math.max(y1, q.y + q.h); }
+  const W = x1 - x0, H = y1 - y0, buf = new Uint32Array(W * H);
+  for (const q of placed) {
+    const row = q.clr ? (src.a && q.pal < 6 ? src.a[q.pal] : null) : (q.pal < src.r.length ? src.r[q.pal] : null);
+    if (!row) return { err: 'palette row ' + q.pal + (q.clr ? ' (absolute)' : '') + ' is not available' };
+    const tw = q.w >> 3;
+    if ((q.tile + tw * (q.h >> 3)) * 32 > tiles.length) return { err: 'piece tiles ' + q.tile + '..' + (q.tile + tw * (q.h >> 3) - 1) + ' past the ' + (tiles.length >> 5) + ' tiles of the gfx' };
+    for (let yy = 0; yy < q.h; yy++) {
+      const sy = q.vf ? q.h - 1 - yy : yy;
+      for (let xx = 0; xx < q.w; xx++) {
+        const sx = q.hf ? q.w - 1 - xx : xx;
+        const b = tiles[(q.tile + (sy >> 3) * tw + (sx >> 3)) * 32 + (sy & 7) * 4 + ((sx & 7) >> 1)], ci = (sx & 1) ? b >> 4 : b & 15;
+        if (ci) buf[(q.y - y0 + yy) * W + (q.x - x0 + xx)] = bgr555(row[ci]);
+      }
+    }
+  }
+  return { w: W, h: H, ox: x0, oy: y0, rgba: new Uint8ClampedArray(buf.buffer) };
+}
+// Preview-only transforms of a drawn picture: mirrors about the entity's position, then quarter turns about the picture's centre.
+function xformPic(p, fx, fy, rot) {
+  let { w, h, ox, oy, rgba } = p;
+  if (fx) {
+    const o = new Uint8ClampedArray(rgba.length), a = new Uint32Array(rgba.buffer, rgba.byteOffset, w * h), b = new Uint32Array(o.buffer);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) b[y * w + x] = a[y * w + (w - 1 - x)];
+    rgba = o; ox = -(ox + w);
+  }
+  if (fy) {
+    const o = new Uint8ClampedArray(rgba.length), a = new Uint32Array(rgba.buffer, rgba.byteOffset, w * h), b = new Uint32Array(o.buffer);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) b[y * w + x] = a[(h - 1 - y) * w + x];
+    rgba = o; oy = -(oy + h);
+  }
+  for (let n = ((rot || 0) / 90) & 3; n > 0; n--) {   // clockwise
+    const o = new Uint8ClampedArray(rgba.length), a = new Uint32Array(rgba.buffer, rgba.byteOffset, w * h), b = new Uint32Array(o.buffer);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) b[x * h + (h - 1 - y)] = a[y * w + x];
+    const cx = ox + w / 2, cy = oy + h / 2;
+    rgba = o; [w, h] = [h, w]; ox = Math.round(cx - w / 2); oy = Math.round(cy - h / 2);
+  }
+  return { w, h, ox, oy, rgba };
+}
+function mkPic(p) {
+  const cv = document.createElement('canvas'); cv.width = p.w; cv.height = p.h;
+  cv.getContext('2d').putImageData(new ImageData(p.rgba, p.w, p.h), 0, 0);
+  return { cv, w: p.w, h: p.h, ox: p.ox, oy: p.oy, rgba: p.rgba };
+}
+function sprRec(idx) {
+  const d = S.spr.data, r = d && S.key && d.rooms[S.key];
+  return r ? r[String(idx)] || null : null;
+}
+function sprPic(key) {
+  let p = S.spr.pics.get(key);
+  if (!p) {
+    const d = S.spr.data.pictures[key], rgba = b64(d.rgba);
+    p = mkPic({ w: d.w, h: d.h, ox: d.ox, oy: d.oy, rgba: new Uint8ClampedArray(rgba.buffer, 0, rgba.length) });
+    S.spr.pics.set(key, p);
+  }
+  return p;
+}
+
+// ---- the picker's choices (sprite_view.json, through serve.py's /sprite-view). They change only what this viewer draws.
+// {kind, id, type (null: any type), anim, step, frame, flipX, flipY, rot} per kind of entity; {room, index, ...} per entity.
+// Precedence: this entity > the rule for its exact type > the rule for any type > the default sprite.
+const SV = { rules: [], entities: [], state: 'idle', err: '', persist: true, timer: 0, loaded: false,
+  scope: store('svScope') || 'type' };
+const svIdOf = o => o.src.idName || ('0x' + hex(o.src.id));
+const svIsDefault = c => !c || (c.anim == null && c.frame == null && !c.flipX && !c.flipY && !c.rot);
+function svFind(o) {
+  if (o.cat !== 'entity') return null;
+  const idx = +o.key.slice(1), id = svIdOf(o);
+  let c = SV.entities.find(x => x.room === S.key && x.index === idx);
+  if (c) return { choice: c, level: 'entity' };
+  c = SV.rules.find(r => r.kind === o.kind && r.id === id && r.type === o.src.type);
+  if (c) return { choice: c, level: 'type' };
+  c = SV.rules.find(r => r.kind === o.kind && r.id === id && r.type == null);
+  if (c) return { choice: c, level: 'any' };
+  return null;
+}
+// What a choice draws: {frame, flipX, flipY} the game would apply to that frame (the entity's own flips XOR the frame's spriteSettings).
+function svFrameOf(rec, ch) {
+  const cat = S.spr.data.sprites[rec.sprite];
+  let frame = rec.frame, fx = rec.flipX, fy = rec.flipY;
+  if (ch.anim != null) {
+    const a = cat && cat.anims[ch.anim];
+    if (!a || !a.f.length) return null;
+    const fr = a.f[clamp(ch.step || 0, 0, a.f.length - 1)];
+    frame = fr[0]; fx = (rec.baseFlipX || 0) ^ ((fr[2] >> 6) & 1); fy = (rec.baseFlipY || 0) ^ ((fr[2] >> 7) & 1);
+  } else if (ch.frame != null) { frame = ch.frame; fx = rec.baseFlipX || 0; fy = rec.baseFlipY || 0; }
+  return { frame, flipX: fx, flipY: fy };
+}
+// The picture a choice gives for a record, or {err}. Cached; null picture while the swapped tiles load.
+function svPic(rec, ch) {
+  const fr = svFrameOf(rec, ch);
+  if (!fr) return { err: 'animation ' + ch.anim + ' does not exist' };
+  const key = [rec.src, fr.frame, fr.flipX, fr.flipY, rec.dx | 0, rec.dy | 0, ch.flipX | 0, ch.flipY | 0, ch.rot | 0].join('|');
+  let p = S.spr.views.get(key);
+  if (p) return p;
+  const r = renderFrame(S.spr.data.sources[rec.src], fr.frame, fr.flipX, fr.flipY, rec.dx | 0, rec.dy | 0);
+  if (r.wait) { loadPools().then(() => { S.spr.views.clear(); repaintAll(); renderInfo(); }); return { err: r.err, wait: true }; }
+  if (r.err) p = { err: r.err };
+  else p = mkPic(xformPic(r, ch.flipX | 0, ch.flipY | 0, ch.rot | 0));
+  S.spr.views.set(key, p);
+  return p;
+}
+// The default picture of an entity object (what sprites.json drew): {rec, pic} or null.
+function sprOf0(o) {
+  if (o.cat !== 'entity' || S.spr.state !== 'ready') return null;
+  const rec = sprRec(o.key.slice(1));
+  return rec && rec.pic ? { rec, pic: sprPic(rec.pic) } : null;
+}
+// The drawn sprite of an entity object, with the picker's choice applied: {rec, pic, choice?} or null.
+function sprOf(o) {
+  const base = sprOf0(o);
+  if (!base || !base.rec.src) return base;
+  const f = svFind(o);
+  if (!f || svIsDefault(f.choice)) return base;
+  const p = svPic(base.rec, f.choice);
+  return p.err ? base : { rec: base.rec, pic: p, choice: f.choice, level: f.level };
+}
+// Text for INFO and COPY INFO: why the entity is (not) drawn the way it is.
+function spriteLines(o) {
+  if (o.cat !== 'entity' || !o.real) return [];
+  const d = S.spr.data;
+  if (S.spr.state !== 'ready') return [['sprite', S.spr.state === 'loading' ? 'sprites.json is loading' : 'no sprites.json (' + S.spr.err + '): markers only']];
+  const rec = sprRec(o.key.slice(1));
+  if (!rec) {
+    const why = d.notCovered[o.kind + '/' + (o.src.idName || '')];
+    return [['sprite', why ? 'marker only: ' + why : 'marker only (' + (['OBJECT', 'ENEMY', 'NPC', 'PROJECTILE'].includes(o.kind) ? 'no definition for this id' : 'this kind has no sprite definition') + ')']];
+  }
+  const out = [];
+  if (rec.skipped) out.push(['sprite', 'NOT DRAWN: ' + rec.skipped]);
+  else out.push(['sprite', (rec.default ? 'DEFAULT (not curated)' : 'drawn') + (rec.pieces ? ' (' + rec.pieces + ' OAM pieces)' : '') + (S.sprOn ? '' : ', SPRITES is off')]);
+  out.push(['rule', rec.rule || rec.family]);
+  if (rec.sprite != null) out.push(['sprite index', rec.sprite + ' (definition ' + rec.definition + ')']);
+  if (rec.frame != null) out.push(['frame', (rec.anim != null ? 'animation ' + rec.anim + ', first frame -> ' : 'set directly: ') + 'frameIndex ' + rec.frame + ', flipX ' + rec.flipX + ', flipY ' + rec.flipY + (rec.dx || rec.dy ? ', offset ' + rec.dx + ',' + rec.dy : '')]);
+  if (rec.gfx) out.push(['tiles', rec.gfx + ', OBJ palette id ' + rec.palette]);
+  (rec.why || []).forEach((w, i) => out.push([i ? '' : 'why', w]));
+  if (rec.state) out.push(['pose is', rec.state]);
+  const f = rec.src && svFind(o);
+  if (f && !svIsDefault(f.choice)) out.push(['PREVIEW', 'the sprite picker shows ' + svText(f.choice) + ' (' + ({ entity: 'this entity only', type: 'every entity of this kind/id/type', any: 'every entity of this kind/id' })[f.level] + '); a viewer preview, the game is unchanged']);
+  return out;
+}
+function svText(c) {
+  const t = [];
+  if (c.anim != null) t.push('animation ' + c.anim + ' step ' + (c.step || 0)); else if (c.frame != null) t.push('raw frame ' + c.frame);
+  if (c.flipX) t.push('flip H'); if (c.flipY) t.push('flip V'); if (c.rot) t.push('rotated ' + c.rot);
+  return t.join(', ') || 'the default';
+}
+
+// ---------------------------------------------------------------- objects (entities, tile entities, exits)
+const KIND_COLOR = { ENEMY: '#ff5050', OBJECT: '#ffd24a', NPC: '#5ad2ff', MANAGER: '#c08cff', PLAYER: '#6dff6d',
+  PROJECTILE: '#ff9a3c', PLAYER_ITEM: '#7dffc8', TILE: '#ff8ad8', EXIT: '#ffffff' };
+const kindColor = k => KIND_COLOR[k] || '#bbbbbb';
+function buildObjects(room) {
+  const out = [];
+  const inside = (x, y) => x >= 0 && y >= 0 && x < room.width && y < room.height;
+  room.entities.forEach((e, i) => {
+    const kind = e.kindName || ('KIND' + e.kind);
+    const id = e.idName || ('0x' + hex(e.id));
+    out.push({ key: 'e' + i, cat: 'entity', kind, label: kind + '/' + id + ' ' + e.type, x: e.x, y: e.y,
+      real: e.positioned, outside: !inside(e.x, e.y), draw: true, src: e,
+      hay: (kind + '/' + id + ' ' + e.type + ' id' + e.id + ' x' + e.x + ' y' + e.y + ' ' + e.list + ' ' + e.when + ' ' + e.label).toLowerCase() });
+  });
+  room.tileEntities.forEach((t, i) => {
+    const has = t.x != null && t.y != null;
+    out.push({ key: 't' + i, cat: 'tile', kind: 'TILE', label: 'TILE/' + (t.typeName || ('0x' + hex(t.type))), x: has ? t.x : 0, y: has ? t.y : 0,
+      real: has, outside: has && !inside(t.x, t.y), draw: has, src: t,
+      hay: ('tile/' + t.typeName + ' type' + t.type + ' x' + t.x + ' y' + t.y).toLowerCase() });
+  });
+  room.exits.forEach((x, i) => {
+    const dest = roomKey(x.destArea, x.destRoom);
+    out.push({ key: 'x' + i, cat: 'exit', kind: 'EXIT', label: 'EXIT/' + (x.warpTypeName || x.warpType).toString().replace('WARP_TYPE_', '') + ' -> ' + dest,
+      x: x.x, y: x.y, real: true, outside: !(x.x >= 0 && x.y >= 0 && x.x < room.width && x.y < room.height), draw: true, src: x,
+      hay: ('exit ' + dest + ' ' + x.warpTypeName + ' x' + x.x + ' y' + x.y).toLowerCase() });
+  });
+  return out;
+}
+function objVisible(o) {
+  if (S.kindOff.has(o.kind)) return false;
+  if (S.filter && !o.hay.includes(S.filter)) return false;
+  return true;
+}
+
+// ---------------------------------------------------------------- blocks
+const blockUnit = L => L.format === 'metatile' ? 16 : 8;
+function blockInfo(bg, bx, by) {
+  const room = S.room, L = room.layers[bg];
+  if (!L || !L.data) return null;
+  const data = layerData(L);
+  if (bx < 0 || by < 0 || bx >= L.w || by >= L.h) return null;
+  const info = { bg, bx, by, unit: blockUnit(L), format: L.format };
+  info.px = bx * info.unit; info.py = by * info.unit;
+  const decode = e => ({ raw: e, tile: e & 0x3FF, hf: (e >> 10) & 1, vf: (e >> 11) & 1, pal: e >> 12 });
+  if (L.format === 'metatile') {
+    const raw = data[by * L.w + bx], m = raw & 0x3FFF, sub = getMeta(room, L.metatileSet), types = getTypes(room, L.metatileSet);
+    info.metatile = raw; info.set = L.metatileSet;
+    info.oob = m * 4 + 4 > sub.length;
+    info.type = m < types.length ? types[m] : null;
+    info.entries = info.oob ? [] : [0, 1, 2, 3].map(k => decode(sub[m * 4 + k]));
+  } else info.entries = [decode(data[by * L.w + bx])];
+  return info;
+}
+const blockKey = b => b.bg + ':' + b.bx + ',' + b.by;
+function fmtEntry(e) { return 'tile 0x' + hex(e.tile, 3) + ' pal ' + e.pal + (e.hf ? ' hflip' : '') + (e.vf ? ' vflip' : '') + ' (entry 0x' + hex(e.raw, 4) + ')'; }
+
+// ---------------------------------------------------------------- COPY INFO
+function layerLine(room, bg) {
+  const L = room.layers[bg];
+  if (!L) return null;
+  return bg + ': bgcnt ' + (L.bgcnt == null ? 'unset (set by managers)' : '0x' + hex(L.bgcnt, 4) + ' priority ' + L.priority + ' charBase ' + L.charBase + ' ' + L.colors + ' colours') +
+    ', ' + L.format + ' ' + L.w + 'x' + L.h + ', shown by the game: ' + (L.visible ? 'yes' : 'no') + (L.defined === false ? ', not defined by this room' : '');
+}
+function fieldsOf(o) {
+  const lines = [];
+  for (const [k, v] of Object.entries(o.src)) lines.push('    ' + k + ': ' + (v === null ? 'null' : v));
+  return lines;
+}
+function infoText() {
+  const room = S.room;
+  if (!room) return '';
+  const a = room._a, t = [];
+  t.push('TMC layer workbench (' + S.maps.rom.region + ' ROM)');
+  t.push('Area 0x' + hex(a.id) + ' ' + a.name + ', room 0x' + hex(room.id) + ' ' + (room.name || '') + (room.enumName ? ' (' + room.enumName + ')' : ''));
+  t.push('Size ' + room.width + 'x' + room.height + ' px (' + (room.width / 16) + 'x' + (room.height / 16) + ' metatiles), mode ' + room.mode + ', world ' + room.worldX + ',' + room.worldY + ', tileSet ' + room.tileSetId + ', gfx ' + room.gfx);
+  for (const bg of ['BG1', 'BG2', 'BG3']) { const l = layerLine(room, bg); if (l) t.push(l); }
+  t.push('Draw order (back to front): ' + room.drawOrder.join(', '));
+  t.push('Entities ' + room.entities.length + ' (positioned ' + room.entities.filter(e => e.positioned).length + '), tile entities ' + room.tileEntities.length + ', exits ' + room.exits.length);
+  const objs = S.objs.filter(o => S.sel.objs.has(o.key));
+  if (objs.length) {
+    t.push('', 'Selected objects (' + objs.length + '):');
+    for (const o of objs) {
+      t.push('  [' + o.cat + ' ' + o.key + '] ' + o.label + ' at ' + (o.draw ? o.x + ',' + o.y : 'no position') +
+        (o.outside ? ' (OUTSIDE the room)' : '') + (o.cat === 'entity' && !o.real ? ' (x,y are parameters, not a position)' : ''));
+      for (const [k, v] of spriteLines(o)) t.push('    ' + (k ? k + ': ' : '        ') + v);
+      t.push(...fieldsOf(o));
+    }
+  }
+  const bl = S.sel.blocks;
+  if (bl.length) {
+    t.push('', 'Selected blocks (' + bl.length + (bl.length > 256 ? ', first 256 listed' : '') + '):');
+    for (const b of bl.slice(0, 256)) {
+      const i = blockInfo(b.bg, b.bx, b.by);
+      if (!i) continue;
+      let s = '  ' + i.bg + ' block ' + i.bx + ',' + i.by + ' (' + i.unit + 'px unit, at ' + i.px + ',' + i.py + ')';
+      if (i.format === 'metatile') {
+        s += ' metatile 0x' + hex(i.metatile, 4) + ' (' + i.set + ' set)' + (i.type != null ? ' type 0x' + hex(i.type, 4) : '') + (i.oob ? ' OUT OF RANGE: past the loaded set, the game reads stale memory' : '');
+        t.push(s);
+        i.entries.forEach((e, k) => t.push('      ' + ['TL', 'TR', 'BL', 'BR'][k] + ': ' + fmtEntry(e)));
+      } else { t.push(s); i.entries.forEach(e => t.push('      ' + fmtEntry(e))); }
+    }
+  }
+  return t.join('\n') + '\n';
+}
+async function copyInfo() {
+  const text = infoText();
+  try { await navigator.clipboard.writeText(text); toast('Copied ' + text.length + ' chars'); }
+  catch (e) {
+    const ta = el('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;left:-999px'; document.body.append(ta); ta.select();
+    try { document.execCommand('copy'); toast('Copied ' + text.length + ' chars'); } catch (e2) { toast('Copy failed'); }
+    ta.remove();
+  }
+}
+
+// ---------------------------------------------------------------- window manager
+const ws = $('#ws'), miniBar = $('#mini');
+const wins = {};
+let zTop = 10;
+function wsSize() { return { W: ws.clientWidth, H: ws.clientHeight }; }
+function defaultRect(id) {
+  const { W, H } = wsSize(), u = (a, b, c, d) => ({ x: Math.round(a * W), y: Math.round(b * H), w: Math.round(c * W), h: Math.round(d * H) });
+  return ({
+    RESULT: u(0, 0, .5, .64), BG2: u(.5, 0, .25, .32), BG1: u(.75, 0, .25, .32), BG3: u(.5, .32, .25, .32),
+    MAP: u(.75, .32, .25, .32), ENTITIES: u(0, .64, .3, .36), INFO: u(.3, .64, .4, .36), DEPTH: u(.7, .64, .3, .36),
+  })[id];
+}
+class Win {
+  constructor(id, title, opts = {}) {
+    this.id = id; this.title = title; this.state = 'open'; this.onResize = null;
+    this.el = el('div', 'win'); this.hd = el('div', 'hd'); this.bd = el('div', 'bd');
+    this.t = el('span', 't'); this.t.textContent = title;
+    this.btnMin = el('button'); this.btnMin.textContent = '_'; this.btnMin.title = 'minimise';
+    this.btnX = el('button'); this.btnX.textContent = 'x'; this.btnX.title = 'hide (reopen from the top bar)';
+    this.extra = el('span');
+    this.hd.append(this.t, this.extra, this.btnMin, this.btnX);
+    this.el.append(this.hd, this.bd);
+    ws.append(this.el);
+    wins[id] = this;
+    this.btnMin.onclick = () => this.setState('min');
+    this.btnX.onclick = () => this.setState('closed');
+    this.el.addEventListener('mousedown', () => this.front(), true);
+    this.hd.addEventListener('mousedown', e => this.startDrag(e));
+    this.hd.addEventListener('dblclick', e => { if (e.target === this.hd || e.target === this.t) this.setState('min'); });
+    new ResizeObserver(() => { if (this.state === 'open') { this.onResize && this.onResize(); saveLayoutSoon(); } }).observe(this.el);
+  }
+  rect() { return { x: this.el.offsetLeft, y: this.el.offsetTop, w: this.el.offsetWidth, h: this.el.offsetHeight }; }
+  setRect(r) {
+    const { W, H } = wsSize();
+    const w = clamp(r.w, 160, Math.max(160, W)), h = clamp(r.h, 80, Math.max(80, H));
+    Object.assign(this.el.style, { width: w + 'px', height: h + 'px',
+      left: clamp(r.x, -w + 80, Math.max(0, W - 80)) + 'px', top: clamp(r.y, 0, Math.max(0, H - 24)) + 'px' });
+  }
+  front() { this.el.style.zIndex = ++zTop; for (const k in wins) wins[k].el.classList.toggle('front', wins[k] === this); }
+  // auto: set by autoMinHidden (a layer the game hides), not by the user: remembered in autoMin and not saved as the window's state.
+  setState(s, auto) {
+    this.state = s; this.autoMin = !!auto && s === 'min';
+    this.el.style.display = s === 'open' ? 'flex' : 'none';
+    if (s === 'open') { this.front(); this.onResize && this.onResize(); }
+    renderMini(); saveLayoutSoon();
+  }
+  startDrag(e) {
+    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
+    const r = this.rect(), sx = e.clientX, sy = e.clientY;
+    const mv = ev => this.setRect({ x: r.x + ev.clientX - sx, y: r.y + ev.clientY - sy, w: r.w, h: r.h });
+    const up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); saveLayoutSoon(); };
+    addEventListener('mousemove', mv); addEventListener('mouseup', up);
+    e.preventDefault();
+  }
+}
+function renderMini() {
+  miniBar.textContent = '';
+  const lab = el('span'); lab.textContent = 'WINDOWS'; lab.style.color = 'var(--dim)'; miniBar.append(lab);
+  for (const id in wins) {
+    const w = wins[id], b = el('button'); b.textContent = w.id;
+    b.className = w.state === 'open' ? 'on' : '';
+    b.title = w.state === 'open' ? 'click: minimise' : 'click: show';
+    b.style.opacity = w.state === 'closed' ? .55 : 1;
+    b.onclick = () => w.setState(w.state === 'open' ? 'min' : 'open');
+    miniBar.append(b);
+  }
+}
+let saveT = 0;
+function saveLayoutSoon() { clearTimeout(saveT); saveT = setTimeout(saveLayout, 300); }
+function saveLayout() {
+  const o = {};
+  for (const id in wins) o[id] = Object.assign(wins[id].rect(), { s: wins[id].autoMin ? 'open' : wins[id].state });
+  store('layout', o);
+}
+function applyLayout(reset) {
+  const saved = reset ? null : store('layout');
+  for (const id in wins) {
+    const w = wins[id], r = (saved && saved[id]) || defaultRect(id);
+    w.setRect(r);
+    w.setState(saved && saved[id] ? saved[id].s || 'open' : 'open');
+  }
+  if (reset) saveLayout();
+}
+
+// ---------------------------------------------------------------- panes: shared pan/zoom machinery
+class Pane {
+  constructor(win, canvasHost) {
+    this.win = win; this.host = canvasHost; this.cv = el('canvas'); canvasHost.append(this.cv);
+    this.ctx = this.cv.getContext('2d');
+    this.s = 1; this.ox = 0; this.oy = 0; this.dirty = true;
+    const ro = new ResizeObserver(() => this.resize()); ro.observe(canvasHost);
+    this.cv.addEventListener('wheel', e => this.wheel(e), { passive: false });
+    this.cv.addEventListener('mousedown', e => this.down(e));
+    this.cv.addEventListener('mousemove', e => this.move(e));
+    this.cv.addEventListener('contextmenu', e => e.preventDefault());
+    this.cv.addEventListener('dblclick', e => { if (e.shiftKey) { e.preventDefault(); fitAll(); } });
+  }
+  resize() {
+    const w = Math.max(1, this.host.clientWidth), h = Math.max(1, this.host.clientHeight);
+    if (this.cv.width !== w || this.cv.height !== h) { this.cv.width = w; this.cv.height = h; }
+    this.paint();
+  }
+  pos(e) { const r = this.cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * this.cv.width / r.width, y: (e.clientY - r.top) * this.cv.height / r.height }; }
+  toImg(p) { return { x: (p.x - this.ox) / this.s, y: (p.y - this.oy) / this.s }; }
+  setT(t, fromSync) {
+    this.s = t.s; this.ox = t.ox; this.oy = t.oy;
+    this.paint();
+    if (!fromSync && S.sync) for (const v of S.views) if (v !== this && v.win.state === 'open') v.setT(t, true);
+  }
+  wheel(e) {
+    e.preventDefault();
+    if (e.ctrlKey) {
+      const p = this.pos(e), k = Math.exp(-e.deltaY * 0.0016), ns = clamp(this.s * k, 0.05, 64);
+      const ix = (p.x - this.ox) / this.s, iy = (p.y - this.oy) / this.s;
+      this.setT({ s: ns, ox: p.x - ix * ns, oy: p.y - iy * ns });
+    } else {
+      const d = e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+      this.setT(e.shiftKey ? { s: this.s, ox: this.ox - d, oy: this.oy } : { s: this.s, ox: this.ox - e.deltaX, oy: this.oy - d });
+    }
+  }
+  down(e) {
+    const p = this.pos(e);
+    if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+      e.preventDefault();
+      const sx = p.x, sy = p.y, ox = this.ox, oy = this.oy;
+      const mv = ev => { const q = this.pos(ev); this.setT({ s: this.s, ox: ox + q.x - sx, oy: oy + q.y - sy }); };
+      const up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); };
+      addEventListener('mousemove', mv); addEventListener('mouseup', up);
+      return;
+    }
+    if (e.button === 0) this.leftDown(e, p);
+  }
+  leftDown() {}
+  move() {}
+  paint() {}
+}
+
+// ---------------------------------------------------------------- image views (RESULT and one per layer)
+function makeChecker() {
+  const c = document.createElement('canvas'); c.width = c.height = 16;
+  const x = c.getContext('2d'); x.fillStyle = '#20232b'; x.fillRect(0, 0, 16, 16); x.fillStyle = '#2a2e38'; x.fillRect(0, 0, 8, 8); x.fillRect(8, 8, 8, 8);
+  return c;
+}
+const checker = makeChecker();
+class ImgView extends Pane {
+  constructor(win, host, bg, status) {
+    super(win, host);
+    this.bg = bg; this.status = status; this.drag = null;
+  }
+  source() {
+    const room = S.room;
+    if (!room) return null;
+    if (this.bg) { const l = getLayer(room, this.bg); return l ? l.canvas : null; }
+    return getComposite(room);
+  }
+  fit() {
+    const src = this.source(), w = this.cv.width, h = this.cv.height;
+    if (!src || w < 4) return;
+    let s = Math.min((w - 8) / src.width, (h - 8) / src.height);
+    s = s >= 1 ? Math.floor(s) : Math.max(s, 0.05);
+    this.s = s; this.ox = Math.round((w - src.width * s) / 2); this.oy = Math.round((h - src.height * s) / 2);
+  }
+  centerOn(x, y) { this.ox = Math.round(this.cv.width / 2 - x * this.s); this.oy = Math.round(this.cv.height / 2 - y * this.s); this.paint(); }
+  paint() {
+    const ctx = this.ctx, w = this.cv.width, h = this.cv.height, room = S.room;
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = this.bg ? ctx.createPattern(checker, 'repeat') : '#0b0c0f';
+    ctx.fillRect(0, 0, w, h);
+    if (!room) return;
+    const src = this.source();
+    if (!src) {
+      ctx.fillStyle = '#8a92a6'; ctx.font = '12px monospace';
+      ctx.fillText(this.bg + ': this room has no ' + this.bg + ' data', 10, 20);
+      return;
+    }
+    const hidden = this.bg && room.layers[this.bg] && room.layers[this.bg].visible === false;
+    if (hidden) ctx.globalAlpha = 0.3;   // the game does not show this layer in this room: what follows may not be a map
+    ctx.drawImage(src, this.ox, this.oy, src.width * this.s, src.height * this.s);
+    ctx.globalAlpha = 1;
+    if (!this.bg) { this.paintSprites(ctx, room); for (const t of dpTargets()) paintDepthOverlay(ctx, this, t); }
+    // room bounds when the image is not the room
+    ctx.strokeStyle = '#ffffff30'; ctx.lineWidth = 1;
+    ctx.strokeRect(this.ox - .5, this.oy - .5, room.width * this.s + 1, room.height * this.s + 1);
+    this.paintOverlay(ctx, src, w, h, room);
+    if (hidden) this.paintHiddenNotice(ctx, w, room.layers[this.bg]);
+  }
+  paintHiddenNotice(ctx, w, L) {
+    const lines = ['NOT SHOWN BY THE GAME IN THIS ROOM', 'data may not be a drawable map' + (L.note ? ' (' + L.note + ')' : '')];
+    ctx.font = 'bold 11px ui-monospace,Consolas,monospace'; ctx.textBaseline = 'top';
+    const tw = Math.min(w - 8, Math.max(...lines.map(t => ctx.measureText(t).width)) + 12);
+    ctx.fillStyle = '#000000d0'; ctx.fillRect(4, 4, tw, 8 + lines.length * 14);
+    ctx.strokeStyle = '#ff6060'; ctx.lineWidth = 1; ctx.strokeRect(4.5, 4.5, tw, 8 + lines.length * 14);
+    ctx.fillStyle = '#ff9090';
+    lines.forEach((t, i) => ctx.fillText(t, 10, 8 + i * 14, tw - 12));
+  }
+  // The curated sprites (sprites.json) at the entities' positions, over the room; the game sorts by y.
+  paintSprites(ctx, room) {
+    if (!S.sprOn || S.spr.state !== 'ready') return;
+    const list = [];
+    for (const o of S.objs) {
+      if (o.cat !== 'entity' || !o.real) continue;
+      const sp = sprOf(o); if (sp) list.push([o, sp]);
+    }
+    list.sort((a, b) => a[0].y - b[0].y || a[0].key.localeCompare(b[0].key, undefined, { numeric: true }));
+    ctx.imageSmoothingEnabled = false;
+    for (const [o, sp] of list) ctx.drawImage(sp.pic.cv, this.ox + (o.x + sp.pic.ox) * this.s, this.oy + (o.y + sp.pic.oy) * this.s, sp.pic.w * this.s, sp.pic.h * this.s);
+  }
+  // An entity whose drawn sprite has an opaque pixel under the screen point p.
+  hitSprite(p) {
+    if (!S.sprOn || S.spr.state !== 'ready' || this.bg) return null;
+    const q = this.toImg(p);
+    let best = null;
+    for (const o of S.objs) {
+      if (o.cat !== 'entity' || !o.real) continue;
+      const sp = sprOf(o); if (!sp) continue;
+      const x = Math.floor(q.x - o.x - sp.pic.ox), y = Math.floor(q.y - o.y - sp.pic.oy);
+      if (x < 0 || y < 0 || x >= sp.pic.w || y >= sp.pic.h || !sp.pic.rgba[(y * sp.pic.w + x) * 4 + 3]) continue;
+      if (!best || o.y >= best.y) best = o;
+    }
+    return best;
+  }
+  paintOverlay(ctx, src, w, h, room) {
+    const s = this.s, ox = this.ox, oy = this.oy;
+    if (S.grid) {
+      const step = s >= 3 ? 8 : 16;
+      ctx.lineWidth = 1;
+      for (let x = Math.max(0, Math.floor(-ox / s / step) * step); x <= src.width && ox + x * s < w; x += step) {
+        ctx.fillStyle = x % 16 ? '#ffffff14' : '#ffffff30'; ctx.fillRect(Math.round(ox + x * s), Math.max(0, oy), 1, Math.min(h, src.height * s));
+      }
+      for (let y = Math.max(0, Math.floor(-oy / s / step) * step); y <= src.height && oy + y * s < h; y += step) {
+        ctx.fillStyle = y % 16 ? '#ffffff14' : '#ffffff30'; ctx.fillRect(Math.max(0, ox), Math.round(oy + y * s), Math.min(w, src.width * s), 1);
+      }
+    }
+    // selected blocks
+    ctx.lineWidth = 2;
+    for (const b of S.sel.blocks) {
+      const L = room.layers[b.bg]; if (!L) continue;
+      const u = blockUnit(L);
+      ctx.fillStyle = '#5ad2ff30'; ctx.fillRect(ox + b.bx * u * s, oy + b.by * u * s, u * s, u * s);
+      ctx.strokeStyle = b.bg === this.bg || !this.bg ? '#5ad2ff' : '#5ad2ff80';
+      ctx.strokeRect(ox + b.bx * u * s + 1, oy + b.by * u * s + 1, u * s - 2, u * s - 2);
+    }
+    if (S.entities) this.paintObjects(ctx, room, w, h);
+    if (this.drag && this.drag.moved) {
+      const d = this.drag;
+      ctx.strokeStyle = '#ffd24a'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
+      ctx.strokeRect(Math.min(d.sx, d.cx) + .5, Math.min(d.sy, d.cy) + .5, Math.abs(d.cx - d.sx), Math.abs(d.cy - d.sy));
+      ctx.setLineDash([]);
+    }
+  }
+  objScreen(o, room) {
+    let x = o.x, y = o.y;
+    if (o.outside) { x = clamp(x, 0, room.width); y = clamp(y, 0, room.height); }
+    return { x: this.ox + x * this.s, y: this.oy + y * this.s };
+  }
+  paintObjects(ctx, room, w, h) {
+    ctx.font = '10px ui-monospace,Consolas,monospace'; ctx.textBaseline = 'middle';
+    const sel = S.sel.objs;
+    for (const o of S.objs) {
+      if (!o.draw || !objVisible(o)) continue;
+      const p = this.objScreen(o, room);
+      if (p.x < -200 || p.y < -20 || p.x > w + 20 || p.y > h + 20) continue;
+      const col = o.outside ? '#ff4040' : kindColor(o.kind), isSel = sel.has(o.key);
+      ctx.lineWidth = 1.5; ctx.strokeStyle = '#000'; ctx.fillStyle = col;
+      if (o.outside) {
+        ctx.beginPath(); ctx.moveTo(p.x, p.y - 6); ctx.lineTo(p.x + 6, p.y + 5); ctx.lineTo(p.x - 6, p.y + 5); ctx.closePath(); ctx.fill(); ctx.stroke();
+      } else if (!o.real) {
+        ctx.setLineDash([2, 2]); ctx.strokeStyle = col; ctx.beginPath();
+        ctx.moveTo(p.x, p.y - 5); ctx.lineTo(p.x + 5, p.y); ctx.lineTo(p.x, p.y + 5); ctx.lineTo(p.x - 5, p.y); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+      } else if (o.cat === 'exit') {
+        ctx.fillRect(p.x - 4, p.y - 4, 8, 8); ctx.strokeRect(p.x - 4, p.y - 4, 8, 8);
+        ctx.fillStyle = '#000'; ctx.fillRect(p.x - 1, p.y - 1, 2, 2);
+      } else if (o.cat === 'tile') {
+        ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 7); ctx.fill(); ctx.stroke();
+      } else {
+        ctx.fillRect(p.x - 3, p.y - 3, 7, 7); ctx.strokeRect(p.x - 3.5, p.y - 3.5, 7, 7);
+        ctx.fillStyle = '#000'; ctx.fillRect(p.x, p.y, 1, 1);
+      }
+      if (isSel) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(p.x - 8, p.y - 8, 16, 16); }
+      if (S.labels || isSel) {
+        let t = o.label + (o.outside ? ' (' + o.x + ',' + o.y + ' outside)' : '') + (!o.real && o.cat === 'entity' ? ' ~' : '');
+        ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(t, p.x + 8, p.y - 7);
+        ctx.fillStyle = isSel ? '#fff' : col; ctx.fillText(t, p.x + 8, p.y - 7);
+      }
+    }
+  }
+  hitObject(p) {
+    if (!S.entities || !S.room) return null;
+    let best = null, bd = 100;
+    for (const o of S.objs) {
+      if (!o.draw || !objVisible(o)) continue;
+      const q = this.objScreen(o, S.room), d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
+      if (d < bd) { bd = d; best = o; }
+    }
+    return best;
+  }
+  // The layer a click in this view targets: the layer itself, or in RESULT the topmost one with a pixel there.
+  targetLayer(ix, iy) {
+    const room = S.room;
+    if (this.bg) return room.layers[this.bg] && room.layers[this.bg].data ? this.bg : null;
+    const order = enabledOrder(room);
+    for (let k = order.length - 1; k >= 0; k--) {
+      const l = getLayer(room, order[k]);
+      if (l && ix >= 0 && iy >= 0 && ix < l.w && iy < l.h && (l.buf[Math.floor(iy) * l.w + Math.floor(ix)] >>> 24)) return order[k];
+    }
+    return order.length ? order[order.length - 1] : null;
+  }
+  leftDown(e, p) {
+    this.drag = { sx: p.x, sy: p.y, cx: p.x, cy: p.y, moved: false, e };
+    const mv = ev => {
+      const q = this.pos(ev), d = this.drag; if (!d) return;
+      d.cx = q.x; d.cy = q.y;
+      if (!d.moved && Math.hypot(d.cx - d.sx, d.cy - d.sy) > 4) d.moved = true;
+      if (d.moved) this.paint();
+    };
+    const up = ev => {
+      removeEventListener('mousemove', mv); removeEventListener('mouseup', up);
+      const d = this.drag; this.drag = null; if (!d) return;
+      if (d.moved) this.rectSelect(d, ev); else this.clickSelect(d, ev);
+      this.paint();
+    };
+    addEventListener('mousemove', mv); addEventListener('mouseup', up);
+  }
+  clickSelect(d, ev) {
+    const p = { x: d.sx, y: d.sy }, add = ev.ctrlKey || ev.metaKey;
+    if (!ev.altKey) {
+      const o = this.hitObject(p) || this.hitSprite(p);
+      if (o) { selectObjs([o.key], add); return; }
+    }
+    const i = this.toImg(p), bg = this.targetLayer(i.x, i.y);
+    if (!bg) { if (!add) clearSel(); return; }
+    const u = blockUnit(S.room.layers[bg]);
+    const info = blockInfo(bg, Math.floor(i.x / u), Math.floor(i.y / u));
+    if (!info) { if (!add) clearSel(); return; }
+    selectBlocks([{ bg, bx: info.bx, by: info.by }], add);
+  }
+  rectSelect(d, ev) {
+    const add = ev.ctrlKey || ev.metaKey;
+    const a = this.toImg({ x: Math.min(d.sx, d.cx), y: Math.min(d.sy, d.cy) }), b = this.toImg({ x: Math.max(d.sx, d.cx), y: Math.max(d.sy, d.cy) });
+    const bg = this.targetLayer((a.x + b.x) / 2, (a.y + b.y) / 2) || this.targetLayer(a.x, a.y);
+    const blocks = [];
+    if (bg) {
+      const L = S.room.layers[bg], u = blockUnit(L);
+      const x0 = clamp(Math.floor(a.x / u), 0, L.w - 1), x1 = clamp(Math.floor((b.x - .001) / u), 0, L.w - 1);
+      const y0 = clamp(Math.floor(a.y / u), 0, L.h - 1), y1 = clamp(Math.floor((b.y - .001) / u), 0, L.h - 1);
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) blocks.push({ bg, bx: x, by: y });
+    }
+    const keys = [];
+    if (S.entities) for (const o of S.objs) if (o.draw && objVisible(o) && o.x >= a.x && o.x <= b.x && o.y >= a.y && o.y <= b.y) keys.push(o.key);
+    setSel(blocks, keys, add);
+  }
+  move(e) {
+    const p = this.pos(e), i = this.toImg(p), room = S.room;
+    if (!room) return;
+    let t = Math.floor(i.x) + ',' + Math.floor(i.y);
+    const bg = this.targetLayer(i.x, i.y);
+    if (bg) {
+      const u = blockUnit(room.layers[bg]), info = blockInfo(bg, Math.floor(i.x / u), Math.floor(i.y / u));
+      if (info) t += '  ' + bg + ' ' + info.bx + ',' + info.by + (info.metatile != null ? ' mt 0x' + hex(info.metatile, 4) : ' tile 0x' + hex(info.entries[0].tile, 3));
+    }
+    const o = this.hitObject(p) || this.hitSprite(p);
+    if (o) t += '  | ' + o.label + (sprOf(o) ? ' (sprite)' : '');
+    this.status.textContent = t + '   x' + this.s.toFixed(2);
+  }
+}
+
+// ---------------------------------------------------------------- selection
+function setSel(blocks, objKeys, add) {
+  if (!add) { S.sel.blocks = []; S.sel.objs = new Set(); }
+  const have = new Set(S.sel.blocks.map(blockKey));
+  for (const b of blocks) if (!have.has(blockKey(b))) { S.sel.blocks.push(b); have.add(blockKey(b)); }
+  for (const k of objKeys) S.sel.objs.add(k);
+  selChanged();
+}
+function selectObjs(keys, add) {
+  if (add && keys.length === 1 && S.sel.objs.has(keys[0])) { S.sel.objs.delete(keys[0]); selChanged(); return; }
+  setSel([], keys, add);
+}
+function selectBlocks(blocks, add) {
+  if (add && blocks.length === 1) {
+    const i = S.sel.blocks.findIndex(b => blockKey(b) === blockKey(blocks[0]));
+    if (i >= 0) { S.sel.blocks.splice(i, 1); selChanged(); return; }
+  }
+  setSel(blocks, [], add);
+}
+function clearSel() { S.sel = { blocks: [], objs: new Set() }; selChanged(); }
+function selChanged() { repaintAll(); renderInfo(); renderEntityList(true); renderDepth(); }
+function moveSel(dx, dy) {
+  if (!S.sel.blocks.length) return;
+  const nb = [];
+  for (const b of S.sel.blocks) {
+    const L = S.room.layers[b.bg];
+    nb.push({ bg: b.bg, bx: clamp(b.bx + dx, 0, L.w - 1), by: clamp(b.by + dy, 0, L.h - 1) });
+  }
+  S.sel.blocks = nb; S.sel.objs = new Set();
+  selChanged();
+}
+function repaintAllSoon() { setTimeout(() => { for (const v of S.views) v.resize(); if (mapPane) mapPane.resize(); }, 50); }
+function repaintAll() { for (const v of S.views) if (v.win.state === 'open') v.paint(); }
+function fitAll() {
+  const open = S.views.filter(v => v.win.state === 'open');
+  const first = open.find(v => !v.bg) || open[0];
+  if (S.sync && first) {
+    first.fit();
+    for (const v of open) if (v !== first) { v.s = first.s; v.ox = first.ox; v.oy = first.oy; }
+  } else for (const v of open) v.fit();
+  repaintAll();
+}
+
+// ---------------------------------------------------------------- the windows
+const bgViews = {};
+function buildResult() {
+  const w = new Win('RESULT', 'RESULT');
+  const tb = el('div', 'tb'), cvh = el('div', 'cv'), st = el('div', 'st');
+  w.bd.append(tb, cvh, st);
+  w.checks = {};
+  for (const bg of ['BG1', 'BG2', 'BG3']) {
+    const cb = el('input'); cb.type = 'checkbox'; cb.checked = true;
+    const lab = el('label', null, cb, ' ' + bg); w.checks[bg] = { cb, lab };
+    cb.onchange = () => { S.layerOn[bg] = cb.checked; layersChanged(); };
+    tb.append(lab);
+  }
+  const sh = el('input'); sh.type = 'checkbox'; sh.id = 'showHidden';
+  sh.onchange = () => { S.showHidden = sh.checked; layersChanged(); };
+  tb.append(el('label', null, sh, ' show layers the game hides'));
+  const v = new ImgView(w, cvh, null, st);
+  w.view = v; S.views.push(v);
+  w.onResize = () => v.resize();
+  return w;
+}
+function layersChanged() { repaintAll(); updateLayerChecks(); }
+function updateLayerChecks() {
+  const room = S.room, w = wins.RESULT;
+  for (const bg of ['BG1', 'BG2', 'BG3']) {
+    const c = w.checks[bg], L = room && room.layers[bg];
+    c.cb.disabled = !L || !L.data;
+    c.cb.checked = S.layerOn[bg] && !c.cb.disabled;
+    c.lab.style.opacity = !L || !L.data ? .4 : 1;
+    c.lab.title = !L ? 'this room has no ' + bg : (L.visible === false ? 'the game does not show ' + bg + ' in this room' + (L.note ? ': ' + L.note : '') : '');
+    c.lab.style.color = L && L.visible === false ? 'var(--dim)' : '';
+    c.lab.lastChild.textContent = ' ' + bg + (L && L.visible === false ? ' (hidden in game)' : '');
+  }
+}
+function buildLayer(bg) {
+  const w = new Win(bg, bg + ' LAYER');
+  const cvh = el('div', 'cv'), st = el('div', 'st');
+  if (bg === 'BG3') {
+    const sel = el('select'); for (let i = 0; i < 4; i++) { const o = el('option'); o.value = i; o.textContent = 'char base ' + i; sel.append(o); }
+    sel.title = 'BG3 control is set at runtime by room managers; pick the tile base to try';
+    sel.onchange = () => { S.bg3cb = +sel.value; repaintAll(); };
+    w.extra.append(sel);
+  }
+  w.bd.append(cvh, st);
+  const v = new ImgView(w, cvh, bg, st); w.view = v; bgViews[bg] = v; S.views.push(v);
+  w.onResize = () => v.resize();
+  return w;
+}
+// A layer the game does not show in this room (visible: false) starts minimised: its data may not be a drawable map.
+// Moving to a room where it is shown opens it again if only this rule had closed it. A window the user opens in a
+// hidden room stays open until the next room.
+function autoMinHidden() {
+  const room = S.room;
+  for (const bg of ['BG1', 'BG2', 'BG3']) {
+    const w = wins[bg], L = room && room.layers[bg], hidden = !!(L && L.data && L.visible === false);
+    if (hidden && w.state === 'open') w.setState('min', true);
+    else if (!hidden && w.autoMin) w.setState('open');
+  }
+}
+function updateLayerTitles() {
+  const room = S.room;
+  for (const bg of ['BG1', 'BG2', 'BG3']) {
+    const L = room && room.layers[bg];
+    wins[bg].t.textContent = bg + ' LAYER' + (L ? (L.visible === false ? ' (hidden in game)' : '') + ' ' + L.w + 'x' + L.h + ' ' + L.format : ' (none)');
+  }
+}
+
+// world map
+let mapPane = null;
+function buildMap() {
+  const w = new Win('MAP', 'MAP');
+  const cvh = el('div', 'cv'), st = el('div', 'st');
+  w.bd.append(cvh, st);
+  const p = new Pane(w, cvh); mapPane = p;
+  p.status = st;
+  p.fit = function () {
+    const a = S.room && S.room._a; if (!a || this.cv.width < 4) return;
+    const bb = areaBounds(a), W = this.cv.width, H = this.cv.height;
+    const s = Math.min((W - 20) / (bb.x1 - bb.x0), (H - 20) / (bb.y1 - bb.y0));
+    this.s = s; this.ox = (W - (bb.x1 - bb.x0) * s) / 2 - bb.x0 * s; this.oy = (H - (bb.y1 - bb.y0) * s) / 2 - bb.y0 * s;
+  };
+  p.paint = function () {
+    const ctx = this.ctx, W = this.cv.width, H = this.cv.height, room = S.room;
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#0b0c0f'; ctx.fillRect(0, 0, W, H);
+    if (!room) return;
+    const a = room._a;
+    ctx.font = '10px ui-monospace,Consolas,monospace'; ctx.textBaseline = 'top';
+    const rooms = a.rooms.slice().sort((x, y) => y.width * y.height - x.width * x.height);
+    for (const r of rooms) {
+      const x = this.ox + r.worldX * this.s, y = this.oy + r.worldY * this.s, w = r.width * this.s, h = r.height * this.s;
+      const thumb = r.__c && Object.values(r.__c.comp)[0];
+      if (thumb) { ctx.drawImage(thumb, x, y, w, h); ctx.fillStyle = '#00000050'; ctx.fillRect(x, y, w, h); }
+      else { ctx.fillStyle = '#2a3040'; ctx.fillRect(x, y, w, h); }
+      ctx.strokeStyle = r === room ? '#ffd24a' : '#6a7490'; ctx.lineWidth = r === room ? 3 : 1;
+      ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+      if (w > 18) {
+        const t = hex(r.id) + (w > 90 && r.name ? ' ' + r.name : '');
+        ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(t, x + 3, y + 2);
+        ctx.fillStyle = r === room ? '#ffd24a' : '#fff'; ctx.fillText(t, x + 3, y + 2);
+      }
+    }
+  };
+  p.roomAt = function (e) {
+    const q = this.toImg(this.pos(e)), a = S.room._a;
+    let best = null;
+    for (const r of a.rooms) if (q.x >= r.worldX && q.y >= r.worldY && q.x < r.worldX + r.width && q.y < r.worldY + r.height)
+      if (!best || r.width * r.height < best.width * best.height) best = r;
+    return best;
+  };
+  p.leftDown = function (e) {
+    const sx = e.clientX, sy = e.clientY;
+    const up = ev => {
+      removeEventListener('mouseup', up);
+      if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) { const r = this.roomAt(ev); if (r) openRoom(r._a.id, r.id, true); }
+    };
+    addEventListener('mouseup', up);
+  };
+  p.move = function (e) {
+    const r = S.room && this.roomAt(e);
+    this.status.textContent = r ? 'room ' + hex(r.id) + ' ' + (r.name || '') + '  ' + r.width + 'x' + r.height + ' at ' + r.worldX + ',' + r.worldY : 'area ' + hex(S.room._a.id) + ' ' + S.room._a.name + ' (' + S.room._a.rooms.length + ' rooms)';
+  };
+  p.setT = Pane.prototype.setT.bind(p); // independent pan/zoom, not synchronised with the images
+  p.setT = function (t) { this.s = t.s; this.ox = t.ox; this.oy = t.oy; this.paint(); };
+  w.onResize = () => p.resize();
+  return w;
+}
+function areaBounds(a) {
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const r of a.rooms) { x0 = Math.min(x0, r.worldX); y0 = Math.min(y0, r.worldY); x1 = Math.max(x1, r.worldX + r.width); y1 = Math.max(y1, r.worldY + r.height); }
+  return { x0, y0, x1: Math.max(x1, x0 + 1), y1: Math.max(y1, y0 + 1) };
+}
+
+// entities list
+let entList, entKinds;
+function buildEntities() {
+  const w = new Win('ENTITIES', 'ENTITIES');
+  const tb = el('div', 'tb'), find = el('input'), chips = el('div', 'chips');
+  find.type = 'search'; find.placeholder = 'filter: text, id, x80, list...'; find.style.width = '190px';
+  find.oninput = () => { S.filter = find.value.trim().toLowerCase(); repaintAll(); renderEntityList(); };
+  const ov = el('input'); ov.type = 'checkbox'; ov.checked = S.entities; ov.id = 'ovEnt';
+  ov.onchange = () => { S.entities = ov.checked; syncCtl(); repaintAll(); };
+  const sc = el('input'); sc.type = 'checkbox'; sc.id = 'ovSpr';
+  sc.onchange = () => { ensureSprites(); S.sprOn = sc.checked; syncCtl(); repaintAll(); };
+  tb.append(el('label', null, ov, ' markers'), el('label', null, sc, ' SPRITES'), find);
+  entKinds = chips;
+  entList = el('div', 'scroll');
+  w.bd.append(tb, el('div', 'tb', chips), entList);
+  w.onResize = () => {};
+  return w;
+}
+function renderEntityKinds() {
+  entKinds.textContent = '';
+  const counts = {};
+  for (const o of S.objs) counts[o.kind] = (counts[o.kind] || 0) + 1;
+  for (const k of Object.keys(counts).sort()) {
+    const cb = el('input'); cb.type = 'checkbox'; cb.checked = !S.kindOff.has(k);
+    cb.onchange = () => { if (cb.checked) S.kindOff.delete(k); else S.kindOff.add(k); store('kindOff', [...S.kindOff]); repaintAll(); renderEntityList(); };
+    const lab = el('label', null, cb, ' ' + k + ' ' + counts[k]); lab.style.color = kindColor(k);
+    entKinds.append(lab);
+  }
+}
+function renderEntityList(keepScroll) {
+  if (!entList) return;
+  const top = entList.scrollTop;
+  entList.textContent = '';
+  let n = 0;
+  for (const o of S.objs) {
+    if (!objVisible(o)) continue;
+    n++;
+    const r = el('div', 'er' + (S.sel.objs.has(o.key) ? ' sel' : ''));
+    const k = el('span', 'k'); k.style.background = kindColor(o.kind);
+    const t = el('span'); t.textContent = o.label;
+    const p = el('span', o.outside ? 'bad' : 'p');
+    p.textContent = !o.draw ? 'no position' : o.x + ',' + o.y + (o.outside ? ' OUTSIDE' : '') + (o.cat === 'entity' && !o.real ? ' ~param' : '') + (o.cat === 'entity' && o.src.when !== 'always' ? ' ' + o.src.when : '');
+    r.append(k, t, p);
+    if (sprOf(o)) { const sp = el('span'); sp.textContent = 'spr'; sp.style.color = 'var(--acc2)'; sp.title = 'drawn as a sprite (SPRITES)'; r.append(sp); }
+    r.onclick = e => selectObjs([o.key], e.ctrlKey || e.metaKey);
+    r.ondblclick = () => { if (o.draw) for (const v of S.views) if (v.centerOn) v.centerOn(o.x, o.y); };
+    r.title = 'click: select (Ctrl adds), double click: centre the views on it';
+    entList.append(r);
+  }
+  if (!n) { const e = el('div', 'er'); e.textContent = 'no objects match'; entList.append(e); }
+  if (keepScroll) entList.scrollTop = top;
+}
+
+// ---------------------------------------------------------------- sprite picker (INFO) and its persistence
+async function svLoad() {
+  try {
+    const r = await fetch('/sprite-view', { cache: 'no-cache' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    if (d.format !== 'tmc-sprite-view') throw new Error('not a sprite view document');
+    SV.rules = d.rules || []; SV.entities = d.entities || []; SV.state = 'saved';
+  } catch (e) {
+    SV.state = 'nosrv'; SV.err = e.message;
+    const l = store('svLocal'); if (l) { SV.rules = l.rules || []; SV.entities = l.entities || []; }
+  }
+  SV.loaded = true;
+  S.spr.views.clear(); repaintAll(); renderInfo();
+}
+function svChanged() {
+  S.spr.views.clear();
+  SV.state = SV.state === 'nosrv' ? 'nosrv' : 'unsaved';
+  clearTimeout(SV.timer);
+  if (SV.persist) SV.timer = setTimeout(svSave, 350);
+  repaintAll(); renderInfo(); renderEntityList(true);
+}
+async function svSave() {
+  const doc = { format: 'tmc-sprite-view', version: 1, rules: SV.rules, entities: SV.entities };
+  if (SV.state === 'nosrv') { store('svLocal', doc); renderInfo(); return; }
+  SV.state = 'saving'; renderInfo();
+  try {
+    const r = await fetch('/sprite-view', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(doc) });
+    if (!r.ok) throw new Error(((await r.json().catch(() => ({}))).error) || 'HTTP ' + r.status);
+    SV.state = 'saved'; SV.err = '';
+  } catch (e) { SV.state = 'error'; SV.err = e.message; store('svLocal', doc); }
+  renderInfo();
+}
+// The entities a picker action covers: the selected entities that draw a source of the primary's sprite.
+function svTargets() {
+  const objs = S.objs.filter(o => S.sel.objs.has(o.key) && o.cat === 'entity' && o.real);
+  const withSrc = objs.map(o => ({ o, rec: sprRec(o.key.slice(1)) })).filter(x => x.rec && x.rec.src);
+  if (!withSrc.length) return null;
+  const prim = withSrc[0];
+  return { prim, all: withSrc.filter(x => x.rec.sprite === prim.rec.sprite), others: withSrc.length - 1 };
+}
+function svNormalize(c) {
+  const o = {};
+  if (c.anim != null) { o.anim = c.anim; if (c.step) o.step = c.step; } else if (c.frame != null) o.frame = c.frame;
+  if (c.flipX) o.flipX = 1; if (c.flipY) o.flipY = 1; if (c.rot) o.rot = c.rot;
+  return o;
+}
+// Store choice c for entity o at a scope: 'entity', 'type' (this kind/id/type) or 'any' (this kind/id).
+function svWrite(o, scope, c) {
+  const n = svNormalize(c), idx = +o.key.slice(1), id = svIdOf(o);
+  if (scope === 'entity') {
+    SV.entities = SV.entities.filter(x => !(x.room === S.key && x.index === idx));
+    if (!svIsDefault(n)) SV.entities.push(Object.assign({ room: S.key, index: idx }, n));
+  } else {
+    const type = scope === 'type' ? o.src.type : null;
+    SV.rules = SV.rules.filter(r => !(r.kind === o.kind && r.id === id && (r.type == null ? null : r.type) === type));
+    if (!svIsDefault(n)) SV.rules.push(Object.assign({ kind: o.kind, id, type }, n));
+  }
+}
+function svPatch(patch) {
+  const t = svTargets(); if (!t) return;
+  const cur = (svFind(t.prim.o) || {}).choice || {};
+  const merged = Object.assign({ anim: cur.anim, step: cur.step, frame: cur.frame, flipX: cur.flipX, flipY: cur.flipY, rot: cur.rot }, patch);
+  for (const x of t.all) svWrite(x.o, SV.scope, merged);
+  svChanged();
+}
+function svReset() {
+  const t = svTargets(); if (!t) return;
+  for (const x of t.all) { svWrite(x.o, 'entity', {}); svWrite(x.o, 'type', {}); svWrite(x.o, 'any', {}); }
+  svChanged();
+}
+function buildPicker() {
+  const t = svTargets();
+  if (!t || S.spr.state !== 'ready') return null;
+  const D = S.spr.data, { o, rec } = t.prim, cat = D.sprites[rec.sprite];
+  const f = svFind(o), cur = f ? f.choice : {}, box = el('div');
+  box.id = 'picker'; box.style.cssText = 'margin:4px 6px;padding:4px 6px;border:1px solid #5ad2ff66;background:#1a2530';
+  const h = el('div'); h.style.cssText = 'font-weight:bold;color:var(--acc2)';
+  h.textContent = 'SPRITE PICKER  ' + o.label + '  (sprite ' + rec.sprite + ')';
+  const warn = el('div'); warn.style.cssText = 'color:var(--acc);margin:2px 0';
+  warn.textContent = 'PREVIEW ONLY: these choices change what this viewer draws. They do not change the game.';
+  box.append(h, warn);
+  const row = (...k) => { const r = el('div'); r.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin:3px 0'; for (const x of k) r.append(x); box.append(r); return r; };
+  const sel = (opts, val, fn, dis) => {
+    const s = el('select'); s.disabled = !!dis; s.style.maxWidth = '300px';
+    for (const [v, t2] of opts) { const op = el('option'); op.value = v; op.textContent = t2; s.append(op); }
+    s.value = val; s.onchange = () => fn(s.value); return s;
+  };
+  // animation
+  const frKeys = Object.keys(cat.frames).map(Number).sort((a, b) => a - b), nFr = frKeys.length;
+  const aOpts = [['', 'default (' + (rec.anim != null ? 'animation ' + rec.anim : 'frame ' + rec.frame) + ')']];
+  cat.anims.forEach((a, i) => aOpts.push([String(i), 'animation ' + i + ' (' + a.f.length + ' step' + (a.f.length === 1 ? '' : 's') + (a.l ? ', loops to ' + (a.l - 1 < 0 ? 0 : a.l - 1) : '') + ')']));
+  aOpts.push(['raw', 'frames listed for this sprite (' + nFr + ')']);
+  const aVal = cur.anim != null ? String(cur.anim) : cur.frame != null ? 'raw' : '';
+  const aSel = sel(aOpts, aVal, v => svPatch(v === '' ? { anim: null, step: null, frame: null } : v === 'raw' ? { anim: null, step: null, frame: rec.frame } : { anim: +v, step: 0, frame: null }));
+  let fOpts, fVal, fDis = false;
+  if (cur.anim != null && cat.anims[cur.anim]) {
+    fOpts = cat.anims[cur.anim].f.map((fr, i) => [String(i), 'step ' + i + ': frame ' + (fr[0] === 255 ? '255 (nothing drawn)' : fr[0]) + ', ' + fr[1] + ' ticks' + (fr[2] & 0xC0 ? ', flip ' + (fr[2] & 0x40 ? 'H' : '') + (fr[2] & 0x80 ? 'V' : '') : '')]);
+    fVal = String(clamp(cur.step || 0, 0, fOpts.length - 1));
+  } else if (cur.frame != null) {
+    fOpts = frKeys.map(i => [String(i), 'frame ' + i + ' (' + cat.frames[i].length + ' piece' + (cat.frames[i].length === 1 ? '' : 's') + ')']);
+    fVal = String(cur.frame);
+  } else { fOpts = [['', 'frame ' + rec.frame + ' (default)']]; fVal = ''; fDis = true; }
+  const fSel = sel(fOpts, fVal, v => svPatch(cur.anim != null ? { step: +v } : { frame: +v }), fDis);
+  row(el('span', null, 'animation'), aSel, el('span', null, 'frame'), fSel);
+  // flips and rotation (preview only), reset
+  const tg = (text, on, title, fn) => { const b = el('button'); b.textContent = text; b.title = title; b.classList.toggle('on', !!on); b.onclick = fn; return b; };
+  const rot = cur.rot || 0;
+  const reset = el('button'); reset.textContent = 'RESET TO DEFAULT'; reset.title = 'drop this entity\'s, its kind/id/type\'s and its kind/id\'s choices';
+  reset.onclick = svReset; reset.disabled = !f;
+  row(tg('FLIP H', cur.flipX, 'mirror the sprite left-right, about the entity\'s position (preview only, on top of what the game applies)', () => svPatch({ flipX: cur.flipX ? 0 : 1 })),
+    tg('FLIP V', cur.flipY, 'mirror the sprite top-bottom (preview only)', () => svPatch({ flipY: cur.flipY ? 0 : 1 })),
+    tg('ROTATE 90' + (rot ? ' (now ' + rot + ')' : ''), rot, 'turn the sprite a quarter clockwise about its centre (preview only)', () => svPatch({ rot: (rot + 90) % 360 })), reset);
+  // scope
+  const sc = el('div'); sc.style.cssText = 'display:flex;flex-wrap:wrap;gap:2px 12px;align-items:center;margin:3px 0';
+  sc.append(el('span', null, 'apply to:'));
+  const idn = svIdOf(o);
+  for (const [v, text] of [['type', 'every ' + o.kind + '/' + idn + ' of type ' + o.src.type], ['any', 'every ' + o.kind + '/' + idn + ' (any type)'], ['entity', 'this entity only' + (t.all.length > 1 ? ' (' + t.all.length + ' selected)' : '')]]) {
+    const r = el('input'); r.type = 'radio'; r.name = 'svScope'; r.checked = SV.scope === v;
+    r.onchange = () => { SV.scope = v; store('svScope', v); renderInfo(); };
+    sc.append(el('label', null, r, ' ' + text));
+  }
+  box.append(sc);
+  // what is shown, and where it comes from
+  const info = el('div'); info.style.color = 'var(--dim)';
+  info.textContent = 'showing: ' + (f ? svText(cur) + ' (from ' + ({ entity: 'this entity\'s own choice', type: 'the kind/id/type choice', any: 'the kind/id choice' })[f.level] + ')' : 'the default sprite') +
+    (t.others && t.all.length < t.others + 1 ? '   |   ' + (t.others + 1 - t.all.length) + ' selected entit' + (t.others + 1 - t.all.length === 1 ? 'y uses' : 'ies use') + ' another sprite and are left alone' : '');
+  box.append(info);
+  if (f && !svIsDefault(cur)) {
+    const p = svPic(rec, cur);
+    if (p.err) { const e = el('div', 'warn'); e.textContent = 'cannot draw this choice: ' + p.err; box.append(e); }
+  }
+  const st = el('div'); st.id = 'svBadge';
+  const label = { saved: 'saved to sprite_view.json', saving: 'saving...', unsaved: 'UNSAVED (saving in a moment)', idle: '', error: 'NOT SAVED: ' + SV.err + ' (kept in this browser)',
+    nosrv: 'not saved to a file: no serve.py here (' + SV.err + '); choices are kept in this browser only' }[SV.state];
+  st.textContent = label; st.style.color = SV.state === 'saved' ? 'var(--ok)' : SV.state === 'error' || SV.state === 'nosrv' ? 'var(--bad)' : 'var(--acc)';
+  box.append(st);
+  return box;
+}
+
+// info panel
+let infoBody;
+function buildInfo() {
+  const w = new Win('INFO', 'INFO');
+  const tb = el('div', 'tb');
+  const cp = el('button'); cp.textContent = 'COPY INFO'; cp.title = 'copy the room and the selection as plain text (Ctrl+C with nothing selected)'; cp.onclick = copyInfo;
+  const cl = el('button'); cl.textContent = 'CLEAR SELECTION'; cl.onclick = clearSel;
+  tb.append(cp, cl);
+  infoBody = el('div', 'scroll');
+  w.bd.append(tb, infoBody);
+  return w;
+}
+function renderInfo() {
+  if (!infoBody) return;
+  const room = S.room;
+  infoBody.textContent = '';
+  if (!room) return;
+  const objs = S.objs.filter(o => S.sel.objs.has(o.key));
+  const bl = S.sel.blocks;
+  if (!objs.length && !bl.length) {
+    const d = el('div', 'sec'); d.textContent = 'Nothing selected'; infoBody.append(d);
+    const p = el('div'); p.style.padding = '6px'; p.style.color = 'var(--dim)';
+    p.textContent = 'Click a block or a marker; drag a rectangle; Ctrl adds; Alt+click forces a block under a marker; arrows move the block selection; Esc clears.';
+    infoBody.append(p);
+    return;
+  }
+  const pk = buildPicker(); if (pk) infoBody.append(pk);
+  for (const o of objs.slice(0, 40)) {
+    const h = el('div', 'sec'); h.textContent = o.cat + ' ' + o.key + '  ' + o.label; h.style.color = kindColor(o.kind); infoBody.append(h);
+    const t = el('table', 'f');
+    const add = (k, v, cls) => { const r = el('tr'); const a = el('td'), b = el('td'); a.textContent = k; b.textContent = v; if (cls) b.className = cls; r.append(a, b); t.append(r); };
+    if (o.outside) add('!', 'position is OUTSIDE the room (drawn clamped to its edge)', 'warn');
+    if (o.cat === 'entity' && !o.real) add('!', 'x,y are parameters: the game does not copy them into the position', 'warn');
+    for (const [k, v] of spriteLines(o)) add(k, v, k === 'sprite' && /NOT DRAWN|marker only/.test(v) ? 'warn' : '');
+    for (const [k, v] of Object.entries(o.src)) add(k, v === null ? 'null' : String(v));
+    if (o.cat === 'exit' && S.byKey.has(roomKey(o.src.destArea, o.src.destRoom))) {
+      const r = el('tr'), a = el('td'), b = el('td'), bt = el('button');
+      bt.textContent = 'OPEN ' + roomKey(o.src.destArea, o.src.destRoom); bt.onclick = () => openRoom(o.src.destArea, o.src.destRoom, true);
+      b.append(bt); r.append(a, b); t.append(r);
+    }
+    const sp = sprOf(o);
+    if (sp) {   // the picture itself, enlarged, above the fields
+      const pv = el('canvas'); pv.width = sp.pic.w; pv.height = sp.pic.h;
+      pv.style.cssText = 'width:' + sp.pic.w * clamp(Math.floor(96 / Math.max(sp.pic.w, sp.pic.h)), 1, 4) + 'px;image-rendering:pixelated;background:#0b0c0f;margin:4px 6px;display:block;border:1px solid var(--line)';
+      pv.getContext('2d').drawImage(sp.pic.cv, 0, 0);
+      infoBody.append(pv);
+    }
+    infoBody.append(t);
+  }
+  if (objs.length > 40) { const d = el('div', 'sec'); d.textContent = '... ' + (objs.length - 40) + ' more (COPY INFO has them all)'; infoBody.append(d); }
+  const shown = bl.slice(0, 6);
+  for (const b of shown) {
+    const i = blockInfo(b.bg, b.bx, b.by); if (!i) continue;
+    const h = el('div', 'sec'); h.textContent = i.bg + ' block ' + i.bx + ',' + i.by + '  (' + i.unit + 'px at ' + i.px + ',' + i.py + ')'; infoBody.append(h);
+    const row = el('div'); row.style.cssText = 'display:flex;gap:10px;padding:4px 6px';
+    const prev = el('canvas'); prev.width = prev.height = i.unit; prev.style.cssText = 'width:' + i.unit * 4 + 'px;height:' + i.unit * 4 + 'px;image-rendering:pixelated;background:#0b0c0f;flex:none';
+    const l = getLayer(room, b.bg);
+    if (l) prev.getContext('2d').drawImage(l.canvas, i.px, i.py, i.unit, i.unit, 0, 0, i.unit, i.unit);
+    const t = el('table', 'f');
+    const add = (k, v, cls) => { const r = el('tr'); const a = el('td'), c = el('td'); a.textContent = k; c.textContent = v; if (cls) c.className = cls; r.append(a, c); t.append(r); };
+    if (i.format === 'metatile') {
+      add('metatile', '0x' + hex(i.metatile, 4) + ' (' + i.metatile + ') of the ' + i.set + ' set');
+      if (i.type != null) add('type', '0x' + hex(i.type, 4));
+      if (i.oob) add('!', 'index past the loaded set: the game reads stale memory', 'warn');
+      i.entries.forEach((e, k) => add(['top-left', 'top-right', 'bottom-left', 'bottom-right'][k], fmtEntry(e)));
+    } else i.entries.forEach(e => add('tile', fmtEntry(e)));
+    row.append(prev, t); infoBody.append(row);
+  }
+  if (bl.length > 6) { const d = el('div', 'sec'); d.textContent = '... ' + (bl.length - 6) + ' more blocks (COPY INFO lists up to 256)'; infoBody.append(d); }
+}
+
+// ---------------------------------------------------------------- 3D DEPTH panel (platform/3ds/source/port_sprite_depth.inc)
+// The port's stereo depth for a sprite follows its kind/id/type entry in that file: UP (the normal rule: the ground is the
+// sprite's bottom edge and the depth grows upwards; what an entity without an entry gets), DOWN (hangs from its top edge;
+// the old PORT_DEPTH_INVERT), LEFT / RIGHT (the ground is the right / left edge, for a sprite on a side wall) or FLAT (no lean).
+// The port takes the FIRST entry of the file that matches (kind, id, and type equal or PORT_ANY_TYPE). The panel keeps a working
+// copy; SAVE sends the difference to serve.py, which edits the file in place (depth_inc.py) and keeps comments and other lines.
+const DP_MODES = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'FLAT', 'RAISED', 'WALL'];
+const DP_HELP = { UP: 'ground at the bottom edge, depth grows upwards (the normal rule)', DOWN: 'hangs from the top edge, depth grows downwards (a door in a south wall)',
+  LEFT: 'ground at the right edge, depth grows towards the left (a sprite on a left wall)', RIGHT: 'ground at the left edge, depth grows towards the right (a sprite on a right wall)', FLAT: 'no lean at all', WALL: 'picked from the wall the entity stands in: within 24 px of the left, right or bottom edge of its room it is LEFT, RIGHT or DOWN (the nearest wins), elsewhere UP', RAISED: 'the whole sprite at one constant raised depth (the depth the normal lean gives its top edge), no lean' };
+const DP = { loaded: false, err: '', path: '', exists: true, base: [], work: [], unmanaged: [], scope: store('dpScope') || 'type', force: false,
+  follow: store('dpFollow') !== false, showAll: !!store('dpShowAll'), msg: '', persist: true, index: null };
+const dpKey = e => e.kind + '/' + e.id + '/' + (e.type == null ? '*' : e.type);
+const dpClone = l => l.map(e => Object.assign({}, e));
+async function dpLoad(keepMsg) {
+  try {
+    const r = await fetch('/sprite-depth', { cache: 'no-cache' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    dpAccept(await r.json());
+    DP.err = '';
+  } catch (e) { DP.err = e.message; DP.loaded = false; }
+  if (!keepMsg) DP.msg = '';
+  renderDepth(); repaintAll();
+}
+function dpAccept(d) {
+  DP.path = d.path; DP.exists = d.exists !== false; DP.unmanaged = d.unmanaged || [];
+  DP.base = (d.entries || []).map(e => ({ kind: e.kind, id: e.id, type: e.type, mode: e.mode, line: e.line, comment: e.comment || [], spelling: e.spelling }));
+  DP.work = dpClone(DP.base); DP.loaded = true;
+}
+// The first entry (list order) that matches, like SpriteDepthMode in port/port_draw.c.
+function dpEffective(kind, id, type, list) {
+  for (const e of list || DP.work) if (e.kind === kind && e.id === id && (e.type == null || e.type === type)) return { mode: e.mode, entry: e };
+  return { mode: 'UP', entry: null };
+}
+function dpOps() {
+  const b = new Map(DP.base.map(e => [dpKey(e), e])), w = new Map(DP.work.map(e => [dpKey(e), e])), set = [], remove = [];
+  for (const [k, e] of w) { const o = b.get(k); if (!o || o.mode !== e.mode) set.push({ kind: e.kind, id: e.id, type: e.type, mode: e.mode }); }
+  for (const [k, e] of b) if (!w.has(k)) remove.push({ kind: e.kind, id: e.id, type: e.type });
+  return { set, remove };
+}
+const dpDirty = () => { const o = dpOps(); return o.set.length + o.remove.length; };
+// Change what an entity of kind/id/type gets: type null edits the PORT_ANY_TYPE entry. An entry that would only restate what
+// the entity already gets (UP with nothing before it) is not written, unless DP.force.
+function dpSet(kind, id, type, mode) {
+  const list = DP.work, i = list.findIndex(e => e.kind === kind && e.id === id && e.type === type);
+  let redundant;
+  if (type === null) redundant = mode === 'UP';
+  else redundant = mode === dpEffective(kind, id, type, list.filter((e, k) => k !== i)).mode;
+  if (redundant && !DP.force) { if (i >= 0) list.splice(i, 1); }
+  else if (i >= 0) list[i].mode = mode;
+  else {   // where depth_inc.py puts it: an exact type before the first PORT_ANY_TYPE entry of the kind/id, else last
+    let at = list.length;
+    if (type !== null) { const a = list.findIndex(e => e.kind === kind && e.id === id && e.type == null); if (a >= 0) at = a; }
+    list.splice(at, 0, { kind, id, type, mode, line: null, comment: [], isNew: true });
+  }
+  renderDepth(); repaintAll();
+}
+function dpRemove(e) { const i = DP.work.indexOf(e); if (i >= 0) DP.work.splice(i, 1); renderDepth(); repaintAll(); }
+async function dpSave() {
+  const ops = dpOps();
+  if (!ops.set.length && !ops.remove.length) return;
+  try {
+    const r = await fetch('/sprite-depth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ops) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+    dpAccept(d); DP.err = '';
+    const p = d.report || {};
+    DP.msg = 'saved: ' + p.added + ' added, ' + p.changed + ' changed, ' + p.removed + ' removed' + (p.commentLinesRemoved ? ' (' + p.commentLinesRemoved + ' comment line(s) went with their entries)' : '');
+    toast(DP.msg);
+  } catch (e) { DP.msg = 'NOT SAVED: ' + e.message; toast(DP.msg); }
+  renderDepth(); repaintAll();
+}
+// kind/id/type -> an example room and entity index, for the jump
+function dpIndex() {
+  if (DP.index) return DP.index;
+  const exact = new Map(), any = new Map();
+  for (const a of S.areas) for (const r of a.rooms) r.entities.forEach((e, i) => {
+    if (!e.idName) return;
+    const k = e.kindName + '/' + e.idName, v = [roomKey(a.id, r.id), i];
+    if (!any.has(k)) any.set(k, v);
+    if (!exact.has(k + '/' + e.type)) exact.set(k + '/' + e.type, v);
+  });
+  return (DP.index = { exact, any });
+}
+function dpJump(e) {
+  const ix = dpIndex(), v = e.type == null ? ix.any.get(e.kind + '/' + e.id) : ix.exact.get(e.kind + '/' + e.id + '/' + e.type);
+  if (!v) { toast('no ' + e.kind + '/' + e.id + (e.type == null ? '' : ' type ' + e.type) + ' in the ROM\'s rooms'); return; }
+  const [a, r] = v[0].split('-').map(x => parseInt(x, 16));
+  openRoom(a, r, true);
+  const o = S.objs.find(x => x.key === 'e' + v[1]);
+  if (o) { selectObjs([o.key], false); for (const w of S.views) if (w.centerOn) w.centerOn(o.x, o.y); }
+}
+// The entity the panel works on: the first selected entity that has a name.
+function dpTarget() {
+  const o = S.objs.find(x => S.sel.objs.has(x.key) && x.cat === 'entity' && x.src.idName);
+  return o || null;
+}
+// What the RESULT view draws: the selected entities, and optionally every entity of the room that matches an entry.
+function dpTargets() {
+  if (!DP.loaded || !S.objs.length || (wins.DEPTH && wins.DEPTH.state !== 'open')) return [];
+  const out = [];
+  for (const o of S.objs) {
+    if (o.cat !== 'entity' || !o.real || !o.src.idName) continue;
+    const sel = S.sel.objs.has(o.key);
+    if (!sel && !DP.showAll) continue;
+    const eff = dpEffective(o.kind, o.src.idName, o.src.type);
+    if (!sel && !eff.entry) continue;
+    out.push({ o, mode: eff.mode, sel });
+  }
+  return out;
+}
+// The direction the depth grows in, on the screen: modes are in screen terms; the preview's own flips and turns apply to it
+// when DP.follow (the sprite was transformed, so the illustration is too).
+// PORT_DEPTH_WALL as the port resolves it (port_draw.c WallDepthMode): the nearest of the left, right and bottom edges within 24 px.
+function dpResolveWall(mode, o, room) {
+  if (mode !== 'WALL' || !room) return mode;
+  let best = 25, m = 'UP';
+  const l = o.x, r = room.width - o.x, b = room.height - o.y;
+  if (l >= 0 && l < best) { best = l; m = 'LEFT'; }
+  if (r >= 0 && r < best) { best = r; m = 'RIGHT'; }
+  if (b >= 0 && b < best) { best = b; m = 'DOWN'; }
+  return m;
+}
+function dpDir(mode, choice) {
+  let d = { UP: [0, -1], DOWN: [0, 1], LEFT: [-1, 0], RIGHT: [1, 0], FLAT: [0, 0], RAISED: [0, 0], WALL: [0, 0] }[mode].slice();
+  if (DP.follow && choice) {
+    if (choice.flipX) d[0] = -d[0];
+    if (choice.flipY) d[1] = -d[1];
+    for (let n = ((choice.rot || 0) / 90) & 3; n > 0; n--) d = [-d[1], d[0]];
+  }
+  return d;
+}
+// An illustration (not a render): a gradient over the sprite's opaque pixels from the ground edge (clear) to the far edge, and an arrow.
+function paintDepthOverlay(ctx, view, t) {
+  const sp = sprOf(t.o), pic = sp ? sp.pic : null;
+  const w = pic ? pic.w : 16, h = pic ? pic.h : 16, ox = pic ? pic.ox : -8, oy = pic ? pic.oy : -16;
+  const d = dpDir(dpResolveWall(t.mode, t.o, S.room), sp && sp.choice), s = view.s;
+  const x = view.ox + (t.o.x + ox) * s, y = view.oy + (t.o.y + oy) * s;
+  const oc = document.createElement('canvas'); oc.width = w; oc.height = h;
+  const c = oc.getContext('2d');
+  if (d[0] === 0 && d[1] === 0) { c.fillStyle = 'rgba(170,170,170,.45)'; c.fillRect(0, 0, w, h); }
+  else {
+    const half = (Math.abs(d[0]) * w + Math.abs(d[1]) * h) / 2, cx = w / 2, cy = h / 2;
+    const g = c.createLinearGradient(cx - d[0] * half, cy - d[1] * half, cx + d[0] * half, cy + d[1] * half);
+    g.addColorStop(0, 'rgba(90,210,255,.05)'); g.addColorStop(1, 'rgba(255,70,50,.8)');
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+  }
+  if (pic) { c.globalCompositeOperation = 'destination-in'; c.drawImage(pic.cv, 0, 0); }
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(oc, x, y, w * s, h * s);
+  ctx.strokeStyle = t.sel ? '#ffffffa0' : '#ffffff50'; ctx.lineWidth = 1; ctx.setLineDash([3, 2]); ctx.strokeRect(x + .5, y + .5, w * s, h * s); ctx.setLineDash([]);
+  const mx = x + w * s / 2, my = y + h * s / 2, L = clamp(Math.min(w, h) * s * .45, 10, 48);
+  ctx.lineCap = 'round';
+  if (d[0] || d[1]) {
+    const ex = mx + d[0] * L, ey = my + d[1] * L, bx = mx - d[0] * L, by = my - d[1] * L, hx = -d[1], hy = d[0];
+    for (const [col, lw] of [['#000', 5], ['#fff', 2]]) {
+      ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey);
+      ctx.moveTo(ex, ey); ctx.lineTo(ex - d[0] * 7 + hx * 5, ey - d[1] * 7 + hy * 5);
+      ctx.moveTo(ex, ey); ctx.lineTo(ex - d[0] * 7 - hx * 5, ey - d[1] * 7 - hy * 5); ctx.stroke();
+    }
+  }
+  const lab = (t.sel ? 'DEPTH ' : '') + t.mode + (t.sel ? ' (illustration, not a render)' : '');
+  ctx.font = '10px ui-monospace,Consolas,monospace'; ctx.textBaseline = 'bottom';
+  ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(lab, x, y - 2); ctx.fillStyle = '#ffd24a'; ctx.fillText(lab, x, y - 2);
+}
+let depthBody;
+function buildDepth() {
+  const w = new Win('DEPTH', '3D DEPTH');
+  depthBody = el('div', 'scroll');
+  w.bd.append(depthBody);
+  return w;
+}
+function renderDepth() {
+  if (!depthBody) return;
+  const top = depthBody.scrollTop;
+  depthBody.textContent = '';
+  const add = (...k) => { const d = el('div'); d.style.cssText = 'padding:2px 6px'; for (const x of k) d.append(x); depthBody.append(d); return d; };
+  const btn = (text, title, fn, on) => { const b = el('button'); b.textContent = text; b.title = title || ''; b.onclick = fn; if (on) b.classList.add('on'); return b; };
+  if (!DP.loaded) {
+    const m = add(); m.style.color = 'var(--bad)';
+    m.textContent = 'No depth list: ' + (DP.err || 'loading') + '. The panel reads and writes platform/3ds/source/port_sprite_depth.inc through serve.py (/sprite-depth); open the viewer with serve.py.';
+    return;
+  }
+  const n = dpDirty();
+  const head = add(); head.style.cssText += ';display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;position:sticky;top:0;background:var(--panel);z-index:2;border-bottom:1px solid var(--line)';
+  const badge = el('span'); badge.id = 'dpBadge';
+  badge.textContent = n ? 'UNSAVED CHANGES (' + n + ')' : 'saved';
+  badge.style.cssText = 'font-weight:bold;padding:0 6px;border-radius:3px;' + (n ? 'background:#7a2a2a;color:#fff' : 'color:var(--ok)');
+  const save = btn('SAVE', 'write the changes into ' + DP.path, dpSave); save.disabled = !n; save.id = 'dpSave';
+  const rev = btn('REVERT', 'drop the unsaved changes (reload the file)', () => dpLoad()); rev.disabled = !n;
+  const path = el('span'); path.style.color = 'var(--dim)'; path.textContent = DP.path + (DP.exists ? '' : ' (does not exist yet: SAVE creates it)');
+  head.append(badge, save, rev, path);
+  if (DP.msg) { const m = add(); m.style.color = /NOT SAVED/.test(DP.msg) ? 'var(--bad)' : 'var(--ok)'; m.textContent = DP.msg; }
+  const note = add(); note.style.cssText += ';color:var(--acc)';
+  note.textContent = 'SAVE edits the PORT\'s file (it changes the next 3DS build, not this viewer). The overlay in RESULT is an illustration of the direction the depth grows in, not a render of the stereo output.';
+  // the selected entity
+  const o = dpTarget();
+  const sec = el('div', 'sec'); sec.textContent = o ? 'SELECTED  ' + o.label : 'SELECTED'; if (o) sec.style.color = kindColor(o.kind); depthBody.append(sec);
+  if (!o) add().append(el('span', null, 'Select an entity (with a name) in RESULT or ENTITIES to see and change its depth mode.'));
+  else {
+    const kind = o.kind, id = o.src.idName, type = o.src.type, eff = dpEffective(kind, id, type);
+    const cur = add();
+    let how;
+    if (!eff.entry) how = 'UP (default: no entry matches)';
+    else {
+      const first = DP.work.find(e => e.kind === kind && e.id === id);
+      how = eff.mode + ' - ' + (eff.entry.type == null ? 'by the PORT_ANY_TYPE entry' : 'by the entry for exactly type ' + type) + (eff.entry.line ? ' (line ' + eff.entry.line + ')' : ' (new)');
+      if (eff.entry.type == null && DP.work.some(e => e.kind === kind && e.id === id && e.type === type)) how += '  - an exact entry for this type exists but comes AFTER it, so the port never reaches it';
+    }
+    cur.append(el('b', null, 'effective mode: '), how);
+    const row = add(); row.style.cssText += ';display:flex;flex-wrap:wrap;gap:4px';
+    const target = DP.scope === 'any' ? null : type;
+    for (const m of DP_MODES) row.append(btn(m, DP_HELP[m], () => dpSet(kind, id, target, m), m === (target === null ? (DP.work.find(e => e.kind === kind && e.id === id && e.type == null) || { mode: 'UP' }).mode : eff.mode)));
+    const sc = add(); sc.style.cssText += ';display:flex;flex-wrap:wrap;gap:2px 12px';
+    sc.append('applies to:');
+    for (const [v, text] of [['type', 'this type only (' + type + ')'], ['any', 'any type (PORT_ANY_TYPE)']]) {
+      const r = el('input'); r.type = 'radio'; r.name = 'dpScope'; r.checked = DP.scope === v;
+      r.onchange = () => { DP.scope = v; store('dpScope', v); renderDepth(); };
+      sc.append(el('label', null, r, ' ' + text));
+    }
+    const fc = el('input'); fc.type = 'checkbox'; fc.checked = DP.force; fc.onchange = () => { DP.force = fc.checked; };
+    fc.id = 'dpForce';
+    sc.append(el('label', null, fc, ' write even if it equals the default'));
+    add().append(el('span', null, DP_HELP[eff.mode]));
+    const exact = DP.work.find(e => e.kind === kind && e.id === id && e.type === type), anyE = DP.work.find(e => e.kind === kind && e.id === id && e.type == null);
+    const st = add(); st.style.color = 'var(--dim)';
+    st.textContent = 'entries for ' + kind + '/' + id + ': ' + (exact ? 'exact type ' + type + ' = ' + exact.mode : 'none for type ' + type) + '; ' + (anyE ? 'any type = ' + anyE.mode : 'none for any type');
+  }
+  const ov = add(); ov.style.cssText += ';display:flex;flex-wrap:wrap;gap:2px 12px';
+  const fo = el('input'); fo.type = 'checkbox'; fo.checked = DP.follow; fo.id = 'dpFollow';
+  fo.onchange = () => { DP.follow = fo.checked; store('dpFollow', fo.checked); repaintAll(); };
+  const sa = el('input'); sa.type = 'checkbox'; sa.checked = DP.showAll; sa.id = 'dpShowAll';
+  sa.onchange = () => { DP.showAll = sa.checked; store('dpShowAll', sa.checked); repaintAll(); };
+  ov.append(el('label', null, fo, ' overlay follows the sprite picker\'s flips and turns'), el('label', null, sa, ' overlay every entity of this room that has an entry'));
+  // the entries
+  const sh = el('div', 'sec'); sh.textContent = 'ENTRIES (' + DP.work.length + ', first match wins)'; depthBody.append(sh);
+  const baseKeys = new Map(DP.base.map(e => [dpKey(e), e]));
+  DP.work.forEach((e, i) => {
+    const r = el('div', 'er'); r.style.alignItems = 'center';
+    const changed = !baseKeys.has(dpKey(e)) ? 'new' : baseKeys.get(dpKey(e)).mode !== e.mode ? 'changed' : '';
+    const m = el('span'); m.textContent = e.mode; m.style.cssText = 'width:46px;font-weight:bold;color:' + ({ UP: '#6dff9a', DOWN: '#ffd24a', LEFT: '#5ad2ff', RIGHT: '#c08cff', FLAT: '#bbb' })[e.mode];
+    const t = el('span'); t.textContent = e.kind + '/' + e.id + ' ' + (e.type == null ? 'any type' : 'type ' + e.type);
+    const sh2 = DP.work.slice(0, i).some(p => p.kind === e.kind && p.id === e.id && p.type == null && e.type != null);
+    const x = el('span', 'p'); x.textContent = (e.line ? 'line ' + e.line : '') + (changed ? ' ' + changed.toUpperCase() : '') + (e.spelling === 'PORT_DEPTH_INVERT' && !changed ? ' (INVERT)' : '') + (sh2 ? ' SHADOWED by an earlier any-type entry' : '');
+    if (changed) x.style.color = 'var(--acc)'; if (sh2) x.style.color = 'var(--bad)';
+    const rm = el('button'); rm.textContent = 'x'; rm.title = 'remove this entry (SAVE removes the line and the comment lines directly above it)'; rm.style.marginLeft = 'auto';
+    rm.onclick = ev => { ev.stopPropagation(); dpRemove(e); };
+    r.append(m, t, x, rm);
+    r.title = (e.comment && e.comment.length ? e.comment.join('\n') + '\n\n' : '') + 'click: jump to a room with ' + e.kind + '/' + e.id + (e.type == null ? '' : ' type ' + e.type);
+    r.onclick = () => dpJump(e);
+    depthBody.append(r);
+    if (e.comment && e.comment.length) { const c = el('div'); c.style.cssText = 'padding:0 6px 2px 60px;color:var(--dim);white-space:normal'; c.textContent = e.comment.join(' ').replace(/\/\*|\*\/|\/\//g, '').trim(); depthBody.append(c); }
+  });
+  if (!DP.work.length) add().append(el('span', null, 'No entries: every sprite follows the normal rule (UP).'));
+  if (DP.unmanaged.length) {
+    const s2 = el('div', 'sec'); s2.textContent = 'LINES THE TOOL DOES NOT UNDERSTAND (kept as they are)'; depthBody.append(s2);
+    for (const u of DP.unmanaged) { const d = add(); d.style.color = 'var(--dim)'; d.textContent = 'line ' + u.line + ': ' + u.text; }
+  }
+  depthBody.scrollTop = top;
+}
+
+// ---------------------------------------------------------------- left list
+const isOpen = a => S.groupsOpen[a.id] !== undefined ? !!S.groupsOpen[a.id] : !!(S.room && S.room._a === a);
+function buildList() {
+  const q = $('#q').value.trim().toLowerCase().replace(/\s+/g, '_');
+  const list = $('#list'); list.textContent = '';
+  let total = 0, shown = 0;
+  const mRoom = /^(?:0x)?([0-9a-f]{1,2})-(?:0x)?([0-9a-f]{1,2})$/.exec(q), mArea = /^(?:0x)?([0-9a-f]{1,2})$/.exec(q);
+  for (const a of S.areas) {
+    const aname = a.name.replace(/^AREA_/, '');
+    let rooms = a.rooms; total += rooms.length;
+    let forceOpen = false;
+    if (q) {
+      const areaHit = (mArea && parseInt(mArea[1], 16) === a.id) || aname.toLowerCase().includes(q) || a.name.toLowerCase().includes(q);
+      if (mRoom) rooms = rooms.filter(r => a.id === parseInt(mRoom[1], 16) && r.id === parseInt(mRoom[2], 16));
+      else if (!areaHit) rooms = rooms.filter(r => (r.name || '').toLowerCase().includes(q) || (r.enumName || '').toLowerCase().includes(q));
+      forceOpen = true;
+      if (!rooms.length) continue;
+    }
+    shown += rooms.length;
+    const open = forceOpen || isOpen(a);
+    const g = el('div', 'grp'); g.dataset.area = a.id;
+    const l = el('span'); l.textContent = (open ? '- ' : '+ ') + hex(a.id) + ' ' + aname;
+    const n = el('span', 'n'); n.textContent = rooms.length === a.rooms.length ? a.rooms.length : rooms.length + '/' + a.rooms.length;
+    g.append(l, n);
+    g.onclick = () => { S.groupsOpen[a.id] = !isOpen(a); store('groupsOpen', S.groupsOpen); buildList(); };
+    list.append(g);
+    if (!open) continue;
+    for (const r of rooms) {
+      const d = el('div', 'rm' + (r === S.room ? ' cur' : '')); d.dataset.key = roomKey(a.id, r.id);
+      const id = el('span', 'id'); id.textContent = hex(r.id);
+      const nm = el('span', 'nm'); nm.textContent = r.name || '(unnamed)';
+      const sz = el('span', 'sz'); sz.textContent = r.width + 'x' + r.height;
+      d.append(id, nm); if (r.mode === 'special') { const sp = el('span', 'sp'); sp.textContent = 'S'; sp.title = 'special mode: raw tilemap'; d.append(sp); }
+      d.append(sz);
+      d.title = r.enumName || '';
+      d.onclick = () => openRoom(a.id, r.id, true);
+      list.append(d);
+    }
+  }
+  $('#count').textContent = (q ? shown + '/' : '') + total + ' rooms';
+}
+function scrollToCurrent() { const c = $('#list .rm.cur'); if (c) c.scrollIntoView({ block: 'nearest' }); }
+
+// ---------------------------------------------------------------- top bar
+function syncCtl() {
+  const m = { ovE: S.entities, ovL: S.labels, ovG: S.grid, ovS: S.sync, ovP: S.sprOn && S.spr.state === 'ready' };
+  for (const k in m) { const b = $('#' + k); if (b) b.classList.toggle('on', m[k]); }
+  const c = $('#ovEnt'); if (c) c.checked = S.entities;
+  const cp = $('#ovSpr'); if (cp) { cp.checked = S.sprOn && S.spr.state === 'ready'; cp.disabled = S.spr.state === 'missing'; }
+  const bp = $('#ovP'); if (bp) bp.title = S.spr.state === 'missing' ? 'no sprites.json (' + S.spr.err + '): click to choose one' : 'draw curated entities as sprites (P)';
+  store('opts', { entities: S.entities, labels: S.labels, grid: S.grid, sync: S.sync, sprites: S.sprOn });
+}
+function toggleSprites() {
+  if (S.spr.state === 'missing') { chooseSprites(); return; }
+  ensureSprites();
+  S.sprOn = !S.sprOn; syncCtl(); repaintAll();
+}
+function chooseSprites() {
+  const inp = el('input'); inp.type = 'file'; inp.accept = '.json';
+  inp.onchange = () => inp.files[0] && inp.files[0].text().then(t => { setSprites(JSON.parse(t)); S.sprOn = true; syncCtl(); }).catch(e => toast('sprites.json: ' + e.message));
+  inp.click();
+}
+function buildTop() {
+  const ctl = $('#tbCtl');
+  const mk = (id, text, title, fn) => { const b = el('button'); b.id = id; b.textContent = text; b.title = title; b.onclick = fn; ctl.append(b); return b; };
+  mk('listB', 'LIST', 'show or hide the room list (B)', () => { const l = $('#left'); l.style.display = l.style.display === 'none' ? '' : 'none'; $('#listB').classList.toggle('on', l.style.display !== 'none'); store('listHidden', l.style.display === 'none'); for (const id in wins) wins[id].setRect(wins[id].rect()); repaintAllSoon(); }).classList.add('on');
+  mk('ovE', 'ENTITIES', 'entity overlay (E)', () => { S.entities = !S.entities; syncCtl(); repaintAll(); });
+  mk('ovL', 'LABELS', 'marker labels (L)', () => { S.labels = !S.labels; syncCtl(); repaintAll(); });
+  mk('ovP', 'SPRITES', 'draw curated entities as sprites (P)', toggleSprites);
+  mk('ovG', 'GRID', '8/16 px grid (G)', () => { S.grid = !S.grid; syncCtl(); repaintAll(); });
+  mk('ovS', 'SYNC PAN', 'pan and zoom the image windows together (Y)', () => { S.sync = !S.sync; syncCtl(); });
+  mk('fitB', 'FIT', 'fit the room to every window (F, Shift+double click)', fitAll);
+  mk('relayout', 'RELAYOUT', 'put the windows back in the default layout', () => { applyLayout(true); autoMinHidden(); fitAll(); });
+  mk('copyB', 'COPY INFO', 'room + selection as plain text (Ctrl+C with nothing selected)', copyInfo);
+  const hint = el('span'); hint.style.color = 'var(--dim)';
+  hint.textContent = 'Ctrl+wheel zoom - Shift+drag pan - drag = select - [ ] prev/next room';
+  ctl.append(hint);
+}
+function updateTop() {
+  const room = S.room, a = room._a;
+  const t = $('#tbRoom'); t.textContent = '';
+  const b1 = el('b'); b1.textContent = 'AREA ' + hex(a.id) + ' ' + a.name.replace(/^AREA_/, '');
+  const b2 = el('b'); b2.textContent = 'ROOM ' + hex(room.id) + ' ' + (room.name || '');
+  const sz = ' ' + room.width + 'x' + room.height + ' px (' + room.width / 16 + 'x' + room.height / 16 + ' mt) ' + room.mode + ' tileset ' + room.tileSetId + ' ' + room.gfx + ' world ' + room.worldX + ',' + room.worldY;
+  t.append(b1, '  ', b2, sz);
+  const lay = $('#tbLayers'); lay.textContent = '';
+  for (const bg of ['BG1', 'BG2', 'BG3']) {
+    const L = room.layers[bg]; if (!L) continue;
+    const s = el('span'); const bb = el('b'); bb.textContent = bg;
+    s.append(bb, ' ' + (L.bgcnt == null ? 'bgcnt runtime' : '0x' + hex(L.bgcnt, 4) + ' pri ' + L.priority + ' cb ' + L.charBase + ' ' + L.colors + 'c') + (L.visible === false ? ' HIDDEN' : ''));
+    if (L.visible === false) s.style.opacity = .7;
+    const tm = L.data && L.format === 'metatile' ? tilemapOf(room, L) : null;
+    if (tm && tm.oob) { const w = el('span', 'warn'); w.textContent = ' ' + tm.oob + ' metatile(s) out of range'; s.append(w); }
+    lay.append(s);
+  }
+  const s = el('span'); s.textContent = 'order ' + room.drawOrder.join(' > ') + '   entities ' + room.entities.length +
+    ' (' + room.entities.filter(e => e.positioned).length + ' positioned, ' + room.entities.filter(e => e.when !== 'always').length + ' conditional)  tile ' + room.tileEntities.length + '  exits ' + room.exits.length;
+  s.style.color = 'var(--fg)'; lay.append(s);
+}
+
+// ---------------------------------------------------------------- opening rooms
+function openRoom(area, id, push) {
+  const room = S.byKey.get(roomKey(area, id));
+  if (!room) { toast('no room ' + roomKey(area, id)); return false; }
+  S.room = room; S.key = roomKey(area, id);
+  S.sel = { blocks: [], objs: new Set() };
+  S.objs = buildObjects(room);
+  document.title = 'TMC ' + S.key + ' ' + (room.name || '');
+  try { const u = new URL(location.href); u.searchParams.set('room', S.key); history.replaceState(null, '', u); } catch (e) { }
+  updateTop(); updateLayerChecks(); updateLayerTitles(); autoMinHidden();
+  renderEntityKinds(); renderEntityList(); renderInfo(); renderDepth();
+  buildList(); scrollToCurrent();
+  for (const v of S.views) if (v.win.state === 'open') { v.resize(); }
+  fitAll();
+  if (mapPane) { mapPane.fit(); mapPane.paint(); mapPane.move({ clientX: -1e5, clientY: -1e5 }); }
+  return true;
+}
+function stepRoom(d) {
+  const all = []; for (const a of S.areas) for (const r of a.rooms) all.push(r);
+  const i = all.indexOf(S.room), n = all[(i + d + all.length) % all.length];
+  openRoom(n._a.id, n.id, true);
+}
+
+// ---------------------------------------------------------------- keyboard
+addEventListener('keydown', e => {
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') { if (e.key === 'Escape') e.target.blur(); return; }
+  const k = e.key;
+  if (e.ctrlKey || e.metaKey) {
+    if (k.toLowerCase() === 'c' && !String(getSelection())) { e.preventDefault(); copyInfo(); }
+    return;
+  }
+  if (k === 'ArrowLeft') { moveSel(-1, 0); e.preventDefault(); }
+  else if (k === 'ArrowRight') { moveSel(1, 0); e.preventDefault(); }
+  else if (k === 'ArrowUp') { moveSel(0, -1); e.preventDefault(); }
+  else if (k === 'ArrowDown') { moveSel(0, 1); e.preventDefault(); }
+  else if (k === 'Escape') clearSel();
+  else if (k === '[') stepRoom(-1);
+  else if (k === ']') stepRoom(1);
+  else if (k === 'b' || k === 'B') $('#listB').click();
+  else if (k === 'e' || k === 'E') $('#ovE').click();
+  else if (k === 'p' || k === 'P') $('#ovP').click();
+  else if (k === 'l' || k === 'L') $('#ovL').click();
+  else if (k === 'g' || k === 'G') $('#ovG').click();
+  else if (k === 'y' || k === 'Y') $('#ovS').click();
+  else if (k === 'f' || k === 'F') fitAll();
+  else if (k === '/') { e.preventDefault(); $('#q').focus(); }
+});
+
+// ---------------------------------------------------------------- loading
+async function loadMapsFromNetwork() {
+  let r = await fetch('maps.json', { cache: 'no-cache' }).catch(() => null);
+  if (r && r.ok) { $('#msgb').textContent = 'Parsing maps.json ...'; return await r.json(); }
+  r = await fetch('maps.json.gz', { cache: 'no-cache' }).catch(() => null);
+  if (r && r.ok) { $('#msgb').textContent = 'Unpacking maps.json.gz ...'; return await gunzipJson(r.body); }
+  throw new Error('neither maps.json nor maps.json.gz could be fetched');
+}
+async function gunzipJson(stream) {
+  const ds = stream.pipeThrough(new DecompressionStream('gzip'));
+  return JSON.parse(await new Response(ds).text());
+}
+async function loadFile(f) {
+  if (/\.gz$/i.test(f.name)) return gunzipJson(f.stream());
+  return JSON.parse(await f.text());
+}
+function askForFile(err) {
+  const b = $('#msgb'); b.textContent = '';
+  const p = el('div'); p.textContent = 'Could not load maps.json (' + err.message + '). Run serve.py, or choose / drop maps.json (or maps.json.gz) here.';
+  const inp = el('input'); inp.type = 'file'; inp.accept = '.json,.gz';
+  inp.onchange = () => inp.files[0] && loadFile(inp.files[0]).then(start).catch(askForFile);
+  b.append(p, inp);
+  addEventListener('dragover', e => e.preventDefault());
+  addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) loadFile(f).then(start).catch(askForFile); });
+}
+function start(maps) {
+  if (maps.format !== 'tmc-layer-workbench-maps') throw new Error('not a maps.json of this tool');
+  S.maps = maps; S.areas = maps.areas; S.byKey.clear();
+  for (const a of S.areas) for (const r of a.rooms) { r._a = a; S.byKey.set(roomKey(a.id, r.id), r); }
+  const o = store('opts'); if (o) Object.assign(S, { entities: o.entities !== false, labels: o.labels !== false, grid: !!o.grid, sync: o.sync !== false, sprOn: o.sprites !== false });
+  buildTop();
+  buildResult(); buildLayer('BG2'); buildLayer('BG1'); buildLayer('BG3'); buildMap(); buildEntities(); buildInfo(); buildDepth();
+  if (store('listHidden')) $('#listB').click();
+  applyLayout(false); syncCtl();
+  $('#q').oninput = buildList;
+  $('#expandAll').onclick = () => { for (const a of S.areas) S.groupsOpen[a.id] = true; store('groupsOpen', S.groupsOpen); buildList(); };
+  $('#collapseAll').onclick = () => { S.groupsOpen = {}; for (const a of S.areas) S.groupsOpen[a.id] = false; store('groupsOpen', S.groupsOpen); buildList(); };
+  addEventListener('resize', () => { for (const id in wins) wins[id].setRect(wins[id].rect()); });
+  let a = 0x20, r = 0;
+  const m = /^([0-9a-f]{1,2})-([0-9a-f]{1,2})$/i.exec(new URL(location.href).searchParams.get('room') || '');
+  if (m && S.byKey.has(roomKey(parseInt(m[1], 16), parseInt(m[2], 16)))) { a = parseInt(m[1], 16); r = parseInt(m[2], 16); }
+  else if (!S.byKey.has(roomKey(a, r))) { a = S.areas[0].id; r = S.areas[0].rooms[0].id; }
+  $('#msg').remove();
+  addEventListener('dragover', e => e.preventDefault());
+  addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f && /sprites/i.test(f.name)) { e.preventDefault(); f.text().then(t => setSprites(JSON.parse(t))).catch(err => toast('sprites.json: ' + err.message)); } });
+  openRoom(a, r, false);
+  const testMode = new URL(location.href).searchParams.has('test');
+  if (testMode) SV.persist = false;   // the self-checks never write a file
+  const sprLoaded = ensureSprites();
+  const svLoaded = svLoad(), dpLoaded = dpLoad();
+  requestAnimationFrame(() => { fitAll(); if (mapPane) { mapPane.fit(); mapPane.paint(); } });
+  if (testMode) sprLoaded.then(() => Promise.all([svLoaded, dpLoaded])).then(runTests);
+}
+
+// ---------------------------------------------------------------- self-checks (?test)
+// Expected values come from render_room.py's compose() (FNV-1a 32 over the room's RGB bytes).
+const EXPECT = {"20-00": 1399115066, "20-01": 1176383374, "00-00": 3279241343, "02-00": 3151911497, "48-00": 3865198760, "60-00": 3263227983, "2D-00": 1106148263, "03-01": 1972784561, "70-00": 1216606463, "21-00": 2929800824, "15-00": 2337535438, "88-00": 285133399, "0B-01": 3608816652, "50-00": 2386207617};
+// sprites.json pictures (FNV of their RGB), as sprites.py wrote them: [room key, entity index].
+const EXPECT_SPR = {"20-00#1": 1306469306, "70-08#1": 2979542157, "70-08#2": 2828932215, "50-05#0": 739655970, "60-03#12": 2979542157, "78-01#4": 3382804929, "0D-02#0": 2136737887,
+  // default (not curated) sprites: ENEMY/OCTOROK, OBJECT/FURNITURE, OBJECT/BELL, NPC/ZELDA, ENEMY/KEATON (swapped gfx), PROJECTILE/REMOVABLE_DUST
+  "00-00#11": 3122377044, "01-00#29": 934890877, "02-00#0": 1291120833, "02-00#90": 1942049835, "03-06#16": 1448731119, "06-04#2": 1191357100};
+function fnv(bytes, stride4) {
+  let h = 0x811C9DC5;
+  for (let i = 0; i < bytes.length; i += 4) for (let k = 0; k < 3; k++) { h ^= bytes[i + k]; h = Math.imul(h, 0x01000193) >>> 0; }
+  return h >>> 0;
+}
+async function runTests() {
+  const out = [], ok = (c, m) => { out.push((c ? 'PASS ' : 'FAIL ') + m); return c; };
+  let all = true; const chk = (c, m) => { all = ok(c, m) && all; };
+  let nrooms = 0, nent = 0; for (const a of S.areas) { nrooms += a.rooms.length; for (const r of a.rooms) nent += r.entities.length; }
+  chk(S.areas.length === 91, 'areas ' + S.areas.length + ' (91)');
+  chk(nrooms === 597, 'rooms ' + nrooms + ' (597)');
+  chk(nent === 5135, 'entities ' + nent + ' (5135)');
+  const saveOn = Object.assign({}, S.layerOn), saveHid = S.showHidden;
+  S.layerOn = { BG1: true, BG2: true, BG3: true }; S.showHidden = false;
+  for (const key of Object.keys(EXPECT)) {
+    const [a, r] = key.split('-').map(x => parseInt(x, 16)), room = S.byKey.get(key);
+    if (!room) { chk(false, key + ' missing'); continue; }
+    const t0 = performance.now(), cv = getComposite(room), ms = performance.now() - t0;
+    const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+    const h = fnv(d);
+    chk(h === EXPECT[key], key + ' ' + (room.name || '') + ' ' + room.width + 'x' + room.height + ' composite hash ' + h.toString(16) + ' vs ' + EXPECT[key].toString(16) + ' (' + ms.toFixed(0) + ' ms)');
+  }
+  const cur = S.room;
+  // entity overlay data: the curtain of Gentari's room
+  const g = S.byKey.get('20-00'), cur1 = g.entities.find(e => e.idName === 'GENTARI_CURTAIN');
+  chk(cur1 && cur1.x === 24 && cur1.y === 80 && cur1.kindName === 'OBJECT', '20-00 has OBJECT/GENTARI_CURTAIN at 24,80');
+  // hiding a layer changes the composite
+  S.layerOn.BG1 = false; const hNo = fnv(getComposite(S.byKey.get('00-00')).getContext('2d').getImageData(0, 0, 1008, 1008).data);
+  chk(hNo !== EXPECT['00-00'], 'hiding BG1 changes the 00-00 composite');
+  S.layerOn = saveOn; S.showHidden = saveHid;
+  // sprites.json: loaded, and the pictures are what sprites.py rendered
+  chk(S.spr.state === 'ready', 'sprites.json loaded (' + S.spr.state + (S.spr.err ? ': ' + S.spr.err : '') + ')');
+  if (S.spr.state === 'ready') {
+    for (const k of Object.keys(EXPECT_SPR)) {
+      const [rk, i] = k.split('#'), rec = (S.spr.data.rooms[rk] || {})[i], h = rec && rec.pic ? fnv(sprPic(rec.pic).rgba) : null;
+      chk(h === EXPECT_SPR[k], 'sprite ' + k + ' ' + (rec ? rec.family : '?') + ' picture hash ' + (h == null ? 'none' : h.toString(16)) + ' vs ' + EXPECT_SPR[k].toString(16));
+    }
+    const rg = S.spr.data.rooms['20-00'], e0 = g.entities[Object.keys(rg).find(i => rg[i].family === 'OBJECT/GENTARI_CURTAIN')];
+    chk(e0 === cur1, 'the 20-00 sprite record belongs to the curtain entity');
+    // the RESULT window draws it: pixels of the picture's rectangle change once SPRITES is on
+    openRoom(0x20, 0, false); const so = S.sprOn; S.sprOn = false; const w0 = wins.RESULT.view; w0.paint();
+    const px = () => { const c = w0.ctx.getImageData(w0.ox + (24 - 8) * w0.s + 2, w0.oy + (80 - 20) * w0.s + 2, 4, 4).data; return fnv(c); };
+    const before = px(); S.sprOn = true; w0.paint(); const after = px(); S.sprOn = so;
+    chk(before !== after, 'RESULT draws the sprite over the room when SPRITES is on');
+  }
+  // the sprite picker: the viewer's own renderer reproduces every picture sprites.py drew, from the catalog alone
+  if (S.spr.state === 'ready') {
+    await loadPools();
+    chk(!S.spr.poolErr && S.spr.pools && Object.keys(S.spr.pools).length > 0, 'sprites_tiles.json.gz loaded' + (S.spr.poolErr ? ' (' + S.spr.poolErr + ')' : ''));
+    const seen = new Set(); let n = 0, bad = [], recs = 0, defaults = 0;
+    for (const [rk, rr] of Object.entries(S.spr.data.rooms)) for (const [i, rec] of Object.entries(rr)) {
+      if (!rec.pic) continue;
+      recs++; if (rec.default) defaults++;
+      if (!rec.src) { bad.push(rk + '#' + i + ' ' + rec.family + ' has no source'); continue; }
+      const key = [rec.src, rec.frame, rec.flipX, rec.flipY, rec.dx, rec.dy, rec.pic].join('|');
+      if (seen.has(key)) continue; seen.add(key); n++;
+      const r = renderFrame(S.spr.data.sources[rec.src], rec.frame, rec.flipX, rec.flipY, rec.dx, rec.dy), p = S.spr.data.pictures[rec.pic];
+      if (r.err || r.w !== p.w || r.h !== p.h || r.ox !== p.ox || r.oy !== p.oy || fnv(r.rgba) !== fnv(b64(p.rgba))) bad.push(rk + '#' + i + ' ' + rec.family + (r.err ? ' ' + r.err : ''));
+    }
+    chk(bad.length === 0, 'renderFrame (JS) reproduces ' + n + ' distinct pictures of sprites.json (' + recs + ' records, ' + defaults + ' default)' + (bad.length ? ': ' + bad.slice(0, 5).join('; ') : ''));
+    // the previewed transforms: a mirror twice, four quarter turns are the identity; the picture mirrors about the entity's position
+    const cur0 = S.spr.data.rooms['20-00'], k0 = Object.keys(cur0).find(i => cur0[i].family === 'OBJECT/GENTARI_CURTAIN'), pr = cur0[k0];
+    const base = renderFrame(S.spr.data.sources[pr.src], pr.frame, pr.flipX, pr.flipY, pr.dx, pr.dy);
+    const same = (a, b) => a.w === b.w && a.h === b.h && a.ox === b.ox && a.oy === b.oy && fnv(a.rgba) === fnv(b.rgba);
+    chk(same(xformPic(xformPic(base, 1, 1, 0), 1, 1, 0), base), 'flip H and V twice is the identity');
+    chk(same(xformPic(base, 0, 0, 360), base) && same(xformPic(xformPic(xformPic(xformPic(base, 0, 0, 90), 0, 0, 90), 0, 0, 90), 0, 0, 90), base), 'four quarter turns are the identity');
+    const rot = xformPic(base, 0, 0, 90);
+    chk(rot.w === base.h && rot.h === base.w, 'a quarter turn swaps width and height');
+    const fl = renderFrame(S.spr.data.sources[pr.src], pr.frame, pr.flipX ^ 1, pr.flipY, 0, 0);   // the game's own flip, drawn by the renderer
+    const mir = xformPic(renderFrame(S.spr.data.sources[pr.src], pr.frame, pr.flipX, pr.flipY, 0, 0), 1, 0, 0);
+    chk(same(fl, mir), "mirroring a picture about the entity's position equals the renderer's own flip");
+    // choices: precedence this entity > exact type > any type > default; a default choice is not stored
+    const saveRules = SV.rules, saveEnts = SV.entities, savePersist = SV.persist, saveScope = SV.scope, saveState = SV.state;
+    SV.persist = false; SV.rules = []; SV.entities = [];
+    openRoom(0x20, 0, false);
+    const oc = S.objs.find(o => o.src.idName === 'GENTARI_CURTAIN');
+    selectObjs([oc.key], false);
+    chk(svTargets() && svTargets().all.length === 1 && svFind(oc) === null, 'curtain selected: a picker target, no choice yet');
+    const defPic = sprOf(oc).pic;
+    SV.scope = 'any'; svPatch({ anim: 1, step: 0, frame: null });
+    chk(svFind(oc).level === 'any' && SV.rules.length === 1 && SV.rules[0].type === null, 'scope "any type" stores a rule with type null');
+    const p1 = sprOf(oc);
+    chk(p1.pic !== defPic && p1.choice.anim === 1 && fnv(p1.pic.rgba) !== fnv(defPic.rgba), 'animation 1 draws the open curtain, not the default');
+    SV.scope = 'type'; svPatch({ flipX: 1 });
+    chk(svFind(oc).level === 'type' && SV.rules.length === 2, 'the exact-type rule wins over the any-type one');
+    SV.scope = 'entity'; svPatch({ rot: 90 });
+    const f3 = svFind(oc);
+    chk(f3.level === 'entity' && SV.entities.length === 1 && sprOf(oc).pic.w === renderFrame(S.spr.data.sources[pr.src], S.spr.data.sprites[pr.sprite].anims[1].f[0][0], 0, 0, pr.dx, pr.dy).h, 'an entity choice wins and rotates the picture');
+    const j = JSON.stringify({ r: SV.rules, e: SV.entities });
+    chk(/"room":"20-00"/.test(j) && !/rgba|png|data:/.test(j), 'the choices are plain settings: no art in them');
+    svReset();
+    chk(SV.rules.length === 0 && SV.entities.length === 0 && svFind(oc) === null && sprOf(oc).pic === defPic, 'RESET TO DEFAULT drops every level and the default picture is back');
+    chk(SV.persist === false && SV.state !== 'saving', 'the self-checks do not write sprite_view.json');
+    SV.rules = saveRules; SV.entities = saveEnts; SV.persist = savePersist; SV.scope = saveScope; SV.state = saveState; S.spr.views.clear();
+    clearSel();
+  }
+  // the 3D DEPTH panel: first match wins, what is written, the direction illustration
+  {
+    const saveForce = DP.force, saveScope = DP.scope;
+    const L = [{ kind: 'OBJECT', id: 'A', type: null, mode: 'FLAT' }, { kind: 'OBJECT', id: 'A', type: 3, mode: 'LEFT' }, { kind: 'OBJECT', id: 'B', type: 3, mode: 'LEFT' }, { kind: 'OBJECT', id: 'B', type: null, mode: 'DOWN' }];
+    chk(dpEffective('OBJECT', 'A', 3, L).mode === 'FLAT' && dpEffective('OBJECT', 'B', 3, L).mode === 'LEFT' && dpEffective('OBJECT', 'B', 4, L).mode === 'DOWN' && dpEffective('OBJECT', 'C', 0, L).entry === null && dpEffective('OBJECT', 'C', 0, L).mode === 'UP',
+      'depth: the first matching entry wins; no entry is UP');
+    DP.work = [{ kind: 'OBJECT', id: 'B', type: null, mode: 'DOWN', line: 5 }]; DP.base = dpClone(DP.work); DP.force = false;
+    dpSet('OBJECT', 'B', 7, 'DOWN');
+    chk(DP.work.length === 1 && dpDirty() === 0, 'depth: an exact entry that only restates what the any-type entry gives is not written');
+    dpSet('OBJECT', 'B', 7, 'UP');
+    chk(DP.work.length === 2 && DP.work[0].type === 7 && DP.work[0].mode === 'UP' && dpDirty() === 1, 'depth: an exact UP that differs from the any-type entry is written, before it (first match wins)');
+    dpSet('OBJECT', 'B', 7, 'DOWN');
+    chk(DP.work.length === 1 && dpDirty() === 0, 'depth: setting it back removes the entry again');
+    dpSet('OBJECT', 'N', null, 'UP');
+    chk(DP.work.length === 1, 'depth: UP for any type is the default and is not written');
+    DP.force = true; dpSet('OBJECT', 'N', null, 'UP'); DP.force = false;
+    chk(DP.work.length === 2 && DP.work[1].mode === 'UP' && dpDirty() === 1, 'depth: ... unless the user explicitly asks');
+    DP.work.pop();
+    const ops0 = dpOps();
+    chk(ops0.set.length === 0 && ops0.remove.length === 0, 'depth: no changes, no operations');
+    dpRemove(DP.work[0]);
+    const ops1 = dpOps();
+    chk(ops1.remove.length === 1 && ops1.remove[0].id === 'B' && ops1.set.length === 0 && dpDirty() === 1, 'depth: removing an entry sends a remove');
+    // the Gentari curtain: the ROM has no entry in this copy unless the port's file already carries one
+    DP.work = [{ kind: 'OBJECT', id: 'BOSS_DOOR', type: null, mode: 'DOWN', line: 1, spelling: 'PORT_DEPTH_INVERT' }]; DP.base = dpClone(DP.work);
+    openRoom(0x20, 0, false);
+    const oc = S.objs.find(o => o.src.idName === 'GENTARI_CURTAIN'); selectObjs([oc.key], false);
+    chk(dpTarget() === oc && dpEffective('OBJECT', 'GENTARI_CURTAIN', oc.src.type).mode === 'UP', 'depth: the curtain has no entry here: UP (default)');
+    DP.scope = 'type'; dpSet('OBJECT', 'GENTARI_CURTAIN', oc.src.type, 'LEFT');
+    chk(dpEffective('OBJECT', 'GENTARI_CURTAIN', oc.src.type).mode === 'LEFT' && dpDirty() === 1 && dpOps().set[0].type === oc.src.type, 'depth: choosing LEFT for the curtain makes one unsaved change');
+    chk(document.querySelector('#dpBadge').textContent.indexOf('UNSAVED') === 0 && !document.querySelector('#dpSave').disabled, 'depth: the unsaved-changes badge shows and SAVE is enabled');
+    chk(dpDir('LEFT', null)[0] === -1 && dpDir('UP', null)[1] === -1 && dpDir('FLAT', null).every(v => v === 0), 'depth: UP points up, LEFT points left, FLAT has no direction');
+    DP.follow = true;
+    const dd = (m, c) => dpDir(m, c).join();
+    chk(dd('UP', { rot: 90 }) === '1,0' && dd('UP', { rot: 180 }) === '0,1' && dd('LEFT', { flipX: 1 }) === '1,0' && dd('UP', { flipY: 1 }) === '0,1', 'depth: the illustration follows the sprite picker\'s flips and turns');
+    DP.follow = false; chk(dd('UP', { rot: 90 }) === '0,-1', 'depth: ... unless it is switched off'); DP.follow = true;
+    const ix = dpIndex();
+    chk(ix.any.has('OBJECT/BOSS_DOOR') && ix.exact.has('OBJECT/GENTARI_CURTAIN/0'), 'depth: an example room exists for every entry to jump to');
+    dpJump({ kind: 'OBJECT', id: 'GENTARI_CURTAIN', type: 0 });
+    chk(S.key === '20-00' && S.sel.objs.size === 1, 'depth: clicking an entry jumps to a room with that kind/id/type and selects it');
+    DP.force = saveForce; DP.scope = saveScope;
+    await dpLoad(); clearSel();
+  }
+  // layers the game hides: their windows start minimised, and reopen with the next room that shows them
+  openRoom(0x20, 0, false);
+  const hid = S.room.layers.BG1.visible === false;
+  chk(hid && wins.BG1.state === 'min' && wins.BG1.autoMin, '20-00: BG1 is hidden by the game, its window starts minimised');
+  openRoom(0x00, 0, false);
+  chk(S.room.layers.BG1.visible !== false && wins.BG1.state === 'open', '00-00: BG1 is shown, its window is open again');
+  if (cur) openRoom(cur._a.id, cur.id, false);
+  const box = el('div'); box.id = 'testbox'; box.textContent = (all ? 'ALL PASS' : 'FAILURES') + '\n' + out.join('\n');
+  box.onclick = () => box.remove();
+  document.body.append(box);
+  document.title = (all ? 'TEST PASS' : 'TEST FAIL') + ' - TMC Layer Workbench';
+  window.__testResult = { ok: all, lines: out };
+  console.log(out.join('\n'));
+  if (cur) { /* leave the viewer on the room it opened */ }
+}
+
+addEventListener('DOMContentLoaded', () => {
+  loadMapsFromNetwork().then(start).catch(askForFile);
+});
+window.addEventListener('error', e => { const b = $('#toast'); if (b) toast('JS error: ' + e.message); });
+</script>
+</body>
+</html>

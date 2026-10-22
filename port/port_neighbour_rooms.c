@@ -34,6 +34,7 @@ static int sActive;
 static PortNeighbourStats sStats;
 static u64 sDrawn; /* the rooms the last build drew */
 static int sMode = -1; /* the setting the module last ran with: 0 OFF, 1 ON */
+static int sCurtainClosed; /* a Gentari curtain of the current room is shut (see CurtainClosed) */
 
 static u32 RoomKey(void) {
     return ((u32)gRoomControls.area << 8) | gRoomControls.room;
@@ -121,6 +122,19 @@ static u64 Connected(unsigned room) {
     return mask;
 }
 
+/* Gentari's curtains hide the next room until they are drawn open: while a GENTARI_CURTAIN of the current room is
+ * still shut (action 1) or opening (action 2; 3 is open), the neighbours stay out of the picture, so the room behind
+ * the curtain is not seen through the wall around it. */
+static int CurtainClosed(void) {
+    for (LinkedList* list = gEntityLists; list < &gEntityLists[9]; ++list) {
+        if (list->first == NULL) continue;
+        for (Entity* e = list->first; e != (Entity*)list && e != NULL; e = e->next) {
+            if (e->kind == OBJECT && e->id == GENTARI_CURTAIN && (e->action == 1 || e->action == 2)) return 1;
+        }
+    }
+    return 0;
+}
+
 static void Build(void) {
     memset(sWin, 0xFF, sizeof(sWin));
     memset(&sStats, 0, sizeof(sStats));
@@ -134,7 +148,7 @@ static void Build(void) {
     /* The window's rectangle in world pixels. */
     const int wx0 = ox - MARGIN_X * 8, wy0 = oy - MARGIN_Y * 8;
     const int wx1 = wx0 + WIN_COLS * 8, wy1 = wy0 + WIN_ROWS * 8;
-    const u64 connected = Connected(gRoomControls.room);
+    const u64 connected = sCurtainClosed ? 0 : Connected(gRoomControls.room);
     for (unsigned j = 0; j < MAX_ROOMS; ++j) {
         const RoomResInfo* nb = &gArea.roomResInfos[j];
         if (j == gRoomControls.room || nb->pixel_width == 0 || nb->pixel_height == 0) continue;
@@ -310,7 +324,10 @@ void Port_NeighbourRooms_Update(void) {
     /* At once, for a border scroll (the incoming room's neighbours show from its first frame; both rooms share
      * the tile set, so the layers' definitions already fit); again once a door's new tile set is in place, and
      * later in case. */
-    if (sTicks == 0 || sTicks == 8 || sTicks == 120) {
+    const int closed = CurtainClosed();
+    const int curtainChanged = closed != sCurtainClosed;
+    sCurtainClosed = closed;
+    if (sTicks == 0 || sTicks == 8 || sTicks == 120 || curtainChanged) {
         Build();
         sActive = 1;
     }

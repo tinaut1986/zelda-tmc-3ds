@@ -1,6 +1,7 @@
 #include "platform_3ds.h"
 #include "port_ppu_gpu_3ds.h"
 #include "stereo_3ds.h"
+#include "sprite_lean_3ds.h"
 
 #include "platform_gpu_3ds.h"
 #include "tmc3ds_build_config.h"
@@ -115,9 +116,16 @@ static float sEyeShiftNdc[PPU_GPU3DS_OBJ + 1][4];
 static Stereo3DSEye sEyeCurrent;
 static float sEyeToNdc;
 
-static int SpritePx(const PpuGpu3DSBatch* batch) {
-    const float shift = Stereo3DS_SpriteShift(batch->depth, sEyeCurrent);
+static int RoundPx(float shift) {
     return (int)(shift < 0.0f ? shift - 0.5f : shift + 0.5f);
+}
+/* A sprite that leans across its columns (PpuGpu3DSBatch.side) takes its whole disparity in one eye, so that its
+ * columns, moved by different amounts, overlap instead of parting (SpriteLean3DS_EyeShift). */
+static int SpritePx(const PpuGpu3DSBatch* batch) {
+    if (batch->side == SPRITE_LEAN_3DS_SIDE_NONE) return RoundPx(Stereo3DS_SpriteShift(batch->depth, sEyeCurrent));
+    return SpriteLean3DS_EyeShift(RoundPx(Stereo3DS_SpriteShift(batch->depth, STEREO3DS_LEFT)),
+                                  RoundPx(Stereo3DS_SpriteShift(batch->depth, STEREO3DS_RIGHT)), batch->side,
+                                  sEyeCurrent == STEREO3DS_LEFT);
 }
 /* The same in whole pixels, for the batch's scissor: a layer's regions move with it, or their
  * edges cut what moved (the R button split in two, a heart cut by the next). */
