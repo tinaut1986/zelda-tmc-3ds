@@ -1602,12 +1602,17 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
     }
 
     int32_t px, py;
+    /* Link blinks like the game's map (sub_080A6378): shown while bit 5 of its frame count is clear. The phase is
+     * recorded so the panel repaints when it flips (Port_SecondScreen_MapPhaseChanged). */
+    const int hintsPhase = SecondScreen_HintsPhase(snap);
+    sPaintedHintsPhase = hintsPhase;
     /* Indoors (caves, houses) the game's own map keeps Link at his last spot on the overworld; use it there. */
-    if (Port_SecondScreenWorldMap_LocateInRegion(region, snap->area, snap->playerX, snap->playerY, dw, dh,
-                                                 &px, &py) ||
+    if (!hintsPhase &&
+        (Port_SecondScreenWorldMap_LocateInRegion(region, snap->area, snap->playerX, snap->playerY, dw, dh,
+                                                  &px, &py) ||
         ((snap->overworldMapX | snap->overworldMapY) != 0 &&
          Port_SecondScreenWorldMap_LocateWorldInRegion(region, snap->overworldMapX, snap->overworldMapY, dw, dh,
-                                                       &px, &py))) {
+                                                       &px, &py)))) {
         int32_t base = (int32_t)(7.0f * u);
         uint32_t gold = Port_SecondScreenTheme_Color(SSC_GOLD);
 #ifdef TMC_3DS
