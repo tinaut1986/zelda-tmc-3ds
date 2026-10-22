@@ -1422,4 +1422,11 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   the neighbour rooms are not drawn (`CurtainClosed`, `port_neighbour_rooms.c`); the owner would prefer a camera sweep when it opens
   (not done). The owner checked all of it on the New 3DS (2026-10-22), not on the Old 3DS/2DS. `port_draw.c`'s 3DS-only depth code is
   now guarded by `TMC_3DS` (the PC build of it was broken at HEAD).
+- **2026-10-22** A Keese has 3D depth only while it flies (`SpriteDepth`, `port_draw.c`): its z never tells flight from rest (type 0 stays at
+  z 0 and fakes the height with `spriteOffsetY`; the other types sit at z -16 even asleep), so the rule is its action (1 = fly) and the
+  height is taken as 16 px. Other fliers (peahat, flying skull, wallmaster, ghini, pesto...) change their z for real and already follow the
+  height rule; give one its own rule like the Keese's if it looks wrong. The bottom screen's region detail map now marks Link with his head
+  (frame 0x59 of the world map's own marker sheet; the region's sheet gave a cap seen from above), blinking like the game's (bit 5 of the
+  frame count), and also while he is indoors, at the spot the game's map keeps (`Port_SecondScreenWorldMap_LocateWorldInRegion`). The
+  other markers of the region (hints, kinstones) do not blink with him yet. The owner checked both on the New 3DS.
 
