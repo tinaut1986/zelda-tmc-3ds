@@ -1602,8 +1602,12 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
     }
 
     int32_t px, py;
+    /* Indoors (caves, houses) the game's own map keeps Link at his last spot on the overworld; use it there. */
     if (Port_SecondScreenWorldMap_LocateInRegion(region, snap->area, snap->playerX, snap->playerY, dw, dh,
-                                                 &px, &py)) {
+                                                 &px, &py) ||
+        ((snap->overworldMapX | snap->overworldMapY) != 0 &&
+         Port_SecondScreenWorldMap_LocateWorldInRegion(region, snap->overworldMapX, snap->overworldMapY, dw, dh,
+                                                       &px, &py))) {
         int32_t base = (int32_t)(7.0f * u);
         uint32_t gold = Port_SecondScreenTheme_Color(SSC_GOLD);
 #ifdef TMC_3DS

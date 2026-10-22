@@ -952,6 +952,15 @@ int Port_SecondScreenWorldMap_LocateInRegion(int32_t region, uint8_t area, int32
     return LocalizeInRegion(region, areaX, areaY, dstW, dstH, outX, outY);
 }
 
+int Port_SecondScreenWorldMap_LocateWorldInRegion(int32_t region, int32_t worldX, int32_t worldY, int32_t dstW,
+                                                  int32_t dstH, int32_t* outX, int32_t* outY) {
+    /* A world point that is not Link's own place: where the game's pause map keeps him while he is indoors (his last
+     * spot on the overworld), so there is no overworld test in front of it. */
+    if (outX == NULL || outY == NULL || dstW <= 0 || dstH <= 0) {
+        return 0;
+    }
+    return LocalizeInRegion(region, worldX, worldY, dstW, dstH, outX, outY);
+}
 
 int32_t Port_SecondScreenWorldMap_GetRegionMarkers(int32_t region, uint32_t hintMask,
                                                    const uint8_t* fusedKinstones,
