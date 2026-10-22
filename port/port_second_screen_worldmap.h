@@ -177,6 +177,10 @@ int Port_SecondScreenWorldMap_DrawRegion(uint32_t* pixels, int32_t bufW, int32_t
 int Port_SecondScreenWorldMap_LocateInRegion(int32_t region, uint8_t area, int32_t areaX, int32_t areaY,
                                              int32_t dstW, int32_t dstH, int32_t* outX, int32_t* outY);
 
+/* The same for a world point that needs no overworld test: Link's kept spot on the overworld while he is indoors. */
+int Port_SecondScreenWorldMap_LocateWorldInRegion(int32_t region, int32_t worldX, int32_t worldY, int32_t dstW,
+                                                  int32_t dstH, int32_t* outX, int32_t* outY);
+
 #ifdef __cplusplus
 }
 #endif
