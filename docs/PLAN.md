@@ -33,7 +33,7 @@ were widened by hand to cover `v0.3.1` too, see the decisions log), **`v0.3.1`**
 to stable without a beta at the owner's request), `v0.2.0` (2026-10-14, stable), `v0.1.2`
 (2026-10-13, beta), `v0.1.1` (2026-10-12, stable) and `v0.1.0` (2026-10-11, beta).
 
-**Branches:** `feat/village-3d` is parked (local only, not pushed). Every other branch
+**Branches:** none open besides the local backup below. Every other branch
 merged into the release line was deleted, here and on origin (2026-10-17: `fix/title-live-view`,
 `feat/gba-look`, `feat/hud-auto`, `feat/title-rays-3d`, `feat/minish-paths-centred`,
 `feat/wide-ai-ask`, `feat/stereo-fileselect`, `feat/splash-3d`, `docs/plan-branches-2026-10-17`; the
@@ -44,7 +44,6 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 | Branch | State |
 |---|---|
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
-| `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
 tile 0 (area 0x20 room 09), the village's gap cells taking the nearest zone's graphics, the top-frame HOLD
@@ -66,7 +65,7 @@ leaves pots unliftable).
 
 **Start here (2026-10-20):** `v0.4.1` (beta, tagged on what `release/v0.4.2` starts from) holds, on top of `v0.4.0`, the neighbour-list fix, the GPU split
 flush, the Zz bubble fix, the NEIGHBOURS setting (ON / OFF) and the drop of WIDE + BLUR (decisions log of 2026-10-19 and
-2026-10-20); pushed to origin on 2026-10-20. Open branches: the parked `feat/village-3d` and the local backup
+2026-10-20); pushed to origin on 2026-10-20. Open branches: the local backup
 `backup/blur-neighbours-all`; `origin/feat/frame-blur` is merged and left on origin. Next, in this order:
 0. **Review of the neighbour rooms.** The blur is gone from WIDE (decisions log 2026-10-20, third entry): VIEW is WIDE,
    WIDE + AI, ORIGINAL and NEIGHBOURS is ON / OFF. What is open, with where to look:
@@ -108,7 +107,7 @@ flush, the Zz bubble fix, the NEIGHBOURS setting (ON / OFF) and the drop of WIDE
    (look when the owner reports one); P3.4's old claim that dialogues go per pixel was not borne out (the C
    line of the numbers box read C0 through a dialogue), recheck before rebuilding anything; the generated
    side strips of the Minish Paths corridor (P4.6); the README's before/after GIF of the portal shrink (P1.6).
-Parked (owner, 2026-10-17): **`feat/village-3d`**, none of it goes into a release; do not work on it unasked.
+Dropped (owner, 2026-10-22): `feat/village-3d` was deleted; the Minish Village's 3D is taken by hand, case by case, from the release line (decisions log).
 Closed by the owner (2026-10-17), do not re-propose: RetroAchievements (the achievements he looked at
 work; he will report any that should fire and does not), the save states across builds, issue #5
 (the dissolve works), the sibling updaters' hardening (done), #25, #4, #23, #26 and #20 (all closed on
@@ -590,7 +589,7 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   *Done 2026-10-17, New 3DS, in the release* (table in `docs/stereo-3d.md`): the sun rays of the Minish
   Woods, the leaves of the Minish Paths, the title's rays (with the logo and sword in front of them), the
   file select (sprites, hearts, languages, name letters), the Nintendo and Capcom logos, the boot splash
-  and the numbers box (SHOW FPS, at the HUD's depth). **Open:** the Minish Village (`feat/village-3d`:
+  and the numbers box (SHOW FPS, at the HUD's depth). **Open:** the Minish Village (by hand, case by case from the release line:
   houses back, hanging fruits), more scenes as the owner asks, the edges a moved layer uncovers, an OPTIONS
   cell, and the cost on the Old 3DS (it has no slider, so only a New 3DS shows it).
 
@@ -1406,4 +1405,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
 - **2026-10-21** `v0.4.3` (**beta**) cut from `release/v0.4.3`: everything of `feat/stereo-world`, `feat/options-groups` and `feat/map-zoom-pan` merged `--no-ff`. PR #47
   (bheppe, 3D WORLD) was marked **Merged** by GitHub when the release reached `main` (its base) the same day, when `v0.4.3` was promoted to stable (`544da18`);
   until then it stayed open. The branch was renamed to `release/v0.4.4` right after the tag. The owner asked for the promotion so that Old 3DS/2DS owners can test it.
-
+- **2026-10-22** `feat/village-3d` (local only, never pushed) was deleted at the owner's request: its one unmerged commit
+  (`1b5d13b`, the leaf-block copy to BG3, WIP) caused the visual problems noted in `docs/stereo-3d.md` and its other commit
+  (the numbers box at the HUD's depth) was already in the release as `f605dd8`. The Minish Village's 3D will be attacked by hand,
+  case by case, directly from the release line instead of through a branch of its own; the 2026-10-17 entry on the leaf blocks
+  stays as the record of what that approach found.
