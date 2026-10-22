@@ -61,10 +61,22 @@ static s32 sBossTop = 0x7fffffff, sBossTopNext = 0x7fffffff; /* and its highest 
 /* Per-entity corrections of the stereo depth, hand-curated (platform/3ds/source/port_sprite_depth.inc, optional):
  *   PORT_SPRITE_DEPTH(kind, id, type, mode)   kind: ENEMY, OBJECT...; id: the kind's own id (BOSS_DOOR...);
  *                                             type: the entity's type or PORT_ANY_TYPE
- *   PORT_DEPTH_INVERT: the sprite hangs from the top edge (a door in a south wall): the ground is the top of its
- *                      pieces and the depth rises downwards, not upwards
- *   PORT_DEPTH_FLAT:   no lean at all */
-enum { PORT_DEPTH_INVERT = 1, PORT_DEPTH_FLAT = 2, PORT_ANY_TYPE = 0xff };
+ *   PORT_DEPTH_UP:     the normal rule (what an entity without an entry gets): the ground is the bottom of its
+ *                      pieces and the depth rises upwards
+ *   PORT_DEPTH_DOWN or PORT_DEPTH_INVERT: the sprite hangs from the top edge (a door in a south wall): the ground is
+ *                      the top of its pieces and the depth rises downwards
+ *   PORT_DEPTH_LEFT:   the sprite hangs on a wall to its left (a curtain on a west wall): the ground is the right edge of
+ *                      its pieces and the depth rises towards the left of the screen
+ *   PORT_DEPTH_RIGHT:  the mirror (a wall to its right): ground at the left edge, the depth rising towards the right
+ *   PORT_DEPTH_FLAT:   no lean at all
+ * A side lean is written as the depth at each piece's right edge (virtuappu_mode1_obj_depth) and at its left edge
+ * (virtuappu_mode1_obj_depth_top, with SPRITE_LEAN_3DS_COLUMNS set): the GPU model spreads it over the tile columns. */
+enum {
+    PORT_DEPTH_UP = 0, PORT_DEPTH_INVERT = 1, PORT_DEPTH_DOWN = PORT_DEPTH_INVERT, PORT_DEPTH_FLAT = 2,
+    PORT_DEPTH_LEFT = 3, PORT_DEPTH_RIGHT = 4, PORT_ANY_TYPE = 0xff
+};
+/* Bit 7 of the top depth: the entry leans across its columns (SPRITE_LEAN_3DS_COLUMNS, platform/3ds/source/sprite_lean_3ds.h). */
+#define PORT_DEPTH_COLUMNS 0x80u
 typedef struct { u8 kind, id, type, mode; } PortSpriteDepthFix;
 #if defined(__has_include)
 #if __has_include("../platform/3ds/source/port_sprite_depth.inc")
@@ -81,6 +93,7 @@ static const PortSpriteDepthFix sSpriteDepthFixes[1];
 #define PORT_SPRITE_FIXES 0
 #endif
 static int sRenderingInvert = 0, sRenderingFlat = 0;
+static int sRenderingSide = 0; /* PORT_DEPTH_LEFT or PORT_DEPTH_RIGHT: the depth rises across the sprite, not up or down */
 static int SpriteDepthMode(const Entity* entity) {
     for (int i = 0; i < PORT_SPRITE_FIXES; ++i) {
         const PortSpriteDepthFix* f = &sSpriteDepthFixes[i];
@@ -512,6 +525,8 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
     const int bodyShear = sRenderingBody && !sRenderingFlat;
     s32 feetBottom = -0x7fffffff;
     s32 topMin = 0x7fffffff; /* the highest top edge of its pieces: the ground of a sprite that hangs (PORT_DEPTH_INVERT) */
+    /* Its left and right edges: the ground of a sprite on a side wall (PORT_DEPTH_RIGHT, PORT_DEPTH_LEFT). */
+    s32 leftMin = 0x7fffffff, rightMax = -0x7fffffff;
     if (bodyShear) {
         const u8* scan = data;
         for (int i = 0; i < count; i++, scan += 5) {
@@ -523,6 +538,17 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
                 continue;
             const u8* scanEntry = sizeTab + scanSize;
             const s32 bottom = (s32)scanYoff + (s32)baseY - (s32)scanEntry[1] + (s32)scanEntry[3];
+            if (sRenderingSide) {
+                /* On the screen, as the pieces are placed below (an h-flip mirrors the offsets, the anchor stays). */
+                s8 scanXoff = (s8)scan[0];
+                if (!(flags & 0x300) && (flags & 0x10000000))
+                    scanXoff = -scanXoff;
+                const s32 left = (s32)scanXoff + (s32)baseX - (s32)scanEntry[0];
+                if (left < leftMin)
+                    leftMin = left;
+                if (left + (s32)scanEntry[2] > rightMax)
+                    rightMax = left + (s32)scanEntry[2];
+            }
             if (bottom > feetBottom)
                 feetBottom = bottom;
             if (bottom - (s32)scanEntry[3] < topMin)
@@ -577,7 +603,21 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
         u8 pieceDepth = sRenderingDepth;
         u8 pieceDepthTop = sRenderingDepth;
 #ifdef TMC_3DS
-        if (bodyShear && (count > 1 || se[3] > 16 || sRenderingInvert)) {
+        u8 pieceColumns = 0;
+        if (bodyShear && sRenderingSide) {
+            /* On a side wall: the same rise as the normal rule, measured from the edge it hangs on across the sprite's
+             * width (in the GPU renderer, column by column of tiles). The depth at the piece's right edge goes in the
+             * entry's depth, the one at its left edge in its top depth. */
+            const s32 left = x - (s32)se[0], right = left + (s32)se[2];
+            const s32 fromLeft = sRenderingSide == PORT_DEPTH_RIGHT ? left - leftMin : rightMax - right;
+            const int near = (int)(fromLeft > 0 ? fromLeft : 0); /* the piece's edge nearer the ground */
+            const int nearQ = Port_Config_StereoBodyDepthQ(near), farQ = Port_Config_StereoBodyDepthQ(near + (int)se[2]);
+            const int sumRight = (int)sRenderingDepth + (sRenderingSide == PORT_DEPTH_RIGHT ? farQ : nearQ);
+            const int sumLeft = (int)sRenderingDepth + (sRenderingSide == PORT_DEPTH_RIGHT ? nearQ : farQ);
+            pieceDepth = (u8)(sumRight > 20 ? 20 : sumRight);
+            pieceDepthTop = (u8)(sumLeft > 20 ? 20 : sumLeft);
+            pieceColumns = PORT_DEPTH_COLUMNS;
+        } else if (bodyShear && (count > 1 || se[3] > 16 || sRenderingInvert)) {
             /* The depth rises with the height over the feet: at the piece's bottom edge, and at its top edge, so the
              * GPU renderer can give each tile row of the piece its own (the lean is then not one step per piece). */
             const s32 above = feetBottom - (y + (s32)se[3]); /* how far this piece's bottom is over the feet */
@@ -659,11 +699,20 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
             virtuappu_mode1_obj_clip_mark_staged[updated & 0x7F] = 1;
         /* The HUD's sprites (priority 0) take no depth from their pieces' height: they keep the entity's own (none for a HUD element), and with it the
          * layer's, which is in front of the world's whatever the world does. */
-        if (((attr2 >> 10) & 3u) == 0) pieceDepth = pieceDepthTop = sRenderingDepth;
+        if (((attr2 >> 10) & 3u) == 0) {
+            pieceDepth = pieceDepthTop = sRenderingDepth;
+#ifdef TMC_3DS
+            pieceColumns = 0;
+#endif
+        }
         /* Every piece of the big Chuchu is drawn with the layers in front (bit 7), moved or not: split between the base and
          * the front, its parts would cover one another in the wrong order. */
         virtuappu_mode1_obj_depth_staged[updated & 0x7F] = (u8)(pieceDepth | (sRenderingBoss && Port_Config_GetStereoWorld() ? 0x80 : 0));
+#ifdef TMC_3DS
+        virtuappu_mode1_obj_depth_top_staged[updated & 0x7F] = (u8)(pieceDepthTop | (pieceDepthTop != pieceDepth ? pieceColumns : 0));
+#else
         virtuappu_mode1_obj_depth_top_staged[updated & 0x7F] = pieceDepthTop;
+#endif
         virtuappu_mode1_obj_group_staged[updated & 0x7F] = sRenderingGroup;
 
         updated++;
@@ -1091,7 +1140,14 @@ static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra
     sRenderingDepth = SpriteDepth(entity);
     sRenderingBody = 1;
     sRenderingBoss = entity->kind == ENEMY && entity->id == CHUCHU_BOSS;
-    { const int mode = SpriteDepthMode(entity); sRenderingInvert = mode == PORT_DEPTH_INVERT; sRenderingFlat = mode == PORT_DEPTH_FLAT; }
+#ifdef TMC_3DS
+    {
+        const int mode = SpriteDepthMode(entity);
+        sRenderingInvert = mode == PORT_DEPTH_INVERT;
+        sRenderingFlat = mode == PORT_DEPTH_FLAT;
+        sRenderingSide = mode == PORT_DEPTH_LEFT || mode == PORT_DEPTH_RIGHT ? mode : 0;
+    }
+#endif
     /* Its jump (1 px at most) must not use up the room the rise from feet to head needs under the world's cap: with the
      * whole of it, every part reached the cap at the top of a jump and the ramp was lost. */
     if (sRenderingBoss && sRenderingDepth > 4) sRenderingDepth = 4;
@@ -1101,7 +1157,9 @@ static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra
     sRenderingGroup = 0;
     sRenderingBody = 0;
     sRenderingBoss = 0;
-    sRenderingInvert = sRenderingFlat = 0;
+#ifdef TMC_3DS
+    sRenderingInvert = sRenderingFlat = sRenderingSide = 0;
+#endif
     sRenderingDepth = 0; /* what is drawn next (the HUD, DrawDirect) stays on the screen plane */
 }
 

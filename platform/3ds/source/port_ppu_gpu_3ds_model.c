@@ -1,6 +1,7 @@
 #include <math.h>
 #include "port_ppu_gpu_3ds_model.h"
 #include "port_zone_tiles.h"
+#include "sprite_lean_3ds.h"
 
 #if defined(__3DS__)
 #include "arm11_fast_mem.h"
@@ -3229,12 +3230,16 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
      * out (its tiles over a roof take the roof's depth, the lean starting from there). Each run of tiles with the
      * same depth, in drawing order, is a batch of its own, so the depth changes one tile at a time (8 px) rather
      * than one piece at a time. */
-    enum { LEAN_MAX_RUNS = 20, OBJ_MAX_TILES = 64 };
+    enum { LEAN_MAX_RUNS = SPRITE_LEAN_3DS_MAX_RUNS, OBJ_MAX_TILES = SPRITE_LEAN_3DS_MAX_TILES };
     const unsigned depthRaw = !stencilOnly && frame->objDepth != NULL ? frame->objDepth[obj->index] : 0u;
     const bool forceFront = (depthRaw & 0x80u) != 0;
     const unsigned depthBottom = depthRaw & 0x7fu;
-    const unsigned depthTop = !stencilOnly && frame->objDepthTop != NULL ? (frame->objDepthTop[obj->index] & 0x7fu) : depthBottom;
-    const bool leans = depthTop != depthBottom; /* up (a standing sprite) or down (one that hangs, PORT_DEPTH_INVERT) */
+    const unsigned depthTopRaw = !stencilOnly && frame->objDepthTop != NULL ? frame->objDepthTop[obj->index] : depthBottom;
+    const unsigned depthTop = depthTopRaw & 0x7fu;
+    /* Up (a standing sprite), down (one that hangs, PORT_DEPTH_INVERT), or across its columns (one on a side wall,
+     * PORT_DEPTH_LEFT/RIGHT: then depthBottom is the depth at its right edge and depthTop at its left one). */
+    const bool leans = depthTop != depthBottom;
+    const bool leanColumns = leans && (depthTopRaw & SPRITE_LEAN_3DS_COLUMNS) != 0u;
     const unsigned support = supportQ != NULL && !stencilOnly ? supportQ[obj->index] : 0u;
     const bool perTile = !mosaicEnabled && (leans || support != 0u) &&
                          (!obj->affine || determinant != 0) &&
@@ -3244,46 +3249,14 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     uint8_t runDepth[LEAN_MAX_RUNS];
     int runCount = 0;
     if (perTile) {
-        const int rows = obj->height / PPU_GPU3DS_TILE_SIDE, cols = obj->width / PPU_GPU3DS_TILE_SIDE;
-        int runs = 0;
-        unsigned tallest = 0;
-        for (int row = 0; row < rows; ++row) {
-            for (int col = 0; col < cols; ++col) {
-                /* The tile's place on the screen (a flipped sprite has its rows and columns the other way round). */
-                const int screenRow = obj->vflip ? rows - 1 - row : row;
-                const int screenCol = obj->hflip ? cols - 1 - col : col;
-                int depthI = (int)depthBottom;
-                if (leans) {
-                    unsigned heightMid = (unsigned)(rows - 1 - screenRow) * PPU_GPU3DS_TILE_SIDE +
-                                         PPU_GPU3DS_TILE_SIDE / 2u;
-                    unsigned span = (unsigned)rows * PPU_GPU3DS_TILE_SIDE;
-                    if (obj->affine) {
-                        /* Rotated or scaled: how high the middle of the tile lands over the bottom of the piece's
-                         * bounds on the screen (the same inverse mapping as the geometry below), not its row. */
-                        const float centerY = obj->y + obj->boundsHeight * 0.5f + 0.5f;
-                        const int sx = (col * PPU_GPU3DS_TILE_SIDE + PPU_GPU3DS_TILE_SIDE / 2 - obj->width / 2) * 512 - 1;
-                        const int sy = (row * PPU_GPU3DS_TILE_SIDE + PPU_GPU3DS_TILE_SIDE / 2 - obj->height / 2) * 512 - 1;
-                        const float py = centerY + (float)(-(int64_t)obj->pc * sx + (int64_t)obj->pa * sy) /
-                                                           (2.0f * (float)determinant);
-                        float above = (float)(obj->y + obj->boundsHeight) - py;
-                        if (above < 0.0f) above = 0.0f;
-                        span = (unsigned)obj->boundsHeight > 0u ? (unsigned)obj->boundsHeight : span;
-                        heightMid = above > (float)span ? span : (unsigned)above;
-                    }
-                    depthI += ((int)depthTop - (int)depthBottom) * (int)heightMid / (int)span;
-                }
-                unsigned depth = (unsigned)(depthI < 0 ? 0 : depthI) + support;
-                /* Never past the HUD's 6 px (24 quarters): the HUD is always in front. */
-                if (depth > 20u) depth = 20u;
-                tileDepth[row * cols + col] = (uint8_t)depth;
-                if (depth > tallest) tallest = depth;
-            }
-        }
-        /* Too many changes of depth for one sprite (each is a batch): one depth, the highest. */
-        for (int tile = 0; tile < rows * cols; ++tile)
-            if (tile == 0 || tileDepth[tile] != tileDepth[tile - 1]) ++runs;
-        if (runs > LEAN_MAX_RUNS)
-            for (int tile = 0; tile < rows * cols; ++tile) tileDepth[tile] = (uint8_t)tallest;
+        const SpriteLean3DS lean = {
+            .x = obj->x, .y = obj->y, .width = obj->width, .height = obj->height,
+            .boundsWidth = obj->boundsWidth, .boundsHeight = obj->boundsHeight,
+            .affine = obj->affine, .hflip = obj->hflip, .vflip = obj->vflip,
+            .pa = obj->pa, .pb = obj->pb, .pc = obj->pc, .pd = obj->pd,
+            .depthNear = depthBottom, .depthFar = depthTop, .columns = leanColumns, .support = support,
+        };
+        SpriteLean3DS_Fill(&lean, tileDepth);
     }
     if (mosaicEnabled) {
         if (!build_mosaic_obj_geometry(
@@ -3296,8 +3269,11 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     const unsigned tileScale = obj->bpp8 ? 2u : 1u;
     const uint16_t baseTile =
             obj->bpp8 ? (uint16_t)(obj->baseTile & ~1u) : obj->baseTile;
-    for (int tileRow = 0; tileRow < tilesHigh; ++tileRow) {
-        for (int tileCol = 0; tileCol < tilesWide; ++tileCol) {
+    /* Row by row, or column by column for a column lean (its runs of equal depth are its columns). */
+    for (int tileStep = 0; tileStep < tilesHigh * tilesWide; ++tileStep) {
+        {
+            int tileRow, tileCol;
+            SpriteLean3DS_TileAt(tilesHigh, tilesWide, perTile && leanColumns, tileStep, &tileRow, &tileCol);
             if (perTile) {
                 const unsigned rowDepth = tileDepth[tileRow * tilesWide + tileCol];
                 if (runCount == 0 || (runDepth[runCount - 1] != rowDepth && runCount < LEAN_MAX_RUNS)) {
