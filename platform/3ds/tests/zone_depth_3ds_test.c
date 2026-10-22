@@ -1,6 +1,7 @@
 /* Host test of the zone depth fixes' arithmetic (platform/3ds/source/zone_depth_3ds.h): the frame's scroll read back from
  * a layer's offset registers, a fix placed in the frame (a room at a positive origin in Full View, scrolled past), the
  * scissor of a batch redrawn for a zone (cut by the batch, by the frame, moved for each eye), empty and negative sizes;
+ * the draw order (the copy under the layer in front: its opaque pixels are never covered);
  * and every line of platform/3ds/source/port_zone_depth.inc parsed through the same macro the game uses and checked.
  *
  *   cc -std=c11 -Wall -Wextra -Iplatform/3ds/source platform/3ds/tests/zone_depth_3ds_test.c -o /tmp/zone_depth_3ds_test
@@ -120,6 +121,62 @@ static int test_hole_filled(void) {
     return 0;
 }
 
+/* The draw order, modelled on one line of pixels (port_ppu_gpu_3ds.c, DrawOutput's colour loop in the world scene): BG2
+ * unmoved; the zone's copy of BG2, right after BG2's own batches (its anchor), cut and moved by ZoneDepth3DS_BatchScissor;
+ * then BG1, its unmoved copy first (IsGhostBatch) and its moved picture over it. BG1 has a hole and, inside the zone,
+ * opaque pixels of its own (the chick's). `zoneLast` draws the copy after BG1 instead, the first version's order. */
+enum { LINE = 64, EMPTY = 0 };
+static int bg2At(int x) { return 1000 + x; }
+static int bg1At(int x) { return (x >= 20 && x < 32 && x != 26 && x != 27) ? 0 : 2000 + x; } /* hole 20..32, opaque 26..27 */
+
+static void drawLine(int out[LINE], const ZoneDepth3DSRect* zone, int shift, bool zoneLast) {
+    for (int x = 0; x < LINE; ++x) out[x] = EMPTY;
+    for (int x = 0; x < LINE; ++x) out[x] = bg2At(x);
+    ZoneDepth3DSRect cut;
+    const bool zoneOn = ZoneDepth3DS_BatchScissor(zone, 0, LINE, 0, 1, shift, LINE, 1, &cut);
+    if (zoneOn && !zoneLast)
+        for (int x = cut.left; x < cut.right; ++x) out[x] = bg2At(x - shift);
+    for (int x = 0; x < LINE; ++x)
+        if (bg1At(x)) out[x] = bg1At(x);
+    for (int x = 0; x < LINE; ++x)
+        if (x - shift >= 0 && x - shift < LINE && bg1At(x - shift)) out[x] = bg1At(x - shift);
+    if (zoneOn && zoneLast)
+        for (int x = cut.left; x < cut.right; ++x) out[x] = bg2At(x - shift);
+}
+
+static int test_draw_order(void) {
+    /* A generous zone, bigger than BG1's hole (16..36 against 20..32). */
+    const ZoneDepth3DSRect zone = { 16, 0, 36, 1 };
+    for (int shift = -3; shift <= 3; ++shift) {
+        int line[LINE];
+        drawLine(line, &zone, shift, false);
+        for (int x = 0; x < LINE; ++x) {
+            CHECK(line[x] != EMPTY);
+            /* BG1's moved opaque pixels are never covered: the chick's own pixels stay on top. */
+            if (x - shift >= 0 && x - shift < LINE && bg1At(x - shift)) CHECK(line[x] == bg1At(x - shift));
+        }
+        /* Inside BG1's moved hole, away from the ghost's one-pixel edge, BG2 is the moved copy (the roof's plane). */
+        for (int x = 20 + shift; x < 32 + shift; ++x) {
+            const bool ghost = x >= 0 && x < LINE && bg1At(x);
+            const bool bg1 = bg1At(x - shift) != 0;
+            if (!ghost && !bg1) CHECK(line[x] == bg2At(x - shift));
+        }
+        /* Outside the zone, nothing changed: BG1 and BG2 as without the fix. */
+        int plain[LINE];
+        const ZoneDepth3DSRect none = { 0, 0, 0, 0 };
+        drawLine(plain, &none, shift, false);
+        for (int x = 0; x < LINE; ++x)
+            if (x < zone.left + (shift < 0 ? shift : 0) || x >= zone.right + (shift > 0 ? shift : 0)) CHECK(line[x] == plain[x]);
+        /* The first version's order (the copy after BG1) covered BG1's opaque pixels inside the zone. */
+        if (shift != 0) {
+            int late[LINE];
+            drawLine(late, &zone, shift, true);
+            CHECK(late[26 + shift] != bg1At(26));
+        }
+    }
+    return 0;
+}
+
 static int test_table(void) {
     const unsigned count = (unsigned)(sizeof(kTable) / sizeof(kTable[0]));
     CHECK(count >= 1);
@@ -132,8 +189,9 @@ static int test_table(void) {
             return 1;
         }
         CHECK(fix->x >= 0 && fix->y >= 0);
-        if (fix->area == 0x02 && fix->room == 0x00 && fix->bg == 2 && fix->toBg == 1 && fix->x == 272 && fix->y == 864 &&
-            fix->w == 16 && fix->h == 16)
+        /* The log hut's hole in Hyrule Town's BG1 roof (x 272..296, y 856..896) lies inside its fix. */
+        if (fix->area == 0x02 && fix->room == 0x00 && fix->bg == 2 && fix->toBg == 1 && fix->x <= 272 && fix->y <= 856 &&
+            fix->x + fix->w >= 296 && fix->y + fix->h >= 896)
             chick = true;
     }
     CHECK(chick);
@@ -141,7 +199,7 @@ static int test_table(void) {
 }
 
 int main(void) {
-    if (test_frame_scroll() || test_screen_rect() || test_batch_scissor() || test_hole_filled() || test_table()) return 1;
+    if (test_frame_scroll() || test_screen_rect() || test_batch_scissor() || test_hole_filled() || test_draw_order() || test_table()) return 1;
     printf("zone_depth_3ds_test: ok\n");
     return 0;
 }

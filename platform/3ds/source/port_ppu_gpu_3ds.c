@@ -1236,15 +1236,17 @@ static bool IsGhostBatch(const PpuGpu3DSBatch* batch) {
            batch->layer <= PPU_GPU3DS_BG3 && sFrontLayer[batch->layer][batch->priority & 3u];
 }
 
-/* Zone depth fixes (docs/stereo-3d.md, "Zone depth fixes"; zone_depth_3ds.h): a rectangle of one layer drawn once more,
- * over that layer's own picture, at another layer's plane. Each is drawn right after the batch `anchor`, the last batch
- * of whichever of the two layers is drawn later (the one in front), so what the game draws in front of that (sprites,
- * BG0) still covers it and the layer's own unmoved picture lies under it, filling the strip the moved copy uncovers. It
- * is drawn in the pass that draws its anchor and moved by toBg's shift for the eye (none in the base). Resolved once a
- * frame (PrepareZoneDraws); none outside the world scene or in a room with no fix. */
+/* Zone depth fixes (docs/stereo-3d.md, "Zone depth fixes"; zone_depth_3ds.h): the pixels of one layer inside a rectangle
+ * drawn once more, moved as another layer's plane is. Each copy is drawn right after the layer's own last batch
+ * (`anchor`), in the layer's own place in the drawing order: over the layer's unmoved picture (which fills the strip the
+ * moved copy uncovers) and under everything the game draws after the layer (sprites, the layers in front), so a layer in
+ * front keeps its opaque pixels and only its transparent ones show the moved copy. It is drawn in the pass that draws its
+ * anchor and moved by toBg's shift for the eye; a copy that moves but whose layer is drawn in the base has no shift
+ * there, so that frame is drawn whole (SPLIT_ZONE_UNDER_BASE). Resolved once a frame (PrepareZoneDraws); none outside the
+ * world scene, in a room with no fix, or with the rectangle off the frame. */
 typedef struct ZoneDraw {
     ZoneDepth3DSRect rect;
-    size_t anchor, first, last; /* the anchor batch; the first and last batch of layer `bg` */
+    size_t anchor, first; /* the last and the first batch of layer `bg` */
     uint8_t bg, toBg, toPriority;
 } ZoneDraw;
 static ZoneDraw sZoneDraws[ZONE_DEPTH_3DS_MAX_PER_ROOM];
@@ -1253,6 +1255,9 @@ static unsigned sZoneDrawCount;
 static int EyeLayerPx(unsigned layer, unsigned priority, Stereo3DSEye eye) {
     return RoundPx(Stereo3DS_LayerShift(layer, priority & 3u, eye));
 }
+
+/* More than any eye's shift (the depths are -16..16 px at the full slider, split between the eyes). */
+enum { ZONE_MARGIN = 16 };
 
 static void PrepareZoneDraws(void) {
     sZoneDrawCount = 0;
@@ -1277,11 +1282,15 @@ static void PrepareZoneDraws(void) {
         if (EyeLayerPx(bg, bgPriority, STEREO3DS_LEFT) == EyeLayerPx(to, toPriority, STEREO3DS_LEFT) &&
             EyeLayerPx(bg, bgPriority, STEREO3DS_RIGHT) == EyeLayerPx(to, toPriority, STEREO3DS_RIGHT))
             continue;
+        /* Off the frame, even moved: nothing to draw (and no reason to give up the base picture). */
+        const ZoneDepth3DSRect* rect = &zones[z].rect;
+        if (rect->right <= -ZONE_MARGIN || rect->left >= (int)sPreparedWidth + ZONE_MARGIN || rect->bottom <= 0 ||
+            rect->top >= (int)sPreparedHeight)
+            continue;
         ZoneDraw* draw = &sZoneDraws[sZoneDrawCount++];
-        draw->rect = zones[z].rect;
-        draw->anchor = last[bg] > last[to] ? last[bg] : last[to];
+        draw->rect = *rect;
+        draw->anchor = last[bg];
         draw->first = first[bg];
-        draw->last = last[bg];
         draw->bg = (uint8_t)bg;
         draw->toBg = (uint8_t)to;
         draw->toPriority = (uint8_t)toPriority;
@@ -1323,7 +1332,7 @@ static void DrawZonesAfter(size_t index) {
         const ZoneDraw* draw = &sZoneDraws[z];
         if (draw->anchor != index) continue;
         const int shift = sEyeShifting ? sEyeShiftPx[draw->toBg][draw->toPriority & 3u] : 0;
-        for (size_t i = draw->first; i <= draw->last; ++i) {
+        for (size_t i = draw->first; i <= draw->anchor; ++i) {
             const PpuGpu3DSBatch* batch = &sCommands.batches[i];
             if (batch->layer == draw->bg && !batch->objWindow) DrawZoneBatch(batch, &draw->rect, shift);
         }
@@ -1601,7 +1610,8 @@ static int EyesOverBaseRefusal(void) {
      * where it is in both eyes: the base draws it and its marks serve both. */
     if (sEyeWindowFollows && sEyeWindowPx != 0) return SPLIT_WINDOW_FOLLOWS;
     if (Port_Config_GpuScissorMode() == 0) return SPLIT_LINES_UNCLIPPED;
-    /* A zone that moves (its plane is in front) drawn after a batch the base draws: the base has no shift. */
+    /* A zone that moves (its plane is in front) drawn after its layer's batch the base draws: the base has no shift, and
+     * the front passes come after what the base draws over the layer (sprites), which must stay over the copy. */
     for (unsigned z = 0; z < sZoneDrawCount; ++z)
         if (sFrontLayer[sZoneDraws[z].toBg][sZoneDraws[z].toPriority & 3u] &&
             !IsFrontBatch(&sCommands.batches[sZoneDraws[z].anchor]))

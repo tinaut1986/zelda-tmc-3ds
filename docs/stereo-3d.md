@@ -115,47 +115,61 @@ scenes below override it for their layers. The values are in pixels at the full 
 ## Zone depth fixes
 
 A layer is all the PPU can move, and some art is split between layers: in Hyrule Town (area 0x02, room 0x00) the log
-hut's roof is BG1 (raised, `stereo_world_bg1`), but one 16x16 cell of it is a hole in BG1 where BG2, the ground's layer,
-shows the roof's little chick, which then sat on the ground's plane inside the raised roof. A zone depth fix draws a
-rectangle of one layer at another layer's plane. They are hand-curated in `platform/3ds/source/port_zone_depth.inc`
-(optional, like `port_sprite_depth.inc`; the layer workbench in `tools/layer-workbench/` edits it too):
+hut's roof is BG1 (raised, `stereo_world_bg1`), but BG1 is transparent at x 272..296, y 856..896 (the beaded log pillar
+and the ladder's top with the little chick, all BG2, the ground's layer), so that part of the roof sat on the ground's
+plane. A zone depth fix draws the pixels of one layer inside a rectangle at another layer's plane. They are hand-curated
+in `platform/3ds/source/port_zone_depth.inc` (optional, like `port_sprite_depth.inc`; the layer workbench in
+`tools/layer-workbench/` edits it too):
 
     PORT_ZONE_DEPTH(area, room, bg, x, y, w, h, toBg)
 
 - `area`, `room`: the room (`gRoomControls.area` / `.room`), numbers, hex ok.
 - `bg`: 1, 2 or 3, the layer whose pixels in the rectangle are moved.
-- `x`, `y`, `w`, `h`: the rectangle in room pixels, from the room's origin (multiples of 8 in practice, 16 for a metatile).
+- `x`, `y`, `w`, `h`: the rectangle in room pixels, from the room's origin (multiples of 8 in practice).
 - `toBg`: 1, 2 or 3, not `bg`: the layer whose plane (its depth, so its shift for each eye) the rectangle takes.
 
-The chick's fix is `PORT_ZONE_DEPTH(0x02, 0x00, 2, 272, 864, 16, 16, 1)`: BG1's hole is metatile column 17, row 54 of
-the room (BG1 block 0x0000 between 0x0490 and 0x0492).
+Nothing else about the layering changes: a layer in front of `bg` keeps its opaque pixels on top, and only its
+transparent ones show the moved copy. So the rectangle can (and should) be bigger than the hole: where the hole runs past
+the rectangle's edge, `bg`'s picture breaks by a pixel there. The log hut's fix is
+`PORT_ZONE_DEPTH(0x02, 0x00, 2, 264, 848, 40, 48, 1)`, the hole and the partly transparent BG1 tiles around it. Left at
+the ground's plane on purpose: the thin gaps of the roof's sign above (y 840..848, BG2's red letters behind them), most of
+the shutters (x 304..328) and the door (x 304..320, y 880..896). The hole is open at its bottom (y 896), where the ladder
+meets the ground: the ladder steps by the roof's disparity there.
 
 How it works (`zone_depth_3ds.c`, `zone_depth_3ds.h`, `port_ppu_gpu_3ds.c`):
 
 - **When.** Only in the world scene with 3D on (`Stereo3DS_BeginFrame` calls `ZoneDepth3DS_BeginFrame` with the slider up and
-  scene bit 128), only while the current room is the fix's, and only when the two layers have different shifts in either
-  eye (3D WORLD off, or both layers on one plane: nothing is drawn). The room's fixes are looked up when the room changes;
-  a room with none costs one compare a frame. 16 fixes per room at most. The software renderer is flat and ignores them.
+  scene bit 128), only while the current room is the fix's, only when the two layers have different shifts in either eye
+  (3D WORLD off, or both layers on one plane: nothing is drawn), and only while the rectangle is on the frame. The room's
+  fixes are looked up when the room changes; a room with none costs one compare a frame. 16 fixes per room at most. The
+  software renderer is flat and ignores them.
 - **Where.** The rectangle follows the layer's pixels: the room's origin in the frame is `origin - scroll` of the frame,
   with the scroll the layer's own offset registers (`gIoMem`, the frame's) say (`ZoneDepth3DS_FrameScroll`: the game writes
   the low four bits of `scroll - origin`, plus 8 on y, plus any shake, and the registers can be a tick behind the camera),
   as `Port_Widescreen_ContentRects` does. In Full View the frame is the whole 400x240 view and the scroll its corner, so a
   room narrower than the view (resting at a positive origin) and the 240x160 view are the same arithmetic.
-- **How it is drawn.** The batches of `bg` are drawn once more, each with its
-  scissor cut to the rectangle and to its own lines and columns, moved by `toBg`'s shift for the eye, art and scissor
-  together (`ZoneDepth3DS_BatchScissor`; host test `platform/3ds/tests/zone_depth_3ds_test.c`). They go right after the
-  last batch of whichever of the two layers is drawn later (`ZoneDraw.anchor`): the copy covers `bg`'s own picture, and
-  what the game draws in front of that (BG0, the sprites of a higher priority) still covers the copy. It is drawn in the
-  pass that draws its anchor (over one base: the eyes' pass when the anchor is a layer in front), with no depth write, like
-  every background. A copy that moves but whose anchor is on the screen plane would need a shift the base has not: that
-  frame is drawn whole (reason 8).
-- **No seam, no black line.** The hole in `toBg` and the copy move by the same whole pixels in each eye, so the copy fills
-  the moved hole exactly; the strip the copy uncovers at its other side shows `bg`'s own unmoved picture drawn under it
-  (which is what was there), and the other side of the moved hole is `toBg`'s own art. Nothing is copied or edited in VRAM.
-- **Limits.** One rectangle of one layer; the copy's transparent texels show what is under it (the layer's unmoved
-  picture), so a rectangle should cover whole opaque cells. A `bg` batch that blends (an alpha first target) blends again
-  over its own copy. The layer's priority is taken from its last batch of the frame (a layer that changes priority
-  between bands takes one). While the camera crosses into another room the fixes are the current room's.
+- **How it is drawn.** The batches of `bg` are drawn once more, each with its scissor cut to the rectangle and to its own
+  lines and columns, moved by `toBg`'s shift for the eye, art and scissor together (`ZoneDepth3DS_BatchScissor`). They go
+  right after `bg`'s own last batch (`ZoneDraw.anchor`), in `bg`'s place in the drawing order: over `bg`'s unmoved picture
+  and over what was drawn before it, under everything drawn after it (the sprites at `bg`'s priority or in front of it, the
+  layers in front such as BG1). No depth write, like every background. The first version drew it after the later of the
+  two layers (BG1) and covered BG1's own opaque pixels in the rectangle (the chick's): the owner saw it on the console.
+- **Base picture.** With BG2 on the screen plane its batches are drawn in the base, which has no shift, and the eyes'
+  passes come after the sprites the base draws over BG2 (Link in front of the hut must stay over the copy). So while a
+  moving copy anchored to a base layer is on the frame, the frame is drawn whole for each eye (reason 8): near the log hut
+  the GPU does both eyes' work, as with any reason.
+- **No seam, no black line.** Under the copy lies `bg`'s own unmoved picture, so the 1 px strip the moved copy uncovers at
+  one edge of the rectangle shows `bg`'s pixels (what was there without the fix), never the clear colour. The hole in
+  `toBg` moves by the same whole pixels as the copy, so in each eye the copy shows through the moved hole as the art
+  lines up at `toBg`'s plane; the hole's edge is a pixel thicker on one side, from `toBg`'s unmoved copy (`IsGhostBatch`),
+  as everywhere else in the world. Where the rectangle's edge lies under `toBg`'s opaque pixels it cannot be seen at all.
+  Nothing is copied or edited in VRAM. The host test (`platform/3ds/tests/zone_depth_3ds_test.c`) models this order on a
+  line of pixels, every shift from -3 to 3: BG1's moved opaque pixels are never covered, the moved hole shows the moved
+  copy, nothing outside the rectangle changes, and no pixel is left empty; and the first version's order fails it.
+- **Limits.** One rectangle of one layer. The copy's transparent texels show `bg`'s unmoved picture under it. A `bg` batch
+  that blends (an alpha first target) blends again over its own copy. The layers' priorities are taken from their last
+  batch of the frame (a layer that changes priority between bands takes one). While the camera crosses into another room
+  the fixes are the current room's.
 
 ## What Link holds up or throws
 
@@ -197,7 +211,7 @@ eye (reason 4). The software renderer leaves them flat.
     background, never with the lower sprite the base would have under it; a semi-transparent sprite with
     no second target in BLDCNT does not blend and does not count), `gpu_scissor_mode` is 0
     (7), the debug poke `gPpuGpu3DSEyesWhole 01` asks for it (5, to compare), or a zone depth fix that moves is
-    anchored to a layer on the screen plane (8, "Zone depth fixes").
+    drawn on a layer on the screen plane (8, "Zone depth fixes").
 
   The whole frame twice doubled the GPU's work: 9.0 ms a frame in 2D, 17.1 ms in 3D in the Deepwood
   Shrine's dark room, 12.6 ms over one base (PLAN, decisions log 2026-10-18). With no depth at all
