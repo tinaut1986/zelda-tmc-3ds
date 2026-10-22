@@ -1156,6 +1156,13 @@ static u8 SpriteDepth(const Entity* entity) {
         return DepthForHeight(entity);
     }
 #ifdef TMC_3DS
+    /* A Keese flies without ever leaving z 0 (type 0: it fakes the height with spriteOffsetY) or sits at z -16 all the
+     * time (the other types), resting and sleeping included. Its flight is its action (1 = KEESE_ACTION_FLY): in the air
+     * it stands out as an entity 16 px up, at rest and asleep it is on the ground's plane. */
+    if (entity->kind == ENEMY && entity->id == KEESE) {
+        extern int Port_Config_StereoHeightDepthQ(int height);
+        return entity->action == 1 ? (u8)Port_Config_StereoHeightDepthQ(16) : 0;
+    }
     /* Standing on the ground (z 0) a sprite stays on the ground's plane, so it does not float; raised off it
      * (jumping, falling, flying) it stands out with its height (stereo_world_height in tmc3ds.ini). */
     extern int Port_Config_StereoHeightDepthQ(int height);
