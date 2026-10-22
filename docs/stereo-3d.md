@@ -150,7 +150,7 @@ splash stays flat whatever is drawn per eye. 3D is turned off again in `Platform
 the presenter links the right eye itself. `tools/make_splash.py` makes `romfs/splash.rgb565` (logo cut to its
 bounds and centred, a 14 px margin so the shift crops nothing).
 
-## Minish Village: unfinished (branch `feat/village-3d`, not merged)
+## Minish Village: unfinished (the `feat/village-3d` branch was deleted on 2026-10-22; what follows is what it found)
 
 - The flowers and plants over everything (BG1 at priority 1 in area 1) hang in front; so do the leaf
   blocks they stand in. Those are on BG2 with the ground, and a layer is all the PPU can move, so while 3D
