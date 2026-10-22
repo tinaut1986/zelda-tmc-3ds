@@ -578,6 +578,7 @@ function infoText() {
       t.push(...fieldsOf(o));
     }
   }
+  t.push(...zInfoLines(room));
   const bl = S.sel.blocks;
   if (bl.length) {
     t.push('', 'Selected blocks (' + bl.length + (bl.length > 256 ? ', first 256 listed' : '') + '):');
@@ -613,7 +614,7 @@ function defaultRect(id) {
   const { W, H } = wsSize(), u = (a, b, c, d) => ({ x: Math.round(a * W), y: Math.round(b * H), w: Math.round(c * W), h: Math.round(d * H) });
   return ({
     RESULT: u(0, 0, .5, .64), BG2: u(.5, 0, .25, .32), BG1: u(.75, 0, .25, .32), BG3: u(.5, .32, .25, .32),
-    MAP: u(.75, .32, .25, .32), ENTITIES: u(0, .64, .3, .36), INFO: u(.3, .64, .4, .36), DEPTH: u(.7, .64, .3, .36),
+    MAP: u(.75, .32, .25, .32), ENTITIES: u(0, .64, .3, .36), INFO: u(.3, .64, .4, .36), DEPTH: u(.7, .64, .3, .36), ZONES: u(.55, .1, .45, .9),
   })[id];
 }
 class Win {
@@ -683,7 +684,7 @@ function applyLayout(reset) {
   for (const id in wins) {
     const w = wins[id], r = (saved && saved[id]) || defaultRect(id);
     w.setRect(r);
-    w.setState(saved && saved[id] ? saved[id].s || 'open' : 'open');
+    w.setState(saved && saved[id] ? saved[id].s || 'open' : id === 'ZONES' ? 'min' : 'open');   // ZONES starts minimised: it covers the others
   }
   if (reset) saveLayout();
 }
@@ -783,11 +784,12 @@ class ImgView extends Pane {
     if (hidden) ctx.globalAlpha = 0.3;   // the game does not show this layer in this room: what follows may not be a map
     ctx.drawImage(src, this.ox, this.oy, src.width * this.s, src.height * this.s);
     ctx.globalAlpha = 1;
-    if (!this.bg) { this.paintSprites(ctx, room); for (const t of dpTargets()) paintDepthOverlay(ctx, this, t); }
+    if (!this.bg) { zParallax(ctx, this, room); this.paintSprites(ctx, room); for (const t of dpTargets()) paintDepthOverlay(ctx, this, t); }
     // room bounds when the image is not the room
     ctx.strokeStyle = '#ffffff30'; ctx.lineWidth = 1;
     ctx.strokeRect(this.ox - .5, this.oy - .5, room.width * this.s + 1, room.height * this.s + 1);
     this.paintOverlay(ctx, src, w, h, room);
+    paintZones(ctx, this, room);
     if (hidden) this.paintHiddenNotice(ctx, w, room.layers[this.bg]);
   }
   paintHiddenNotice(ctx, w, L) {
@@ -912,6 +914,7 @@ class ImgView extends Pane {
     return order.length ? order[order.length - 1] : null;
   }
   leftDown(e, p) {
+    if (ZN.draw && zDrawStart(this, e, p)) return;
     this.drag = { sx: p.x, sy: p.y, cx: p.x, cy: p.y, moved: false, e };
     const mv = ev => {
       const q = this.pos(ev), d = this.drag; if (!d) return;
@@ -1670,6 +1673,270 @@ function renderDepth() {
   depthBody.scrollTop = top;
 }
 
+// ---------------------------------------------------------------- ZONES panel (platform/3ds/source/port_zone_depth.inc)
+// The port's "zone depth fixes": PORT_ZONE_DEPTH(area, room, bg, x, y, w, h, toBg) = draw this rectangle of layer bg (room pixel
+// coordinates, the ones this viewer uses) at the stereo depth of layer toBg. The window keeps a working copy of the file;
+// SAVE sends the difference to serve.py (GET/POST /zone-depth), which edits the file in place (zone_inc.py), keeps comments and
+// other lines, and checks every zone against maps.json. DRAW mode drags a rectangle on RESULT or on a layer window.
+const ZN_COL = { 1: '#ffa040', 2: '#6dff9a', 3: '#c08cff' };
+const ZN = { loaded: false, err: '', path: '', exists: true, base: [], work: [], unmanaged: [], msg: '', sel: null, draw: false,
+  snap: store('znSnap') === 16 ? 16 : 8, bg: 2, toBg: 1, rect: null, preview: store('znPreview') !== false, parallax: !!store('znParallax') };
+const zKey = e => [e.area, e.room, e.bg, e.x, e.y, e.w, e.h].join('/');
+const zText = e => 'PORT_ZONE_DEPTH(0x' + hex(e.area) + ', 0x' + hex(e.room) + ', ' + e.bg + ', ' + e.x + ', ' + e.y + ', ' + e.w + ', ' + e.h + ', ' + e.toBg + ')';
+const zLabel = e => 'BG' + e.bg + ' -> BG' + e.toBg;
+const zClone = l => l.map(e => Object.assign({}, e));
+async function zLoad(keepMsg) {
+  try {
+    const r = await fetch('/zone-depth', { cache: 'no-cache' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    zAccept(await r.json());
+    ZN.err = '';
+  } catch (e) { ZN.err = e.message; ZN.loaded = false; }
+  if (!keepMsg) ZN.msg = '';
+  renderZones(); repaintAll();
+}
+function zAccept(d) {
+  ZN.path = d.path; ZN.exists = d.exists !== false; ZN.unmanaged = d.unmanaged || [];
+  ZN.base = (d.entries || []).map(e => ({ area: e.area, room: e.room, bg: e.bg, x: e.x, y: e.y, w: e.w, h: e.h, toBg: e.toBg, line: e.line, comment: e.comment || [] }));
+  ZN.work = zClone(ZN.base); ZN.loaded = true; ZN.sel = null;
+}
+// What SAVE sends: zones whose key is new or whose toBg changed, and keys that are gone. Editing a rectangle is a remove plus a set.
+function zOps(list, base) {
+  const b = new Map((base || ZN.base).map(e => [zKey(e), e])), w = new Map((list || ZN.work).map(e => [zKey(e), e])), set = [], remove = [];
+  for (const [k, e] of w) { const o = b.get(k); if (!o || o.toBg !== e.toBg) set.push({ area: e.area, room: e.room, bg: e.bg, x: e.x, y: e.y, w: e.w, h: e.h, toBg: e.toBg }); }
+  for (const [k, e] of b) if (!w.has(k)) remove.push({ area: e.area, room: e.room, bg: e.bg, x: e.x, y: e.y, w: e.w, h: e.h });
+  return { set, remove };
+}
+const zDirty = () => { const o = zOps(); return o.set.length + o.remove.length; };
+// The checks serve.py repeats on save (zone_inc.check_zone): errors refuse a save, warnings do not.
+function zCheck(e, list) {
+  const errs = [], warns = [], isInt = v => Number.isInteger(v);
+  if (![e.area, e.room, e.x, e.y, e.w, e.h].every(isInt) || !isInt(e.bg) || !isInt(e.toBg)) return { errs: ['not a number'], warns };
+  if (e.bg < 1 || e.bg > 3) errs.push('bg must be 1, 2 or 3');
+  if (e.toBg < 1 || e.toBg > 3) errs.push('toBg must be 1, 2 or 3');
+  if (e.bg === e.toBg) errs.push('bg and toBg are the same: the zone changes nothing');
+  if (e.x < 0 || e.y < 0 || e.w < 1 || e.h < 1) errs.push('x, y must be >= 0 and w, h >= 1');
+  const room = S.byKey.get(roomKey(e.area, e.room));
+  if (!room) errs.push('room ' + roomKey(e.area, e.room) + ' does not exist');
+  else {
+    if (e.x + e.w > room.width || e.y + e.h > room.height) errs.push('not inside the room (' + room.width + 'x' + room.height + ')');
+    for (const [n, what] of [[e.bg, 'bg'], [e.toBg, 'toBg']]) { const L = room.layers['BG' + n]; if (n >= 1 && n <= 3 && !(L && L.data)) warns.push('BG' + n + ' (' + what + ') is not defined in this room'); }
+  }
+  if ((list || ZN.work).some(o => o !== e && zKey(o) === zKey(e))) errs.push('the same rectangle is listed twice');
+  return { errs, warns };
+}
+function zIssues() {   // errors in zones SAVE would write
+  const keys = new Set(zOps().set.map(zKey));
+  return ZN.work.filter(e => keys.has(zKey(e)) && zCheck(e).errs.length);
+}
+async function zSave() {
+  const ops = zOps();
+  if (!ops.set.length && !ops.remove.length) return;
+  if (zIssues().length) { ZN.msg = 'NOT SAVED: fix the zones marked in red first'; renderZones(); return; }
+  try {
+    const r = await fetch('/zone-depth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ops) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+    zAccept(d); ZN.err = '';
+    const p = d.report || {};
+    ZN.msg = 'saved: ' + p.added + ' added, ' + p.changed + ' changed, ' + p.removed + ' removed' + (p.commentLinesRemoved ? ' (' + p.commentLinesRemoved + ' comment line(s) went with their zones)' : '') +
+      (p.warnings && p.warnings.length ? '. WARNING: ' + p.warnings.join('; ') : '');
+    toast(ZN.msg);
+  } catch (e) { ZN.msg = 'NOT SAVED: ' + e.message; toast(ZN.msg); }
+  renderZones(); repaintAll();
+}
+const zRoomZones = room => room ? ZN.work.filter(e => e.area === room._a.id && e.room === room.id) : [];
+// The rectangle covered by a drag from image point a to b: whole cells of `snap` pixels, inside the room.
+function zSnapRect(a, b, snap, room) {
+  const c0 = Math.floor(Math.min(a.x, b.x) / snap), c1 = Math.floor(Math.max(a.x, b.x) / snap), r0 = Math.floor(Math.min(a.y, b.y) / snap), r1 = Math.floor(Math.max(a.y, b.y) / snap);
+  const x0 = clamp(c0 * snap, 0, room.width - 1), y0 = clamp(r0 * snap, 0, room.height - 1);
+  const x1 = clamp((c1 + 1) * snap, x0 + 1, room.width), y1 = clamp((r1 + 1) * snap, y0 + 1, room.height);
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+function zSelect(e, jump) {
+  ZN.sel = e;
+  if (e && jump) {
+    if (!S.room || S.room._a.id !== e.area || S.room.id !== e.room) { if (!openRoom(e.area, e.room, true)) return; }
+    for (const v of S.views) if (v.centerOn) v.centerOn(e.x + e.w / 2, e.y + e.h / 2);
+  }
+  renderZones(); repaintAll();
+}
+function zAdd() {
+  const r = ZN.rect, room = S.room;
+  if (!r || !room) return;
+  const e = { area: room._a.id, room: room.id, bg: ZN.bg, x: r.x, y: r.y, w: r.w, h: r.h, toBg: ZN.toBg, line: null, comment: [], isNew: true };
+  const dup = ZN.work.find(o => zKey(o) === zKey(e));
+  if (dup) { dup.toBg = e.toBg; ZN.sel = dup; }
+  else {
+    const c = zCheck(e);
+    if (c.errs.length) { toast('zone not added: ' + c.errs[0]); return; }
+    ZN.work.push(e); ZN.sel = e;
+  }
+  ZN.rect = null; zFields(); renderZones(); repaintAll();
+}
+function zRemove(e) { const i = ZN.work.indexOf(e); if (i >= 0) ZN.work.splice(i, 1); if (ZN.sel === e) ZN.sel = null; renderZones(); repaintAll(); }
+// ---- DRAW mode: a drag on RESULT or a layer window sets the pending rectangle (the layer window picks bg)
+function zDrawStart(view, e, p) {
+  const room = S.room; if (!room) return false;
+  if (view.bg) { ZN.bg = bgNum(view.bg); if (ZN.toBg === ZN.bg) ZN.toBg = ZN.bg === 1 ? 2 : 1; }
+  const a = view.toImg(p);
+  const upd = ev => { ZN.rect = zSnapRect(a, view.toImg(view.pos(ev)), ZN.snap, room); zFields(); repaintAll(); };
+  upd(e);
+  const up = () => { removeEventListener('mousemove', upd); removeEventListener('mouseup', up); zFields(); renderZones(); };
+  addEventListener('mousemove', upd); addEventListener('mouseup', up);
+  return true;
+}
+function zSetDraw(on) { ZN.draw = on; for (const v of S.views) v.cv.style.cursor = on ? 'crosshair' : ''; zFields(); }
+// ---- painting
+function paintZones(ctx, view, room) {
+  if (!ZN.loaded || !wins.ZONES || wins.ZONES.state !== 'open') return;
+  const s = view.s, ox = view.ox, oy = view.oy;
+  ctx.font = 'bold 10px ui-monospace,Consolas,monospace'; ctx.textBaseline = 'bottom';
+  const label = (t, x, y, col) => { ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(t, x, y); ctx.fillStyle = col; ctx.fillText(t, x, y); };
+  if (ZN.preview) for (const z of zRoomZones(room)) {
+    const x = ox + z.x * s, y = oy + z.y * s, w = z.w * s, h = z.h * s, col = ZN_COL[z.toBg] || '#fff', sel = z === ZN.sel;
+    const mine = view.bg && view.bg === 'BG' + z.bg;
+    ctx.fillStyle = col + (sel ? '44' : mine ? '30' : view.bg ? '14' : '10'); ctx.fillRect(x, y, w, h);
+    ctx.lineWidth = sel ? 2 : 1; ctx.strokeStyle = sel ? '#fff' : col + (view.bg ? 'ff' : 'aa'); ctx.setLineDash(sel ? [] : [4, 3]);
+    ctx.strokeRect(x + .5, y + .5, w - 1, h - 1); ctx.setLineDash([]);
+    label(zLabel(z) + (!view.bg && ZN.parallax ? ' (illustration, not a render)' : ''), x, y - 2, sel ? '#fff' : col);
+  }
+  if (ZN.rect) {
+    const r = ZN.rect, x = ox + r.x * s, y = oy + r.y * s;
+    ctx.fillStyle = '#ffd24a28'; ctx.fillRect(x, y, r.w * s, r.h * s);
+    ctx.lineWidth = 1; ctx.strokeStyle = '#ffd24a'; ctx.setLineDash([4, 3]); ctx.strokeRect(x + .5, y + .5, r.w * s - 1, r.h * s - 1); ctx.setLineDash([]);
+    label(r.w + 'x' + r.h + ' px at ' + r.x + ',' + r.y + '  BG' + ZN.bg + ' -> BG' + ZN.toBg, x, y - 2, '#ffd24a');
+  }
+}
+// The illustration of the plane change: inside each zone's rectangle, the layer bg is drawn 2 px to the side (towards the viewer
+// = right, away = left), over the other layers in their order. An exaggerated hint, not what the stereo renderer does.
+const zTmp = document.createElement('canvas');
+function zShift(z) { return z.toBg < z.bg ? 2 : -2; }
+function zParallax(ctx, view, room) {
+  if (!ZN.loaded || !ZN.parallax || !wins.ZONES || wins.ZONES.state !== 'open') return;
+  const order = enabledOrder(room), p0 = getGfx(room.gfx).pal[0];
+  for (const z of zRoomZones(room)) {
+    if (!order.includes('BG' + z.bg) || z.w < 1 || z.h < 1 || z.w > 4096 || z.h > 4096) continue;
+    zTmp.width = z.w; zTmp.height = z.h;
+    const c = zTmp.getContext('2d'); c.imageSmoothingEnabled = false;
+    c.fillStyle = 'rgb(' + (p0 & 255) + ',' + (p0 >> 8 & 255) + ',' + (p0 >> 16 & 255) + ')'; c.fillRect(0, 0, z.w, z.h);
+    for (const b of order) { const l = getLayer(room, b); if (l) c.drawImage(l.canvas, -z.x + (b === 'BG' + z.bg ? zShift(z) : 0), -z.y); }
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(zTmp, view.ox + z.x * view.s, view.oy + z.y * view.s, z.w * view.s, z.h * view.s);
+  }
+}
+// ---- the window
+let zBody, zListEl, zEls = {};
+function buildZones() {
+  const w = new Win('ZONES', 'ZONES');
+  zBody = el('div', 'scroll'); w.bd.append(zBody);
+  const add = (...k) => { const d = el('div'); d.style.cssText = 'padding:2px 6px;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center'; for (const x of k) d.append(x); zBody.append(d); return d; };
+  const btn = (text, title, fn) => { const b = el('button'); b.textContent = text; b.title = title; b.onclick = fn; return b; };
+  const sel = (vals, cur, fn, id) => { const s = el('select'); for (const [v, t] of vals) { const o = el('option'); o.value = v; o.textContent = t; s.append(o); } s.value = cur; s.onchange = () => fn(+s.value); if (id) s.id = id; return s; };
+  const num = (key, id) => { const i = el('input'); i.type = 'number'; i.step = 1; i.style.cssText = 'width:64px;background:#0f1115;border:1px solid var(--line);border-radius:3px'; i.id = id;
+    i.oninput = () => { if (!ZN.rect) return; ZN.rect[key] = i.value === '' ? NaN : +i.value; zFields(true); repaintAll(); }; return i; };
+  const head = add(); head.style.cssText += ';position:sticky;top:0;background:var(--panel);z-index:2;border-bottom:1px solid var(--line)';
+  zEls.badge = el('span'); zEls.badge.id = 'znBadge';
+  zEls.save = btn('SAVE', '', zSave); zEls.save.id = 'znSave';
+  zEls.rev = btn('REVERT', 'drop the unsaved changes (reload the file)', () => zLoad());
+  zEls.path = el('span'); zEls.path.style.color = 'var(--dim)';
+  head.append(zEls.badge, zEls.save, zEls.rev, zEls.path);
+  zEls.msg = add(); zEls.msg.id = 'znMsg';
+  const note = add(); note.style.color = 'var(--acc)';
+  note.textContent = 'PORT_ZONE_DEPTH(area, room, bg, x, y, w, h, toBg): draw this rectangle of layer bg at the depth of layer toBg. SAVE edits the PORT\'s file (it changes the next 3DS build, not this viewer).';
+  const sec = el('div', 'sec'); sec.textContent = 'DRAW A ZONE'; zBody.append(sec);
+  zEls.draw = el('input'); zEls.draw.type = 'checkbox'; zEls.draw.id = 'znDraw'; zEls.draw.onchange = () => zSetDraw(zEls.draw.checked);
+  zEls.snap = sel([[8, '8 px (tile)'], [16, '16 px (metatile)']], ZN.snap, v => { ZN.snap = v; store('znSnap', v); }, 'znSnap');
+  add(el('label', null, zEls.draw, ' DRAW mode (drag on RESULT or a layer window; Shift+drag still pans)'), 'snap', zEls.snap);
+  zEls.bg = sel([[1, 'BG1'], [2, 'BG2'], [3, 'BG3']], ZN.bg, v => { ZN.bg = v; repaintAll(); }, 'znBg');
+  zEls.to = sel([[1, 'BG1'], [2, 'BG2'], [3, 'BG3']], ZN.toBg, v => { ZN.toBg = v; repaintAll(); }, 'znTo');
+  add('moves layer', zEls.bg, 'to the depth of', zEls.to);
+  zEls.x = num('x', 'znX'); zEls.y = num('y', 'znY'); zEls.w = num('w', 'znW'); zEls.h = num('h', 'znH');
+  add('x', zEls.x, 'y', zEls.y, 'w', zEls.w, 'h', zEls.h);
+  zEls.size = el('span'); zEls.size.id = 'znSize'; zEls.add = btn('ADD', 'add the rectangle to this room\'s zones', zAdd); zEls.add.id = 'znAdd';
+  zEls.clear = btn('CLEAR', 'forget the rectangle', () => { ZN.rect = null; zFields(); repaintAll(); });
+  add(zEls.size, zEls.add, zEls.clear);
+  const pv = el('input'); pv.type = 'checkbox'; pv.checked = ZN.preview; pv.id = 'znPreview'; pv.onchange = () => { ZN.preview = pv.checked; store('znPreview', pv.checked); repaintAll(); };
+  const pa = el('input'); pa.type = 'checkbox'; pa.checked = ZN.parallax; pa.id = 'znParallax'; pa.onchange = () => { ZN.parallax = pa.checked; store('znParallax', pa.checked); repaintAll(); };
+  add(el('label', null, pv, ' outline the zones'), el('label', null, pa, ' RESULT: shift each zone\'s layer 2 px (illustration, not a render)'));
+  zListEl = el('div'); zBody.append(zListEl);
+  w.onResize = () => { };
+  zFields(); return w;
+}
+// The pending rectangle's controls (no re-render, so a field keeps its focus while typing).
+function zFields(typing) {
+  if (!zEls.x) return;
+  const r = ZN.rect;
+  zEls.draw.checked = ZN.draw; zEls.bg.value = ZN.bg; zEls.to.value = ZN.toBg; zEls.snap.value = ZN.snap;
+  if (!typing) for (const k of ['x', 'y', 'w', 'h']) zEls[k].value = r ? r[k] : '';
+  const room = S.room, bad = !r || !room ? [] : zCheck({ area: room._a.id, room: room.id, bg: ZN.bg, toBg: ZN.toBg, x: r.x, y: r.y, w: r.w, h: r.h }, []).errs;
+  zEls.size.textContent = r ? r.w + 'x' + r.h + ' px (' + (r.w / 8) + 'x' + (r.h / 8) + ' tiles)' + (bad.length ? ': ' + bad[0] : '') : 'no rectangle yet';
+  zEls.size.style.color = bad.length ? 'var(--bad)' : 'var(--fg)';
+  zEls.add.disabled = !r || !room || bad.length > 0;
+}
+function renderZones() {
+  if (!zBody) return;
+  const n = ZN.loaded ? zDirty() : 0, top = zBody.scrollTop;
+  zEls.badge.textContent = !ZN.loaded ? 'NOT LOADED' : n ? 'UNSAVED CHANGES (' + n + ')' : 'saved';
+  zEls.badge.style.cssText = 'font-weight:bold;padding:0 6px;border-radius:3px;' + (n ? 'background:#7a2a2a;color:#fff' : 'color:var(--ok)');
+  zEls.save.disabled = !n; zEls.save.title = 'write the changes into ' + ZN.path;
+  zEls.rev.disabled = !n;
+  zEls.path.textContent = ZN.loaded ? ZN.path + (ZN.exists ? '' : ' (does not exist yet: SAVE creates it, with a header describing the format)') : '';
+  zEls.msg.textContent = ZN.loaded ? ZN.msg : 'No zone list: ' + (ZN.err || 'loading') + '. The window reads and writes platform/3ds/source/port_zone_depth.inc through serve.py (/zone-depth); open the viewer with serve.py.';
+  zEls.msg.style.color = !ZN.loaded || /NOT SAVED|WARNING/.test(ZN.msg) ? 'var(--bad)' : 'var(--ok)';
+  zEls.msg.style.display = zEls.msg.textContent ? '' : 'none';
+  zFields();
+  zListEl.textContent = '';
+  if (!ZN.loaded) return;
+  const baseKeys = new Map(ZN.base.map(e => [zKey(e), e])), room = S.room;
+  const row = (e, withRoom) => {
+    const r = el('div', 'er'); r.style.alignItems = 'center';
+    if (e === ZN.sel) r.classList.add('sel');
+    const k = el('span', 'k'); k.style.background = ZN_COL[e.toBg] || '#888';
+    const t = el('span'); t.textContent = zLabel(e) + '  ' + e.x + ',' + e.y + ' ' + e.w + 'x' + e.h; t.style.fontWeight = 'bold';
+    const c = zCheck(e), o = baseKeys.get(zKey(e)), st = el('span', 'p');
+    st.textContent = (withRoom ? roomKey(e.area, e.room) + ' ' + ((S.byKey.get(roomKey(e.area, e.room)) || {}).name || '') + '  ' : '') + (e.line && o ? 'line ' + e.line : '') + (!o ? ' NEW' : o.toBg !== e.toBg ? ' CHANGED' : '') + (c.errs.length ? ' ERROR: ' + c.errs[0] : c.warns.length ? ' WARNING: ' + c.warns[0] : '');
+    if (c.errs.length) st.style.color = 'var(--bad)'; else if (c.warns.length) st.style.color = 'var(--acc)'; else if (!o || o.toBg !== e.toBg) st.style.color = 'var(--acc)';
+    const rm = el('button'); rm.textContent = 'x'; rm.title = 'remove this zone (SAVE removes the line and the comment lines directly above it)'; rm.style.marginLeft = 'auto';
+    rm.onclick = ev => { ev.stopPropagation(); zRemove(e); };
+    r.append(k, t, st, rm);
+    r.title = (e.comment && e.comment.length ? e.comment.join('\n') + '\n\n' : '') + zText(e) + '\nclick: select and jump to it';
+    r.onclick = () => zSelect(e, true);
+    return r;
+  };
+  const sh = el('div', 'sec'); sh.textContent = 'THIS ROOM (' + (room ? roomKey(room._a.id, room.id) : '') + ')  ' + zRoomZones(room).length + ' zone(s)'; zListEl.append(sh);
+  for (const e of zRoomZones(room)) {
+    zListEl.append(row(e, false));
+    if (e === ZN.sel) zListEl.append(zEditor(e));
+  }
+  if (!zRoomZones(room).length) { const d = el('div'); d.style.cssText = 'padding:2px 6px;color:var(--dim)'; d.textContent = 'No zones in this room. Tick DRAW mode, drag a rectangle, choose the layers and press ADD.'; zListEl.append(d); }
+  const all = el('div', 'sec'); all.textContent = 'ALL ZONES (' + ZN.work.length + ')'; zListEl.append(all);
+  for (const e of ZN.work) zListEl.append(row(e, true));
+  if (!ZN.work.length) { const d = el('div'); d.style.cssText = 'padding:2px 6px;color:var(--dim)'; d.textContent = 'The file holds no zones.'; zListEl.append(d); }
+  if (ZN.unmanaged.length) {
+    const s2 = el('div', 'sec'); s2.textContent = 'LINES THE TOOL DOES NOT UNDERSTAND (kept as they are)'; zListEl.append(s2);
+    for (const u of ZN.unmanaged) { const d = el('div'); d.style.cssText = 'padding:2px 6px;color:var(--dim)'; d.textContent = 'line ' + u.line + ': ' + u.text; zListEl.append(d); }
+  }
+  zBody.scrollTop = top;
+}
+// Inline editor of the selected zone: x, y, w, h, bg, toBg. A field commits on change.
+function zEditor(e) {
+  const d = el('div'); d.style.cssText = 'padding:3px 6px 5px 22px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;background:#173a4d55';
+  const mk = key => { const i = el('input'); i.type = 'number'; i.step = 1; i.value = e[key]; i.className = 'znEd'; i.dataset.k = key; i.style.cssText = 'width:64px;background:#0f1115;border:1px solid var(--line);border-radius:3px';
+    i.onchange = () => { e[key] = i.value === '' ? NaN : +i.value; renderZones(); repaintAll(); }; return i; };
+  const ms = key => { const s = el('select'); s.className = 'znEd'; s.dataset.k = key; for (let v = 1; v <= 3; v++) { const o = el('option'); o.value = v; o.textContent = 'BG' + v; s.append(o); } s.value = e[key];
+    s.onchange = () => { e[key] = +s.value; renderZones(); repaintAll(); }; return s; };
+  d.append('x', mk('x'), 'y', mk('y'), 'w', mk('w'), 'h', mk('h'), 'bg', ms('bg'), 'toBg', ms('toBg'));
+  return d;
+}
+function zInfoLines(room) {
+  const zs = ZN.loaded ? zRoomZones(room) : [];
+  if (!zs.length) return [];
+  const t = ['', 'Zone depth fixes of this room (port_zone_depth.inc, ' + zs.length + '):'];
+  for (const z of zs) t.push('  ' + zText(z) + '   // ' + zLabel(z));
+  return t;
+}
+
 // ---------------------------------------------------------------- left list
 const isOpen = a => S.groupsOpen[a.id] !== undefined ? !!S.groupsOpen[a.id] : !!(S.room && S.room._a === a);
 function buildList() {
@@ -1781,6 +2048,9 @@ function openRoom(area, id, push) {
   try { const u = new URL(location.href); u.searchParams.set('room', S.key); history.replaceState(null, '', u); } catch (e) { }
   updateTop(); updateLayerChecks(); updateLayerTitles(); autoMinHidden();
   renderEntityKinds(); renderEntityList(); renderInfo(); renderDepth();
+  if (ZN.sel && (ZN.sel.area !== room._a.id || ZN.sel.room !== room.id)) ZN.sel = null;
+  ZN.rect = null;
+  renderZones();
   buildList(); scrollToCurrent();
   for (const v of S.views) if (v.win.state === 'open') { v.resize(); }
   fitAll();
@@ -1850,7 +2120,7 @@ function start(maps) {
   for (const a of S.areas) for (const r of a.rooms) { r._a = a; S.byKey.set(roomKey(a.id, r.id), r); }
   const o = store('opts'); if (o) Object.assign(S, { entities: o.entities !== false, labels: o.labels !== false, grid: !!o.grid, sync: o.sync !== false, sprOn: o.sprites !== false });
   buildTop();
-  buildResult(); buildLayer('BG2'); buildLayer('BG1'); buildLayer('BG3'); buildMap(); buildEntities(); buildInfo(); buildDepth();
+  buildResult(); buildLayer('BG2'); buildLayer('BG1'); buildLayer('BG3'); buildMap(); buildEntities(); buildInfo(); buildDepth(); buildZones();
   if (store('listHidden')) $('#listB').click();
   applyLayout(false); syncCtl();
   $('#q').oninput = buildList;
@@ -1868,9 +2138,9 @@ function start(maps) {
   const testMode = new URL(location.href).searchParams.has('test');
   if (testMode) SV.persist = false;   // the self-checks never write a file
   const sprLoaded = ensureSprites();
-  const svLoaded = svLoad(), dpLoaded = dpLoad();
+  const svLoaded = svLoad(), dpLoaded = dpLoad(), znLoaded = zLoad();
   requestAnimationFrame(() => { fitAll(); if (mapPane) { mapPane.fit(); mapPane.paint(); } });
-  if (testMode) sprLoaded.then(() => Promise.all([svLoaded, dpLoaded])).then(runTests);
+  if (testMode) sprLoaded.then(() => Promise.all([svLoaded, dpLoaded, znLoaded])).then(runTests);
 }
 
 // ---------------------------------------------------------------- self-checks (?test)
@@ -2018,6 +2288,52 @@ async function runTests() {
     chk(S.key === '20-00' && S.sel.objs.size === 1, 'depth: clicking an entry jumps to a room with that kind/id/type and selects it');
     DP.force = saveForce; DP.scope = saveScope;
     await dpLoad(); clearSel();
+  }
+  // the ZONES window: checks, what SAVE sends, snapping, the overlay and the illustration
+  {
+    const saveWork = ZN.work, saveBase = ZN.base, saveSel = ZN.sel, saveLoaded = ZN.loaded, saveRect = ZN.rect, savePar = ZN.parallax, savePrev = ZN.preview, wasState = wins.ZONES.state;
+    const Z = (o) => Object.assign({ area: 2, room: 0, bg: 2, x: 272, y: 864, w: 16, h: 16, toBg: 1 }, o);
+    chk(zCheck(Z()).errs.length === 0 && zCheck(Z()).warns.length === 0, 'zones: the first example (02-00, BG2 -> BG1 at 272,864 16x16) is valid');
+    chk(zCheck(Z({ bg: 1 })).errs.length === 1 && zCheck(Z({ x: 1000 })).errs.length === 1 && zCheck(Z({ area: 0xFE })).errs.length === 1 && zCheck(Z({ toBg: 4 })).errs.length === 1 && zCheck(Z({ w: 0 })).errs.length === 1 && zCheck(Z({ x: NaN })).errs.length === 1,
+      'zones: bg == toBg, outside the room, unknown room, toBg 4, empty and NaN are errors');
+    chk(zCheck(Z({ x: 992 })).errs.length === 0 && zCheck(Z({ x: 993 })).errs.length === 1, 'zones: a rectangle may touch the room\'s edge, not cross it');
+    chk(zCheck(Z({ toBg: 3 })).warns.length === 1 && zCheck(Z({ toBg: 3 })).errs.length === 0, 'zones: a layer the room does not define (BG3 of 02-00) is a warning, not an error');
+    ZN.base = [Z({ x: 0 }), Z({ x: 16 }), Z({ x: 32, toBg: 3 })]; ZN.work = zClone(ZN.base);
+    let o = zOps(); chk(o.set.length === 0 && o.remove.length === 0 && zDirty() === 0, 'zones: no change, no operations');
+    ZN.work[2].toBg = 1; o = zOps(); chk(o.set.length === 1 && o.set[0].x === 32 && o.set[0].toBg === 1 && o.remove.length === 0, 'zones: changing toBg sends one set');
+    ZN.work[1].w = 32; o = zOps(); chk(o.set.length === 2 && o.remove.length === 1 && o.remove[0].x === 16 && o.remove[0].w === 16, 'zones: editing a rectangle is a remove of the old key plus a set of the new');
+    ZN.work.splice(0, 1); o = zOps(); chk(o.remove.length === 2 && zDirty() === 4, 'zones: removing a zone sends a remove');
+    ZN.work = zClone(ZN.base); ZN.work.push(Z({ x: 0 }));
+    chk(zCheck(ZN.work[3], ZN.work).errs.some(m => /twice/.test(m)), 'zones: the same rectangle twice is an error');
+    const rm = S.byKey.get('02-00'), sr = (ax, ay, bx, by, sn) => JSON.stringify(zSnapRect({ x: ax, y: ay }, { x: bx, y: by }, sn, rm));
+    chk(sr(275, 868, 275, 868, 8) === '{"x":272,"y":864,"w":8,"h":8}' && sr(275, 868, 275, 868, 16) === '{"x":272,"y":864,"w":16,"h":16}', 'zones: a click is one cell, 8 or 16 px');
+    chk(sr(290, 880, 270, 860, 8) === '{"x":264,"y":856,"w":32,"h":32}' && sr(-50, -50, 3, 3, 16) === '{"x":0,"y":0,"w":16,"h":16}' && sr(1000, 950, 2000, 2000, 16) === '{"x":992,"y":944,"w":16,"h":16}', 'zones: a drag covers whole cells, in either direction, and stays inside the room');
+    // the overlay and the illustration in RESULT
+    openRoom(2, 0, false);
+    ZN.loaded = true; ZN.base = []; ZN.work = [Z({ x: 240, y: 832, w: 96, h: 64 })]; ZN.sel = null; ZN.rect = null; ZN.preview = true; ZN.parallax = false;
+    wins.ZONES.setState('open');
+    const rv = wins.RESULT.view; rv.fit(); rv.s = 4; rv.centerOn(288, 864);
+    const px = () => { const x = Math.round(rv.ox + 240 * rv.s), y = Math.round(rv.oy + 832 * rv.s); return fnv(rv.ctx.getImageData(x, y, 96 * rv.s, 64 * rv.s).data); };
+    ZN.preview = false; rv.paint(); const hPlain = px();
+    ZN.preview = true; rv.paint(); const hOutline = px();
+    chk(hPlain !== hOutline, 'zones: the outline is drawn over a zone of the room (and not when switched off)');
+    ZN.preview = false; ZN.parallax = false; rv.paint(); const h0 = px();
+    ZN.parallax = true; rv.paint(); const h1 = px();
+    chk(h0 !== h1, 'zones: the illustration shifts the zone\'s layer and changes the pixels inside it');
+    const ow = rv.ctx.getImageData(Math.round(rv.ox + 100 * rv.s), Math.round(rv.oy + 100 * rv.s), 8, 8).data;
+    ZN.parallax = false; rv.paint(); const ow0 = rv.ctx.getImageData(Math.round(rv.ox + 100 * rv.s), Math.round(rv.oy + 100 * rv.s), 8, 8).data;
+    chk(fnv(ow) === fnv(ow0), 'zones: the illustration leaves pixels outside every zone alone');
+    chk(zShift(Z({ bg: 2, toBg: 1 })) === 2 && zShift(Z({ bg: 1, toBg: 2 })) === -2, 'zones: the illustration moves a layer taken towards the viewer to the right, away to the left');
+    chk(zInfoLines(S.room).some(l => l.indexOf('PORT_ZONE_DEPTH(0x02, 0x00, 2, 240, 832, 96, 64, 1)') >= 0) && infoText().indexOf('Zone depth fixes of this room') >= 0, 'zones: COPY INFO lists the room\'s zones');
+    // list, selection, jump
+    renderZones();
+    chk(document.querySelector('#znBadge').textContent.indexOf('UNSAVED') === 0 && !document.querySelector('#znSave').disabled, 'zones: the unsaved badge shows and SAVE is enabled');
+    ZN.work.push(Z({ area: 0x20, x: 16, y: 16, bg: 2, toBg: 3 }));
+    openRoom(0, 0, false); zSelect(ZN.work[1], true);
+    chk(S.key === '20-00' && ZN.sel === ZN.work[1], 'zones: clicking a zone of another room opens that room and selects it');
+    chk(document.querySelectorAll('.znEd').length === 6, 'zones: the selected zone shows its six editable fields');
+    ZN.work = saveWork; ZN.base = saveBase; ZN.sel = saveSel; ZN.loaded = saveLoaded; ZN.rect = saveRect; ZN.parallax = savePar; ZN.preview = savePrev; wins.ZONES.setState(wasState);
+    renderZones(); repaintAll();
   }
   // layers the game hides: their windows start minimised, and reopen with the next room that shows them
   openRoom(0x20, 0, false);

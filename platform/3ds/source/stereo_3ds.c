@@ -1,6 +1,8 @@
 #include "stereo_3ds.h"
 
 #include "port_ppu_gpu_3ds_model.h"
+#include "zone_depth_3ds.h"
+#include "port_ppu_gpu_3ds.h"
 #include "tmc3ds_build_config.h"
 #if TMC3DS_DEBUG_TOOLS
 #include "debug_log_3ds.h"
@@ -63,6 +65,10 @@ void Stereo3DS_BeginFrame(void) {
         for (unsigned layer = 0; layer < 5 && !sHasDepth; ++layer)
             for (unsigned priority = 0; priority < 4; ++priority)
                 if (kDepth[layer][priority] != 0) sHasDepth = true;
+    /* The current room's zone depth fixes (port_zone_depth.inc), only in the world scene with 3D on, or with a PLANE
+     * TINT view up (it paints them at their plane with the slider down too). */
+    ZoneDepth3DS_BeginFrame((sHasDepth && Stereo3DS_WorldScene()) ||
+                            (PortPpuGpu3DS_TintMode() != 0 && (sScenesAny & SCENE_WORLD) != 0));
 }
 
 bool Stereo3DS_Active(void) { return sActive; }

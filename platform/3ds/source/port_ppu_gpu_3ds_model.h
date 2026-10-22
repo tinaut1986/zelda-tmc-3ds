@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cpu/mode1.h"
+#include "zone_depth_3ds.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -273,6 +274,10 @@ typedef struct PpuGpu3DSFrameView {
     /* Which entity wrote each OAM entry (virtuappu_mode1_obj_group; 0: none): an entity's entries share one support. */
     const uint8_t* objGroup;
     uint8_t bgDepthQ[4][4];
+    /* The zone depth fixes on this frame (zone_depth_3ds.h): a sprite resting on a zone's pixels takes the zone's plane
+     * (toBg's depth) instead of its layer's. NULL / 0: none, nothing is looked up. */
+    const ZoneDepth3DSZone* depthZones;
+    unsigned depthZoneCount;
     /* A uniform screen fade the renderer applies itself (docs/gpu-fade.md):
      * `memory`'s palettes are then the unfaded ones and the finished picture is
      * blended toward grey `fadeLevel` by fadeWeight/255. 0 weight: none. */
