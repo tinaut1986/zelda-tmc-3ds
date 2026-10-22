@@ -112,6 +112,51 @@ scenes below override it for their layers. The values are in pixels at the full 
   the boss cut into many small batches some of those draws were lost (two rows of tiles of its legs, in one eye, in ~4 % of the
   frames; 0 of 116 with the change, 5 of 122 without, alternating the two on the console).
 
+## Zone depth fixes
+
+A layer is all the PPU can move, and some art is split between layers: in Hyrule Town (area 0x02, room 0x00) the log
+hut's roof is BG1 (raised, `stereo_world_bg1`), but one 16x16 cell of it is a hole in BG1 where BG2, the ground's layer,
+shows the roof's little chick, which then sat on the ground's plane inside the raised roof. A zone depth fix draws a
+rectangle of one layer at another layer's plane. They are hand-curated in `platform/3ds/source/port_zone_depth.inc`
+(optional, like `port_sprite_depth.inc`; the layer workbench in `tools/layer-workbench/` edits it too):
+
+    PORT_ZONE_DEPTH(area, room, bg, x, y, w, h, toBg)
+
+- `area`, `room`: the room (`gRoomControls.area` / `.room`), numbers, hex ok.
+- `bg`: 1, 2 or 3, the layer whose pixels in the rectangle are moved.
+- `x`, `y`, `w`, `h`: the rectangle in room pixels, from the room's origin (multiples of 8 in practice, 16 for a metatile).
+- `toBg`: 1, 2 or 3, not `bg`: the layer whose plane (its depth, so its shift for each eye) the rectangle takes.
+
+The chick's fix is `PORT_ZONE_DEPTH(0x02, 0x00, 2, 272, 864, 16, 16, 1)`: BG1's hole is metatile column 17, row 54 of
+the room (BG1 block 0x0000 between 0x0490 and 0x0492).
+
+How it works (`zone_depth_3ds.c`, `zone_depth_3ds.h`, `port_ppu_gpu_3ds.c`):
+
+- **When.** Only in the world scene with 3D on (`Stereo3DS_BeginFrame` calls `ZoneDepth3DS_BeginFrame` with the slider up and
+  scene bit 128), only while the current room is the fix's, and only when the two layers have different shifts in either
+  eye (3D WORLD off, or both layers on one plane: nothing is drawn). The room's fixes are looked up when the room changes;
+  a room with none costs one compare a frame. 16 fixes per room at most. The software renderer is flat and ignores them.
+- **Where.** The rectangle follows the layer's pixels: the room's origin in the frame is `origin - scroll` of the frame,
+  with the scroll the layer's own offset registers (`gIoMem`, the frame's) say (`ZoneDepth3DS_FrameScroll`: the game writes
+  the low four bits of `scroll - origin`, plus 8 on y, plus any shake, and the registers can be a tick behind the camera),
+  as `Port_Widescreen_ContentRects` does. In Full View the frame is the whole 400x240 view and the scroll its corner, so a
+  room narrower than the view (resting at a positive origin) and the 240x160 view are the same arithmetic.
+- **How it is drawn.** The batches of `bg` are drawn once more, each with its
+  scissor cut to the rectangle and to its own lines and columns, moved by `toBg`'s shift for the eye, art and scissor
+  together (`ZoneDepth3DS_BatchScissor`; host test `platform/3ds/tests/zone_depth_3ds_test.c`). They go right after the
+  last batch of whichever of the two layers is drawn later (`ZoneDraw.anchor`): the copy covers `bg`'s own picture, and
+  what the game draws in front of that (BG0, the sprites of a higher priority) still covers the copy. It is drawn in the
+  pass that draws its anchor (over one base: the eyes' pass when the anchor is a layer in front), with no depth write, like
+  every background. A copy that moves but whose anchor is on the screen plane would need a shift the base has not: that
+  frame is drawn whole (reason 8).
+- **No seam, no black line.** The hole in `toBg` and the copy move by the same whole pixels in each eye, so the copy fills
+  the moved hole exactly; the strip the copy uncovers at its other side shows `bg`'s own unmoved picture drawn under it
+  (which is what was there), and the other side of the moved hole is `toBg`'s own art. Nothing is copied or edited in VRAM.
+- **Limits.** One rectangle of one layer; the copy's transparent texels show what is under it (the layer's unmoved
+  picture), so a rectangle should cover whole opaque cells. A `bg` batch that blends (an alpha first target) blends again
+  over its own copy. The layer's priority is taken from its last batch of the frame (a layer that changes priority
+  between bands takes one). While the camera crosses into another room the fixes are the current room's.
+
 ## What Link holds up or throws
 
 A sprite rather than a layer. The treasure Link shows when he gets one (`LINK_HOLDING_ITEM`) stands 4 px in
@@ -151,7 +196,8 @@ eye (reason 4). The software renderer leaves them flat.
     not move and they are drawn over one base), a sprite in front blends (3: the GBA blends it with the
     background, never with the lower sprite the base would have under it; a semi-transparent sprite with
     no second target in BLDCNT does not blend and does not count), `gpu_scissor_mode` is 0
-    (7), or the debug poke `gPpuGpu3DSEyesWhole 01` asks for it (5, to compare).
+    (7), the debug poke `gPpuGpu3DSEyesWhole 01` asks for it (5, to compare), or a zone depth fix that moves is
+    anchored to a layer on the screen plane (8, "Zone depth fixes").
 
   The whole frame twice doubled the GPU's work: 9.0 ms a frame in 2D, 17.1 ms in 3D in the Deepwood
   Shrine's dark room, 12.6 ms over one base (PLAN, decisions log 2026-10-18). With no depth at all

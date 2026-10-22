@@ -1,0 +1,147 @@
+/* Host test of the zone depth fixes' arithmetic (platform/3ds/source/zone_depth_3ds.h): the frame's scroll read back from
+ * a layer's offset registers, a fix placed in the frame (a room at a positive origin in Full View, scrolled past), the
+ * scissor of a batch redrawn for a zone (cut by the batch, by the frame, moved for each eye), empty and negative sizes;
+ * and every line of platform/3ds/source/port_zone_depth.inc parsed through the same macro the game uses and checked.
+ *
+ *   cc -std=c11 -Wall -Wextra -Iplatform/3ds/source platform/3ds/tests/zone_depth_3ds_test.c -o /tmp/zone_depth_3ds_test
+ *   /tmp/zone_depth_3ds_test
+ */
+#include "zone_depth_3ds.h"
+
+#include <stdio.h>
+
+#define CHECK(expr)                                                        \
+    do {                                                                   \
+        if (!(expr)) {                                                     \
+            fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #expr);        \
+            return 1;                                                      \
+        }                                                                  \
+    } while (0)
+
+#define PORT_ZONE_DEPTH(area, room, bg, x, y, w, h, toBg) \
+    { (uint8_t)(area), (uint8_t)(room), (uint8_t)(bg), (uint8_t)(toBg), (int16_t)(x), (int16_t)(y), (int16_t)(w), (int16_t)(h) },
+static const ZoneDepth3DSFix kTable[] = {
+#include "port_zone_depth.inc"
+};
+#undef PORT_ZONE_DEPTH
+
+static bool same(ZoneDepth3DSRect r, int left, int top, int right, int bottom) {
+    return r.left == left && r.top == top && r.right == right && r.bottom == bottom;
+}
+
+/* The game's registers for a scroll (UpdateScreenShake): low four bits of (scroll - origin), plus 8 on y. */
+static unsigned hofs(int scroll, int origin) { return (unsigned)((scroll - origin) & 0xf); }
+static unsigned vofs(int scroll, int origin) { return (unsigned)(((scroll - origin) & 0xf) + ZONE_DEPTH_3DS_VOFS_BIAS); }
+
+static int test_frame_scroll(void) {
+    /* Registers in step with the camera: the scroll itself. */
+    for (int scroll = -40; scroll < 600; ++scroll) {
+        CHECK(ZoneDepth3DS_FrameScroll(scroll, 480, hofs(scroll, 480), 0) == scroll);
+        CHECK(ZoneDepth3DS_FrameScroll(scroll, 480, vofs(scroll, 480), ZONE_DEPTH_3DS_VOFS_BIAS) == scroll);
+    }
+    /* The registers a tick behind (or ahead of) the camera, up to 7 px: the frame's scroll, not the camera's. */
+    for (int lag = -8; lag <= 7; ++lag)
+        for (int scroll = 100; scroll < 140; ++scroll) {
+            CHECK(ZoneDepth3DS_FrameScroll(scroll, 16, hofs(scroll + lag, 16), 0) == scroll + lag);
+            CHECK(ZoneDepth3DS_FrameScroll(scroll, 16, vofs(scroll + lag, 16), ZONE_DEPTH_3DS_VOFS_BIAS) == scroll + lag);
+        }
+    /* Registers wider than four bits (a screen shake's negative offset as a u16) read only their low bits. */
+    CHECK(ZoneDepth3DS_FrameScroll(200, 0, (unsigned)(uint16_t)(hofs(198, 0) + 0xfff0u), 0) == 198);
+    return 0;
+}
+
+static int test_screen_rect(void) {
+    const ZoneDepth3DSFix chick = { 0x02, 0x00, 2, 1, 272, 864, 16, 16 };
+    ZoneDepth3DSRect r;
+    /* Hyrule Town's origin (1488, 1520), the camera at (1600, 2300): the chick's cell at (160, 84) of the frame. */
+    CHECK(ZoneDepth3DS_ScreenRect(&chick, 1488 - 1600, 1520 - 2300, &r));
+    CHECK(same(r, 160, 84, 176, 100));
+    /* Full View with a room narrower than the view: its origin rests at a positive x of the frame. */
+    const ZoneDepth3DSFix small = { 0x20, 0x00, 1, 2, 8, 16, 32, 8 };
+    CHECK(ZoneDepth3DS_ScreenRect(&small, 72, 0, &r));
+    CHECK(same(r, 80, 16, 112, 24));
+    /* No area: nothing. */
+    const ZoneDepth3DSFix flatW = { 0, 0, 1, 2, 8, 8, 0, 8 }, negH = { 0, 0, 1, 2, 8, 8, 8, -8 };
+    CHECK(!ZoneDepth3DS_ScreenRect(&flatW, 0, 0, &r));
+    CHECK(!ZoneDepth3DS_ScreenRect(&negH, 0, 0, &r));
+    CHECK(!ZoneDepth3DS_FixValid(&flatW) && !ZoneDepth3DS_FixValid(&negH));
+    const ZoneDepth3DSFix sameLayer = { 0, 0, 2, 2, 0, 0, 8, 8 }, bg0 = { 0, 0, 0, 1, 0, 0, 8, 8 }, bg4 = { 0, 0, 1, 4, 0, 0, 8, 8 };
+    CHECK(!ZoneDepth3DS_FixValid(&sameLayer) && !ZoneDepth3DS_FixValid(&bg0) && !ZoneDepth3DS_FixValid(&bg4));
+    CHECK(ZoneDepth3DS_FixValid(&chick));
+    return 0;
+}
+
+static int test_batch_scissor(void) {
+    const ZoneDepth3DSRect zone = { 160, 84, 176, 100 };
+    ZoneDepth3DSRect s;
+    /* A batch covering the whole 400x240 view: the zone, moved by each eye's shift (left +1, right 0; left +2, right -1). */
+    CHECK(ZoneDepth3DS_BatchScissor(&zone, 0, 400, 0, 240, 1, 400, 240, &s) && same(s, 161, 84, 177, 100));
+    CHECK(ZoneDepth3DS_BatchScissor(&zone, 0, 400, 0, 240, 0, 400, 240, &s) && same(s, 160, 84, 176, 100));
+    CHECK(ZoneDepth3DS_BatchScissor(&zone, 0, 400, 0, 240, 2, 400, 240, &s) && same(s, 162, 84, 178, 100));
+    CHECK(ZoneDepth3DS_BatchScissor(&zone, 0, 400, 0, 240, -1, 400, 240, &s) && same(s, 159, 84, 175, 100));
+    /* A band of lines and a window region: only their part of the zone, then moved. */
+    CHECK(ZoneDepth3DS_BatchScissor(&zone, 0, 400, 90, 120, 1, 400, 240, &s) && same(s, 161, 90, 177, 100));
+    CHECK(ZoneDepth3DS_BatchScissor(&zone, 168, 400, 0, 240, 1, 400, 240, &s) && same(s, 169, 84, 177, 100));
+    /* Bands that miss the zone: nothing. */
+    CHECK(!ZoneDepth3DS_BatchScissor(&zone, 0, 400, 0, 84, 1, 400, 240, &s));
+    CHECK(!ZoneDepth3DS_BatchScissor(&zone, 0, 400, 100, 160, 1, 400, 240, &s));
+    CHECK(!ZoneDepth3DS_BatchScissor(&zone, 0, 160, 0, 240, 1, 400, 240, &s));
+    /* Partly off the frame: cut by the batch's own columns (the layer's place), moved, then cut by the frame. At the
+     * left edge a +1 move leaves column 0 to the layer's own unmoved picture, as the layer's moved batches do. */
+    const ZoneDepth3DSRect left = { -10, -4, 6, 12 }, right = { 392, 232, 408, 248 };
+    CHECK(ZoneDepth3DS_BatchScissor(&left, 0, 400, 0, 240, 1, 400, 240, &s) && same(s, 1, 0, 7, 12));
+    CHECK(ZoneDepth3DS_BatchScissor(&left, 0, 400, 0, 240, -1, 400, 240, &s) && same(s, 0, 0, 5, 12));
+    CHECK(ZoneDepth3DS_BatchScissor(&right, 0, 400, 0, 240, 1, 400, 240, &s) && same(s, 393, 232, 400, 240));
+    /* A 240x160 frame: the same zone at the right edge of a smaller view. */
+    CHECK(ZoneDepth3DS_BatchScissor(&right, 0, 240, 0, 160, 1, 240, 160, &s) == false);
+    const ZoneDepth3DSRect edge = { 232, 150, 248, 166 };
+    CHECK(ZoneDepth3DS_BatchScissor(&edge, 0, 240, 0, 160, 1, 240, 160, &s) && same(s, 233, 150, 240, 160));
+    /* Wholly off the frame, or moved off it: nothing. */
+    const ZoneDepth3DSRect off = { -20, 10, -4, 26 }, edgeOut = { 399, 10, 400, 26 };
+    CHECK(!ZoneDepth3DS_BatchScissor(&off, 0, 400, 0, 240, 1, 400, 240, &s));
+    CHECK(!ZoneDepth3DS_BatchScissor(&edgeOut, 0, 400, 0, 240, 1, 400, 240, &s));
+    /* Empty or inverted zones (never placed, but the clip must not turn them into something). */
+    const ZoneDepth3DSRect empty = { 50, 50, 50, 60 }, inverted = { 60, 60, 50, 50 };
+    CHECK(!ZoneDepth3DS_BatchScissor(&empty, 0, 400, 0, 240, 1, 400, 240, &s));
+    CHECK(!ZoneDepth3DS_BatchScissor(&inverted, 0, 400, 0, 240, 1, 400, 240, &s));
+    return 0;
+}
+
+/* The moved copy fills the hole the moved toBg leaves exactly: for each eye the zone's scissor is the hole's place in
+ * that layer moved by the same shift, so no column of the hole is left uncovered and none of its neighbours is covered. */
+static int test_hole_filled(void) {
+    const ZoneDepth3DSRect zone = { 160, 84, 176, 100 };
+    for (int shift = -6; shift <= 6; ++shift) {
+        ZoneDepth3DSRect s;
+        CHECK(ZoneDepth3DS_BatchScissor(&zone, 0, 400, 0, 240, shift, 400, 240, &s));
+        CHECK(s.left == zone.left + shift && s.right == zone.right + shift);
+        CHECK(s.top == zone.top && s.bottom == zone.bottom);
+    }
+    return 0;
+}
+
+static int test_table(void) {
+    const unsigned count = (unsigned)(sizeof(kTable) / sizeof(kTable[0]));
+    CHECK(count >= 1);
+    bool chick = false;
+    for (unsigned i = 0; i < count; ++i) {
+        const ZoneDepth3DSFix* fix = &kTable[i];
+        if (!ZoneDepth3DS_FixValid(fix)) {
+            fprintf(stderr, "port_zone_depth.inc entry %u is not valid (bg %u toBg %u size %dx%d)\n", i, fix->bg,
+                    fix->toBg, fix->w, fix->h);
+            return 1;
+        }
+        CHECK(fix->x >= 0 && fix->y >= 0);
+        if (fix->area == 0x02 && fix->room == 0x00 && fix->bg == 2 && fix->toBg == 1 && fix->x == 272 && fix->y == 864 &&
+            fix->w == 16 && fix->h == 16)
+            chick = true;
+    }
+    CHECK(chick);
+    return 0;
+}
+
+int main(void) {
+    if (test_frame_scroll() || test_screen_rect() || test_batch_scissor() || test_hole_filled() || test_table()) return 1;
+    printf("zone_depth_3ds_test: ok\n");
+    return 0;
+}
