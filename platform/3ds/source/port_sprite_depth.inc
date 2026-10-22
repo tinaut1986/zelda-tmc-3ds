@@ -16,6 +16,9 @@
  *         PORT_DEPTH_FLAT    no lean at all
  *         PORT_DEPTH_RAISED  no lean, the whole sprite at one raised depth: the one the normal rule gives its top edge
  *                            (the entity's own depth plus the rise of its whole height, feet to top; 20 quarters at most)
+ *         PORT_DEPTH_WALL    picked from where the entity stands in its room: within 24 px of the left, right or bottom
+ *                            edge it is LEFT, RIGHT or DOWN (the nearest wins), anywhere else UP; for door-like sprites
+ *                            that sit in a wall whichever way they face
  *
  * The HUD's sprites (priority 0) ignore every mode. A side lean (LEFT, RIGHT) gives all of its shift to one eye, so its
  * columns never part (docs/stereo-3d.md).
@@ -36,3 +39,7 @@ PORT_SPRITE_DEPTH(OBJECT, MINISH_SIZED_ARCHWAY, 2, PORT_DEPTH_FLAT)
  * the right wall, so the depth follows the wall they are on. */
 PORT_SPRITE_DEPTH(OBJECT, MINISH_SIZED_ARCHWAY, 3, PORT_DEPTH_LEFT)
 PORT_SPRITE_DEPTH(OBJECT, MINISH_SIZED_ARCHWAY, 4, PORT_DEPTH_RIGHT)
+/* Every other archway sits in a wall of its room and faces it whichever way: the wall it stands in decides (the bottom
+ * archway of a room hangs from its top edge, the same fix as the south boss doors). Listed after the exact types above,
+ * the first match wins. */
+PORT_SPRITE_DEPTH(OBJECT, MINISH_SIZED_ARCHWAY, PORT_ANY_TYPE, PORT_DEPTH_WALL)

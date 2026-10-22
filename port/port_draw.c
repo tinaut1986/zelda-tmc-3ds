@@ -69,6 +69,9 @@ static s32 sBossTop = 0x7fffffff, sBossTopNext = 0x7fffffff; /* and its highest 
  *                      its pieces and the depth rises towards the left of the screen
  *   PORT_DEPTH_RIGHT:  the mirror (a wall to its right): ground at the left edge, the depth rising towards the right
  *   PORT_DEPTH_FLAT:   no lean at all
+ *   PORT_DEPTH_WALL:   picked from where the entity stands in its room: within PORT_WALL_MARGIN pixels of the left, right or
+ *                      bottom edge it is LEFT, RIGHT or DOWN (the nearest edge wins), anywhere else UP. For door-like
+ *                      sprites that sit in a wall whichever way they face
  *   PORT_DEPTH_RAISED: no lean, the whole sprite at one raised depth: what the normal rule gives its top edge (the
  *                      entity's own depth plus Port_Config_StereoBodyDepthQ of its whole height, feet to the top of
  *                      its highest piece; 20 quarters at most)
@@ -77,7 +80,7 @@ static s32 sBossTop = 0x7fffffff, sBossTopNext = 0x7fffffff; /* and its highest 
  * PORT_DEPTH_RIGHT, on every piece of the sprite): the GPU model spreads it over the tile columns. */
 enum {
     PORT_DEPTH_UP = 0, PORT_DEPTH_INVERT = 1, PORT_DEPTH_DOWN = PORT_DEPTH_INVERT, PORT_DEPTH_FLAT = 2,
-    PORT_DEPTH_LEFT = 3, PORT_DEPTH_RIGHT = 4, PORT_DEPTH_RAISED = 5, PORT_ANY_TYPE = 0xff
+    PORT_DEPTH_LEFT = 3, PORT_DEPTH_RIGHT = 4, PORT_DEPTH_RAISED = 5, PORT_DEPTH_WALL = 6, PORT_ANY_TYPE = 0xff
 };
 /* The bits of the top depth that say the entry leans across its columns and which way (SPRITE_LEAN_3DS_COLUMNS,
  * SPRITE_LEAN_3DS_RISES_RIGHT) and the raised depth (SpriteLean3DS_RaisedDepth). */
@@ -100,11 +103,24 @@ static const PortSpriteDepthFix sSpriteDepthFixes[1];
 static int sRenderingInvert = 0, sRenderingFlat = 0;
 static int sRenderingSide = 0; /* PORT_DEPTH_LEFT or PORT_DEPTH_RIGHT: the depth rises across the sprite, not up or down */
 static int sRenderingRaised = 0; /* PORT_DEPTH_RAISED: one depth for the whole sprite, its top edge's */
+/* PORT_DEPTH_WALL: the wall the entity stands in, from its place in the room (the nearest of the left, right and bottom
+ * edges within PORT_WALL_MARGIN pixels; the top edge keeps the normal rule). */
+enum { PORT_WALL_MARGIN = 24 };
+static int WallDepthMode(const Entity* entity) {
+    const int x = entity->x.HALF.HI - gRoomControls.origin_x, y = entity->y.HALF.HI - gRoomControls.origin_y;
+    const int left = x, right = gRoomControls.width - x, bottom = gRoomControls.height - y;
+    int best = PORT_WALL_MARGIN + 1, mode = PORT_DEPTH_UP;
+    if (left >= 0 && left < best) { best = left; mode = PORT_DEPTH_LEFT; }
+    if (right >= 0 && right < best) { best = right; mode = PORT_DEPTH_RIGHT; }
+    if (bottom >= 0 && bottom < best) { best = bottom; mode = PORT_DEPTH_DOWN; }
+    return mode;
+}
+
 static int SpriteDepthMode(const Entity* entity) {
     for (int i = 0; i < PORT_SPRITE_FIXES; ++i) {
         const PortSpriteDepthFix* f = &sSpriteDepthFixes[i];
         if (f->kind == entity->kind && f->id == entity->id && (f->type == PORT_ANY_TYPE || f->type == entity->type))
-            return f->mode;
+            return f->mode == PORT_DEPTH_WALL ? WallDepthMode(entity) : f->mode;
     }
     return 0;
 }
