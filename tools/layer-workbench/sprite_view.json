@@ -1,0 +1,13 @@
+{
+ "entities": [],
+ "format": "tmc-sprite-view",
+ "rules": [
+  {
+   "frame": 1,
+   "id": "DUST",
+   "kind": "ENEMY",
+   "type": 0
+  }
+ ],
+ "version": 1
+}
