@@ -94,7 +94,7 @@ table.f td:first-child{color:var(--dim);white-space:nowrap;width:1%}
 .catDet .strip canvas.def{border-style:dashed}
 .catDet .occ{display:inline-block;margin:0 4px 1px 0;padding:0 4px;border:1px solid var(--line);border-radius:3px;cursor:pointer}
 .catDet .occ:hover{border-color:var(--acc2)}
-.mode-UP{color:#6dff9a}.mode-DOWN{color:#ffd24a}.mode-LEFT{color:#5ad2ff}.mode-RIGHT{color:#c08cff}.mode-FLAT{color:#bbb}.mode-RAISED{color:#ff9a3c}.mode-WALL{color:#ff8ad8}
+.mode-UP{color:#6dff9a}.mode-DOWN{color:#ffd24a}.mode-LEFT{color:#5ad2ff}.mode-RIGHT{color:#c08cff}.mode-FLAT{color:#bbb}.mode-RAISED{color:#ff9a3c}.mode-WALL{color:#ff8ad8}.mode-FIXED{color:#4ad8b0}
 #testbox{position:fixed;left:280px;top:60px;z-index:99997;background:#0b0c0f;border:2px solid var(--acc);padding:8px 12px;max-height:80%;overflow:auto;white-space:pre}
 </style>
 </head>
@@ -1455,11 +1455,18 @@ function renderInfo() {
 // the old PORT_DEPTH_INVERT), LEFT / RIGHT (the ground is the right / left edge, for a sprite on a side wall) or FLAT (no lean).
 // The port takes the FIRST entry of the file that matches (kind, id, and type equal or PORT_ANY_TYPE). The panel keeps a working
 // copy; SAVE sends the difference to serve.py, which edits the file in place (depth_inc.py) and keeps comments and other lines.
-const DP_MODES = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'FLAT', 'RAISED', 'WALL'];
+const DP_MODES = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'FLAT', 'RAISED', 'WALL', 'FIXED'];
+const DP_FIXED_MAX = 20;   // PORT_DEPTH_FIXED(n): n in quarter pixels, 0..20 (port/port_draw.c: 0x40 + n)
+const dpFixedN = v => { v = Math.round(Number(v)); return Number.isFinite(v) ? Math.max(0, Math.min(DP_FIXED_MAX, v)) : 0; };
+// How a mode reads everywhere: FIXED carries its n, FIXED(14). `e` is an entry, an effective-mode result or {mode, n}.
+const dpLabel = e => !e || !e.mode ? 'UP' : e.mode === 'FIXED' ? 'FIXED(' + e.n + ')' : e.mode;
+// Two (mode, n) pairs are the same depth: n only counts for FIXED.
+const dpSame = (a, b) => a.mode === b.mode && (a.mode !== 'FIXED' || a.n === b.n);
 const DP_HELP = { UP: 'ground at the bottom edge, depth grows upwards (the normal rule)', DOWN: 'hangs from the top edge, depth grows downwards (a door in a south wall)',
-  LEFT: 'ground at the right edge, depth grows towards the left (a sprite on a left wall)', RIGHT: 'ground at the left edge, depth grows towards the right (a sprite on a right wall)', FLAT: 'no lean at all', WALL: 'picked from the wall the entity stands in: within 24 px of the left, right or bottom edge of its room it is LEFT, RIGHT or DOWN (the nearest wins), elsewhere UP', RAISED: 'the whole sprite at one constant raised depth (the depth the normal lean gives its top edge), no lean' };
+  LEFT: 'ground at the right edge, depth grows towards the left (a sprite on a left wall)', RIGHT: 'ground at the left edge, depth grows towards the right (a sprite on a right wall)', FLAT: 'no lean at all', WALL: 'picked from the wall the entity stands in: within 24 px of the left, right or bottom edge of its room it is LEFT, RIGHT or DOWN (the nearest wins), elsewhere UP', RAISED: 'the whole sprite at one constant raised depth (the depth the normal lean gives its top edge), no lean',
+  FIXED: 'the whole sprite at an explicit depth of n quarter pixels (0..20) over the entity\'s own depth, no lean: for pieces that must sit on a surface of a known height (PORT_DEPTH_FIXED(n))' };
 const DP = { loaded: false, err: '', path: '', exists: true, base: [], work: [], unmanaged: [], scope: store('dpScope') || 'type', force: false,
-  follow: store('dpFollow') !== false, showAll: !!store('dpShowAll'), msg: '', persist: true, index: null };
+  fixedN: dpFixedN(store('dpFixedN') == null ? 8 : store('dpFixedN')), follow: store('dpFollow') !== false, showAll: !!store('dpShowAll'), msg: '', persist: true, index: null };
 const dpKey = e => e.kind + '/' + e.id + '/' + (e.type == null ? '*' : e.type);
 const dpClone = l => l.map(e => Object.assign({}, e));
 async function dpLoad(keepMsg) {
@@ -1474,35 +1481,36 @@ async function dpLoad(keepMsg) {
 }
 function dpAccept(d) {
   DP.path = d.path; DP.exists = d.exists !== false; DP.unmanaged = d.unmanaged || [];
-  DP.base = (d.entries || []).map(e => ({ kind: e.kind, id: e.id, type: e.type, mode: e.mode, line: e.line, comment: e.comment || [], spelling: e.spelling }));
+  DP.base = (d.entries || []).map(e => ({ kind: e.kind, id: e.id, type: e.type, mode: e.mode, n: e.mode === 'FIXED' ? e.n : undefined, line: e.line, comment: e.comment || [], spelling: e.spelling }));
   DP.work = dpClone(DP.base); DP.loaded = true;
 }
 // The first entry (list order) that matches, like SpriteDepthMode in port/port_draw.c.
 function dpEffective(kind, id, type, list) {
-  for (const e of list || DP.work) if (e.kind === kind && e.id === id && (e.type == null || e.type === type)) return { mode: e.mode, entry: e };
-  return { mode: 'UP', entry: null };
+  for (const e of list || DP.work) if (e.kind === kind && e.id === id && (e.type == null || e.type === type)) return { mode: e.mode, n: e.n, label: dpLabel(e), entry: e };
+  return { mode: 'UP', n: undefined, label: 'UP', entry: null };
 }
 function dpOps() {
   const b = new Map(DP.base.map(e => [dpKey(e), e])), w = new Map(DP.work.map(e => [dpKey(e), e])), set = [], remove = [];
-  for (const [k, e] of w) { const o = b.get(k); if (!o || o.mode !== e.mode) set.push({ kind: e.kind, id: e.id, type: e.type, mode: e.mode }); }
+  for (const [k, e] of w) { const o = b.get(k); if (!o || !dpSame(o, e)) set.push(e.mode === 'FIXED' ? { kind: e.kind, id: e.id, type: e.type, mode: e.mode, n: e.n } : { kind: e.kind, id: e.id, type: e.type, mode: e.mode }); }
   for (const [k, e] of b) if (!w.has(k)) remove.push({ kind: e.kind, id: e.id, type: e.type });
   return { set, remove };
 }
 const dpDirty = () => { const o = dpOps(); return o.set.length + o.remove.length; };
 // Change what an entity of kind/id/type gets: type null edits the PORT_ANY_TYPE entry. An entry that would only restate what
 // the entity already gets (UP with nothing before it) is not written, unless DP.force.
-function dpSet(kind, id, type, mode) { dpSetQuiet(kind, id, type, mode); renderDepth(); repaintAll(); }
-function dpSetQuiet(kind, id, type, mode) {
+function dpSet(kind, id, type, mode, n) { dpSetQuiet(kind, id, type, mode, n); renderDepth(); repaintAll(); }
+function dpSetQuiet(kind, id, type, mode, n) {
+  if (mode === 'FIXED') { n = dpFixedN(n == null ? DP.fixedN : n); DP.fixedN = n; store('dpFixedN', n); } else n = undefined;
   const list = DP.work, i = list.findIndex(e => e.kind === kind && e.id === id && e.type === type);
   let redundant;
   if (type === null) redundant = mode === 'UP';
-  else redundant = mode === dpEffective(kind, id, type, list.filter((e, k) => k !== i)).mode;
+  else redundant = dpSame({ mode, n }, dpEffective(kind, id, type, list.filter((e, k) => k !== i)));
   if (redundant && !DP.force) { if (i >= 0) list.splice(i, 1); }
-  else if (i >= 0) list[i].mode = mode;
+  else if (i >= 0) { list[i].mode = mode; list[i].n = n; }
   else {   // where depth_inc.py puts it: an exact type before the first PORT_ANY_TYPE entry of the kind/id, else last
     let at = list.length;
     if (type !== null) { const a = list.findIndex(e => e.kind === kind && e.id === id && e.type == null); if (a >= 0) at = a; }
-    list.splice(at, 0, { kind, id, type, mode, line: null, comment: [], isNew: true });
+    list.splice(at, 0, { kind, id, type, mode, n, line: null, comment: [], isNew: true });
   }
 }
 function dpRemove(e) { const i = DP.work.indexOf(e); if (i >= 0) DP.work.splice(i, 1); renderDepth(); repaintAll(); }
@@ -1555,7 +1563,7 @@ function dpTargets() {
     if (!sel && !DP.showAll) continue;
     const eff = dpEffective(o.kind, o.src.idName, o.src.type);
     if (!sel && !eff.entry) continue;
-    out.push({ o, mode: eff.mode, sel });
+    out.push({ o, mode: eff.mode, n: eff.n, sel });
   }
   return out;
 }
@@ -1572,7 +1580,7 @@ function dpResolveWall(mode, o, room) {
   return m;
 }
 function dpDir(mode, choice) {
-  let d = { UP: [0, -1], DOWN: [0, 1], LEFT: [-1, 0], RIGHT: [1, 0], FLAT: [0, 0], RAISED: [0, 0], WALL: [0, 0] }[mode].slice();
+  let d = { UP: [0, -1], DOWN: [0, 1], LEFT: [-1, 0], RIGHT: [1, 0], FLAT: [0, 0], RAISED: [0, 0], WALL: [0, 0], FIXED: [0, 0] }[mode].slice();
   if (DP.follow && choice) {
     if (choice.flipX) d[0] = -d[0];
     if (choice.flipY) d[1] = -d[1];
@@ -1586,20 +1594,21 @@ function paintDepthOverlay(ctx, view, t) {
   const w = pic ? pic.w : 16, h = pic ? pic.h : 16, ox = pic ? pic.ox : -8, oy = pic ? pic.oy : -16;
   const d = dpDir(dpResolveWall(t.mode, t.o, S.room), sp && sp.choice), s = view.s;
   const x = view.ox + (t.o.x + ox) * s, y = view.oy + (t.o.y + oy) * s;
-  const oc = dpOverlayCanvas(pic, d, w, h);
+  const oc = dpOverlayCanvas(pic, d, w, h, t.mode === 'FIXED');
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(oc, x, y, w * s, h * s);
   ctx.strokeStyle = t.sel ? '#ffffffa0' : '#ffffff50'; ctx.lineWidth = 1; ctx.setLineDash([3, 2]); ctx.strokeRect(x + .5, y + .5, w * s, h * s); ctx.setLineDash([]);
   dpArrow(ctx, x + w * s / 2, y + h * s / 2, clamp(Math.min(w, h) * s * .45, 10, 48), d);
-  const lab = (t.sel ? 'DEPTH ' : '') + t.mode + (t.sel ? ' (illustration, not a render)' : '');
+  const lab = (t.sel ? 'DEPTH ' : '') + (t.mode === 'FIXED' ? 'FIXED ' + t.n : t.mode) + (t.sel ? ' (illustration, not a render)' : '');
   ctx.font = '10px ui-monospace,Consolas,monospace'; ctx.textBaseline = 'bottom';
   ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(lab, x, y - 2); ctx.fillStyle = '#ffd24a'; ctx.fillText(lab, x, y - 2);
 }
 // The gradient (clear at the ground edge, red at the far edge) over the opaque pixels of pic, w x h; d is the direction from dpDir.
-function dpOverlayCanvas(pic, d, w, h) {
+function dpOverlayCanvas(pic, d, w, h, fixed) {
   const oc = document.createElement('canvas'); oc.width = w; oc.height = h;
   const c = oc.getContext('2d');
-  if (d[0] === 0 && d[1] === 0) { c.fillStyle = 'rgba(170,170,170,.45)'; c.fillRect(0, 0, w, h); }
+  if (fixed) { c.fillStyle = 'rgba(74,216,176,.5)'; c.fillRect(0, 0, w, h); }   // FIXED: one uniform tint, the same depth everywhere
+  else if (d[0] === 0 && d[1] === 0) { c.fillStyle = 'rgba(170,170,170,.45)'; c.fillRect(0, 0, w, h); }
   else {
     const half = (Math.abs(d[0]) * w + Math.abs(d[1]) * h) / 2, cx = w / 2, cy = h / 2;
     const g = c.createLinearGradient(cx - d[0] * half, cy - d[1] * half, cx + d[0] * half, cy + d[1] * half);
@@ -1642,13 +1651,25 @@ function dpEditor(add, kind, id, type, pfx) {
   let how;
   if (!eff.entry) how = 'UP (default: no entry matches)';
   else {
-    how = eff.mode + ' - ' + (eff.entry.type == null ? 'by the PORT_ANY_TYPE entry' : 'by the entry for exactly type ' + type) + (eff.entry.line ? ' (line ' + eff.entry.line + ')' : ' (new)');
+    how = eff.label + ' - ' + (eff.entry.type == null ? 'by the PORT_ANY_TYPE entry' : 'by the entry for exactly type ' + type) + (eff.entry.line ? ' (line ' + eff.entry.line + ')' : ' (new)');
     if (eff.entry.type == null && DP.work.some(e => e.kind === kind && e.id === id && e.type === type)) how += '  - an exact entry for this type exists but comes AFTER it, so the port never reaches it';
   }
   cur.append(el('b', null, 'effective mode: '), how);
   const row = add(); row.style.cssText += ';display:flex;flex-wrap:wrap;gap:4px';
   const target = DP.scope === 'any' ? null : type;
-  for (const m of DP_MODES) row.append(btn(m, DP_HELP[m], () => dpSet(kind, id, target, m), m === (target === null ? (DP.work.find(e => e.kind === kind && e.id === id && e.type == null) || { mode: 'UP' }).mode : eff.mode)));
+  const shown = target === null ? (DP.work.find(e => e.kind === kind && e.id === id && e.type == null) || { mode: 'UP' }) : eff;   // what the buttons show
+  for (const m of DP_MODES) row.append(btn(m, DP_HELP[m], () => dpSet(kind, id, target, m, m === 'FIXED' ? (shown.mode === 'FIXED' ? shown.n : DP.fixedN) : undefined), m === shown.mode));
+  if (shown.mode === 'FIXED') {   // n, only while FIXED is the mode shown: a slider and a number, both written on release/commit
+    const fr = add(); fr.style.cssText += ';display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center';
+    const num = el('input'), sl = el('input');
+    num.type = 'number'; sl.type = 'range'; num.id = pfx + 'FixedN'; sl.id = pfx + 'FixedSlider';
+    for (const i of [num, sl]) { i.min = 0; i.max = DP_FIXED_MAX; i.step = 1; i.value = shown.n; }
+    num.style.width = '56px';
+    sl.oninput = () => { num.value = sl.value; };
+    const commit = v => { const n = dpFixedN(v); if (n !== shown.n) dpSet(kind, id, target, 'FIXED', n); else { num.value = sl.value = n; } };
+    sl.onchange = () => commit(sl.value); num.onchange = () => commit(num.value);
+    fr.append('n (quarter pixels, 0..' + DP_FIXED_MAX + ')', sl, num);
+  }
   const sc = add(); sc.style.cssText += ';display:flex;flex-wrap:wrap;gap:2px 12px';
   sc.append('applies to:');
   for (const [v, text] of [['type', 'this type only (' + type + ')'], ['any', 'any type (PORT_ANY_TYPE)']]) {
@@ -1662,7 +1683,7 @@ function dpEditor(add, kind, id, type, pfx) {
   add().append(el('span', null, DP_HELP[eff.mode]));
   const exact = DP.work.find(e => e.kind === kind && e.id === id && e.type === type), anyE = DP.work.find(e => e.kind === kind && e.id === id && e.type == null);
   const st = add(); st.style.color = 'var(--dim)';
-  st.textContent = 'entries for ' + kind + '/' + id + ': ' + (exact ? 'exact type ' + type + ' = ' + exact.mode : 'none for type ' + type) + '; ' + (anyE ? 'any type = ' + anyE.mode : 'none for any type');
+  st.textContent = 'entries for ' + kind + '/' + id + ': ' + (exact ? 'exact type ' + type + ' = ' + dpLabel(exact) : 'none for type ' + type) + '; ' + (anyE ? 'any type = ' + dpLabel(anyE) : 'none for any type');
 }
 let depthBody;
 function buildDepth() {
@@ -1703,8 +1724,8 @@ function renderDepth() {
   const baseKeys = new Map(DP.base.map(e => [dpKey(e), e]));
   DP.work.forEach((e, i) => {
     const r = el('div', 'er'); r.style.alignItems = 'center';
-    const changed = !baseKeys.has(dpKey(e)) ? 'new' : baseKeys.get(dpKey(e)).mode !== e.mode ? 'changed' : '';
-    const m = el('span'); m.textContent = e.mode; m.style.cssText = 'width:46px;font-weight:bold;color:' + ({ UP: '#6dff9a', DOWN: '#ffd24a', LEFT: '#5ad2ff', RIGHT: '#c08cff', FLAT: '#bbb', RAISED: '#ff9a3c', WALL: '#ff8ad8' })[e.mode];
+    const changed = !baseKeys.has(dpKey(e)) ? 'new' : !dpSame(baseKeys.get(dpKey(e)), e) ? 'changed' : '';
+    const m = el('span'); m.textContent = dpLabel(e); m.style.cssText = 'min-width:46px;font-weight:bold;color:' + ({ UP: '#6dff9a', DOWN: '#ffd24a', LEFT: '#5ad2ff', RIGHT: '#c08cff', FLAT: '#bbb', RAISED: '#ff9a3c', WALL: '#ff8ad8', FIXED: '#4ad8b0' })[e.mode];
     const t = el('span'); t.textContent = e.kind + '/' + e.id + ' ' + (e.type == null ? 'any type' : 'type ' + e.type);
     const sh2 = DP.work.slice(0, i).some(p => p.kind === e.kind && p.id === e.id && p.type == null && e.type != null);
     const x = el('span', 'p'); x.textContent = (e.line ? 'line ' + e.line : '') + (changed ? ' ' + changed.toUpperCase() : '') + (e.spelling === 'PORT_DEPTH_INVERT' && !changed ? ' (INVERT)' : '') + (sh2 ? ' SHADOWED by an earlier any-type entry' : '');
@@ -2001,7 +2022,7 @@ const CAT = { win: null, el: {}, groups: [], byKey: new Map(), built: false, sel
   q: '', kindOff: new Set(store('catKindOff') || []), depth: store('catDepth') || 'any', art: store('catArt') || 'any', wall: !!store('catWall'),
   sort: store('catSort') || 'name', dir: store('catDir') === -1 ? -1 : 1,
   svScope: store('catSvScope') === 'any' ? 'any' : 'type', overlay: store('catOverlay') !== false, illus: null,
-  bulkMode: store('catBulkMode') || 'WALL', bulkScope: store('catBulkScope') === 'any' ? 'any' : 'type',
+  bulkMode: DP_MODES.includes(store('catBulkMode')) ? store('catBulkMode') : 'WALL', bulkScope: store('catBulkScope') === 'any' ? 'any' : 'type',
   stripAll: false, rawOpen: false, roomsAll: false, msg: '', ver: 0, drawnVer: -1, rows: null, rowsVer: -1, detailDirty: true };
 const CAT_WALLS = ['LEFT', 'RIGHT', 'DOWN', 'UP'];
 // Group the rooms' entities by kind/id/type. For each: its occurrences with the direction the port's WALL rule gives them (dpResolveWall,
@@ -2053,7 +2074,7 @@ function catMode(g) {
   if (!g.named) return { mode: 'UP', entry: null, text: 'UP (default; this id has no name, the list cannot address it)', shadowed: false };
   const eff = dpEffective(g.kind, g.id, g.type);
   const shadowed = !!(eff.entry && eff.entry.type == null && DP.work.some(e => e.kind === g.kind && e.id === g.id && e.type === g.type));
-  return { mode: eff.mode, entry: eff.entry, shadowed, text: eff.mode + (eff.entry ? ' (' + (eff.entry.type == null ? 'any type' : 'exact type') + ', ' + (eff.entry.line ? 'line ' + eff.entry.line : 'new') + ')' : ' (default)') + (shadowed ? ' - an exact entry after it is never reached' : '') };
+  return { mode: eff.mode, n: eff.n, label: eff.label, entry: eff.entry, shadowed, text: eff.label + (eff.entry ? ' (' + (eff.entry.type == null ? 'any type' : 'exact type') + ', ' + (eff.entry.line ? 'line ' + eff.entry.line : 'new') + ')' : ' (default)') + (shadowed ? ' - an exact entry after it is never reached' : '') };
 }
 const catWallText = g => CAT_WALLS.filter(k => g.wall[k]).map(k => k + ' ' + g.wall[k]).join(' / ') || 'no positioned entity';
 // What the filters and the sort keep, in order. Memoised on CAT.ver (bumped by every change of data, depth list, picker choice or filter).
@@ -2117,16 +2138,16 @@ function catSvPatch(g, patch) {
 function catSvReset(g) { svWriteRule(g.kind, g.id, g.type, {}); svWriteRule(g.kind, g.id, null, {}); svChanged(); }
 // Apply one mode to every ticked row: for each, the entry of its exact type or (scope 'any') of PORT_ANY_TYPE, through dpSetQuiet: so an
 // entry that only restates what the entity gets anyway is not written, and an exact entry goes before the first any-type one. One render.
-function catApplyBulk(mode, scope) {
+function catApplyBulk(mode, scope, fixedN) {
   const gs = CAT.groups.filter(g => CAT.checked.has(g.key));
   let n = 0, skipped = 0; const seen = new Set();
   for (const g of gs) {
     if (!g.named) { skipped++; continue; }
     const t = scope === 'any' ? null : g.type, k = g.kind + '/' + g.id + '/' + t;
     if (seen.has(k)) continue;
-    seen.add(k); dpSetQuiet(g.kind, g.id, t, mode); n++;
+    seen.add(k); dpSetQuiet(g.kind, g.id, t, mode, fixedN); n++;
   }
-  CAT.msg = n ? mode + ' set for ' + n + (scope === 'any' ? ' kind/id (any type)' : ' kind/id/type') + (n === 1 ? ' entry' : ' entries') + (skipped ? '; ' + skipped + ' without an enum name skipped' : '') + '. Not saved yet: SAVE writes the file.' : 'nothing to apply' + (skipped ? ' (' + skipped + ' without an enum name)' : '');
+  CAT.msg = n ? (mode === 'FIXED' ? 'FIXED(' + DP.fixedN + ')' : mode) + ' set for ' + n + (scope === 'any' ? ' kind/id (any type)' : ' kind/id/type') + (n === 1 ? ' entry' : ' entries') + (skipped ? '; ' + skipped + ' without an enum name skipped' : '') + '. Not saved yet: SAVE writes the file.' : 'nothing to apply' + (skipped ? ' (' + skipped + ' without an enum name)' : '');
   renderDepth(); repaintAll();
   return { n, skipped };
 }
@@ -2170,12 +2191,15 @@ function buildCatalog() {
   const t4 = tb();
   E.all = cbx('catAll', false, v => { for (const g of catRows()) { if (v) CAT.checked.add(g.key); else CAT.checked.delete(g.key); } catRefresh(true); });
   E.nchk = el('span');
-  E.bmode = mkSel(DP_MODES.map(m => [m, m]), CAT.bulkMode, v => { CAT.bulkMode = v; store('catBulkMode', v); }, 'catBulkMode');
+  E.bmode = mkSel(DP_MODES.map(m => [m, m]), CAT.bulkMode, v => { CAT.bulkMode = v; store('catBulkMode', v); E.bn.style.display = v === 'FIXED' ? '' : 'none'; }, 'catBulkMode');
+  E.bn = el('input'); E.bn.type = 'number'; E.bn.min = 0; E.bn.max = DP_FIXED_MAX; E.bn.step = 1; E.bn.id = 'catBulkN'; E.bn.style.width = '52px'; E.bn.value = DP.fixedN;
+  E.bn.title = 'FIXED: n in quarter pixels (0..' + DP_FIXED_MAX + ')'; E.bn.style.display = CAT.bulkMode === 'FIXED' ? '' : 'none';
+  E.bn.onchange = () => { E.bn.value = DP.fixedN = dpFixedN(E.bn.value); store('dpFixedN', DP.fixedN); };
   E.bscope = mkSel([['type', 'each row\'s exact type'], ['any', 'any type (PORT_ANY_TYPE)']], CAT.bulkScope, v => { CAT.bulkScope = v; store('catBulkScope', v); }, 'catBulkScope');
-  E.apply = dpBtn('APPLY', 'set that depth mode for every ticked row (a working copy: SAVE writes the file)', () => catApplyBulk(CAT.bulkMode, CAT.bulkScope)); E.apply.id = 'catApply';
+  E.apply = dpBtn('APPLY', 'set that depth mode for every ticked row (a working copy: SAVE writes the file)', () => catApplyBulk(CAT.bulkMode, CAT.bulkScope, dpFixedN(E.bn.value))); E.apply.id = 'catApply';
   E.none = dpBtn('UNTICK', 'untick every row', () => { CAT.checked.clear(); catRefresh(true); });
   E.force = cbx('catForce', DP.force, v => { DP.force = v; renderDepth(); });
-  t4.append(el('label', null, E.all, ' all listed'), E.nchk, 'set depth', E.bmode, 'for', E.bscope, E.apply, E.none, el('label', null, E.force, ' write even if it equals the default'));
+  t4.append(el('label', null, E.all, ' all listed'), E.nchk, 'set depth', E.bmode, E.bn, 'for', E.bscope, E.apply, E.none, el('label', null, E.force, ' write even if it equals the default'));
   E.bmsg = tb(); E.bmsg.style.cssText += ';display:block;color:var(--ok)';
   E.list = el('div', 'catList'); E.spacer = el('div'); E.spacer.style.cssText = 'position:relative;width:100%'; E.list.append(E.spacer);
   E.list.onscroll = () => catRenderList();
@@ -2277,16 +2301,16 @@ function catRenderDetail() {
   const b1 = blk(); b1.style.cssText += ';display:flex;gap:10px;flex-wrap:wrap';
   const big = el('canvas'); big.id = 'catBig'; big.width = big.height = 176; big.style.cssText = 'flex:none;width:176px;height:176px;border:1px solid var(--line);image-rendering:pixelated';
   const bx = big.getContext('2d'); bx.imageSmoothingEnabled = false; bx.fillStyle = bx.createPattern(checker, 'repeat'); bx.fillRect(0, 0, 176, 176);
-  const eff = m.mode === 'WALL' ? catIllusMode(g, 'WALL') : m.mode;
+  const eff = m.mode === 'WALL' ? catIllusMode(g, 'WALL') : m.mode, effLab = eff === 'FIXED' ? 'FIXED ' + m.n : eff;
   if (pp && pp.pic) {
     const p = pp.pic, s = clamp(Math.floor(160 / Math.max(p.w, p.h)), 1, 8), x0 = Math.round((176 - p.w * s) / 2), y0 = Math.round((176 - p.h * s) / 2);
     bx.drawImage(p.cv, x0, y0, p.w * s, p.h * s);
     if (CAT.overlay) {
       const d = dpDir(eff, pp.choice);
-      bx.drawImage(dpOverlayCanvas(p, d, p.w, p.h), x0, y0, p.w * s, p.h * s);
+      bx.drawImage(dpOverlayCanvas(p, d, p.w, p.h, eff === 'FIXED'), x0, y0, p.w * s, p.h * s);
       dpArrow(bx, x0 + p.w * s / 2, y0 + p.h * s / 2, clamp(Math.min(p.w, p.h) * s * .45, 10, 48), d);
       bx.font = '10px ui-monospace,Consolas,monospace'; bx.textBaseline = 'bottom'; bx.lineWidth = 3; bx.strokeStyle = '#000'; bx.fillStyle = '#ffd24a';
-      bx.strokeText(eff + ' (illustration)', 3, 173); bx.fillText(eff + ' (illustration)', 3, 173);
+      bx.strokeText(effLab + ' (illustration)', 3, 173); bx.fillText(effLab + ' (illustration)', 3, 173);
     }
   } else { bx.fillStyle = '#8a92a6'; bx.font = '11px ui-monospace,Consolas,monospace'; bx.fillText('no picture', 52, 90); }
   b1.append(big);
@@ -2301,7 +2325,7 @@ function catRenderDetail() {
     if (pp.err) line(side, el('span', 'warn', 'cannot draw the choice: ' + pp.err));
   }
   const ov = el('input'); ov.type = 'checkbox'; ov.id = 'catOverlay'; ov.checked = CAT.overlay; ov.onchange = () => { CAT.overlay = ov.checked; store('catOverlay', ov.checked); catRefresh(true); };
-  line(side, el('label', null, ov, ' depth illustration over the picture (mode ' + eff + '; follows the picker\'s flips when "overlay follows" is on in 3D DEPTH)'));
+  line(side, el('label', null, ov, ' depth illustration over the picture (mode ' + effLab + '; follows the picker\'s flips when "overlay follows" is on in 3D DEPTH)'));
   if (m.mode === 'WALL') {
     const s2 = el('select'); s2.id = 'catIllus';
     for (const k of CAT_WALLS) if (g.wall[k]) { const o = el('option'); o.value = k; o.textContent = k + ' (' + g.wall[k] + ')'; s2.append(o); }
@@ -2904,6 +2928,62 @@ async function runTests() {
     reset(); catRender(); chk(CAT.el.spacer.children.length > 5 && CAT.el.spacer.children.length < 60 && parseInt(CAT.el.spacer.style.height) === 688 * CAT_ROW, 'catalog: the list draws only the visible rows (' + CAT.el.spacer.children.length + ' of 688)');
     const t0 = performance.now(); for (let k = 0; k < 20; k++) { CAT.el.list.scrollTop = k * 700; catRenderList(); } const dtl = performance.now() - t0;
     chk(dtl < 1500, 'catalog: 20 scroll steps render in ' + dtl.toFixed(0) + ' ms');
+    // PORT_DEPTH_FIXED(n): mode FIXED plus an integer n
+    {
+      const saveN = DP.fixedN, saveBm = CAT.bulkMode;
+      reset(); DP.force = false; DP.scope = 'type';
+      const F = (n, o) => W(n, Object.assign({ kind: 'NPC', id: 'REM', type: null, mode: 'FIXED', n: 14 }, o));
+      DP.work = [F(56)]; DP.base = dpClone(DP.work);
+      const e0 = dpEffective('NPC', 'REM', 3);
+      chk(e0.mode === 'FIXED' && e0.n === 14 && e0.label === 'FIXED(14)' && dpLabel(DP.work[0]) === 'FIXED(14)' && dpLabel({ mode: 'WALL' }) === 'WALL' && dpLabel(null) === 'UP', 'FIXED: the effective mode reads FIXED(14); other modes keep their name');
+      chk(dpDirty() === 0 && dpSame({ mode: 'FIXED', n: 14 }, { mode: 'FIXED', n: 14 }) && !dpSame({ mode: 'FIXED', n: 14 }, { mode: 'FIXED', n: 12 }) && dpSame({ mode: 'UP' }, { mode: 'UP', n: 3 }), 'FIXED: n counts only for FIXED');
+      dpSet('NPC', 'REM', null, 'FIXED', 12);
+      const o = dpOps();
+      chk(DP.work.length === 1 && DP.work[0].n === 12 && o.set.length === 1 && o.set[0].mode === 'FIXED' && o.set[0].n === 12 && o.remove.length === 0 && dpDirty() === 1, 'FIXED: changing only n is a change (one set, in place), the ops carry n');
+      chk(document.querySelector('#dpBadge').textContent === 'UNSAVED CHANGES (1)', 'FIXED: the badge shows the change');
+      dpSet('NPC', 'REM', null, 'FIXED', 14); chk(dpDirty() === 0, 'FIXED: setting n back is no change');
+      dpSet('NPC', 'REM', null, 'FIXED', 99); chk(DP.work[0].n === 20, 'FIXED: n is clamped to 0..20');
+      dpSet('NPC', 'REM', null, 'FIXED', -4); chk(DP.work[0].n === 0 && dpEffective('NPC', 'REM', 0).label === 'FIXED(0)', 'FIXED: ... and 0 is a valid depth');
+      dpSet('NPC', 'REM', null, 'UP'); chk(DP.work.length === 0 && dpOps().remove.length === 1, 'FIXED -> UP (the default) removes the entry');
+      DP.work = [F(56)]; dpSet('NPC', 'REM', null, 'WALL'); chk(DP.work[0].mode === 'WALL' && DP.work[0].n === undefined && dpOps().set.length === 1 && !('n' in dpOps().set[0]), 'FIXED -> WALL: the n is dropped');
+      dpSet('NPC', 'REM', null, 'FIXED'); chk(DP.work[0].mode === 'FIXED' && DP.work[0].n === DP.fixedN, 'WALL -> FIXED without n uses the last n');
+      DP.work = [F(56)]; DP.base = dpClone(DP.work);
+      dpSet('NPC', 'REM', 4, 'FIXED', 14); chk(DP.work.length === 1 && dpDirty() === 0, 'FIXED: an exact entry equal to the any-type FIXED(14) is not written');
+      dpSet('NPC', 'REM', 4, 'FIXED', 9); chk(DP.work.length === 2 && DP.work[0].type === 4 && DP.work[0].n === 9 && dpEffective('NPC', 'REM', 4).label === 'FIXED(9)' && dpEffective('NPC', 'REM', 5).label === 'FIXED(14)', 'FIXED: an exact FIXED(9) goes before the any-type one and wins for its type');
+      // the DEPTH editor: a numeric field only while FIXED is shown
+      DP.work = [F(56)]; DP.base = dpClone(DP.work);
+      const host = document.createElement('div'), addH = () => { const d = document.createElement('div'); host.append(d); return d; };
+      dpEditor(addH, 'NPC', 'REM', 3, 'tfx');
+      const nf = host.querySelector('#tfxFixedN');
+      chk(nf && nf.value === '14' && nf.min === '0' && nf.max === '20' && host.querySelector('#tfxFixedSlider') && /effective mode: FIXED\(14\)/.test(host.textContent) && [...host.querySelectorAll('button')].some(b => b.textContent === 'FIXED' && b.classList.contains('on')), 'FIXED editor: the n field (0..20) and slider show, the FIXED button is on, the text says FIXED(14)');
+      DP.work = []; host.textContent = ''; dpEditor(addH, 'NPC', 'REM', 3, 'tfx');
+      chk(!host.querySelector('#tfxFixedN'), 'FIXED editor: no n field while another mode is shown');
+      DP.fixedN = 7; [...host.querySelectorAll('button')].find(b => b.textContent === 'FIXED').click();
+      chk(DP.work.length === 1 && DP.work[0].mode === 'FIXED' && DP.work[0].n === 7 && DP.work[0].type === 3, 'FIXED editor: the FIXED button writes FIXED with the remembered n');
+      DP.work = [F(56)]; DP.base = dpClone(DP.work); renderDepth();
+      // the catalog: mode text, filter, COPY LIST, bulk
+      const gr = CAT.groups.find(g => g.named && g.kind === 'NPC' && g.name.indexOf('REM') === 4) || CAT.groups.find(g => g.named && g.kind === 'NPC');
+      DP.work = [F(56, { kind: gr.kind, id: gr.id })]; DP.base = dpClone(DP.work); CAT.ver++;
+      const cm = catMode(gr);
+      chk(cm.mode === 'FIXED' && cm.n === 14 && cm.text === 'FIXED(14) (any type, line 56)', 'catalog: the mode column reads FIXED(14) (any type, line 56)');
+      CAT.depth = 'm:FIXED'; CAT.ver++; chk(catRows().length === CAT.groups.filter(g => g.kind === gr.kind && g.id === gr.id).length && catRows().every(g => g.id === gr.id), 'catalog filter "mode FIXED" keeps the rows with a FIXED rule');
+      CAT.depth = 'any'; CAT.q = gr.name; CAT.ver++;
+      chk(catListText().split('\n').some(l => l.indexOf(gr.name + ' |') === 0 && /\| FIXED\(14\) \(any type, line 56\)/.test(l)), 'catalog COPY LIST: the mode reads FIXED(14)');
+      CAT.q = ''; CAT.ver++; catRender();
+      chk(document.querySelector('#catBulkN') && [...document.querySelectorAll('#catBulkMode option')].some(o => o.value === 'FIXED'), 'catalog: the bulk selector has FIXED and a numeric field');
+      const other = catRows().filter(g => g.named && !(g.kind === gr.kind && g.id === gr.id)).slice(0, 2);
+      DP.work = []; DP.base = []; CAT.checked = new Set(other.map(g => g.key));
+      const rb = catApplyBulk('FIXED', 'type', 11), ob = dpOps();
+      chk(rb.n === 2 && ob.set.length === 2 && ob.set.every(x => x.mode === 'FIXED' && x.n === 11 && x.type !== null) && other.every(g => catMode(g).text === 'FIXED(11) (exact type, new)'), 'catalog bulk: FIXED with n = 11 for two ticked rows');
+      catApplyBulk('FIXED', 'type', 11); chk(DP.work.length === 2 && dpOps().set.length === 2, 'catalog bulk: the same FIXED(n) again changes nothing');
+      catApplyBulk('FIXED', 'type', 5); chk(DP.work.length === 2 && DP.work.every(e => e.n === 5) && dpOps().set.length === 2, 'catalog bulk: another n edits the entries in place');
+      // the illustration: a uniform tint, no arrow
+      const pic = { w: 8, h: 8, ox: 0, oy: 0, cv: (() => { const c = document.createElement('canvas'); c.width = c.height = 8; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 8, 8); return c; })() };
+      const px = cv => { const d = cv.getContext('2d').getImageData(0, 0, 8, 8).data; return [0, 63].map(i => [...d.slice(i * 4, i * 4 + 4)].join()); };
+      const fx = px(dpOverlayCanvas(pic, [0, 0], 8, 8, true)), up = px(dpOverlayCanvas(pic, dpDir('UP'), 8, 8, false));
+      chk(fx[0] === fx[1] && /^74,21[56],17[56],128$/.test(fx[0]) && up[0] !== up[1] && dpDir('FIXED').every(v => v === 0), 'FIXED illustration: one uniform tint (no gradient, no arrow direction)');
+      DP.fixedN = saveN; store('dpFixedN', saveN); CAT.bulkMode = saveBm;
+    }
     // restore
     DP.work = saveWork; DP.base = saveBase; DP.force = saveForce; DP.scope = saveScope; DP.unmanaged = saveUnm; DP.loaded = saveLoaded;
     CAT.q = saveF.q; CAT.kindOff = saveF.kindOff; CAT.depth = saveF.depth; CAT.art = saveF.art; CAT.wall = saveF.wall; CAT.sort = saveF.sort; CAT.dir = saveF.dir; CAT.sel = saveF.sel; CAT.checked = saveF.checked; CAT.bulkMode = saveF.bm; CAT.bulkScope = saveF.bs; CAT.svScope = saveF.svs; CAT.msg = '';

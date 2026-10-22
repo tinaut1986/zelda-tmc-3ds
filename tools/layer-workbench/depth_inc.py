@@ -1,7 +1,8 @@
 """Reader and writer of platform/3ds/source/port_sprite_depth.inc, the port's per-entity stereo depth list.
 
     PORT_SPRITE_DEPTH(kind, id, type, mode)      type: a number or PORT_ANY_TYPE
-    mode: PORT_DEPTH_UP | PORT_DEPTH_DOWN (= PORT_DEPTH_INVERT) | PORT_DEPTH_LEFT | PORT_DEPTH_RIGHT | PORT_DEPTH_FLAT | PORT_DEPTH_RAISED | PORT_DEPTH_WALL
+    mode: PORT_DEPTH_UP | PORT_DEPTH_DOWN (= PORT_DEPTH_INVERT) | PORT_DEPTH_LEFT | PORT_DEPTH_RIGHT | PORT_DEPTH_FLAT | PORT_DEPTH_RAISED | PORT_DEPTH_WALL |
+          PORT_DEPTH_FIXED(n)   n: quarter pixels, 0..20 (in memory: mode 'FIXED' plus an integer `n`)
 
 The file is hand-written and shared with other people (and other tools), so the writer is a minimal-diff editor,
 not a serialiser: it keeps every line it does not manage (the header block, comments, blank lines, entries it does
@@ -26,8 +27,9 @@ import json
 import os
 import re
 
-MODES = ("UP", "DOWN", "LEFT", "RIGHT", "FLAT", "RAISED", "WALL")
-WRITE_MODE = {m: "PORT_DEPTH_" + m for m in MODES}
+MODES = ("UP", "DOWN", "LEFT", "RIGHT", "FLAT", "RAISED", "WALL", "FIXED")
+WRITE_MODE = {m: "PORT_DEPTH_" + m for m in MODES if m != "FIXED"}
+FIXED_MAX = 20              # PORT_DEPTH_FIXED(n): n in quarter pixels, 0..20 (port/port_draw.c encodes 0x40 + n)
 READ_MODE = {"PORT_DEPTH_UP": "UP", "PORT_DEPTH_DOWN": "DOWN", "PORT_DEPTH_INVERT": "DOWN",
              "PORT_DEPTH_LEFT": "LEFT", "PORT_DEPTH_RIGHT": "RIGHT", "PORT_DEPTH_FLAT": "FLAT",
              "PORT_DEPTH_RAISED": "RAISED", "PORT_DEPTH_WALL": "WALL"}
@@ -35,7 +37,7 @@ ANY = "PORT_ANY_TYPE"
 ANY_VALUE = 0xFF            # PORT_ANY_TYPE: no real entity type uses it
 
 _ENTRY = re.compile(r"^(?P<ind>\s*)PORT_SPRITE_DEPTH\(\s*(?P<kind>\w+)\s*,\s*(?P<id>\w+)\s*,\s*(?P<type>\w+)\s*,"
-                    r"\s*(?P<mode>\w+)\s*\)(?P<tail>\s*(?://.*|/\*.*?\*/)?)\s*$")
+                    r"\s*(?P<mode>PORT_DEPTH_FIXED\s*\(\s*(?P<n>\d+)\s*\)|\w+)\s*\)(?P<tail>\s*(?://.*|/\*.*?\*/)?)\s*$")
 _NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
@@ -85,19 +87,23 @@ class Doc:
                 continue
             m = _ENTRY.match(ln)
             t = m.group("type") if m else None
-            ok = m and m.group("mode") in READ_MODE and (t == ANY or re.fullmatch(r"\d+|0x[0-9a-fA-F]+", t))
+            fixed = bool(m) and m.group("n") is not None
+            ok = m and (m.group("mode") in READ_MODE or (fixed and int(m.group("n")) <= FIXED_MAX)) and (t == ANY or re.fullmatch(r"\d+|0x[0-9a-fA-F]+", t))
             if not ok or (t != ANY and int(t, 0) >= ANY_VALUE):
                 self.unmanaged.append({"line": i + 1, "text": ln.strip()})
                 continue
             j = i
             while j > 1 and kinds[j - 1] == "comment":      # j > 1: never the file's first line
                 j -= 1
-            self.entries.append({
+            ent = {
                 "line": i + 1, "kind": m.group("kind"), "id": m.group("id"),
-                "type": None if t == ANY else int(t, 0), "mode": READ_MODE[m.group("mode")],
+                "type": None if t == ANY else int(t, 0), "mode": "FIXED" if fixed else READ_MODE[m.group("mode")],
                 "spelling": m.group("mode"), "tail": m.group("tail").strip(),
                 "comment": [x.strip() for x in self.lines[j:i]], "_first": j,
-            })
+            }
+            if fixed:
+                ent["n"] = int(m.group("n"))
+            self.entries.append(ent)
 
     # ---- queries
     def find(self, key):
@@ -131,7 +137,7 @@ class Doc:
             found = self.find(k)
             if found:
                 for e in found:
-                    if e["mode"] == mode:
+                    if e["mode"] == mode and e.get("n") == s.get("n" if mode == "FIXED" else "_"):
                         continue
                     i = e["line"] - 1
                     self.lines[i] = _ENTRY.sub(lambda m: m.group("ind") + self._render(s) + m.group("tail"), self.lines[i])
@@ -147,7 +153,8 @@ class Doc:
 
     def _render(self, e):
         t = ANY if e["type"] is None else str(e["type"])
-        return "PORT_SPRITE_DEPTH(%s, %s, %s, %s)" % (e["kind"], e["id"], t, WRITE_MODE[e["mode"]])
+        mode = "PORT_DEPTH_FIXED(%d)" % e["n"] if e["mode"] == "FIXED" else WRITE_MODE[e["mode"]]
+        return "PORT_SPRITE_DEPTH(%s, %s, %s, %s)" % (e["kind"], e["id"], t, mode)
 
     def _insert_at(self, k):
         kind, id_, t = k
@@ -178,6 +185,10 @@ def validate(op):
     t = op.get("type")
     if t is not None and (not isinstance(t, int) or isinstance(t, bool) or not 0 <= t < ANY_VALUE):
         raise DepthError("bad type %r (0..254 or null for any)" % (t,))
+    if op.get("mode") == "FIXED":
+        n = op.get("n")
+        if not isinstance(n, int) or isinstance(n, bool) or not 0 <= n <= FIXED_MAX:
+            raise DepthError("bad n %r for FIXED (0..%d)" % (n, FIXED_MAX))
     return op
 
 

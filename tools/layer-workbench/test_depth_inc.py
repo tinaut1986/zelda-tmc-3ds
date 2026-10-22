@@ -317,10 +317,98 @@ def test_wall_catalog():
     equal((groups[("OBJECT", "CUTSCENE_ORCHESTRATOR", 0)]["wall"]["LEFT"], groups[("OBJECT", "CUTSCENE_ORCHESTRATOR", 0)]["n"]), (53, 62), "CUTSCENE_ORCHESTRATOR 0: 53 of 62 by the left wall")
 
 
+def test_fixed():
+    print("PORT_DEPTH_FIXED(n)")
+    rem = "PORT_SPRITE_DEPTH(NPC, REM, PORT_ANY_TYPE, PORT_DEPTH_FIXED(14))"
+    e = D.parse(rem + "\n").entries[0]
+    equal((e["mode"], e["n"], e["type"], e["spelling"]), ("FIXED", 14, None, "PORT_DEPTH_FIXED(14)"), "FIXED(14) is read")
+    loose = "  PORT_SPRITE_DEPTH( NPC ,REM,3,  PORT_DEPTH_FIXED ( 0 )  )  // note\n"
+    e = D.parse(loose).entries[0]
+    equal((e["mode"], e["n"], e["type"], e["tail"]), ("FIXED", 0, 3, "// note"), "whitespace-tolerant, n = 0")
+    equal(D.parse(loose).text(), loose, "and it round-trips byte for byte")
+    for n in (20, 21, 99):
+        d = D.parse("PORT_SPRITE_DEPTH(NPC, REM, 1, PORT_DEPTH_FIXED(%d))\n" % n)
+        equal((len(d.entries), len(d.unmanaged)), (1, 0) if n <= 20 else (0, 1), "n = %d in the file" % n)
+    for t in ("PORT_DEPTH_FIXED", "PORT_DEPTH_FIXED()", "PORT_DEPTH_FIXED(-1)", "PORT_DEPTH_FIXED(x)"):
+        equal(len(D.parse("PORT_SPRITE_DEPTH(NPC, REM, 1, %s)\n" % t).unmanaged), 1, "unreadable " + t)
+    if os.path.isfile(REAL_INC):
+        real = open(REAL_INC, encoding="utf-8", newline="").read()
+        es = [x for x in D.parse(real).entries if x["mode"] == "FIXED"]
+        if rem in real:
+            equal([(x["kind"], x["id"], x["type"], x["n"]) for x in es if x["id"] == "REM"], [("NPC", "REM", None, 14)], "the real file's REM line is read")
+            same, rep = D.apply_request(real, {"set": [{"kind": "NPC", "id": "REM", "type": None, "mode": "FIXED", "n": 14}]})
+            equal((same, sum(rep.values())), (real, 0), "setting REM to what it is changes nothing")
+            new, rep = D.apply_request(real, {"set": [{"kind": "NPC", "id": "REM", "type": None, "mode": "FIXED", "n": 12}]})
+            equal(rep["changed"], 1, "REM n 14 -> 12 is one change")
+            equal(new.replace("FIXED(12)", "FIXED(14)"), real, "and only that line moved")
+    base = SAMPLE + rem + "\n"
+    new, rep = D.apply_request(base, {"set": [{"kind": "NPC", "id": "REM", "type": None, "mode": "FIXED", "n": 8}]})
+    equal((rep["changed"], new.replace("FIXED(8)", "FIXED(14)")), (1, base), "edit n in place")
+    # to and from FIXED, the trailing comment and indentation are kept
+    new, rep = D.apply_request(SAMPLE, {"set": [{"kind": "ENEMY", "id": "OCTOROK", "type": 2, "mode": "FIXED", "n": 5}]})
+    check("  PORT_SPRITE_DEPTH(ENEMY, OCTOROK, 2, PORT_DEPTH_FIXED(5))   // trailing note\n" in new, "DOWN -> FIXED(5) in place")
+    back, rep = D.apply_request(new, {"set": [{"kind": "ENEMY", "id": "OCTOROK", "type": 2, "mode": "DOWN"}]})
+    equal((back, rep["changed"]), (SAMPLE, 1), "FIXED -> DOWN restores the file")
+    new, _ = D.apply_request(base, {"set": [{"kind": "NPC", "id": "REM", "type": None, "mode": "FLAT"}]})
+    equal(new, base.replace("NPC, REM, PORT_ANY_TYPE, PORT_DEPTH_FIXED(14)", "NPC, REM, PORT_ANY_TYPE, PORT_DEPTH_FLAT"), "FIXED -> FLAT")
+    # add (comment attachment, first-match ordering) and remove
+    new, _ = D.apply_request(base, {"set": [{"kind": "NPC", "id": "REM", "type": 2, "mode": "FIXED", "n": 3}]})
+    es = D.parse(new).entries
+    equal([(x["id"], x["type"], x.get("n")) for x in es if x["id"] == "REM"], [("REM", 2, 3), ("REM", None, 14)],
+          "an exact FIXED goes before the ANY entry")
+    equal(D.effective(es, "NPC", "REM", 2)[0], "FIXED", "and wins by first match")
+    withc = SAMPLE + "// Rem's counter\n" + rem + "\n"
+    new, rep = D.apply_request(withc, {"remove": [{"kind": "NPC", "id": "REM", "type": None}]})
+    equal((new, rep["commentLinesRemoved"]), (SAMPLE, 1), "removing a FIXED entry takes its attached comment")
+    new, _ = D.apply_request(withc, {"set": [{"kind": "NPC", "id": "REM", "type": None, "mode": "FIXED", "n": 9}]})
+    equal(new, withc.replace("(14)", "(9)"), "changing n keeps the attached comment")
+    new, _ = D.apply_request(SAMPLE, {"set": [{"kind": "NPC", "id": "NEWBIE", "type": None, "mode": "FIXED", "n": 20}]})
+    equal(D.parse(new).entries[-1]["n"], 20, "a new FIXED entry goes after the last managed entry")
+    check("PORT_SPRITE_DEPTH(NPC, NEWBIE, PORT_ANY_TYPE, PORT_DEPTH_FIXED(20))\n" in new, "and is spelled PORT_DEPTH_FIXED(20)")
+    # validation
+    for n in (-1, 21, 1.5, "8", None, True):
+        try:
+            D.apply_request(SAMPLE, {"set": [{"kind": "NPC", "id": "X", "type": None, "mode": "FIXED", "n": n}]})
+            check(False, "accepted n=%r" % (n,))
+        except D.DepthError:
+            check(True, "")
+    try:
+        D.apply_request(SAMPLE, {"set": [{"kind": "NPC", "id": "X", "type": None, "mode": "FIXED"}]})
+        check(False, "accepted FIXED without n")
+    except D.DepthError:
+        check(True, "")
+    # endpoints, on temp copies
+    import functools
+    before = sha(REAL_INC)
+    with tempfile.TemporaryDirectory() as tmp:
+        inc = os.path.join(tmp, "depth.inc")
+        open(inc, "w", newline="").write(base)
+        serve.Handler.depth_inc, serve.Handler.sprite_view = inc, os.path.join(tmp, "view.json")
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(serve.Handler, directory=HERE))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+        def req(body):
+            c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
+            c.request("POST", "/sprite-depth", json.dumps(body), {"Content-Type": "application/json"})
+            r = c.getresponse()
+            return r.status, r.read()
+        c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
+        c.request("GET", "/sprite-depth")
+        ents = json.loads(c.getresponse().read())["entries"]
+        equal([(x["mode"], x["n"]) for x in ents if x["id"] == "REM"], [("FIXED", 14)], "GET /sprite-depth reports mode FIXED and n")
+        st, _ = req({"set": [{"kind": "NPC", "id": "REM", "type": None, "mode": "FIXED", "n": 12}]})
+        equal((st, open(inc, newline="").read()), (200, base.replace("(14)", "(12)")), "POST edits n in the temp copy")
+        st, _ = req({"set": [{"kind": "NPC", "id": "REM", "type": None, "mode": "FIXED", "n": 21}]})
+        equal((st, open(inc, newline="").read()), (400, base.replace("(14)", "(12)")), "n = 21 is refused and nothing is written")
+        srv.shutdown()
+    equal(sha(REAL_INC), before, "the real .inc was not touched")
+
+
 def main():
     test_parse()
     test_roundtrip()
     test_edits()
+    test_fixed()
     test_server()
     test_bulk()
     test_wall_catalog()
