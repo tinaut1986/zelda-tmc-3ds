@@ -52,6 +52,6 @@ PORT_SPRITE_DEPTH(ENEMY, DUST, 0, PORT_DEPTH_FLAT)
 PORT_SPRITE_DEPTH(OBJECT, FURNITURE, 7, PORT_DEPTH_WALL)
 PORT_SPRITE_DEPTH(OBJECT, ARCHWAY, PORT_ANY_TYPE, PORT_DEPTH_WALL)
 /* Rem, the shoemaker (area 0x23 room 02): his hands and the boots he works on are drawn over his counter, which stands out;
- * they take its height (8 quarters) instead of the floor's. */
-PORT_SPRITE_DEPTH(NPC, REM, PORT_ANY_TYPE, PORT_DEPTH_FIXED(8))
+ * they take its height (14 quarters, tuned on the console) instead of the floor's. */
+PORT_SPRITE_DEPTH(NPC, REM, PORT_ANY_TYPE, PORT_DEPTH_FIXED(14))
 
