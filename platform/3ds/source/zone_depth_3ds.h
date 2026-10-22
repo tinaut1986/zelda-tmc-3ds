@@ -91,4 +91,48 @@ static inline bool ZoneDepth3DS_BatchScissor(const ZoneDepth3DSRect* zone, int b
     return true;
 }
 
+/* The layer whose plane a pixel of layer `bg` at frame pixel (x, y) is drawn at: toBg inside a zone of that layer, else
+ * the layer's own. No zones: no loop. */
+static inline unsigned ZoneDepth3DS_PlaneAt(const ZoneDepth3DSZone* zones, unsigned count, unsigned bg, int x, int y) {
+    for (unsigned i = 0; i < count; ++i) {
+        const ZoneDepth3DSZone* zone = &zones[i];
+        if (zone->bg == bg && x >= zone->rect.left && x < zone->rect.right && y >= zone->rect.top && y < zone->rect.bottom)
+            return zone->toBg;
+    }
+    return bg;
+}
+
+/* Whether layer `bg` has an opaque pixel where the support is sampled (the GPU model samples the frame's tiles). */
+typedef bool (*ZoneDepth3DSOpaqueFn)(void* context, unsigned bg);
+
+/* Stereo 3D "support" (docs/stereo-3d.md, "Support"): the plane a sprite at priority `objPriority` rests on at frame pixel
+ * (x, y). The frontmost opaque BG1-BG3 layer behind it (priority at or after its own; at one priority the lower layer
+ * number is in front) is what it stands on; a layer in front of it opaque there means it is behind that layer and takes
+ * nothing (false). The plane is that layer's, or, inside a zone depth fix of that layer, the zone's toBg: a sprite on the
+ * pixels a zone moves stands where they are seen. `bgPriority` is each layer's priority (BGnCNT & 3). Out: the layer and
+ * priority whose depth applies. Layers behind the best one so far are not sampled, as before zones existed. */
+static inline bool ZoneDepth3DS_SupportPlane(unsigned objPriority, const unsigned bgPriority[4], ZoneDepth3DSOpaqueFn opaque,
+                                             void* context, const ZoneDepth3DSZone* zones, unsigned zoneCount, int x, int y,
+                                             unsigned* layer, unsigned* priority) {
+    int best = -1;
+    unsigned bestPriority = 4;
+    for (unsigned bg = 1; bg < 4u; ++bg) {
+        const unsigned p = bgPriority[bg] & 3u;
+        if (p < objPriority) {
+            if (opaque(context, bg)) return false;
+            continue;
+        }
+        if (p >= bestPriority) continue;
+        if (opaque(context, bg)) {
+            best = (int)bg;
+            bestPriority = p;
+        }
+    }
+    if (best < 0) return false;
+    const unsigned plane = zoneCount != 0 ? ZoneDepth3DS_PlaneAt(zones, zoneCount, (unsigned)best, x, y) : (unsigned)best;
+    *layer = plane;
+    *priority = plane == (unsigned)best ? bestPriority : bgPriority[plane] & 3u;
+    return true;
+}
+
 #endif

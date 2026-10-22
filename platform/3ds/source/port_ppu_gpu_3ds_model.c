@@ -3158,27 +3158,32 @@ static bool bg_opaque_at(const PpuGpu3DSFrameView* frame, const PpuGpu3DSBand* b
     return ((sample.pixelX & 1u) ? (packed >> 4u) : (packed & 0xfu)) != 0;
 }
 
+typedef struct SupportSample {
+    const PpuGpu3DSFrameView* frame;
+    const PpuGpu3DSBand* band;
+    int x, y;
+} SupportSample;
+
+static bool support_opaque(void* context, unsigned bg) {
+    const SupportSample* sample = (const SupportSample*)context;
+    return bg_opaque_at(sample->frame, sample->band, bg, sample->x, sample->y);
+}
+
 /* The depth, in quarter pixels, a sprite takes from what it rests on at the view pixel (x, y): the frontmost opaque
- * background layer behind it (priority at or after its own). 0 where a layer in front covers it (it is behind that
- * layer there) or the layer under it has no depth. */
+ * background layer behind it (priority at or after its own), at its plane, or at a zone depth fix's plane over its
+ * pixels (ZoneDepth3DS_SupportPlane). 0 where a layer in front covers it (it is behind that layer there) or the plane
+ * under it has no depth. */
 static unsigned obj_support_depth(const PpuGpu3DSFrameView* frame, const PpuGpu3DSBand* band, unsigned objPriority,
                                   int x, int y) {
-    int best = -1;
-    unsigned bestPriority = 4;
     const uint8_t* io = frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;
-    for (unsigned bg = 1; bg < 4u; ++bg) {
-        const unsigned priority = read16(io, MODE1_IO_BG0CNT + bg * 2u) & 3u;
-        if (priority < objPriority) {
-            if (bg_opaque_at(frame, band, bg, x, y)) return 0;
-            continue;
-        }
-        if (priority >= bestPriority) continue;
-        if (bg_opaque_at(frame, band, bg, x, y)) {
-            best = (int)bg;
-            bestPriority = priority;
-        }
-    }
-    return best < 0 ? 0u : frame->bgDepthQ[best][bestPriority];
+    unsigned priorities[4] = { 0 };
+    for (unsigned bg = 1; bg < 4u; ++bg) priorities[bg] = read16(io, MODE1_IO_BG0CNT + bg * 2u) & 3u;
+    SupportSample sample = { frame, band, x, y };
+    unsigned layer, priority;
+    if (!ZoneDepth3DS_SupportPlane(objPriority, priorities, support_opaque, &sample, frame->depthZones,
+                                   frame->depthZoneCount, x, y, &layer, &priority))
+        return 0u;
+    return frame->bgDepthQ[layer][priority];
 }
 
 static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,

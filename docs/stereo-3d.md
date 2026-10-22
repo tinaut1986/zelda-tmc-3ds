@@ -57,7 +57,10 @@ scenes below override it for their layers. The values are in pixels at the full 
 - **Support.** A sprite takes the depth of the background layer it rests on (the roof under a statue): `compute_obj_support`
   samples the frontmost opaque BG1-BG3 layer behind it (priority at or after its own) at the middle of each tile with
   `text_bg_sample`, takes the highest of the entry's tiles and the highest of the entries of one entity
-  (`virtuappu_mode1_obj_group`, the entity that wrote them). A layer in front of the sprite gives nothing.
+  (`virtuappu_mode1_obj_group`, the entity that wrote them). A layer in front of the sprite gives nothing. Where the layer
+  it rests on is inside a zone depth fix of that layer ("Zone depth fixes" below), the sample takes the zone's plane
+  (`toBg`'s depth) instead: the chick on the log hut's roof stands on BG2 pixels inside BG1's hole and takes the roof's
+  depth, and its jump rises from there (`ZoneDepth3DS_SupportPlane`, host test `platform/3ds/tests/zone_depth_3ds_test.c`).
 - **The HUD is in front.** Sprites at priority 0 take nothing from their pieces' height and the world's sum is capped at
   5 px, under the HUD's 6.
 - **Strips a moved layer leaves.** BG1-BG3 in front move one pixel per eye; where the art relies on them covering a hole
@@ -166,6 +169,13 @@ How it works (`zone_depth_3ds.c`, `zone_depth_3ds.h`, `port_ppu_gpu_3ds.c`):
   Nothing is copied or edited in VRAM. The host test (`platform/3ds/tests/zone_depth_3ds_test.c`) models this order on a
   line of pixels, every shift from -3 to 3: BG1's moved opaque pixels are never covered, the moved hole shows the moved
   copy, nothing outside the rectangle changes, and no pixel is left empty; and the first version's order fails it.
+- **Sprites on a zone.** The support sample ("Support" above) of a sprite whose frontmost opaque layer behind it is `bg`
+  inside one of the frame's zones takes `toBg`'s depth at `toBg`'s priority, so a sprite resting there (the roof's chick)
+  starts from the zone's plane and its height adds on top. Every sprite, not a list. The GPU model gets the frame's zones
+  in `PpuGpu3DSFrameView.depthZones` (set only with `objSupport`); with none nothing is looked up.
+- **PLANE TINT.** The copy is tinted as `toBg` at its priority (LAYERS: `toBg`'s colour; DEPTH: its depth), so the view
+  shows the zone at the plane it is drawn at. With a tint view up the zones are placed and drawn (unmoved) with the slider
+  down too, and when the slider rounds both planes to one shift.
 - **Limits.** One rectangle of one layer. The copy's transparent texels show `bg`'s unmoved picture under it. A `bg` batch
   that blends (an alpha first target) blends again over its own copy. The layers' priorities are taken from their last
   batch of the frame (a layer that changes priority between bands takes one). While the camera crosses into another room

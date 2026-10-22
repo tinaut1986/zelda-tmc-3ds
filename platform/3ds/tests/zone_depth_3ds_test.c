@@ -1,7 +1,8 @@
 /* Host test of the zone depth fixes' arithmetic (platform/3ds/source/zone_depth_3ds.h): the frame's scroll read back from
  * a layer's offset registers, a fix placed in the frame (a room at a positive origin in Full View, scrolled past), the
  * scissor of a batch redrawn for a zone (cut by the batch, by the frame, moved for each eye), empty and negative sizes;
- * the draw order (the copy under the layer in front: its opaque pixels are never covered);
+ * the draw order (the copy under the layer in front: its opaque pixels are never covered); the plane a sprite rests
+ * on inside a zone (ZoneDepth3DS_PlaneAt, ZoneDepth3DS_SupportPlane);
  * and every line of platform/3ds/source/port_zone_depth.inc parsed through the same macro the game uses and checked.
  *
  *   cc -std=c11 -Wall -Wextra -Iplatform/3ds/source platform/3ds/tests/zone_depth_3ds_test.c -o /tmp/zone_depth_3ds_test
@@ -177,6 +178,55 @@ static int test_draw_order(void) {
     return 0;
 }
 
+/* Support with zones: the opaque layers at the sampled pixel are a mask (bit n: BGn). */
+static bool maskOpaque(void* context, unsigned bg) { return (*(const unsigned*)context >> bg) & 1u; }
+
+static int test_support(void) {
+    /* The log hut: BG1 (the roof, priority 1) has a hole where BG2 (the ground, priority 2) shows; a zone moves BG2's
+     * pixels there to BG1's plane. BG3 (priority 3) is the sky. */
+    const ZoneDepth3DSZone zones[2] = { { { 160, 80, 200, 128 }, 2, 1 }, { { 0, 0, 8, 8 }, 3, 1 } };
+    const unsigned priorities[4] = { 0, 1, 2, 3 };
+    unsigned layer = 9, priority = 9, mask;
+    CHECK(ZoneDepth3DS_PlaneAt(zones, 2, 2, 170, 90) == 1);
+    CHECK(ZoneDepth3DS_PlaneAt(zones, 2, 2, 200, 90) == 2);  /* right edge is outside */
+    CHECK(ZoneDepth3DS_PlaneAt(zones, 2, 1, 170, 90) == 1);  /* another layer's zone */
+    CHECK(ZoneDepth3DS_PlaneAt(zones, 2, 3, 4, 4) == 1);
+    CHECK(ZoneDepth3DS_PlaneAt(zones, 0, 2, 170, 90) == 2);  /* no zones */
+    /* A sprite at priority 1 (the chick on the roof) over the hole: BG1 transparent, BG2 opaque inside the zone: it rests
+     * on BG1's plane (layer 1, BG1's priority 1). */
+    mask = 1u << 2 | 1u << 3;
+    CHECK(ZoneDepth3DS_SupportPlane(1, priorities, maskOpaque, &mask, zones, 2, 170, 90, &layer, &priority));
+    CHECK(layer == 1 && priority == 1);
+    /* The same pixel without the zone: the ground's plane, as before zones. */
+    CHECK(ZoneDepth3DS_SupportPlane(1, priorities, maskOpaque, &mask, NULL, 0, 170, 90, &layer, &priority));
+    CHECK(layer == 2 && priority == 2);
+    /* Outside the zone, on BG2: the ground. */
+    CHECK(ZoneDepth3DS_SupportPlane(1, priorities, maskOpaque, &mask, zones, 2, 220, 90, &layer, &priority));
+    CHECK(layer == 2 && priority == 2);
+    /* On the roof's own opaque pixels inside the zone: BG1 itself (it is in front of BG2, the zone is BG2's). */
+    mask = 1u << 1 | 1u << 2 | 1u << 3;
+    CHECK(ZoneDepth3DS_SupportPlane(1, priorities, maskOpaque, &mask, zones, 2, 170, 90, &layer, &priority));
+    CHECK(layer == 1 && priority == 1);
+    /* A sprite at priority 2 (Link) under the roof's opaque pixels: behind BG1, no support; in the hole, BG2 is in the
+     * zone, so the zone's plane (the hole is the roof's). */
+    CHECK(!ZoneDepth3DS_SupportPlane(2, priorities, maskOpaque, &mask, zones, 2, 170, 90, &layer, &priority));
+    mask = 1u << 2 | 1u << 3;
+    CHECK(ZoneDepth3DS_SupportPlane(2, priorities, maskOpaque, &mask, zones, 2, 170, 90, &layer, &priority));
+    CHECK(layer == 1 && priority == 1);
+    /* Nothing opaque: no support. */
+    mask = 0;
+    CHECK(!ZoneDepth3DS_SupportPlane(1, priorities, maskOpaque, &mask, zones, 2, 170, 90, &layer, &priority));
+    /* Equal priorities: the lower layer number is in front (BG2 and BG3 both at 2, BG3's zone does not apply to BG2). */
+    const unsigned same[4] = { 0, 1, 2, 2 };
+    mask = 1u << 2 | 1u << 3;
+    CHECK(ZoneDepth3DS_SupportPlane(1, same, maskOpaque, &mask, zones, 2, 4, 4, &layer, &priority));
+    CHECK(layer == 2 && priority == 2);
+    mask = 1u << 3;
+    CHECK(ZoneDepth3DS_SupportPlane(1, same, maskOpaque, &mask, zones, 2, 4, 4, &layer, &priority));
+    CHECK(layer == 1 && priority == 1);
+    return 0;
+}
+
 static int test_table(void) {
     const unsigned count = (unsigned)(sizeof(kTable) / sizeof(kTable[0]));
     CHECK(count >= 1);
@@ -199,7 +249,7 @@ static int test_table(void) {
 }
 
 int main(void) {
-    if (test_frame_scroll() || test_screen_rect() || test_batch_scissor() || test_hole_filled() || test_draw_order() || test_table()) return 1;
+    if (test_frame_scroll() || test_screen_rect() || test_batch_scissor() || test_hole_filled() || test_draw_order() || test_support() || test_table()) return 1;
     printf("zone_depth_3ds_test: ok\n");
     return 0;
 }

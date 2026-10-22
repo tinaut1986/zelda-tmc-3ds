@@ -862,23 +862,27 @@ static int sTintMode;
 void PortPpuGpu3DS_SetTintMode(int mode) { sTintMode = mode < 0 || mode > 2 ? 0 : mode; }
 int PortPpuGpu3DS_TintMode(void) { return sTintMode; }
 
+/* A zone depth copy (DrawZoneBatch) is tinted as the plane it is drawn at: this layer and priority, or -1. */
+static int sTintLayer = -1, sTintPriority;
+
 /* The flat colour (0xBBGGRR, with a bit 24 mark) a batch is painted in under the tint view; 0: not tinted. */
 static uint32_t TintOf(const PpuGpu3DSBatch* batch) {
     if (sTintMode == 0 || batch->objWindow || batch->layer > PPU_GPU3DS_OBJ) return 0;
-    const unsigned priority = batch->priority & 3u;
+    const unsigned layer = sTintLayer >= 0 ? (unsigned)sTintLayer : batch->layer;
+    const unsigned priority = (sTintLayer >= 0 ? (unsigned)sTintPriority : batch->priority) & 3u;
     unsigned r, g, b;
     if (sTintMode == 1) {
         static const unsigned kRgb[5][3] = { { 255, 0, 255 }, { 0, 255, 255 }, { 255, 150, 0 }, { 0, 220, 0 }, { 255, 255, 255 } };
         static const unsigned kScale[4] = { 256, 192, 140, 96 };
-        r = kRgb[batch->layer][0] * kScale[priority] / 256u;
-        g = kRgb[batch->layer][1] * kScale[priority] / 256u;
-        b = kRgb[batch->layer][2] * kScale[priority] / 256u;
+        r = kRgb[layer][0] * kScale[priority] / 256u;
+        g = kRgb[layer][1] * kScale[priority] / 256u;
+        b = kRgb[layer][2] * kScale[priority] / 256u;
     } else {
         /* A sprite with a depth of its own (PpuGpu3DSBatch.depth, quarter pixels) is where that puts it, not on its
          * layer's: tall sprites show their lean, tile row by tile row. */
         float depth = batch->depth != 0 && batch->layer == PPU_GPU3DS_OBJ
                               ? 0.25f * (float)batch->depth
-                              : (float)Stereo3DS_LayerDepth(batch->layer, priority);
+                              : (float)Stereo3DS_LayerDepth(layer, priority);
         depth = depth < -4.0f ? -4.0f : depth > 8.0f ? 8.0f : depth;
         const float t = depth + 4.0f; /* 0..12 */
         r = (unsigned)(t * 5.0f);
@@ -1261,7 +1265,8 @@ enum { ZONE_MARGIN = 16 };
 
 static void PrepareZoneDraws(void) {
     sZoneDrawCount = 0;
-    if (!sUnderlay) return;
+    /* The tint views show the zones' planes with the slider down too (ZoneDepth3DS_BeginFrame has them then). */
+    if (!sUnderlay && sTintMode == 0) return;
     const ZoneDepth3DSZone* zones;
     const unsigned count = ZoneDepth3DS_Zones(&zones);
     if (count == 0) return;
@@ -1278,9 +1283,11 @@ static void PrepareZoneDraws(void) {
         if (last[bg] == 0 || last[to] == 0) continue; /* a layer not drawn this frame: no plane to take */
         const unsigned bgPriority = sCommands.batches[last[bg]].priority & 3u;
         const unsigned toPriority = sCommands.batches[last[to]].priority & 3u;
-        /* On the same plane in both eyes: the layer is already where the fix would put it. */
+        /* On the same plane in both eyes: the layer is already where the fix would put it (unless a tint view paints the
+         * planes, which differ even when the slider rounds them to one shift). */
         if (EyeLayerPx(bg, bgPriority, STEREO3DS_LEFT) == EyeLayerPx(to, toPriority, STEREO3DS_LEFT) &&
-            EyeLayerPx(bg, bgPriority, STEREO3DS_RIGHT) == EyeLayerPx(to, toPriority, STEREO3DS_RIGHT))
+            EyeLayerPx(bg, bgPriority, STEREO3DS_RIGHT) == EyeLayerPx(to, toPriority, STEREO3DS_RIGHT) &&
+            (sTintMode == 0 || Stereo3DS_LayerDepth(bg, bgPriority) == Stereo3DS_LayerDepth(to, toPriority)))
             continue;
         /* Off the frame, even moved: nothing to draw (and no reason to give up the base picture). */
         const ZoneDepth3DSRect* rect = &zones[z].rect;
@@ -1297,8 +1304,10 @@ static void PrepareZoneDraws(void) {
     }
 }
 
-/* One batch of the zone's layer, clipped to the zone and moved by `shift` pixels (ZoneDepth3DS_BatchScissor). */
-static void DrawZoneBatch(const PpuGpu3DSBatch* batch, const ZoneDepth3DSRect* zone, int shift) {
+/* One batch of the zone's layer, clipped to the zone and moved by `shift` pixels (ZoneDepth3DS_BatchScissor), tinted
+ * (PLANE TINT) as toBg at `toPriority`. */
+static void DrawZoneBatch(const PpuGpu3DSBatch* batch, const ZoneDepth3DSRect* zone, int shift, unsigned toBg,
+                          unsigned toPriority) {
     if (batch->indexCount == 0) return;
     ZoneDepth3DSRect cut;
     if (!ZoneDepth3DS_BatchScissor(zone, batch->scissorLeft, batch->scissorRight, batch->firstLine,
@@ -1312,7 +1321,10 @@ static void DrawZoneBatch(const PpuGpu3DSBatch* batch, const ZoneDepth3DSRect* z
                                                                       : &sRingTex[batch->texture - 1u]);
     }
     SetBatchOffset(batch->offsetX + (float)shift * (2.0f / (float)sPreparedWidth), batch->offsetY);
+    sTintLayer = (int)toBg;
+    sTintPriority = (int)toPriority;
     ResetTev(batch);
+    sTintLayer = -1;
     ResetBlend(batch);
     C3D_AlphaTest(true, GPU_GREATER, 0);
     SetColorStencil(batch);
@@ -1334,7 +1346,7 @@ static void DrawZonesAfter(size_t index) {
         const int shift = sEyeShifting ? sEyeShiftPx[draw->toBg][draw->toPriority & 3u] : 0;
         for (size_t i = draw->first; i <= draw->anchor; ++i) {
             const PpuGpu3DSBatch* batch = &sCommands.batches[i];
-            if (batch->layer == draw->bg && !batch->objWindow) DrawZoneBatch(batch, &draw->rect, shift);
+            if (batch->layer == draw->bg && !batch->objWindow) DrawZoneBatch(batch, &draw->rect, shift, draw->toBg, draw->toPriority);
         }
     }
 }
