@@ -1439,4 +1439,11 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   entity's support so it never covers its feet (`sprite_support_3ds.h`). Also this day: `PORT_DEPTH_WALL`, a Keese's depth only while it flies, Link's
   head on the region map, the Hyrule Town zone-gap fix and the world event (kinstone fusion) in wide view (see the entries above). The owner
   checked them on the New 3DS.
+- **2026-10-22** The workbench grew a **SPRITE CATALOG** window (every kind/id/type with its picture, counts, depth mode and the line that decides it,
+  filters incl. "sits by a wall", bulk modes; `tools/layer-workbench/README.md`) and its edits are the port's depth rules: `port_sprite_depth.inc` now
+  also holds the owner's rules (`MINISH_LIGHT` type 1 DOWN, `DUST` type 0 FLAT), `WALL` for the dojo's wall racks (`FURNITURE` type 7) and every
+  `ARCHWAY`, and `PORT_DEPTH_FIXED(n)` (0x40 + n quarters over the entity's own depth, no lean) for Rem the shoemaker (n = 14, tuned on the console:
+  8 left his hands and the boots under the counter's top). A sprite resting on another sprite (the counter) has no support rule, only this hand
+  value; the workbench does not read or write `FIXED(n)` yet. `docs/investigations/wall-depth-candidates.md` lists the other entities by a wall.
+  `sprite_view.json` holds the owner's preview choices only (the game is unchanged by them).
 

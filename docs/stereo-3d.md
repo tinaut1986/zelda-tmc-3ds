@@ -110,7 +110,7 @@ scenes below override it for their layers. The values are in pixels at the full 
   whole height (feet to the top of its highest piece, 12 quarters at most), 20 quarters at most
   (`SpriteLean3DS_RaisedDepth`), even for a sprite the normal rule would not lean (one piece 16 px tall or less). Every
   piece carries it at both edges, so each is one batch (affine and flipped ones too). For the small archway in a wall
-  (`MINISH_SIZED_ARCHWAY` type 2, left of the curtain in area 0x20 room 00). Every mode leaves the HUD's sprites
+  (`MINISH_SIZED_ARCHWAY` type 2, left of the curtain in area 0x20 room 00). `PORT_DEPTH_FIXED(n)` (0x40 + n, n up to 20): the same, but at an explicit n quarters over the entity's own depth, for sprites whose pieces must sit on a surface of a known height (Rem's hands and boots over his counter, `NPC` `REM`, n = 8). `PORT_DEPTH_WALL` (6): picked from the wall the entity stands in (`WallDepthMode`). Every mode leaves the HUD's sprites
   (priority 0) alone. To find the kind and id of a sprite on screen, read the OAM entry's group (`virtuappu_mode1_obj_group`) against the
   entity that wrote it (kind, id and type are in `Entity`); BOSS_DOOR is `OBJECT`, 57.
 - **The big Chuchu** (`feat/stereo-boss`): it is three entities stacked 14-18 px apart, each piece of them a rotated or scaled

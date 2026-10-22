@@ -25,6 +25,7 @@
 #include "structures.h"
 #include "vram.h"
 #include "object.h"
+#include "npc.h"
 #include "player.h"
 
 #include "port_widescreen.h"
@@ -77,6 +78,8 @@ static s32 sBossTop = 0x7fffffff, sBossTopNext = 0x7fffffff; /* and its highest 
  *   PORT_DEPTH_WALL:   picked from where the entity stands in its room: within PORT_WALL_MARGIN pixels of the left, right or
  *                      bottom edge it is LEFT, RIGHT or DOWN (the nearest edge wins), anywhere else UP. For door-like
  *                      sprites that sit in a wall whichever way they face
+ *   PORT_DEPTH_FIXED(n): no lean, the whole sprite at n quarter pixels (0..20) over the entity's own depth: for sprites that
+ *                      must sit on a surface whose height is known (the boots and hands of a craftsman on his table)
  *   PORT_DEPTH_RAISED: no lean, the whole sprite at one raised depth: what the normal rule gives its top edge (the
  *                      entity's own depth plus Port_Config_StereoBodyDepthQ of its whole height, feet to the top of
  *                      its highest piece; 20 quarters at most)
@@ -85,8 +88,10 @@ static s32 sBossTop = 0x7fffffff, sBossTopNext = 0x7fffffff; /* and its highest 
  * PORT_DEPTH_RIGHT, on every piece of the sprite): the GPU model spreads it over the tile columns. */
 enum {
     PORT_DEPTH_UP = 0, PORT_DEPTH_INVERT = 1, PORT_DEPTH_DOWN = PORT_DEPTH_INVERT, PORT_DEPTH_FLAT = 2,
-    PORT_DEPTH_LEFT = 3, PORT_DEPTH_RIGHT = 4, PORT_DEPTH_RAISED = 5, PORT_DEPTH_WALL = 6, PORT_ANY_TYPE = 0xff
+    PORT_DEPTH_LEFT = 3, PORT_DEPTH_RIGHT = 4, PORT_DEPTH_RAISED = 5, PORT_DEPTH_WALL = 6, PORT_DEPTH_FIXED_BASE = 0x40, PORT_ANY_TYPE = 0xff
 };
+/* PORT_DEPTH_FIXED(n): the whole sprite at one explicit depth of n quarter pixels over the entity's own (its jump's), no lean. */
+#define PORT_DEPTH_FIXED(n) (PORT_DEPTH_FIXED_BASE | (n))
 /* The bits of the top depth that say the entry leans across its columns and which way (SPRITE_LEAN_3DS_COLUMNS,
  * SPRITE_LEAN_3DS_RISES_RIGHT) and the raised depth (SpriteLean3DS_RaisedDepth). */
 #include "../platform/3ds/source/sprite_lean_3ds.h"
@@ -107,6 +112,7 @@ static const PortSpriteDepthFix sSpriteDepthFixes[1];
 #endif
 static int sRenderingInvert = 0, sRenderingFlat = 0;
 static int sRenderingSide = 0; /* PORT_DEPTH_LEFT or PORT_DEPTH_RIGHT: the depth rises across the sprite, not up or down */
+static int sRenderingFixedQ = -1; /* PORT_DEPTH_FIXED(n): n quarters over the entity's own depth, -1 when off */
 static int sRenderingRaised = 0; /* PORT_DEPTH_RAISED: one depth for the whole sprite, its top edge's */
 /* PORT_DEPTH_WALL: the wall the entity stands in, from its place in the room (the nearest of the left, right and bottom
  * edges within PORT_WALL_MARGIN pixels; the top edge keeps the normal rule). */
@@ -594,7 +600,8 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
      * it, whether or not the normal rule would lean it (it does not lean one piece 16 px tall or less). */
     const u8 raisedQ = (u8)SpriteLean3DS_RaisedDepth(
         (int)sRenderingDepth,
-        bodyShear && sRenderingRaised && feetBottom > topMin ? Port_Config_StereoBodyDepthQ((int)(feetBottom - topMin)) : 0);
+        sRenderingFixedQ >= 0 ? sRenderingFixedQ
+        : bodyShear && sRenderingRaised && feetBottom > topMin ? Port_Config_StereoBodyDepthQ((int)(feetBottom - topMin)) : 0);
 #endif
 
     for (int i = 0; i < count; i++) {
@@ -636,7 +643,7 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
         u8 pieceDepthTop = sRenderingDepth;
 #ifdef TMC_3DS
         u8 pieceColumns = 0;
-        if (bodyShear && sRenderingRaised) {
+        if (bodyShear && (sRenderingRaised || sRenderingFixedQ >= 0)) {
             pieceDepth = pieceDepthTop = raisedQ;
         } else if (bodyShear && sRenderingSide) {
             /* On a side wall: the same rise as the normal rule, measured from the edge it hangs on across the sprite's
@@ -1191,6 +1198,7 @@ static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra
         sRenderingFlat = mode == PORT_DEPTH_FLAT;
         sRenderingSide = mode == PORT_DEPTH_LEFT || mode == PORT_DEPTH_RIGHT ? mode : 0;
         sRenderingRaised = mode == PORT_DEPTH_RAISED;
+        sRenderingFixedQ = (mode & PORT_DEPTH_FIXED_BASE) != 0 ? (mode & 0x3f) : -1;
     }
 #endif
     /* Its jump (1 px at most) must not use up the room the rise from feet to head needs under the world's cap: with the
@@ -1205,6 +1213,7 @@ static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra
     sRenderingBoss = 0;
 #ifdef TMC_3DS
     sRenderingInvert = sRenderingFlat = sRenderingSide = sRenderingRaised = 0;
+    sRenderingFixedQ = -1;
 #endif
     sRenderingDepth = 0; /* what is drawn next (the HUD, DrawDirect) stays on the screen plane */
 }
