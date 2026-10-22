@@ -32,3 +32,7 @@ PORT_SPRITE_DEPTH(OBJECT, GENTARI_CURTAIN, PORT_ANY_TYPE, PORT_DEPTH_LEFT)
  * rest of the scenery. Raised (one constant depth at its top's height) was tried and looked odd on the console. Type 2
  * only: type 1 of the same object sits at the bottom of the room and keeps the normal rule. */
 PORT_SPRITE_DEPTH(OBJECT, MINISH_SIZED_ARCHWAY, 2, PORT_DEPTH_FLAT)
+/* The side archways of the Gentari exit room (area 0x20, room 01): the left one hangs on the left wall, the right one on
+ * the right wall, so the depth follows the wall they are on. */
+PORT_SPRITE_DEPTH(OBJECT, MINISH_SIZED_ARCHWAY, 3, PORT_DEPTH_LEFT)
+PORT_SPRITE_DEPTH(OBJECT, MINISH_SIZED_ARCHWAY, 4, PORT_DEPTH_RIGHT)
