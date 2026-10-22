@@ -393,7 +393,12 @@ The port's stereo depth for a sprite follows its entry in `platform/3ds/source/p
 normal rule: the ground is the sprite's bottom edge and the depth grows upwards; what an entity without an entry
 gets), `DOWN` (hangs from the top edge, the depth grows downwards; written `PORT_DEPTH_DOWN`, the old
 `PORT_DEPTH_INVERT` is read as the same thing), `LEFT` (the right edge is the ground, the depth grows towards the left:
-a sprite on a left wall), `RIGHT` (the mirror) and `FLAT` (no lean). **The port takes the first entry of the file
+a sprite on a left wall), `RIGHT` (the mirror) and `FLAT` (no lean); `RAISED` and `WALL` as `docs/stereo-3d.md` describes them; and
+`FIXED(n)` (`PORT_DEPTH_FIXED(n)`: no lean, the whole sprite at an explicit depth of `n` quarter pixels, 0 to 20, over the entity's
+own depth, for pieces that must sit on a surface of a known height, such as Rem's boots over his counter: `NPC`, `REM`, 14).
+In `depth_inc.py` it is mode `FIXED` plus an integer `n`; a line whose `n` is missing or above 20 is reported as unmanaged, the
+server refuses such an `n`, changing only `n` of an entry rewrites that line in place, and the line's whitespace is tolerated
+when reading. **The port takes the first entry of the file
 that matches** (`SpriteDepthMode`, `port/port_draw.c`: same kind and id, and the type equal or `PORT_ANY_TYPE`), not
 the most specific one.
 
@@ -401,11 +406,14 @@ The **3D DEPTH** window works on the first selected entity that has a name:
 
 - the **effective mode**, and whether it comes from an entry for exactly that type, from a `PORT_ANY_TYPE` entry (with its
   line in the file) or is `UP (default)`; an exact entry that sits after an any-type one is flagged as never reached;
-- a selector (UP / DOWN / LEFT / RIGHT / FLAT) and **applies to**: this type only, or any type. Changing it edits a
+- a selector (UP / DOWN / LEFT / RIGHT / FLAT / RAISED / WALL / FIXED) and **applies to**: this type only, or any type. Changing it edits a
   working copy at once. An entry that would only restate what the entity gets anyway is **not written** (an exact entry equal
-  to the any-type one, UP for any type) unless "write even if it equals the default" is ticked;
+  to the any-type one, UP for any type) unless "write even if it equals the default" is ticked. Choosing **FIXED** shows a numeric field (a slider and a number, 0..20, written
+  when the slider is released or the number is committed) for `n`; a change of `n` alone is an unsaved change, and every text says
+  `FIXED(14)`. The first FIXED of a session starts at the last `n` used (8 at first). Note that with "this type only" an edit of `n`
+  on a type covered by an any-type FIXED entry creates an exact entry; pick "any type" to edit the existing line;
 - the **illustration** in RESULT: over the sprite's opaque pixels, a gradient from clear at the ground edge to red at the
-  far edge, and an arrow along the direction the depth grows, labelled "illustration, not a render" (flat: a grey wash).
+  far edge, and an arrow along the direction the depth grows, labelled "illustration, not a render" (flat: a grey wash). FIXED is a uniform teal tint labelled `FIXED n`, with no arrow: the same depth everywhere, again an illustration.
   It follows the flips and turns chosen in the sprite picker (tick off to keep it in screen terms), and can be shown for
   every entity of the room that has an entry;
 - the **list of all entries**, in file order: click to jump to an example room (and select the entity), **x** to remove
@@ -442,7 +450,7 @@ computed like the port: the nearest of the left, right and bottom edges within 2
 the RESULT illustration; `WallDepthMode` in `port/port_draw.c`; `test_depth_inc.py` checks the margin and the rule's shape in the C source).
 
 **Filters and sort**: text search (all words must match: name, hex id `0x4d`, `furniture/7`), one checkbox per kind, depth (any, has a rule,
-no rule, or one mode), drawn / marker only, and **sits by a wall** (at least one occurrence within 24 px of the left, right or bottom edge: the
+no rule, or one mode; "mode FIXED" matches every `n`, and the rows and COPY LIST read `FIXED(14)`), drawn / marker only, and **sits by a wall** (at least one occurrence within 24 px of the left, right or bottom edge: the
 "wall candidate" of `docs/investigations/wall-depth-candidates.md`, shown as near/total; it counts every positioned entity, drawn or not, where
 the investigation counted drawn ones only). Sort by name, entities, rooms or near-wall count, ascending or descending. The list is virtual
 (only the visible rows exist), so it stays light with the whole catalog. **COPY LIST** puts the listed rows on the clipboard as plain text
@@ -457,12 +465,12 @@ the investigation counted drawn ones only). Sort by name, entities, rooms or nea
   has), FLIP H, FLIP V, ROTATE 90, RESET, and whether the choice is for this exact type or any type. These are the picker's rules in
   `sprite_view.json` (the same data, also shown by the INFO picker); a per-entity choice made in INFO is not applied to the catalog's picture.
   They do **not** change the game;
-- **3D DEPTH, what the port reads**: the DEPTH window's editor itself (`dpEditor`: effective mode, the seven mode buttons, applies to this type or
+- **3D DEPTH, what the port reads**: the DEPTH window's editor itself (`dpEditor`: effective mode, the eight mode buttons (FIXED with its `n` field), applies to this type or
   any type, "write even if it equals the default", the "never reached" warning), editing the same working copy `DP.work`;
 - **ROOMS**: every room it occurs in, with one chip per occurrence (`x,y`, and the wall direction when it is by a wall); a chip opens that room
   and selects the entity in the viewer.
 
-**Bulk**: tick rows (or "all listed"), choose a mode and a scope, APPLY. Scope "each row's exact type" sets `PORT_SPRITE_DEPTH(kind, id, type, mode)`
+**Bulk**: tick rows (or "all listed"), choose a mode (for FIXED a number field `n`, 0..20, appears beside it) and a scope, APPLY. Scope "each row's exact type" sets `PORT_SPRITE_DEPTH(kind, id, type, mode)`
 for each ticked row; "any type" sets one `PORT_ANY_TYPE` entry per kind/id. It goes through the same `dpSetQuiet` as the editor, so an entry that
 only restates what the entity already gets is not written (unless "write even if it equals the default" is ticked) and an exact entry is placed
 before the kind/id's any-type entry. Rows whose id has no name in the enums (one entity of kind 5) cannot be addressed by the list and are skipped.
@@ -599,7 +607,7 @@ need it.
   48 px of a room edge face that edge (`type & 3`); a south boss door is the
   vertical mirror of the north one; the curtain of room `20-00` lies on pixels where the
   console screenshot differs from the layers (97.7% of its pixels).
-- `test_depth_inc.py` (89 checks): the `.inc` parser and writer: header comment and entries inside comments are not
+- `test_depth_inc.py` (124 checks, 35 of them for `PORT_DEPTH_FIXED(n)`: reading, the real file's REM line, round trips, editing `n`, to and from FIXED, ordering, comment attachment, `n` outside 0..20 refused by the writer and the endpoint): the `.inc` parser and writer: header comment and entries inside comments are not
   entries, unknown lines are reported, INVERT and DOWN, any and exact types, attached comments, replace / remove / add and
   where, CRLF, the identity round trip on a sample and on the port's real file, three-way application of a change to a
   file that moved meanwhile, validation; and the two endpoints against temp copies (and that the real `.inc` and
