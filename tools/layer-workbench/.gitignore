@@ -1,0 +1,8 @@
+# Extracted game data and renders: the ROM's art, never committed.
+maps.json
+maps.json.gz
+sprites.json
+*.png
+__pycache__/
+# The repository's top .gitignore hides *.py; the tools here are tracked.
+!*.py

@@ -1,0 +1,1382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TMC Layer Workbench</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --bg:#14161a; --panel:#1c1f26; --panel2:#232733; --line:#343a48; --fg:#d8dce6; --dim:#8a92a6;
+  --acc:#ffd24a; --acc2:#5ad2ff; --bad:#ff6060; --ok:#6dff9a;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:12px/1.35 ui-monospace,Menlo,Consolas,"DejaVu Sans Mono",monospace;overflow:hidden}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--panel2);border:1px solid var(--line);border-radius:3px;padding:2px 8px;cursor:pointer}
+button:hover{border-color:var(--acc2)}
+button.on{background:#2d4a63;border-color:var(--acc2)}
+input[type=text],input[type=search]{background:#0f1115;border:1px solid var(--line);border-radius:3px;padding:3px 6px;min-width:0}
+select{background:#0f1115;border:1px solid var(--line);border-radius:3px}
+label{cursor:pointer;user-select:none;white-space:nowrap}
+#app{display:flex;flex-direction:column;height:100%}
+#top{background:var(--panel);border-bottom:1px solid var(--line);padding:4px 8px;display:flex;flex-direction:column;gap:3px;flex:none}
+#top .row{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center}
+#tbRoom{font-size:13px}
+#tbRoom b{color:var(--acc)}
+#tbLayers span{margin-right:10px;color:var(--dim)}
+#tbLayers span b{color:var(--fg)}
+#main{display:flex;flex:1;min-height:0}
+#left{width:270px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+#left .hd{padding:6px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:4px}
+#left .hd .r{display:flex;gap:6px;align-items:center}
+#q{flex:1}
+#count{color:var(--dim)}
+#list{flex:1;overflow:auto;padding-bottom:20px}
+.grp{cursor:pointer;padding:3px 6px;background:var(--panel2);border-top:1px solid var(--line);position:sticky;top:0;z-index:1;display:flex;justify-content:space-between}
+.grp .n{color:var(--dim)}
+.grp:hover{color:var(--acc2)}
+.rm{padding:2px 6px 2px 18px;cursor:pointer;display:flex;gap:8px;white-space:nowrap}
+.rm:hover{background:#262c3a}
+.rm.cur{background:#3a3515;color:var(--acc)}
+.rm .id{color:var(--dim);width:22px;flex:none}
+.rm .nm{flex:1;overflow:hidden;text-overflow:ellipsis}
+.rm .sz{color:var(--dim)}
+.rm .sp{color:var(--acc2)}
+#wsWrap{flex:1;position:relative;min-width:0;display:flex;flex-direction:column}
+#ws{position:relative;flex:1;overflow:hidden;background:
+  repeating-conic-gradient(#181a20 0% 25%,#15171c 0% 50%) 0 0/24px 24px}
+#mini{flex:none;height:26px;background:var(--panel);border-top:1px solid var(--line);display:flex;gap:4px;padding:2px 4px;align-items:center}
+#mini button{padding:1px 8px}
+.win{position:absolute;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);box-shadow:0 4px 14px #0008;resize:both;overflow:hidden;min-width:160px;min-height:80px}
+.win.front{border-color:#56627a}
+.win .hd{flex:none;display:flex;align-items:center;gap:6px;padding:2px 4px 2px 8px;background:var(--panel2);cursor:move;user-select:none;border-bottom:1px solid var(--line)}
+.win .hd .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:bold}
+.win .hd button{padding:0 6px;line-height:16px}
+.win .bd{flex:1;min-height:0;display:flex;flex-direction:column}
+.tb{flex:none;display:flex;flex-wrap:wrap;gap:4px 10px;padding:3px 6px;border-bottom:1px solid var(--line);align-items:center}
+.cv{flex:1;min-height:0;position:relative;background:#0b0c0f}
+.cv canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
+.st{flex:none;padding:2px 6px;border-top:1px solid var(--line);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scroll{flex:1;overflow:auto;min-height:0}
+table.f{border-collapse:collapse;width:100%}
+table.f td{padding:0 6px;border-bottom:1px solid #262a35;vertical-align:top}
+table.f td:first-child{color:var(--dim);white-space:nowrap;width:1%}
+.sec{background:#262c3a;padding:2px 6px;color:var(--acc2);font-weight:bold;position:sticky;top:0}
+.er{padding:1px 6px;cursor:pointer;white-space:nowrap;display:flex;gap:8px}
+.er:hover{background:#262c3a}
+.er.sel{background:#173a4d;color:#fff}
+.er .k{width:10px;height:10px;margin-top:2px;flex:none;border:1px solid #000}
+.er .p{color:var(--dim)}
+.er .bad{color:var(--bad)}
+.chips{display:flex;flex-wrap:wrap;gap:2px 8px}
+.warn{color:var(--bad)}
+#toast{position:fixed;right:14px;bottom:36px;background:#173a4d;border:1px solid var(--acc2);padding:6px 12px;border-radius:4px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:99999}
+#toast.on{opacity:1}
+#msg{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#14161acc;z-index:99998;text-align:center}
+#msg div{background:var(--panel);border:1px solid var(--line);padding:18px 26px;max-width:560px;line-height:1.6}
+#testbox{position:fixed;left:280px;top:60px;z-index:99997;background:#0b0c0f;border:2px solid var(--acc);padding:8px 12px;max-height:80%;overflow:auto;white-space:pre}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <div class="row"><span id="tbRoom">loading...</span></div>
+    <div class="row" id="tbLayers"></div>
+    <div class="row" id="tbCtl"></div>
+  </div>
+  <div id="main">
+    <div id="left">
+      <div class="hd">
+        <div class="r"><input type="search" id="q" placeholder="search: 20-00, 0x48, name"><span id="count"></span></div>
+        <div class="r"><button id="expandAll">EXPAND</button><button id="collapseAll">COLLAPSE</button></div>
+      </div>
+      <div id="list"></div>
+    </div>
+    <div id="wsWrap"><div id="ws"></div><div id="mini"></div></div>
+  </div>
+</div>
+<div id="toast"></div>
+<div id="msg"><div id="msgb">Loading maps.json ...</div></div>
+
+<script>
+'use strict';
+/* TMC layer workbench, stage 2: read-only viewer for maps.json (see README.md).
+   The compositing mirrors render_room.py: BG entries, flips, palettes and the
+   per-room gfx set come from the file; nothing is read from the ROM here. */
+
+// ---------------------------------------------------------------- helpers
+const $ = (s, e) => (e || document).querySelector(s);
+const hex = (n, w = 2) => (n < 0 ? '-' : '') + Math.abs(n).toString(16).toUpperCase().padStart(w, '0');
+function el(tag, cls, ...kids) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  for (const k of kids) if (k != null) e.append(k);
+  return e;
+}
+function store(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem('tmcwb.' + k)); localStorage.setItem('tmcwb.' + k, JSON.stringify(v)); } catch (e) { return null; } }
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function toast(t) { const e = $('#toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.remove('on'), 1800); }
+
+const S = {
+  maps: null, areas: [], byKey: new Map(), room: null, key: null,
+  layerOn: { BG1: true, BG2: true, BG3: true }, showHidden: false,
+  entities: true, labels: true, grid: false, sync: true,
+  kindOff: new Set(store('kindOff') || []), filter: '',
+  sel: { blocks: [], objs: new Set() },
+  bg3cb: 0, objs: [], objByKey: new Map(),
+  views: [], cache: [], groupsOpen: store('groupsOpen') || {},
+  sprOn: true, spr: { state: 'idle', data: null, pics: new Map(), err: '' },
+};
+const roomKey = (a, r) => hex(a) + '-' + hex(r);
+
+// ---------------------------------------------------------------- data decoding
+function b64(s) { const bin = atob(s), u = new Uint8Array(bin.length); for (let i = 0; i < u.length; i++) u[i] = bin.charCodeAt(i); return u; }
+function u16(s) { const b = b64(s); return new Uint16Array(b.buffer, 0, b.length >> 1); }
+function bgr555(c) {
+  let r = c & 31, g = (c >> 5) & 31, b = (c >> 10) & 31;
+  r = r << 3 | r >> 2; g = g << 3 | g >> 2; b = b << 3 | b >> 2;
+  return (0xFF000000 | b << 16 | g << 8 | r) >>> 0;
+}
+const gfxCache = new Map(), metaCache = new Map();
+function getGfx(id) {
+  let g = gfxCache.get(id);
+  if (!g) {
+    const raw = S.maps.gfx[id];
+    const p = u16(raw.palettes), pal = new Uint32Array(p.length);
+    for (let i = 0; i < p.length; i++) pal[i] = bgr555(p[i]);
+    g = { vram: b64(raw.vram), pal };
+    gfxCache.set(id, g);
+  }
+  return g;
+}
+function getMeta(room, set) {
+  const k = room.metatiles + '/' + set;
+  let m = metaCache.get(k);
+  if (!m) {
+    const a = S.maps.metatiles[room.metatiles];
+    m = a && a[set] ? u16(a[set]) : new Uint16Array(0);
+    metaCache.set(k, m);
+  }
+  return m;
+}
+function getTypes(room, set) {
+  const k = room.metatiles + '/' + set + 'Types';
+  let m = metaCache.get(k);
+  if (!m) {
+    const a = S.maps.metatiles[room.metatiles];
+    m = a && a[set + 'Types'] ? u16(a[set + 'Types']) : new Uint16Array(0);
+    metaCache.set(k, m);
+  }
+  return m;
+}
+function layerData(L) { return L.__d || (L.__d = u16(L.data)); }
+
+// A layer as BG screen entries (RenderMapLayerToSubTileMap for metatile layers).
+function tilemapOf(room, L) {
+  if (L.__tm) return L.__tm;
+  const data = layerData(L);
+  let tm;
+  if (L.format === 'tilemap') tm = { w8: L.w, h8: L.h, entries: data, oob: 0 };
+  else {
+    const sub = getMeta(room, L.metatileSet), w = L.w, h = L.h, out = new Uint16Array(w * 2 * h * 2);
+    let oob = 0;
+    for (let my = 0; my < h; my++) for (let mx = 0; mx < w; mx++) {
+      const base = (data[my * w + mx] & 0x3FFF) * 4;
+      if (base + 4 > sub.length) { oob++; continue; }
+      const o = my * 2 * w * 2 + mx * 2;
+      out[o] = sub[base]; out[o + 1] = sub[base + 1]; out[o + w * 2] = sub[base + 2]; out[o + w * 2 + 1] = sub[base + 3];
+    }
+    tm = { w8: w * 2, h8: h * 2, entries: out, oob };
+  }
+  L.__tm = tm;
+  return tm;
+}
+
+// Cached per room: {layers: {BGn: {canvas, buf, w, h}}, comp: {sig: canvas}}
+function roomCache(room) {
+  if (!room.__c) {
+    room.__c = { layers: {}, comp: {} };
+    S.cache.push(room);
+    while (S.cache.length > 10) { const old = S.cache.shift(); if (old !== S.room) old.__c = null; else S.cache.push(old); }
+  }
+  return room.__c;
+}
+function layerFor(room, bg) {
+  const L = room.layers[bg];
+  if (!L || !L.data) return null;
+  if (bg === 'BG3') return Object.assign({}, L, { charBase: S.bg3cb, colors: 16, w: L.w, h: L.h, __d: layerData(L), __tm: L.__tm });
+  return L;
+}
+function getLayer(room, bg) {
+  const c = roomCache(room), ck = bg === 'BG3' ? 'BG3/' + S.bg3cb : bg;
+  if (c.layers[ck]) return c.layers[ck];
+  const L = layerFor(room, bg);
+  if (!L) return null;
+  const gfx = getGfx(room.gfx), vram = gfx.vram, pal = gfx.pal;
+  const tm = tilemapOf(room, L);
+  if (bg === 'BG3') room.layers.BG3.__tm = tm;
+  const W = tm.w8 * 8, H = tm.h8 * 8;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d'), img = ctx.createImageData(W, H), buf = new Uint32Array(img.data.buffer);
+  const cb = (L.charBase || 0) * 0x4000, c256 = L.colors === 256, ent = tm.entries;
+  for (let ty = 0; ty < tm.h8; ty++) for (let tx = 0; tx < tm.w8; tx++) {
+    const e = ent[ty * tm.w8 + tx], t = e & 0x3FF, hf = (e >> 10) & 1, vf = (e >> 11) & 1, pb = (e >> 12) * 16;
+    for (let y = 0; y < 8; y++) {
+      const sy = vf ? 7 - y : y, row = (ty * 8 + y) * W + tx * 8;
+      for (let x = 0; x < 8; x++) {
+        const sx = hf ? 7 - x : x;
+        let i;
+        if (c256) { const o = cb + t * 64 + sy * 8 + sx; i = o < vram.length ? vram[o] : 0; }
+        else {
+          const o = cb + t * 32 + sy * 4 + (sx >> 1);
+          i = o < vram.length ? (vram[o] >> (4 * (sx & 1))) & 15 : 0;
+          if (i) i += pb;
+        }
+        if (i) buf[row + x] = pal[i];
+      }
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const r = { canvas: cv, buf, w: W, h: H, tm };
+  c.layers[ck] = r;
+  return r;
+}
+const bgNum = bg => +bg.slice(2);
+function layerIsOn(room, bg) {
+  const L = room.layers[bg];
+  if (!L || !L.data || !S.layerOn[bg]) return false;
+  return L.visible !== false || S.showHidden;
+}
+// Back to front: higher priority number is further back; at equal priority the higher BG number is behind.
+function enabledOrder(room) {
+  const a = Object.keys(room.layers).filter(bg => layerIsOn(room, bg));
+  const pr = bg => room.layers[bg].priority == null ? 3 : room.layers[bg].priority;
+  a.sort((x, y) => (pr(y) - pr(x)) || (bgNum(y) - bgNum(x)));
+  return a;
+}
+function getComposite(room) {
+  const order = enabledOrder(room), sig = order.join(',') + (order.includes('BG3') ? '/' + S.bg3cb : '');
+  const c = roomCache(room);
+  if (c.comp[sig]) return c.comp[sig];
+  const cv = document.createElement('canvas'); cv.width = room.width; cv.height = room.height;
+  const ctx = cv.getContext('2d'), gfx = getGfx(room.gfx), p0 = gfx.pal[0];
+  ctx.fillStyle = 'rgb(' + (p0 & 255) + ',' + (p0 >> 8 & 255) + ',' + (p0 >> 16 & 255) + ')';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  for (const bg of order) { const l = getLayer(room, bg); if (l) ctx.drawImage(l.canvas, 0, 0); }
+  c.comp = {}; c.comp[sig] = cv;
+  return cv;
+}
+
+// ---------------------------------------------------------------- sprites (sprites.json, built by sprites.py)
+// Entities of a few curated families come with a pre-rendered picture and the reason it looks that way.
+// The file is loaded lazily and is optional: without it the markers are all there is.
+function ensureSprites() { return S.spr.promise || (S.spr.promise = loadSprites()); }
+async function loadSprites() {
+  const sp = S.spr;
+  sp.state = 'loading'; syncCtl();
+  try {
+    const r = await fetch('sprites.json', { cache: 'no-cache' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    setSprites(await r.json());
+  } catch (e) { sp.state = 'missing'; sp.err = e.message; syncCtl(); }
+}
+function setSprites(d) {
+  if (d.format !== 'tmc-layer-workbench-sprites') throw new Error('not a sprites.json of this tool');
+  S.spr.data = d; S.spr.state = 'ready'; S.spr.pics.clear(); S.spr.err = '';
+  syncCtl(); repaintAll(); renderInfo(); renderEntityList(true);
+}
+function sprRec(idx) {
+  const d = S.spr.data, r = d && S.key && d.rooms[S.key];
+  return r ? r[String(idx)] || null : null;
+}
+function sprPic(key) {
+  let p = S.spr.pics.get(key);
+  if (!p) {
+    const d = S.spr.data.pictures[key], rgba = b64(d.rgba);
+    const cv = document.createElement('canvas'); cv.width = d.w; cv.height = d.h;
+    cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, 0, rgba.length), d.w, d.h), 0, 0);
+    p = { cv, w: d.w, h: d.h, ox: d.ox, oy: d.oy, rgba };
+    S.spr.pics.set(key, p);
+  }
+  return p;
+}
+// The drawn sprite of an entity object: {rec, pic} or null (no record, or the record says why not).
+function sprOf(o) {
+  if (o.cat !== 'entity' || S.spr.state !== 'ready') return null;
+  const rec = sprRec(o.key.slice(1));
+  return rec && rec.pic ? { rec, pic: sprPic(rec.pic) } : null;
+}
+// Text for INFO and COPY INFO: why the entity is (not) drawn the way it is.
+function spriteLines(o) {
+  if (o.cat !== 'entity' || !o.real) return [];
+  const d = S.spr.data;
+  if (S.spr.state !== 'ready') return [['sprite', S.spr.state === 'loading' ? 'sprites.json is loading' : 'no sprites.json (' + S.spr.err + '): markers only']];
+  const rec = sprRec(o.key.slice(1));
+  if (!rec) {
+    const why = d.notCovered[o.kind + '/' + (o.src.idName || '')];
+    return [['sprite', why ? 'marker only: ' + why : 'marker only (family not in the curated list)']];
+  }
+  const out = [];
+  if (rec.skipped) out.push(['sprite', 'NOT DRAWN: ' + rec.skipped]);
+  else out.push(['sprite', 'drawn' + (rec.pieces ? ' (' + rec.pieces + ' OAM pieces)' : '') + (S.sprOn ? '' : ', SPRITES is off')]);
+  out.push(['rule', rec.rule || rec.family]);
+  if (rec.sprite != null) out.push(['sprite index', rec.sprite + ' (object definition ' + rec.definition + ')']);
+  if (rec.frame != null) out.push(['frame', (rec.anim != null ? 'animation ' + rec.anim + ', first frame -> ' : 'set directly: ') + 'frameIndex ' + rec.frame + ', flipX ' + rec.flipX + ', flipY ' + rec.flipY + (rec.dx || rec.dy ? ', offset ' + rec.dx + ',' + rec.dy : '')]);
+  if (rec.gfx) out.push(['tiles', rec.gfx + ', OBJ palette id ' + rec.palette]);
+  (rec.why || []).forEach((w, i) => out.push([i ? '' : 'why', w]));
+  if (rec.state) out.push(['pose is', rec.state]);
+  return out;
+}
+
+// ---------------------------------------------------------------- objects (entities, tile entities, exits)
+const KIND_COLOR = { ENEMY: '#ff5050', OBJECT: '#ffd24a', NPC: '#5ad2ff', MANAGER: '#c08cff', PLAYER: '#6dff6d',
+  PROJECTILE: '#ff9a3c', PLAYER_ITEM: '#7dffc8', TILE: '#ff8ad8', EXIT: '#ffffff' };
+const kindColor = k => KIND_COLOR[k] || '#bbbbbb';
+function buildObjects(room) {
+  const out = [];
+  const inside = (x, y) => x >= 0 && y >= 0 && x < room.width && y < room.height;
+  room.entities.forEach((e, i) => {
+    const kind = e.kindName || ('KIND' + e.kind);
+    const id = e.idName || ('0x' + hex(e.id));
+    out.push({ key: 'e' + i, cat: 'entity', kind, label: kind + '/' + id + ' ' + e.type, x: e.x, y: e.y,
+      real: e.positioned, outside: !inside(e.x, e.y), draw: true, src: e,
+      hay: (kind + '/' + id + ' ' + e.type + ' id' + e.id + ' x' + e.x + ' y' + e.y + ' ' + e.list + ' ' + e.when + ' ' + e.label).toLowerCase() });
+  });
+  room.tileEntities.forEach((t, i) => {
+    const has = t.x != null && t.y != null;
+    out.push({ key: 't' + i, cat: 'tile', kind: 'TILE', label: 'TILE/' + (t.typeName || ('0x' + hex(t.type))), x: has ? t.x : 0, y: has ? t.y : 0,
+      real: has, outside: has && !inside(t.x, t.y), draw: has, src: t,
+      hay: ('tile/' + t.typeName + ' type' + t.type + ' x' + t.x + ' y' + t.y).toLowerCase() });
+  });
+  room.exits.forEach((x, i) => {
+    const dest = roomKey(x.destArea, x.destRoom);
+    out.push({ key: 'x' + i, cat: 'exit', kind: 'EXIT', label: 'EXIT/' + (x.warpTypeName || x.warpType).toString().replace('WARP_TYPE_', '') + ' -> ' + dest,
+      x: x.x, y: x.y, real: true, outside: !(x.x >= 0 && x.y >= 0 && x.x < room.width && x.y < room.height), draw: true, src: x,
+      hay: ('exit ' + dest + ' ' + x.warpTypeName + ' x' + x.x + ' y' + x.y).toLowerCase() });
+  });
+  return out;
+}
+function objVisible(o) {
+  if (S.kindOff.has(o.kind)) return false;
+  if (S.filter && !o.hay.includes(S.filter)) return false;
+  return true;
+}
+
+// ---------------------------------------------------------------- blocks
+const blockUnit = L => L.format === 'metatile' ? 16 : 8;
+function blockInfo(bg, bx, by) {
+  const room = S.room, L = room.layers[bg];
+  if (!L || !L.data) return null;
+  const data = layerData(L);
+  if (bx < 0 || by < 0 || bx >= L.w || by >= L.h) return null;
+  const info = { bg, bx, by, unit: blockUnit(L), format: L.format };
+  info.px = bx * info.unit; info.py = by * info.unit;
+  const decode = e => ({ raw: e, tile: e & 0x3FF, hf: (e >> 10) & 1, vf: (e >> 11) & 1, pal: e >> 12 });
+  if (L.format === 'metatile') {
+    const raw = data[by * L.w + bx], m = raw & 0x3FFF, sub = getMeta(room, L.metatileSet), types = getTypes(room, L.metatileSet);
+    info.metatile = raw; info.set = L.metatileSet;
+    info.oob = m * 4 + 4 > sub.length;
+    info.type = m < types.length ? types[m] : null;
+    info.entries = info.oob ? [] : [0, 1, 2, 3].map(k => decode(sub[m * 4 + k]));
+  } else info.entries = [decode(data[by * L.w + bx])];
+  return info;
+}
+const blockKey = b => b.bg + ':' + b.bx + ',' + b.by;
+function fmtEntry(e) { return 'tile 0x' + hex(e.tile, 3) + ' pal ' + e.pal + (e.hf ? ' hflip' : '') + (e.vf ? ' vflip' : '') + ' (entry 0x' + hex(e.raw, 4) + ')'; }
+
+// ---------------------------------------------------------------- COPY INFO
+function layerLine(room, bg) {
+  const L = room.layers[bg];
+  if (!L) return null;
+  return bg + ': bgcnt ' + (L.bgcnt == null ? 'unset (set by managers)' : '0x' + hex(L.bgcnt, 4) + ' priority ' + L.priority + ' charBase ' + L.charBase + ' ' + L.colors + ' colours') +
+    ', ' + L.format + ' ' + L.w + 'x' + L.h + ', shown by the game: ' + (L.visible ? 'yes' : 'no') + (L.defined === false ? ', not defined by this room' : '');
+}
+function fieldsOf(o) {
+  const lines = [];
+  for (const [k, v] of Object.entries(o.src)) lines.push('    ' + k + ': ' + (v === null ? 'null' : v));
+  return lines;
+}
+function infoText() {
+  const room = S.room;
+  if (!room) return '';
+  const a = room._a, t = [];
+  t.push('TMC layer workbench (' + S.maps.rom.region + ' ROM)');
+  t.push('Area 0x' + hex(a.id) + ' ' + a.name + ', room 0x' + hex(room.id) + ' ' + (room.name || '') + (room.enumName ? ' (' + room.enumName + ')' : ''));
+  t.push('Size ' + room.width + 'x' + room.height + ' px (' + (room.width / 16) + 'x' + (room.height / 16) + ' metatiles), mode ' + room.mode + ', world ' + room.worldX + ',' + room.worldY + ', tileSet ' + room.tileSetId + ', gfx ' + room.gfx);
+  for (const bg of ['BG1', 'BG2', 'BG3']) { const l = layerLine(room, bg); if (l) t.push(l); }
+  t.push('Draw order (back to front): ' + room.drawOrder.join(', '));
+  t.push('Entities ' + room.entities.length + ' (positioned ' + room.entities.filter(e => e.positioned).length + '), tile entities ' + room.tileEntities.length + ', exits ' + room.exits.length);
+  const objs = S.objs.filter(o => S.sel.objs.has(o.key));
+  if (objs.length) {
+    t.push('', 'Selected objects (' + objs.length + '):');
+    for (const o of objs) {
+      t.push('  [' + o.cat + ' ' + o.key + '] ' + o.label + ' at ' + (o.draw ? o.x + ',' + o.y : 'no position') +
+        (o.outside ? ' (OUTSIDE the room)' : '') + (o.cat === 'entity' && !o.real ? ' (x,y are parameters, not a position)' : ''));
+      for (const [k, v] of spriteLines(o)) t.push('    ' + (k ? k + ': ' : '        ') + v);
+      t.push(...fieldsOf(o));
+    }
+  }
+  const bl = S.sel.blocks;
+  if (bl.length) {
+    t.push('', 'Selected blocks (' + bl.length + (bl.length > 256 ? ', first 256 listed' : '') + '):');
+    for (const b of bl.slice(0, 256)) {
+      const i = blockInfo(b.bg, b.bx, b.by);
+      if (!i) continue;
+      let s = '  ' + i.bg + ' block ' + i.bx + ',' + i.by + ' (' + i.unit + 'px unit, at ' + i.px + ',' + i.py + ')';
+      if (i.format === 'metatile') {
+        s += ' metatile 0x' + hex(i.metatile, 4) + ' (' + i.set + ' set)' + (i.type != null ? ' type 0x' + hex(i.type, 4) : '') + (i.oob ? ' OUT OF RANGE: past the loaded set, the game reads stale memory' : '');
+        t.push(s);
+        i.entries.forEach((e, k) => t.push('      ' + ['TL', 'TR', 'BL', 'BR'][k] + ': ' + fmtEntry(e)));
+      } else { t.push(s); i.entries.forEach(e => t.push('      ' + fmtEntry(e))); }
+    }
+  }
+  return t.join('\n') + '\n';
+}
+async function copyInfo() {
+  const text = infoText();
+  try { await navigator.clipboard.writeText(text); toast('Copied ' + text.length + ' chars'); }
+  catch (e) {
+    const ta = el('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;left:-999px'; document.body.append(ta); ta.select();
+    try { document.execCommand('copy'); toast('Copied ' + text.length + ' chars'); } catch (e2) { toast('Copy failed'); }
+    ta.remove();
+  }
+}
+
+// ---------------------------------------------------------------- window manager
+const ws = $('#ws'), miniBar = $('#mini');
+const wins = {};
+let zTop = 10;
+function wsSize() { return { W: ws.clientWidth, H: ws.clientHeight }; }
+function defaultRect(id) {
+  const { W, H } = wsSize(), u = (a, b, c, d) => ({ x: Math.round(a * W), y: Math.round(b * H), w: Math.round(c * W), h: Math.round(d * H) });
+  return ({
+    RESULT: u(0, 0, .5, .64), BG2: u(.5, 0, .25, .32), BG1: u(.75, 0, .25, .32), BG3: u(.5, .32, .25, .32),
+    MAP: u(.75, .32, .25, .32), ENTITIES: u(0, .64, .4, .36), INFO: u(.4, .64, .6, .36),
+  })[id];
+}
+class Win {
+  constructor(id, title, opts = {}) {
+    this.id = id; this.title = title; this.state = 'open'; this.onResize = null;
+    this.el = el('div', 'win'); this.hd = el('div', 'hd'); this.bd = el('div', 'bd');
+    this.t = el('span', 't'); this.t.textContent = title;
+    this.btnMin = el('button'); this.btnMin.textContent = '_'; this.btnMin.title = 'minimise';
+    this.btnX = el('button'); this.btnX.textContent = 'x'; this.btnX.title = 'hide (reopen from the top bar)';
+    this.extra = el('span');
+    this.hd.append(this.t, this.extra, this.btnMin, this.btnX);
+    this.el.append(this.hd, this.bd);
+    ws.append(this.el);
+    wins[id] = this;
+    this.btnMin.onclick = () => this.setState('min');
+    this.btnX.onclick = () => this.setState('closed');
+    this.el.addEventListener('mousedown', () => this.front(), true);
+    this.hd.addEventListener('mousedown', e => this.startDrag(e));
+    this.hd.addEventListener('dblclick', e => { if (e.target === this.hd || e.target === this.t) this.setState('min'); });
+    new ResizeObserver(() => { if (this.state === 'open') { this.onResize && this.onResize(); saveLayoutSoon(); } }).observe(this.el);
+  }
+  rect() { return { x: this.el.offsetLeft, y: this.el.offsetTop, w: this.el.offsetWidth, h: this.el.offsetHeight }; }
+  setRect(r) {
+    const { W, H } = wsSize();
+    const w = clamp(r.w, 160, Math.max(160, W)), h = clamp(r.h, 80, Math.max(80, H));
+    Object.assign(this.el.style, { width: w + 'px', height: h + 'px',
+      left: clamp(r.x, -w + 80, Math.max(0, W - 80)) + 'px', top: clamp(r.y, 0, Math.max(0, H - 24)) + 'px' });
+  }
+  front() { this.el.style.zIndex = ++zTop; for (const k in wins) wins[k].el.classList.toggle('front', wins[k] === this); }
+  // auto: set by autoMinHidden (a layer the game hides), not by the user: remembered in autoMin and not saved as the window's state.
+  setState(s, auto) {
+    this.state = s; this.autoMin = !!auto && s === 'min';
+    this.el.style.display = s === 'open' ? 'flex' : 'none';
+    if (s === 'open') { this.front(); this.onResize && this.onResize(); }
+    renderMini(); saveLayoutSoon();
+  }
+  startDrag(e) {
+    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
+    const r = this.rect(), sx = e.clientX, sy = e.clientY;
+    const mv = ev => this.setRect({ x: r.x + ev.clientX - sx, y: r.y + ev.clientY - sy, w: r.w, h: r.h });
+    const up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); saveLayoutSoon(); };
+    addEventListener('mousemove', mv); addEventListener('mouseup', up);
+    e.preventDefault();
+  }
+}
+function renderMini() {
+  miniBar.textContent = '';
+  const lab = el('span'); lab.textContent = 'WINDOWS'; lab.style.color = 'var(--dim)'; miniBar.append(lab);
+  for (const id in wins) {
+    const w = wins[id], b = el('button'); b.textContent = w.title.split(' ')[0];
+    b.className = w.state === 'open' ? 'on' : '';
+    b.title = w.state === 'open' ? 'click: minimise' : 'click: show';
+    b.style.opacity = w.state === 'closed' ? .55 : 1;
+    b.onclick = () => w.setState(w.state === 'open' ? 'min' : 'open');
+    miniBar.append(b);
+  }
+}
+let saveT = 0;
+function saveLayoutSoon() { clearTimeout(saveT); saveT = setTimeout(saveLayout, 300); }
+function saveLayout() {
+  const o = {};
+  for (const id in wins) o[id] = Object.assign(wins[id].rect(), { s: wins[id].autoMin ? 'open' : wins[id].state });
+  store('layout', o);
+}
+function applyLayout(reset) {
+  const saved = reset ? null : store('layout');
+  for (const id in wins) {
+    const w = wins[id], r = (saved && saved[id]) || defaultRect(id);
+    w.setRect(r);
+    w.setState(saved && saved[id] ? saved[id].s || 'open' : 'open');
+  }
+  if (reset) saveLayout();
+}
+
+// ---------------------------------------------------------------- panes: shared pan/zoom machinery
+class Pane {
+  constructor(win, canvasHost) {
+    this.win = win; this.host = canvasHost; this.cv = el('canvas'); canvasHost.append(this.cv);
+    this.ctx = this.cv.getContext('2d');
+    this.s = 1; this.ox = 0; this.oy = 0; this.dirty = true;
+    const ro = new ResizeObserver(() => this.resize()); ro.observe(canvasHost);
+    this.cv.addEventListener('wheel', e => this.wheel(e), { passive: false });
+    this.cv.addEventListener('mousedown', e => this.down(e));
+    this.cv.addEventListener('mousemove', e => this.move(e));
+    this.cv.addEventListener('contextmenu', e => e.preventDefault());
+    this.cv.addEventListener('dblclick', e => { if (e.shiftKey) { e.preventDefault(); fitAll(); } });
+  }
+  resize() {
+    const w = Math.max(1, this.host.clientWidth), h = Math.max(1, this.host.clientHeight);
+    if (this.cv.width !== w || this.cv.height !== h) { this.cv.width = w; this.cv.height = h; }
+    this.paint();
+  }
+  pos(e) { const r = this.cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * this.cv.width / r.width, y: (e.clientY - r.top) * this.cv.height / r.height }; }
+  toImg(p) { return { x: (p.x - this.ox) / this.s, y: (p.y - this.oy) / this.s }; }
+  setT(t, fromSync) {
+    this.s = t.s; this.ox = t.ox; this.oy = t.oy;
+    this.paint();
+    if (!fromSync && S.sync) for (const v of S.views) if (v !== this && v.win.state === 'open') v.setT(t, true);
+  }
+  wheel(e) {
+    e.preventDefault();
+    if (e.ctrlKey) {
+      const p = this.pos(e), k = Math.exp(-e.deltaY * 0.0016), ns = clamp(this.s * k, 0.05, 64);
+      const ix = (p.x - this.ox) / this.s, iy = (p.y - this.oy) / this.s;
+      this.setT({ s: ns, ox: p.x - ix * ns, oy: p.y - iy * ns });
+    } else {
+      const d = e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+      this.setT(e.shiftKey ? { s: this.s, ox: this.ox - d, oy: this.oy } : { s: this.s, ox: this.ox - e.deltaX, oy: this.oy - d });
+    }
+  }
+  down(e) {
+    const p = this.pos(e);
+    if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+      e.preventDefault();
+      const sx = p.x, sy = p.y, ox = this.ox, oy = this.oy;
+      const mv = ev => { const q = this.pos(ev); this.setT({ s: this.s, ox: ox + q.x - sx, oy: oy + q.y - sy }); };
+      const up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); };
+      addEventListener('mousemove', mv); addEventListener('mouseup', up);
+      return;
+    }
+    if (e.button === 0) this.leftDown(e, p);
+  }
+  leftDown() {}
+  move() {}
+  paint() {}
+}
+
+// ---------------------------------------------------------------- image views (RESULT and one per layer)
+function makeChecker() {
+  const c = document.createElement('canvas'); c.width = c.height = 16;
+  const x = c.getContext('2d'); x.fillStyle = '#20232b'; x.fillRect(0, 0, 16, 16); x.fillStyle = '#2a2e38'; x.fillRect(0, 0, 8, 8); x.fillRect(8, 8, 8, 8);
+  return c;
+}
+const checker = makeChecker();
+class ImgView extends Pane {
+  constructor(win, host, bg, status) {
+    super(win, host);
+    this.bg = bg; this.status = status; this.drag = null;
+  }
+  source() {
+    const room = S.room;
+    if (!room) return null;
+    if (this.bg) { const l = getLayer(room, this.bg); return l ? l.canvas : null; }
+    return getComposite(room);
+  }
+  fit() {
+    const src = this.source(), w = this.cv.width, h = this.cv.height;
+    if (!src || w < 4) return;
+    let s = Math.min((w - 8) / src.width, (h - 8) / src.height);
+    s = s >= 1 ? Math.floor(s) : Math.max(s, 0.05);
+    this.s = s; this.ox = Math.round((w - src.width * s) / 2); this.oy = Math.round((h - src.height * s) / 2);
+  }
+  centerOn(x, y) { this.ox = Math.round(this.cv.width / 2 - x * this.s); this.oy = Math.round(this.cv.height / 2 - y * this.s); this.paint(); }
+  paint() {
+    const ctx = this.ctx, w = this.cv.width, h = this.cv.height, room = S.room;
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = this.bg ? ctx.createPattern(checker, 'repeat') : '#0b0c0f';
+    ctx.fillRect(0, 0, w, h);
+    if (!room) return;
+    const src = this.source();
+    if (!src) {
+      ctx.fillStyle = '#8a92a6'; ctx.font = '12px monospace';
+      ctx.fillText(this.bg + ': this room has no ' + this.bg + ' data', 10, 20);
+      return;
+    }
+    const hidden = this.bg && room.layers[this.bg] && room.layers[this.bg].visible === false;
+    if (hidden) ctx.globalAlpha = 0.3;   // the game does not show this layer in this room: what follows may not be a map
+    ctx.drawImage(src, this.ox, this.oy, src.width * this.s, src.height * this.s);
+    ctx.globalAlpha = 1;
+    if (!this.bg) this.paintSprites(ctx, room);
+    // room bounds when the image is not the room
+    ctx.strokeStyle = '#ffffff30'; ctx.lineWidth = 1;
+    ctx.strokeRect(this.ox - .5, this.oy - .5, room.width * this.s + 1, room.height * this.s + 1);
+    this.paintOverlay(ctx, src, w, h, room);
+    if (hidden) this.paintHiddenNotice(ctx, w, room.layers[this.bg]);
+  }
+  paintHiddenNotice(ctx, w, L) {
+    const lines = ['NOT SHOWN BY THE GAME IN THIS ROOM', 'data may not be a drawable map' + (L.note ? ' (' + L.note + ')' : '')];
+    ctx.font = 'bold 11px ui-monospace,Consolas,monospace'; ctx.textBaseline = 'top';
+    const tw = Math.min(w - 8, Math.max(...lines.map(t => ctx.measureText(t).width)) + 12);
+    ctx.fillStyle = '#000000d0'; ctx.fillRect(4, 4, tw, 8 + lines.length * 14);
+    ctx.strokeStyle = '#ff6060'; ctx.lineWidth = 1; ctx.strokeRect(4.5, 4.5, tw, 8 + lines.length * 14);
+    ctx.fillStyle = '#ff9090';
+    lines.forEach((t, i) => ctx.fillText(t, 10, 8 + i * 14, tw - 12));
+  }
+  // The curated sprites (sprites.json) at the entities' positions, over the room; the game sorts by y.
+  paintSprites(ctx, room) {
+    if (!S.sprOn || S.spr.state !== 'ready') return;
+    const list = [];
+    for (const o of S.objs) {
+      if (o.cat !== 'entity' || !o.real) continue;
+      const sp = sprOf(o); if (sp) list.push([o, sp]);
+    }
+    list.sort((a, b) => a[0].y - b[0].y || a[0].key.localeCompare(b[0].key, undefined, { numeric: true }));
+    ctx.imageSmoothingEnabled = false;
+    for (const [o, sp] of list) ctx.drawImage(sp.pic.cv, this.ox + (o.x + sp.pic.ox) * this.s, this.oy + (o.y + sp.pic.oy) * this.s, sp.pic.w * this.s, sp.pic.h * this.s);
+  }
+  // An entity whose drawn sprite has an opaque pixel under the screen point p.
+  hitSprite(p) {
+    if (!S.sprOn || S.spr.state !== 'ready' || this.bg) return null;
+    const q = this.toImg(p);
+    let best = null;
+    for (const o of S.objs) {
+      if (o.cat !== 'entity' || !o.real) continue;
+      const sp = sprOf(o); if (!sp) continue;
+      const x = Math.floor(q.x - o.x - sp.pic.ox), y = Math.floor(q.y - o.y - sp.pic.oy);
+      if (x < 0 || y < 0 || x >= sp.pic.w || y >= sp.pic.h || !sp.pic.rgba[(y * sp.pic.w + x) * 4 + 3]) continue;
+      if (!best || o.y >= best.y) best = o;
+    }
+    return best;
+  }
+  paintOverlay(ctx, src, w, h, room) {
+    const s = this.s, ox = this.ox, oy = this.oy;
+    if (S.grid) {
+      const step = s >= 3 ? 8 : 16;
+      ctx.lineWidth = 1;
+      for (let x = Math.max(0, Math.floor(-ox / s / step) * step); x <= src.width && ox + x * s < w; x += step) {
+        ctx.fillStyle = x % 16 ? '#ffffff14' : '#ffffff30'; ctx.fillRect(Math.round(ox + x * s), Math.max(0, oy), 1, Math.min(h, src.height * s));
+      }
+      for (let y = Math.max(0, Math.floor(-oy / s / step) * step); y <= src.height && oy + y * s < h; y += step) {
+        ctx.fillStyle = y % 16 ? '#ffffff14' : '#ffffff30'; ctx.fillRect(Math.max(0, ox), Math.round(oy + y * s), Math.min(w, src.width * s), 1);
+      }
+    }
+    // selected blocks
+    ctx.lineWidth = 2;
+    for (const b of S.sel.blocks) {
+      const L = room.layers[b.bg]; if (!L) continue;
+      const u = blockUnit(L);
+      ctx.fillStyle = '#5ad2ff30'; ctx.fillRect(ox + b.bx * u * s, oy + b.by * u * s, u * s, u * s);
+      ctx.strokeStyle = b.bg === this.bg || !this.bg ? '#5ad2ff' : '#5ad2ff80';
+      ctx.strokeRect(ox + b.bx * u * s + 1, oy + b.by * u * s + 1, u * s - 2, u * s - 2);
+    }
+    if (S.entities) this.paintObjects(ctx, room, w, h);
+    if (this.drag && this.drag.moved) {
+      const d = this.drag;
+      ctx.strokeStyle = '#ffd24a'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
+      ctx.strokeRect(Math.min(d.sx, d.cx) + .5, Math.min(d.sy, d.cy) + .5, Math.abs(d.cx - d.sx), Math.abs(d.cy - d.sy));
+      ctx.setLineDash([]);
+    }
+  }
+  objScreen(o, room) {
+    let x = o.x, y = o.y;
+    if (o.outside) { x = clamp(x, 0, room.width); y = clamp(y, 0, room.height); }
+    return { x: this.ox + x * this.s, y: this.oy + y * this.s };
+  }
+  paintObjects(ctx, room, w, h) {
+    ctx.font = '10px ui-monospace,Consolas,monospace'; ctx.textBaseline = 'middle';
+    const sel = S.sel.objs;
+    for (const o of S.objs) {
+      if (!o.draw || !objVisible(o)) continue;
+      const p = this.objScreen(o, room);
+      if (p.x < -200 || p.y < -20 || p.x > w + 20 || p.y > h + 20) continue;
+      const col = o.outside ? '#ff4040' : kindColor(o.kind), isSel = sel.has(o.key);
+      ctx.lineWidth = 1.5; ctx.strokeStyle = '#000'; ctx.fillStyle = col;
+      if (o.outside) {
+        ctx.beginPath(); ctx.moveTo(p.x, p.y - 6); ctx.lineTo(p.x + 6, p.y + 5); ctx.lineTo(p.x - 6, p.y + 5); ctx.closePath(); ctx.fill(); ctx.stroke();
+      } else if (!o.real) {
+        ctx.setLineDash([2, 2]); ctx.strokeStyle = col; ctx.beginPath();
+        ctx.moveTo(p.x, p.y - 5); ctx.lineTo(p.x + 5, p.y); ctx.lineTo(p.x, p.y + 5); ctx.lineTo(p.x - 5, p.y); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+      } else if (o.cat === 'exit') {
+        ctx.fillRect(p.x - 4, p.y - 4, 8, 8); ctx.strokeRect(p.x - 4, p.y - 4, 8, 8);
+        ctx.fillStyle = '#000'; ctx.fillRect(p.x - 1, p.y - 1, 2, 2);
+      } else if (o.cat === 'tile') {
+        ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 7); ctx.fill(); ctx.stroke();
+      } else {
+        ctx.fillRect(p.x - 3, p.y - 3, 7, 7); ctx.strokeRect(p.x - 3.5, p.y - 3.5, 7, 7);
+        ctx.fillStyle = '#000'; ctx.fillRect(p.x, p.y, 1, 1);
+      }
+      if (isSel) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(p.x - 8, p.y - 8, 16, 16); }
+      if (S.labels || isSel) {
+        let t = o.label + (o.outside ? ' (' + o.x + ',' + o.y + ' outside)' : '') + (!o.real && o.cat === 'entity' ? ' ~' : '');
+        ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(t, p.x + 8, p.y - 7);
+        ctx.fillStyle = isSel ? '#fff' : col; ctx.fillText(t, p.x + 8, p.y - 7);
+      }
+    }
+  }
+  hitObject(p) {
+    if (!S.entities || !S.room) return null;
+    let best = null, bd = 100;
+    for (const o of S.objs) {
+      if (!o.draw || !objVisible(o)) continue;
+      const q = this.objScreen(o, S.room), d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
+      if (d < bd) { bd = d; best = o; }
+    }
+    return best;
+  }
+  // The layer a click in this view targets: the layer itself, or in RESULT the topmost one with a pixel there.
+  targetLayer(ix, iy) {
+    const room = S.room;
+    if (this.bg) return room.layers[this.bg] && room.layers[this.bg].data ? this.bg : null;
+    const order = enabledOrder(room);
+    for (let k = order.length - 1; k >= 0; k--) {
+      const l = getLayer(room, order[k]);
+      if (l && ix >= 0 && iy >= 0 && ix < l.w && iy < l.h && (l.buf[Math.floor(iy) * l.w + Math.floor(ix)] >>> 24)) return order[k];
+    }
+    return order.length ? order[order.length - 1] : null;
+  }
+  leftDown(e, p) {
+    this.drag = { sx: p.x, sy: p.y, cx: p.x, cy: p.y, moved: false, e };
+    const mv = ev => {
+      const q = this.pos(ev), d = this.drag; if (!d) return;
+      d.cx = q.x; d.cy = q.y;
+      if (!d.moved && Math.hypot(d.cx - d.sx, d.cy - d.sy) > 4) d.moved = true;
+      if (d.moved) this.paint();
+    };
+    const up = ev => {
+      removeEventListener('mousemove', mv); removeEventListener('mouseup', up);
+      const d = this.drag; this.drag = null; if (!d) return;
+      if (d.moved) this.rectSelect(d, ev); else this.clickSelect(d, ev);
+      this.paint();
+    };
+    addEventListener('mousemove', mv); addEventListener('mouseup', up);
+  }
+  clickSelect(d, ev) {
+    const p = { x: d.sx, y: d.sy }, add = ev.ctrlKey || ev.metaKey;
+    if (!ev.altKey) {
+      const o = this.hitObject(p) || this.hitSprite(p);
+      if (o) { selectObjs([o.key], add); return; }
+    }
+    const i = this.toImg(p), bg = this.targetLayer(i.x, i.y);
+    if (!bg) { if (!add) clearSel(); return; }
+    const u = blockUnit(S.room.layers[bg]);
+    const info = blockInfo(bg, Math.floor(i.x / u), Math.floor(i.y / u));
+    if (!info) { if (!add) clearSel(); return; }
+    selectBlocks([{ bg, bx: info.bx, by: info.by }], add);
+  }
+  rectSelect(d, ev) {
+    const add = ev.ctrlKey || ev.metaKey;
+    const a = this.toImg({ x: Math.min(d.sx, d.cx), y: Math.min(d.sy, d.cy) }), b = this.toImg({ x: Math.max(d.sx, d.cx), y: Math.max(d.sy, d.cy) });
+    const bg = this.targetLayer((a.x + b.x) / 2, (a.y + b.y) / 2) || this.targetLayer(a.x, a.y);
+    const blocks = [];
+    if (bg) {
+      const L = S.room.layers[bg], u = blockUnit(L);
+      const x0 = clamp(Math.floor(a.x / u), 0, L.w - 1), x1 = clamp(Math.floor((b.x - .001) / u), 0, L.w - 1);
+      const y0 = clamp(Math.floor(a.y / u), 0, L.h - 1), y1 = clamp(Math.floor((b.y - .001) / u), 0, L.h - 1);
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) blocks.push({ bg, bx: x, by: y });
+    }
+    const keys = [];
+    if (S.entities) for (const o of S.objs) if (o.draw && objVisible(o) && o.x >= a.x && o.x <= b.x && o.y >= a.y && o.y <= b.y) keys.push(o.key);
+    setSel(blocks, keys, add);
+  }
+  move(e) {
+    const p = this.pos(e), i = this.toImg(p), room = S.room;
+    if (!room) return;
+    let t = Math.floor(i.x) + ',' + Math.floor(i.y);
+    const bg = this.targetLayer(i.x, i.y);
+    if (bg) {
+      const u = blockUnit(room.layers[bg]), info = blockInfo(bg, Math.floor(i.x / u), Math.floor(i.y / u));
+      if (info) t += '  ' + bg + ' ' + info.bx + ',' + info.by + (info.metatile != null ? ' mt 0x' + hex(info.metatile, 4) : ' tile 0x' + hex(info.entries[0].tile, 3));
+    }
+    const o = this.hitObject(p) || this.hitSprite(p);
+    if (o) t += '  | ' + o.label + (sprOf(o) ? ' (sprite)' : '');
+    this.status.textContent = t + '   x' + this.s.toFixed(2);
+  }
+}
+
+// ---------------------------------------------------------------- selection
+function setSel(blocks, objKeys, add) {
+  if (!add) { S.sel.blocks = []; S.sel.objs = new Set(); }
+  const have = new Set(S.sel.blocks.map(blockKey));
+  for (const b of blocks) if (!have.has(blockKey(b))) { S.sel.blocks.push(b); have.add(blockKey(b)); }
+  for (const k of objKeys) S.sel.objs.add(k);
+  selChanged();
+}
+function selectObjs(keys, add) {
+  if (add && keys.length === 1 && S.sel.objs.has(keys[0])) { S.sel.objs.delete(keys[0]); selChanged(); return; }
+  setSel([], keys, add);
+}
+function selectBlocks(blocks, add) {
+  if (add && blocks.length === 1) {
+    const i = S.sel.blocks.findIndex(b => blockKey(b) === blockKey(blocks[0]));
+    if (i >= 0) { S.sel.blocks.splice(i, 1); selChanged(); return; }
+  }
+  setSel(blocks, [], add);
+}
+function clearSel() { S.sel = { blocks: [], objs: new Set() }; selChanged(); }
+function selChanged() { repaintAll(); renderInfo(); renderEntityList(true); }
+function moveSel(dx, dy) {
+  if (!S.sel.blocks.length) return;
+  const nb = [];
+  for (const b of S.sel.blocks) {
+    const L = S.room.layers[b.bg];
+    nb.push({ bg: b.bg, bx: clamp(b.bx + dx, 0, L.w - 1), by: clamp(b.by + dy, 0, L.h - 1) });
+  }
+  S.sel.blocks = nb; S.sel.objs = new Set();
+  selChanged();
+}
+function repaintAllSoon() { setTimeout(() => { for (const v of S.views) v.resize(); if (mapPane) mapPane.resize(); }, 50); }
+function repaintAll() { for (const v of S.views) if (v.win.state === 'open') v.paint(); }
+function fitAll() {
+  const open = S.views.filter(v => v.win.state === 'open');
+  const first = open.find(v => !v.bg) || open[0];
+  if (S.sync && first) {
+    first.fit();
+    for (const v of open) if (v !== first) { v.s = first.s; v.ox = first.ox; v.oy = first.oy; }
+  } else for (const v of open) v.fit();
+  repaintAll();
+}
+
+// ---------------------------------------------------------------- the windows
+const bgViews = {};
+function buildResult() {
+  const w = new Win('RESULT', 'RESULT');
+  const tb = el('div', 'tb'), cvh = el('div', 'cv'), st = el('div', 'st');
+  w.bd.append(tb, cvh, st);
+  w.checks = {};
+  for (const bg of ['BG1', 'BG2', 'BG3']) {
+    const cb = el('input'); cb.type = 'checkbox'; cb.checked = true;
+    const lab = el('label', null, cb, ' ' + bg); w.checks[bg] = { cb, lab };
+    cb.onchange = () => { S.layerOn[bg] = cb.checked; layersChanged(); };
+    tb.append(lab);
+  }
+  const sh = el('input'); sh.type = 'checkbox'; sh.id = 'showHidden';
+  sh.onchange = () => { S.showHidden = sh.checked; layersChanged(); };
+  tb.append(el('label', null, sh, ' show layers the game hides'));
+  const v = new ImgView(w, cvh, null, st);
+  w.view = v; S.views.push(v);
+  w.onResize = () => v.resize();
+  return w;
+}
+function layersChanged() { repaintAll(); updateLayerChecks(); }
+function updateLayerChecks() {
+  const room = S.room, w = wins.RESULT;
+  for (const bg of ['BG1', 'BG2', 'BG3']) {
+    const c = w.checks[bg], L = room && room.layers[bg];
+    c.cb.disabled = !L || !L.data;
+    c.cb.checked = S.layerOn[bg] && !c.cb.disabled;
+    c.lab.style.opacity = !L || !L.data ? .4 : 1;
+    c.lab.title = !L ? 'this room has no ' + bg : (L.visible === false ? 'the game does not show ' + bg + ' in this room' + (L.note ? ': ' + L.note : '') : '');
+    c.lab.style.color = L && L.visible === false ? 'var(--dim)' : '';
+    c.lab.lastChild.textContent = ' ' + bg + (L && L.visible === false ? ' (hidden in game)' : '');
+  }
+}
+function buildLayer(bg) {
+  const w = new Win(bg, bg + ' LAYER');
+  const cvh = el('div', 'cv'), st = el('div', 'st');
+  if (bg === 'BG3') {
+    const sel = el('select'); for (let i = 0; i < 4; i++) { const o = el('option'); o.value = i; o.textContent = 'char base ' + i; sel.append(o); }
+    sel.title = 'BG3 control is set at runtime by room managers; pick the tile base to try';
+    sel.onchange = () => { S.bg3cb = +sel.value; repaintAll(); };
+    w.extra.append(sel);
+  }
+  w.bd.append(cvh, st);
+  const v = new ImgView(w, cvh, bg, st); w.view = v; bgViews[bg] = v; S.views.push(v);
+  w.onResize = () => v.resize();
+  return w;
+}
+// A layer the game does not show in this room (visible: false) starts minimised: its data may not be a drawable map.
+// Moving to a room where it is shown opens it again if only this rule had closed it. A window the user opens in a
+// hidden room stays open until the next room.
+function autoMinHidden() {
+  const room = S.room;
+  for (const bg of ['BG1', 'BG2', 'BG3']) {
+    const w = wins[bg], L = room && room.layers[bg], hidden = !!(L && L.data && L.visible === false);
+    if (hidden && w.state === 'open') w.setState('min', true);
+    else if (!hidden && w.autoMin) w.setState('open');
+  }
+}
+function updateLayerTitles() {
+  const room = S.room;
+  for (const bg of ['BG1', 'BG2', 'BG3']) {
+    const L = room && room.layers[bg];
+    wins[bg].t.textContent = bg + ' LAYER' + (L ? (L.visible === false ? ' (hidden in game)' : '') + ' ' + L.w + 'x' + L.h + ' ' + L.format : ' (none)');
+  }
+}
+
+// world map
+let mapPane = null;
+function buildMap() {
+  const w = new Win('MAP', 'MAP');
+  const cvh = el('div', 'cv'), st = el('div', 'st');
+  w.bd.append(cvh, st);
+  const p = new Pane(w, cvh); mapPane = p;
+  p.status = st;
+  p.fit = function () {
+    const a = S.room && S.room._a; if (!a || this.cv.width < 4) return;
+    const bb = areaBounds(a), W = this.cv.width, H = this.cv.height;
+    const s = Math.min((W - 20) / (bb.x1 - bb.x0), (H - 20) / (bb.y1 - bb.y0));
+    this.s = s; this.ox = (W - (bb.x1 - bb.x0) * s) / 2 - bb.x0 * s; this.oy = (H - (bb.y1 - bb.y0) * s) / 2 - bb.y0 * s;
+  };
+  p.paint = function () {
+    const ctx = this.ctx, W = this.cv.width, H = this.cv.height, room = S.room;
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#0b0c0f'; ctx.fillRect(0, 0, W, H);
+    if (!room) return;
+    const a = room._a;
+    ctx.font = '10px ui-monospace,Consolas,monospace'; ctx.textBaseline = 'top';
+    const rooms = a.rooms.slice().sort((x, y) => y.width * y.height - x.width * x.height);
+    for (const r of rooms) {
+      const x = this.ox + r.worldX * this.s, y = this.oy + r.worldY * this.s, w = r.width * this.s, h = r.height * this.s;
+      const thumb = r.__c && Object.values(r.__c.comp)[0];
+      if (thumb) { ctx.drawImage(thumb, x, y, w, h); ctx.fillStyle = '#00000050'; ctx.fillRect(x, y, w, h); }
+      else { ctx.fillStyle = '#2a3040'; ctx.fillRect(x, y, w, h); }
+      ctx.strokeStyle = r === room ? '#ffd24a' : '#6a7490'; ctx.lineWidth = r === room ? 3 : 1;
+      ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+      if (w > 18) {
+        const t = hex(r.id) + (w > 90 && r.name ? ' ' + r.name : '');
+        ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(t, x + 3, y + 2);
+        ctx.fillStyle = r === room ? '#ffd24a' : '#fff'; ctx.fillText(t, x + 3, y + 2);
+      }
+    }
+  };
+  p.roomAt = function (e) {
+    const q = this.toImg(this.pos(e)), a = S.room._a;
+    let best = null;
+    for (const r of a.rooms) if (q.x >= r.worldX && q.y >= r.worldY && q.x < r.worldX + r.width && q.y < r.worldY + r.height)
+      if (!best || r.width * r.height < best.width * best.height) best = r;
+    return best;
+  };
+  p.leftDown = function (e) {
+    const sx = e.clientX, sy = e.clientY;
+    const up = ev => {
+      removeEventListener('mouseup', up);
+      if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) { const r = this.roomAt(ev); if (r) openRoom(r._a.id, r.id, true); }
+    };
+    addEventListener('mouseup', up);
+  };
+  p.move = function (e) {
+    const r = S.room && this.roomAt(e);
+    this.status.textContent = r ? 'room ' + hex(r.id) + ' ' + (r.name || '') + '  ' + r.width + 'x' + r.height + ' at ' + r.worldX + ',' + r.worldY : 'area ' + hex(S.room._a.id) + ' ' + S.room._a.name + ' (' + S.room._a.rooms.length + ' rooms)';
+  };
+  p.setT = Pane.prototype.setT.bind(p); // independent pan/zoom, not synchronised with the images
+  p.setT = function (t) { this.s = t.s; this.ox = t.ox; this.oy = t.oy; this.paint(); };
+  w.onResize = () => p.resize();
+  return w;
+}
+function areaBounds(a) {
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const r of a.rooms) { x0 = Math.min(x0, r.worldX); y0 = Math.min(y0, r.worldY); x1 = Math.max(x1, r.worldX + r.width); y1 = Math.max(y1, r.worldY + r.height); }
+  return { x0, y0, x1: Math.max(x1, x0 + 1), y1: Math.max(y1, y0 + 1) };
+}
+
+// entities list
+let entList, entKinds;
+function buildEntities() {
+  const w = new Win('ENTITIES', 'ENTITIES');
+  const tb = el('div', 'tb'), find = el('input'), chips = el('div', 'chips');
+  find.type = 'search'; find.placeholder = 'filter: text, id, x80, list...'; find.style.width = '190px';
+  find.oninput = () => { S.filter = find.value.trim().toLowerCase(); repaintAll(); renderEntityList(); };
+  const ov = el('input'); ov.type = 'checkbox'; ov.checked = S.entities; ov.id = 'ovEnt';
+  ov.onchange = () => { S.entities = ov.checked; syncCtl(); repaintAll(); };
+  const sc = el('input'); sc.type = 'checkbox'; sc.id = 'ovSpr';
+  sc.onchange = () => { ensureSprites(); S.sprOn = sc.checked; syncCtl(); repaintAll(); };
+  tb.append(el('label', null, ov, ' markers'), el('label', null, sc, ' SPRITES'), find);
+  entKinds = chips;
+  entList = el('div', 'scroll');
+  w.bd.append(tb, el('div', 'tb', chips), entList);
+  w.onResize = () => {};
+  return w;
+}
+function renderEntityKinds() {
+  entKinds.textContent = '';
+  const counts = {};
+  for (const o of S.objs) counts[o.kind] = (counts[o.kind] || 0) + 1;
+  for (const k of Object.keys(counts).sort()) {
+    const cb = el('input'); cb.type = 'checkbox'; cb.checked = !S.kindOff.has(k);
+    cb.onchange = () => { if (cb.checked) S.kindOff.delete(k); else S.kindOff.add(k); store('kindOff', [...S.kindOff]); repaintAll(); renderEntityList(); };
+    const lab = el('label', null, cb, ' ' + k + ' ' + counts[k]); lab.style.color = kindColor(k);
+    entKinds.append(lab);
+  }
+}
+function renderEntityList(keepScroll) {
+  if (!entList) return;
+  const top = entList.scrollTop;
+  entList.textContent = '';
+  let n = 0;
+  for (const o of S.objs) {
+    if (!objVisible(o)) continue;
+    n++;
+    const r = el('div', 'er' + (S.sel.objs.has(o.key) ? ' sel' : ''));
+    const k = el('span', 'k'); k.style.background = kindColor(o.kind);
+    const t = el('span'); t.textContent = o.label;
+    const p = el('span', o.outside ? 'bad' : 'p');
+    p.textContent = !o.draw ? 'no position' : o.x + ',' + o.y + (o.outside ? ' OUTSIDE' : '') + (o.cat === 'entity' && !o.real ? ' ~param' : '') + (o.cat === 'entity' && o.src.when !== 'always' ? ' ' + o.src.when : '');
+    r.append(k, t, p);
+    if (sprOf(o)) { const sp = el('span'); sp.textContent = 'spr'; sp.style.color = 'var(--acc2)'; sp.title = 'drawn as a sprite (SPRITES)'; r.append(sp); }
+    r.onclick = e => selectObjs([o.key], e.ctrlKey || e.metaKey);
+    r.ondblclick = () => { if (o.draw) for (const v of S.views) if (v.centerOn) v.centerOn(o.x, o.y); };
+    r.title = 'click: select (Ctrl adds), double click: centre the views on it';
+    entList.append(r);
+  }
+  if (!n) { const e = el('div', 'er'); e.textContent = 'no objects match'; entList.append(e); }
+  if (keepScroll) entList.scrollTop = top;
+}
+
+// info panel
+let infoBody;
+function buildInfo() {
+  const w = new Win('INFO', 'INFO');
+  const tb = el('div', 'tb');
+  const cp = el('button'); cp.textContent = 'COPY INFO'; cp.title = 'copy the room and the selection as plain text (Ctrl+C with nothing selected)'; cp.onclick = copyInfo;
+  const cl = el('button'); cl.textContent = 'CLEAR SELECTION'; cl.onclick = clearSel;
+  tb.append(cp, cl);
+  infoBody = el('div', 'scroll');
+  w.bd.append(tb, infoBody);
+  return w;
+}
+function renderInfo() {
+  if (!infoBody) return;
+  const room = S.room;
+  infoBody.textContent = '';
+  if (!room) return;
+  const objs = S.objs.filter(o => S.sel.objs.has(o.key));
+  const bl = S.sel.blocks;
+  if (!objs.length && !bl.length) {
+    const d = el('div', 'sec'); d.textContent = 'Nothing selected'; infoBody.append(d);
+    const p = el('div'); p.style.padding = '6px'; p.style.color = 'var(--dim)';
+    p.textContent = 'Click a block or a marker; drag a rectangle; Ctrl adds; Alt+click forces a block under a marker; arrows move the block selection; Esc clears.';
+    infoBody.append(p);
+    return;
+  }
+  for (const o of objs.slice(0, 40)) {
+    const h = el('div', 'sec'); h.textContent = o.cat + ' ' + o.key + '  ' + o.label; h.style.color = kindColor(o.kind); infoBody.append(h);
+    const t = el('table', 'f');
+    const add = (k, v, cls) => { const r = el('tr'); const a = el('td'), b = el('td'); a.textContent = k; b.textContent = v; if (cls) b.className = cls; r.append(a, b); t.append(r); };
+    if (o.outside) add('!', 'position is OUTSIDE the room (drawn clamped to its edge)', 'warn');
+    if (o.cat === 'entity' && !o.real) add('!', 'x,y are parameters: the game does not copy them into the position', 'warn');
+    for (const [k, v] of spriteLines(o)) add(k, v, k === 'sprite' && /NOT DRAWN|marker only/.test(v) ? 'warn' : '');
+    for (const [k, v] of Object.entries(o.src)) add(k, v === null ? 'null' : String(v));
+    if (o.cat === 'exit' && S.byKey.has(roomKey(o.src.destArea, o.src.destRoom))) {
+      const r = el('tr'), a = el('td'), b = el('td'), bt = el('button');
+      bt.textContent = 'OPEN ' + roomKey(o.src.destArea, o.src.destRoom); bt.onclick = () => openRoom(o.src.destArea, o.src.destRoom, true);
+      b.append(bt); r.append(a, b); t.append(r);
+    }
+    const sp = sprOf(o);
+    if (sp) {   // the picture itself, enlarged, above the fields
+      const pv = el('canvas'); pv.width = sp.pic.w; pv.height = sp.pic.h;
+      pv.style.cssText = 'width:' + sp.pic.w * clamp(Math.floor(96 / Math.max(sp.pic.w, sp.pic.h)), 1, 4) + 'px;image-rendering:pixelated;background:#0b0c0f;margin:4px 6px;display:block;border:1px solid var(--line)';
+      pv.getContext('2d').drawImage(sp.pic.cv, 0, 0);
+      infoBody.append(pv);
+    }
+    infoBody.append(t);
+  }
+  if (objs.length > 40) { const d = el('div', 'sec'); d.textContent = '... ' + (objs.length - 40) + ' more (COPY INFO has them all)'; infoBody.append(d); }
+  const shown = bl.slice(0, 6);
+  for (const b of shown) {
+    const i = blockInfo(b.bg, b.bx, b.by); if (!i) continue;
+    const h = el('div', 'sec'); h.textContent = i.bg + ' block ' + i.bx + ',' + i.by + '  (' + i.unit + 'px at ' + i.px + ',' + i.py + ')'; infoBody.append(h);
+    const row = el('div'); row.style.cssText = 'display:flex;gap:10px;padding:4px 6px';
+    const prev = el('canvas'); prev.width = prev.height = i.unit; prev.style.cssText = 'width:' + i.unit * 4 + 'px;height:' + i.unit * 4 + 'px;image-rendering:pixelated;background:#0b0c0f;flex:none';
+    const l = getLayer(room, b.bg);
+    if (l) prev.getContext('2d').drawImage(l.canvas, i.px, i.py, i.unit, i.unit, 0, 0, i.unit, i.unit);
+    const t = el('table', 'f');
+    const add = (k, v, cls) => { const r = el('tr'); const a = el('td'), c = el('td'); a.textContent = k; c.textContent = v; if (cls) c.className = cls; r.append(a, c); t.append(r); };
+    if (i.format === 'metatile') {
+      add('metatile', '0x' + hex(i.metatile, 4) + ' (' + i.metatile + ') of the ' + i.set + ' set');
+      if (i.type != null) add('type', '0x' + hex(i.type, 4));
+      if (i.oob) add('!', 'index past the loaded set: the game reads stale memory', 'warn');
+      i.entries.forEach((e, k) => add(['top-left', 'top-right', 'bottom-left', 'bottom-right'][k], fmtEntry(e)));
+    } else i.entries.forEach(e => add('tile', fmtEntry(e)));
+    row.append(prev, t); infoBody.append(row);
+  }
+  if (bl.length > 6) { const d = el('div', 'sec'); d.textContent = '... ' + (bl.length - 6) + ' more blocks (COPY INFO lists up to 256)'; infoBody.append(d); }
+}
+
+// ---------------------------------------------------------------- left list
+const isOpen = a => S.groupsOpen[a.id] !== undefined ? !!S.groupsOpen[a.id] : !!(S.room && S.room._a === a);
+function buildList() {
+  const q = $('#q').value.trim().toLowerCase().replace(/\s+/g, '_');
+  const list = $('#list'); list.textContent = '';
+  let total = 0, shown = 0;
+  const mRoom = /^(?:0x)?([0-9a-f]{1,2})-(?:0x)?([0-9a-f]{1,2})$/.exec(q), mArea = /^(?:0x)?([0-9a-f]{1,2})$/.exec(q);
+  for (const a of S.areas) {
+    const aname = a.name.replace(/^AREA_/, '');
+    let rooms = a.rooms; total += rooms.length;
+    let forceOpen = false;
+    if (q) {
+      const areaHit = (mArea && parseInt(mArea[1], 16) === a.id) || aname.toLowerCase().includes(q) || a.name.toLowerCase().includes(q);
+      if (mRoom) rooms = rooms.filter(r => a.id === parseInt(mRoom[1], 16) && r.id === parseInt(mRoom[2], 16));
+      else if (!areaHit) rooms = rooms.filter(r => (r.name || '').toLowerCase().includes(q) || (r.enumName || '').toLowerCase().includes(q));
+      forceOpen = true;
+      if (!rooms.length) continue;
+    }
+    shown += rooms.length;
+    const open = forceOpen || isOpen(a);
+    const g = el('div', 'grp'); g.dataset.area = a.id;
+    const l = el('span'); l.textContent = (open ? '- ' : '+ ') + hex(a.id) + ' ' + aname;
+    const n = el('span', 'n'); n.textContent = rooms.length === a.rooms.length ? a.rooms.length : rooms.length + '/' + a.rooms.length;
+    g.append(l, n);
+    g.onclick = () => { S.groupsOpen[a.id] = !isOpen(a); store('groupsOpen', S.groupsOpen); buildList(); };
+    list.append(g);
+    if (!open) continue;
+    for (const r of rooms) {
+      const d = el('div', 'rm' + (r === S.room ? ' cur' : '')); d.dataset.key = roomKey(a.id, r.id);
+      const id = el('span', 'id'); id.textContent = hex(r.id);
+      const nm = el('span', 'nm'); nm.textContent = r.name || '(unnamed)';
+      const sz = el('span', 'sz'); sz.textContent = r.width + 'x' + r.height;
+      d.append(id, nm); if (r.mode === 'special') { const sp = el('span', 'sp'); sp.textContent = 'S'; sp.title = 'special mode: raw tilemap'; d.append(sp); }
+      d.append(sz);
+      d.title = r.enumName || '';
+      d.onclick = () => openRoom(a.id, r.id, true);
+      list.append(d);
+    }
+  }
+  $('#count').textContent = (q ? shown + '/' : '') + total + ' rooms';
+}
+function scrollToCurrent() { const c = $('#list .rm.cur'); if (c) c.scrollIntoView({ block: 'nearest' }); }
+
+// ---------------------------------------------------------------- top bar
+function syncCtl() {
+  const m = { ovE: S.entities, ovL: S.labels, ovG: S.grid, ovS: S.sync, ovP: S.sprOn && S.spr.state === 'ready' };
+  for (const k in m) { const b = $('#' + k); if (b) b.classList.toggle('on', m[k]); }
+  const c = $('#ovEnt'); if (c) c.checked = S.entities;
+  const cp = $('#ovSpr'); if (cp) { cp.checked = S.sprOn && S.spr.state === 'ready'; cp.disabled = S.spr.state === 'missing'; }
+  const bp = $('#ovP'); if (bp) bp.title = S.spr.state === 'missing' ? 'no sprites.json (' + S.spr.err + '): click to choose one' : 'draw curated entities as sprites (P)';
+  store('opts', { entities: S.entities, labels: S.labels, grid: S.grid, sync: S.sync, sprites: S.sprOn });
+}
+function toggleSprites() {
+  if (S.spr.state === 'missing') { chooseSprites(); return; }
+  ensureSprites();
+  S.sprOn = !S.sprOn; syncCtl(); repaintAll();
+}
+function chooseSprites() {
+  const inp = el('input'); inp.type = 'file'; inp.accept = '.json';
+  inp.onchange = () => inp.files[0] && inp.files[0].text().then(t => { setSprites(JSON.parse(t)); S.sprOn = true; syncCtl(); }).catch(e => toast('sprites.json: ' + e.message));
+  inp.click();
+}
+function buildTop() {
+  const ctl = $('#tbCtl');
+  const mk = (id, text, title, fn) => { const b = el('button'); b.id = id; b.textContent = text; b.title = title; b.onclick = fn; ctl.append(b); return b; };
+  mk('listB', 'LIST', 'show or hide the room list (B)', () => { const l = $('#left'); l.style.display = l.style.display === 'none' ? '' : 'none'; $('#listB').classList.toggle('on', l.style.display !== 'none'); store('listHidden', l.style.display === 'none'); for (const id in wins) wins[id].setRect(wins[id].rect()); repaintAllSoon(); }).classList.add('on');
+  mk('ovE', 'ENTITIES', 'entity overlay (E)', () => { S.entities = !S.entities; syncCtl(); repaintAll(); });
+  mk('ovL', 'LABELS', 'marker labels (L)', () => { S.labels = !S.labels; syncCtl(); repaintAll(); });
+  mk('ovP', 'SPRITES', 'draw curated entities as sprites (P)', toggleSprites);
+  mk('ovG', 'GRID', '8/16 px grid (G)', () => { S.grid = !S.grid; syncCtl(); repaintAll(); });
+  mk('ovS', 'SYNC PAN', 'pan and zoom the image windows together (Y)', () => { S.sync = !S.sync; syncCtl(); });
+  mk('fitB', 'FIT', 'fit the room to every window (F, Shift+double click)', fitAll);
+  mk('relayout', 'RELAYOUT', 'put the windows back in the default layout', () => { applyLayout(true); autoMinHidden(); fitAll(); });
+  mk('copyB', 'COPY INFO', 'room + selection as plain text (Ctrl+C with nothing selected)', copyInfo);
+  const hint = el('span'); hint.style.color = 'var(--dim)';
+  hint.textContent = 'Ctrl+wheel zoom - Shift+drag pan - drag = select - [ ] prev/next room';
+  ctl.append(hint);
+}
+function updateTop() {
+  const room = S.room, a = room._a;
+  const t = $('#tbRoom'); t.textContent = '';
+  const b1 = el('b'); b1.textContent = 'AREA ' + hex(a.id) + ' ' + a.name.replace(/^AREA_/, '');
+  const b2 = el('b'); b2.textContent = 'ROOM ' + hex(room.id) + ' ' + (room.name || '');
+  const sz = ' ' + room.width + 'x' + room.height + ' px (' + room.width / 16 + 'x' + room.height / 16 + ' mt) ' + room.mode + ' tileset ' + room.tileSetId + ' ' + room.gfx + ' world ' + room.worldX + ',' + room.worldY;
+  t.append(b1, '  ', b2, sz);
+  const lay = $('#tbLayers'); lay.textContent = '';
+  for (const bg of ['BG1', 'BG2', 'BG3']) {
+    const L = room.layers[bg]; if (!L) continue;
+    const s = el('span'); const bb = el('b'); bb.textContent = bg;
+    s.append(bb, ' ' + (L.bgcnt == null ? 'bgcnt runtime' : '0x' + hex(L.bgcnt, 4) + ' pri ' + L.priority + ' cb ' + L.charBase + ' ' + L.colors + 'c') + (L.visible === false ? ' HIDDEN' : ''));
+    if (L.visible === false) s.style.opacity = .7;
+    const tm = L.data && L.format === 'metatile' ? tilemapOf(room, L) : null;
+    if (tm && tm.oob) { const w = el('span', 'warn'); w.textContent = ' ' + tm.oob + ' metatile(s) out of range'; s.append(w); }
+    lay.append(s);
+  }
+  const s = el('span'); s.textContent = 'order ' + room.drawOrder.join(' > ') + '   entities ' + room.entities.length +
+    ' (' + room.entities.filter(e => e.positioned).length + ' positioned, ' + room.entities.filter(e => e.when !== 'always').length + ' conditional)  tile ' + room.tileEntities.length + '  exits ' + room.exits.length;
+  s.style.color = 'var(--fg)'; lay.append(s);
+}
+
+// ---------------------------------------------------------------- opening rooms
+function openRoom(area, id, push) {
+  const room = S.byKey.get(roomKey(area, id));
+  if (!room) { toast('no room ' + roomKey(area, id)); return false; }
+  S.room = room; S.key = roomKey(area, id);
+  S.sel = { blocks: [], objs: new Set() };
+  S.objs = buildObjects(room);
+  document.title = 'TMC ' + S.key + ' ' + (room.name || '');
+  try { const u = new URL(location.href); u.searchParams.set('room', S.key); history.replaceState(null, '', u); } catch (e) { }
+  updateTop(); updateLayerChecks(); updateLayerTitles(); autoMinHidden();
+  renderEntityKinds(); renderEntityList(); renderInfo();
+  buildList(); scrollToCurrent();
+  for (const v of S.views) if (v.win.state === 'open') { v.resize(); }
+  fitAll();
+  if (mapPane) { mapPane.fit(); mapPane.paint(); mapPane.move({ clientX: -1e5, clientY: -1e5 }); }
+  return true;
+}
+function stepRoom(d) {
+  const all = []; for (const a of S.areas) for (const r of a.rooms) all.push(r);
+  const i = all.indexOf(S.room), n = all[(i + d + all.length) % all.length];
+  openRoom(n._a.id, n.id, true);
+}
+
+// ---------------------------------------------------------------- keyboard
+addEventListener('keydown', e => {
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') { if (e.key === 'Escape') e.target.blur(); return; }
+  const k = e.key;
+  if (e.ctrlKey || e.metaKey) {
+    if (k.toLowerCase() === 'c' && !String(getSelection())) { e.preventDefault(); copyInfo(); }
+    return;
+  }
+  if (k === 'ArrowLeft') { moveSel(-1, 0); e.preventDefault(); }
+  else if (k === 'ArrowRight') { moveSel(1, 0); e.preventDefault(); }
+  else if (k === 'ArrowUp') { moveSel(0, -1); e.preventDefault(); }
+  else if (k === 'ArrowDown') { moveSel(0, 1); e.preventDefault(); }
+  else if (k === 'Escape') clearSel();
+  else if (k === '[') stepRoom(-1);
+  else if (k === ']') stepRoom(1);
+  else if (k === 'b' || k === 'B') $('#listB').click();
+  else if (k === 'e' || k === 'E') $('#ovE').click();
+  else if (k === 'p' || k === 'P') $('#ovP').click();
+  else if (k === 'l' || k === 'L') $('#ovL').click();
+  else if (k === 'g' || k === 'G') $('#ovG').click();
+  else if (k === 'y' || k === 'Y') $('#ovS').click();
+  else if (k === 'f' || k === 'F') fitAll();
+  else if (k === '/') { e.preventDefault(); $('#q').focus(); }
+});
+
+// ---------------------------------------------------------------- loading
+async function loadMapsFromNetwork() {
+  let r = await fetch('maps.json', { cache: 'no-cache' }).catch(() => null);
+  if (r && r.ok) { $('#msgb').textContent = 'Parsing maps.json ...'; return await r.json(); }
+  r = await fetch('maps.json.gz', { cache: 'no-cache' }).catch(() => null);
+  if (r && r.ok) { $('#msgb').textContent = 'Unpacking maps.json.gz ...'; return await gunzipJson(r.body); }
+  throw new Error('neither maps.json nor maps.json.gz could be fetched');
+}
+async function gunzipJson(stream) {
+  const ds = stream.pipeThrough(new DecompressionStream('gzip'));
+  return JSON.parse(await new Response(ds).text());
+}
+async function loadFile(f) {
+  if (/\.gz$/i.test(f.name)) return gunzipJson(f.stream());
+  return JSON.parse(await f.text());
+}
+function askForFile(err) {
+  const b = $('#msgb'); b.textContent = '';
+  const p = el('div'); p.textContent = 'Could not load maps.json (' + err.message + '). Run serve.py, or choose / drop maps.json (or maps.json.gz) here.';
+  const inp = el('input'); inp.type = 'file'; inp.accept = '.json,.gz';
+  inp.onchange = () => inp.files[0] && loadFile(inp.files[0]).then(start).catch(askForFile);
+  b.append(p, inp);
+  addEventListener('dragover', e => e.preventDefault());
+  addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) loadFile(f).then(start).catch(askForFile); });
+}
+function start(maps) {
+  if (maps.format !== 'tmc-layer-workbench-maps') throw new Error('not a maps.json of this tool');
+  S.maps = maps; S.areas = maps.areas; S.byKey.clear();
+  for (const a of S.areas) for (const r of a.rooms) { r._a = a; S.byKey.set(roomKey(a.id, r.id), r); }
+  const o = store('opts'); if (o) Object.assign(S, { entities: o.entities !== false, labels: o.labels !== false, grid: !!o.grid, sync: o.sync !== false, sprOn: o.sprites !== false });
+  buildTop();
+  buildResult(); buildLayer('BG2'); buildLayer('BG1'); buildLayer('BG3'); buildMap(); buildEntities(); buildInfo();
+  if (store('listHidden')) $('#listB').click();
+  applyLayout(false); syncCtl();
+  $('#q').oninput = buildList;
+  $('#expandAll').onclick = () => { for (const a of S.areas) S.groupsOpen[a.id] = true; store('groupsOpen', S.groupsOpen); buildList(); };
+  $('#collapseAll').onclick = () => { S.groupsOpen = {}; for (const a of S.areas) S.groupsOpen[a.id] = false; store('groupsOpen', S.groupsOpen); buildList(); };
+  addEventListener('resize', () => { for (const id in wins) wins[id].setRect(wins[id].rect()); });
+  let a = 0x20, r = 0;
+  const m = /^([0-9a-f]{1,2})-([0-9a-f]{1,2})$/i.exec(new URL(location.href).searchParams.get('room') || '');
+  if (m && S.byKey.has(roomKey(parseInt(m[1], 16), parseInt(m[2], 16)))) { a = parseInt(m[1], 16); r = parseInt(m[2], 16); }
+  else if (!S.byKey.has(roomKey(a, r))) { a = S.areas[0].id; r = S.areas[0].rooms[0].id; }
+  $('#msg').remove();
+  addEventListener('dragover', e => e.preventDefault());
+  addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f && /sprites/i.test(f.name)) { e.preventDefault(); f.text().then(t => setSprites(JSON.parse(t))).catch(err => toast('sprites.json: ' + err.message)); } });
+  openRoom(a, r, false);
+  const sprLoaded = ensureSprites();
+  requestAnimationFrame(() => { fitAll(); if (mapPane) { mapPane.fit(); mapPane.paint(); } });
+  if (new URL(location.href).searchParams.has('test')) sprLoaded.then(runTests);
+}
+
+// ---------------------------------------------------------------- self-checks (?test)
+// Expected values come from render_room.py's compose() (FNV-1a 32 over the room's RGB bytes).
+const EXPECT = {"20-00": 1399115066, "20-01": 1176383374, "00-00": 3279241343, "02-00": 3151911497, "48-00": 3865198760, "60-00": 3263227983, "2D-00": 1106148263, "03-01": 1972784561, "70-00": 1216606463, "21-00": 2929800824, "15-00": 2337535438, "88-00": 285133399, "0B-01": 3608816652, "50-00": 2386207617};
+// sprites.json pictures (FNV of their RGB), as sprites.py wrote them: [room key, entity index].
+const EXPECT_SPR = {"20-00#1": 1306469306, "70-08#1": 2979542157, "70-08#2": 2828932215, "50-05#0": 739655970, "60-03#12": 2979542157, "78-01#4": 3382804929, "0D-02#0": 2136737887};
+function fnv(bytes, stride4) {
+  let h = 0x811C9DC5;
+  for (let i = 0; i < bytes.length; i += 4) for (let k = 0; k < 3; k++) { h ^= bytes[i + k]; h = Math.imul(h, 0x01000193) >>> 0; }
+  return h >>> 0;
+}
+function runTests() {
+  const out = [], ok = (c, m) => { out.push((c ? 'PASS ' : 'FAIL ') + m); return c; };
+  let all = true; const chk = (c, m) => { all = ok(c, m) && all; };
+  let nrooms = 0, nent = 0; for (const a of S.areas) { nrooms += a.rooms.length; for (const r of a.rooms) nent += r.entities.length; }
+  chk(S.areas.length === 91, 'areas ' + S.areas.length + ' (91)');
+  chk(nrooms === 597, 'rooms ' + nrooms + ' (597)');
+  chk(nent === 5135, 'entities ' + nent + ' (5135)');
+  const saveOn = Object.assign({}, S.layerOn), saveHid = S.showHidden;
+  S.layerOn = { BG1: true, BG2: true, BG3: true }; S.showHidden = false;
+  for (const key of Object.keys(EXPECT)) {
+    const [a, r] = key.split('-').map(x => parseInt(x, 16)), room = S.byKey.get(key);
+    if (!room) { chk(false, key + ' missing'); continue; }
+    const t0 = performance.now(), cv = getComposite(room), ms = performance.now() - t0;
+    const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+    const h = fnv(d);
+    chk(h === EXPECT[key], key + ' ' + (room.name || '') + ' ' + room.width + 'x' + room.height + ' composite hash ' + h.toString(16) + ' vs ' + EXPECT[key].toString(16) + ' (' + ms.toFixed(0) + ' ms)');
+  }
+  const cur = S.room;
+  // entity overlay data: the curtain of Gentari's room
+  const g = S.byKey.get('20-00'), cur1 = g.entities.find(e => e.idName === 'GENTARI_CURTAIN');
+  chk(cur1 && cur1.x === 24 && cur1.y === 80 && cur1.kindName === 'OBJECT', '20-00 has OBJECT/GENTARI_CURTAIN at 24,80');
+  // hiding a layer changes the composite
+  S.layerOn.BG1 = false; const hNo = fnv(getComposite(S.byKey.get('00-00')).getContext('2d').getImageData(0, 0, 1008, 1008).data);
+  chk(hNo !== EXPECT['00-00'], 'hiding BG1 changes the 00-00 composite');
+  S.layerOn = saveOn; S.showHidden = saveHid;
+  // sprites.json: loaded, and the pictures are what sprites.py rendered
+  chk(S.spr.state === 'ready', 'sprites.json loaded (' + S.spr.state + (S.spr.err ? ': ' + S.spr.err : '') + ')');
+  if (S.spr.state === 'ready') {
+    for (const k of Object.keys(EXPECT_SPR)) {
+      const [rk, i] = k.split('#'), rec = (S.spr.data.rooms[rk] || {})[i], h = rec && rec.pic ? fnv(sprPic(rec.pic).rgba) : null;
+      chk(h === EXPECT_SPR[k], 'sprite ' + k + ' ' + (rec ? rec.family : '?') + ' picture hash ' + (h == null ? 'none' : h.toString(16)) + ' vs ' + EXPECT_SPR[k].toString(16));
+    }
+    const rg = S.spr.data.rooms['20-00'], e0 = g.entities[Object.keys(rg).find(i => rg[i].family === 'OBJECT/GENTARI_CURTAIN')];
+    chk(e0 === cur1, 'the 20-00 sprite record belongs to the curtain entity');
+    // the RESULT window draws it: pixels of the picture's rectangle change once SPRITES is on
+    openRoom(0x20, 0, false); const so = S.sprOn; S.sprOn = false; const w0 = wins.RESULT.view; w0.paint();
+    const px = () => { const c = w0.ctx.getImageData(w0.ox + (24 - 8) * w0.s + 2, w0.oy + (80 - 20) * w0.s + 2, 4, 4).data; return fnv(c); };
+    const before = px(); S.sprOn = true; w0.paint(); const after = px(); S.sprOn = so;
+    chk(before !== after, 'RESULT draws the sprite over the room when SPRITES is on');
+  }
+  // layers the game hides: their windows start minimised, and reopen with the next room that shows them
+  openRoom(0x20, 0, false);
+  const hid = S.room.layers.BG1.visible === false;
+  chk(hid && wins.BG1.state === 'min' && wins.BG1.autoMin, '20-00: BG1 is hidden by the game, its window starts minimised');
+  openRoom(0x00, 0, false);
+  chk(S.room.layers.BG1.visible !== false && wins.BG1.state === 'open', '00-00: BG1 is shown, its window is open again');
+  if (cur) openRoom(cur._a.id, cur.id, false);
+  const box = el('div'); box.id = 'testbox'; box.textContent = (all ? 'ALL PASS' : 'FAILURES') + '\n' + out.join('\n');
+  box.onclick = () => box.remove();
+  document.body.append(box);
+  document.title = (all ? 'TEST PASS' : 'TEST FAIL') + ' - TMC Layer Workbench';
+  window.__testResult = { ok: all, lines: out };
+  console.log(out.join('\n'));
+  if (cur) { /* leave the viewer on the room it opened */ }
+}
+
+addEventListener('DOMContentLoaded', () => {
+  loadMapsFromNetwork().then(start).catch(askForFile);
+});
+window.addEventListener('error', e => { const b = $('#toast'); if (b) toast('JS error: ' + e.message); });
+</script>
+</body>
+</html>
