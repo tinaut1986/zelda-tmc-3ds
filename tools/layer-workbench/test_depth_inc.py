@@ -238,11 +238,92 @@ def test_server():
     equal((sha(REAL_INC), sha(REAL_VIEW)), before, "the real .inc and sprite_view.json were not touched")
 
 
+def test_bulk():
+    """What the SPRITES catalog sends for a bulk change: many exact-type sets (and any-type ones) in one request, applied in one write."""
+    print("bulk change (the catalog's request)")
+    base = ("/* header */\n"
+            "PORT_SPRITE_DEPTH(OBJECT, BOSS_DOOR, PORT_ANY_TYPE, PORT_DEPTH_INVERT)\n"
+            "/* the curtain hangs on the left wall */\n"
+            "PORT_SPRITE_DEPTH(OBJECT, GENTARI_CURTAIN, PORT_ANY_TYPE, PORT_DEPTH_LEFT)\n")
+    sets = [{"kind": "OBJECT", "id": "GENTARI_CURTAIN", "type": 3, "mode": "WALL"},        # exact type of a kind/id that has an any-type entry
+            {"kind": "NPC", "id": "NPC_UNK_4E", "type": 0, "mode": "WALL"},
+            {"kind": "OBJECT", "id": "CUTSCENE_ORCHESTRATOR", "type": 0, "mode": "WALL"},
+            {"kind": "OBJECT", "id": "BACKGROUND_CLOUD", "type": None, "mode": "WALL"}]   # any type
+    new, rep = D.apply_request(base, {"set": sets, "remove": []})
+    equal(rep["added"], 4, "four entries added")
+    equal(new.split("\n"), [
+        "/* header */",
+        "PORT_SPRITE_DEPTH(OBJECT, BOSS_DOOR, PORT_ANY_TYPE, PORT_DEPTH_INVERT)",
+        "PORT_SPRITE_DEPTH(OBJECT, GENTARI_CURTAIN, 3, PORT_DEPTH_WALL)",     # before the any-type entry (and its comment): the first match wins
+        "/* the curtain hangs on the left wall */",
+        "PORT_SPRITE_DEPTH(OBJECT, GENTARI_CURTAIN, PORT_ANY_TYPE, PORT_DEPTH_LEFT)",
+        "PORT_SPRITE_DEPTH(NPC, NPC_UNK_4E, 0, PORT_DEPTH_WALL)",
+        "PORT_SPRITE_DEPTH(OBJECT, CUTSCENE_ORCHESTRATOR, 0, PORT_DEPTH_WALL)",
+        "PORT_SPRITE_DEPTH(OBJECT, BACKGROUND_CLOUD, PORT_ANY_TYPE, PORT_DEPTH_WALL)",
+        ""], "the new entries: an exact type before the any-type entry of its kind/id, the rest at the end")
+    again, rep2 = D.apply_request(new, {"set": sets, "remove": []})
+    equal((again, rep2["added"], rep2["changed"]), (new, 0, 0), "the same bulk request twice changes nothing")
+    doc = D.parse(new)
+    equal(D.effective(doc.entries, "OBJECT", "GENTARI_CURTAIN", 3)[0], "WALL", "the exact entry is the one the port reaches (first match)")
+    equal(D.effective(doc.entries, "OBJECT", "GENTARI_CURTAIN", 0)[0], "LEFT", "other types still follow the any-type entry")
+    back, rep3 = D.apply_request(new, {"set": [], "remove": [{k: v for k, v in s_.items() if k != "mode"} for s_ in sets]})
+    equal((back, rep3["removed"]), (base, 4), "removing the same four restores the file byte for byte")
+
+
+def test_wall_catalog():
+    """The numbers the catalog's wall resolution must give, from maps.json and the port's rule (WallDepthMode in port/port_draw.c),
+    written independently of index.html. The same numbers are asserted by index.html?test."""
+    print("catalog wall resolution (maps.json against port/port_draw.c)")
+    maps = os.path.join(HERE, "maps.json")
+    src = open(os.path.join(HERE, "..", "..", "port", "port_draw.c")).read()
+    import re
+    margin = int(re.search(r"PORT_WALL_MARGIN\s*=\s*(\d+)", src).group(1))
+    equal(margin, 24, "port_draw.c: PORT_WALL_MARGIN")
+    check("left >= 0 && left < best" in src and "right >= 0 && right < best" in src and "bottom >= 0 && bottom < best" in src, "port_draw.c: WallDepthMode still tests left, right, bottom in that order")
+    if not os.path.isfile(maps):
+        print("  (no maps.json: skipped)")
+        return
+
+    def wall(x, y, w, h):
+        best, mode = margin + 1, "UP"
+        for name, d in (("LEFT", x), ("RIGHT", w - x), ("DOWN", h - y)):
+            if 0 <= d < best:
+                best, mode = d, name
+        return mode
+    m = json.load(open(maps))
+    groups = {}
+    for a in m["areas"]:
+        for r in a["rooms"]:
+            for e in r["entities"]:
+                if not e["positioned"] or e["kindName"] == "MANAGER":
+                    continue
+                k = (e["kindName"], e.get("idName") or "0x%02X" % e["id"], e["type"])
+                g = groups.setdefault(k, {"n": 0, "rooms": set(), "wall": {"LEFT": 0, "RIGHT": 0, "DOWN": 0, "UP": 0}, "at": []})
+                g["n"] += 1
+                g["rooms"].add((a["id"], r["id"]))
+                w = wall(e["x"], e["y"], r["width"], r["height"])
+                g["wall"][w] += 1
+                g["at"].append((a["id"], r["id"], e["x"], e["y"], w))
+    equal(len(groups), 688, "kind/id/type rows")
+    equal(sum(1 for g in groups.values() if g["wall"]["UP"] != g["n"]), 110, "rows with an occurrence by a wall")
+    fu = groups[("OBJECT", "FURNITURE", 7)]
+    equal((fu["n"], len(fu["rooms"]), fu["wall"]), (48, 8, {"LEFT": 16, "RIGHT": 16, "DOWN": 0, "UP": 16}), "dojo racks: FURNITURE 7")
+    check(all((a, r, 16, y, "LEFT") in [t for t in fu["at"]] for a, r in fu["rooms"] for y in (56, 120)) and
+          all((a, r, 224, y, "RIGHT") in fu["at"] for a, r in fu["rooms"] for y in (56, 120)), "racks at x16 are LEFT and at x224 RIGHT in every dojo room")
+    equal(sorted({a for a, r in fu["rooms"]}), [0x25, 0x28], "the racks are in areas 0x25 and 0x28")
+    ar = groups[("OBJECT", "MINISH_SIZED_ARCHWAY", 1)]
+    equal(ar["at"], [(0x20, 0, 120, 144, "DOWN")], "MINISH_SIZED_ARCHWAY type 1: 120,144 in room 20-00 is DOWN")
+    equal(groups[("OBJECT", "ARCHWAY", 0)]["wall"]["DOWN"], 14, "ARCHWAY 0: 14 on a bottom wall")
+    equal((groups[("OBJECT", "CUTSCENE_ORCHESTRATOR", 0)]["wall"]["LEFT"], groups[("OBJECT", "CUTSCENE_ORCHESTRATOR", 0)]["n"]), (53, 62), "CUTSCENE_ORCHESTRATOR 0: 53 of 62 by the left wall")
+
+
 def main():
     test_parse()
     test_roundtrip()
     test_edits()
     test_server()
+    test_bulk()
+    test_wall_catalog()
     print()
     if FAILS:
         for f in FAILS[:40]:

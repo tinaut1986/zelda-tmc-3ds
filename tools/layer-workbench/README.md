@@ -7,7 +7,8 @@ Stage 2b adds sprites as pictures (`sprites.py` -> `sprites.json`, see "Sprites"
 where the init code is known, and the default sprite of the definition table for every other object, enemy, NPC and
 projectile. Stage 3 adds two editing aids, neither of which touches the game itself: a sprite picker (preview only,
 choices kept in `sprite_view.json`) and a 3D DEPTH panel that edits the port's `port_sprite_depth.inc` (see "Sprite
-picker" and "3D depth panel"). A ZONES window edits the port's `port_zone_depth.inc` (see "Zones").
+picker" and "3D depth panel"). A ZONES window edits the port's `port_zone_depth.inc` (see "Zones"). A CATALOG window lists every
+kind of entity the rooms place, with its picture, counts and depth mode, and sets the depth of many at once (see "Sprite catalog").
 
 ```sh
 export TMC_ROM=/path/to/the-minish-cap.gba    # USA (BZME) or EU (BZMP)
@@ -37,7 +38,7 @@ un-hides its scripts, so `git add tools/layer-workbench` picks them up.
 | `depth_inc.py` | Reader and minimal-diff writer of `platform/3ds/source/port_sprite_depth.inc`. |
 | `zone_inc.py` | Reader and minimal-diff writer of `platform/3ds/source/port_zone_depth.inc` (same design as `depth_inc.py`), with the zone checks the server runs on save. |
 | `render_room.py` | Draws one room from `maps.json` as the BG hardware would. Also the reference for the viewer. |
-| `test_maps.py`, `test_depth_inc.py`, `test_zone_inc.py` | The checks (below). |
+| `test_maps.py`, `test_depth_inc.py`, `test_zone_inc.py` | The checks (below). `test_depth_inc.py` also covers the catalog's bulk request and the wall numbers it must show. |
 | `serve.py`, `index.html` | The desktop viewer (see "Viewer"); `serve.py` also serves the three write endpoints. |
 | `sprite_view.json` | The sprite picker's choices (committed, no art; created by the first choice). |
 
@@ -220,7 +221,8 @@ against `render_room.py`'s output, the pictures of `sprites.json` (hashes in
 `EXPECT_SPR`, curated and default), that the viewer's own `renderFrame` reproduces every distinct
 picture, the picker's transforms and precedence, the depth panel's logic (first match, what is and is not
 written, the illustration's direction, the jump), the ZONES window's (the checks, what SAVE sends, snapping, the outline and the
-illustration, COPY INFO, the jump), that RESULT draws a sprite when SPRITES is on, and that a hidden layer's
+illustration, COPY INFO, the jump), the CATALOG's (grouping, counts, the wall resolution against the port's rule, filters and sorts,
+bulk apply and its shared dirty state, the detail pane, COPY LIST, the virtual list), that RESULT draws a sprite when SPRITES is on, and that a hidden layer's
 window starts minimised. They never write a file (use `serve.py --depth-inc TEMP --zone-inc TEMP` anyway when running them); the result shows in a box and as the page title
 (`TEST PASS`). After changing `build_maps.py`, `sprites.py` or `render_room.py`,
 regenerate the hashes in `EXPECT` / `EXPECT_SPR`.
@@ -245,6 +247,7 @@ kept in `localStorage`; RELAYOUT restores the default arrangement.
 | INFO | The selection: for an entity with a sprite record, the **sprite picker** (below), the picture and **why it is drawn that way** (the rule and the repo function it comes from, or "default (not curated)" and the definition table; animation/frame, flips, offset, tiles, palette, and the runtime state the pose assumes); then every field of the objects, the metatile index, type and the four tile entries of each block (with a preview). COPY INFO and CLEAR SELECTION. |
 | 3D DEPTH | The selected entity's stereo depth mode from `port_sprite_depth.inc`, a selector to change it, the list of all entries, SAVE (below). |
 | ZONES | The port's zone depth fixes from `port_zone_depth.inc`: draw a rectangle, the room's zones and all zones, edit, SAVE (see "Zones"). Starts minimised (the bottom bar opens it). |
+| CATALOG | Every kind/id/type of entity the rooms place: picture, counts, drawn or marker only, depth mode; detail pane, bulk depth change (see "Sprite catalog"). Starts minimised (the bottom bar opens it). |
 
 The left list groups rooms by area (collapsible, remembered); search takes a name, a
 hex area (`48`, `0x48`) or `AA-RR`. The top bar shows area/room, size, mode, each layer's
@@ -423,6 +426,51 @@ block comment are not entries.
 the picker); `test_depth_inc.py` and any experiment should use a copy. The endpoints accept only `application/json`
 POSTs whose Host is local, up to 1 MB, and only these two paths.
 
+## Sprite catalog
+
+The **CATALOG** window (bottom bar; starts minimised, like ZONES) is the sprite viewer: instead of finding an example room by room, it lists
+every distinct kind/id/type the rooms place (688 rows in the EU ROM; MANAGERs and entities that have no position left out) and lets the
+depth of each be configured in one place. It reads `maps.json`, `sprites.json`, the picker's choices (`SV`) and the depth list (`DP`); it
+fetches and writes nothing of its own.
+
+**A row** shows a thumbnail (the first drawn occurrence's picture with the picker's rule for that kind/id/type applied; a placeholder with
+the reason in its tooltip when there is none), `KIND/ID type` and the id in hex, the number of entities and rooms, `near a wall n/total`,
+`drawn` (or `drawn (n of m)`) or `marker only (reason)`, and the effective depth mode with what decides it: `UP (default)` with no entry,
+else the mode, `exact type` or `any type` and the entry's line in the file (`new` for an unsaved one; an exact entry that sits after an
+any-type one is flagged as never reached). For a **WALL** row the resolution of its occurrences follows (`LEFT 16 / RIGHT 16 / UP 16`),
+computed like the port: the nearest of the left, right and bottom edges within 24 px of the room's edge, else UP (`dpResolveWall`, the code of
+the RESULT illustration; `WallDepthMode` in `port/port_draw.c`; `test_depth_inc.py` checks the margin and the rule's shape in the C source).
+
+**Filters and sort**: text search (all words must match: name, hex id `0x4d`, `furniture/7`), one checkbox per kind, depth (any, has a rule,
+no rule, or one mode), drawn / marker only, and **sits by a wall** (at least one occurrence within 24 px of the left, right or bottom edge: the
+"wall candidate" of `docs/investigations/wall-depth-candidates.md`, shown as near/total; it counts every positioned entity, drawn or not, where
+the investigation counted drawn ones only). Sort by name, entities, rooms or near-wall count, ascending or descending. The list is virtual
+(only the visible rows exist), so it stays light with the whole catalog. **COPY LIST** puts the listed rows on the clipboard as plain text
+(kind/id/type, counts, drawn, depth mode and its entry, the WALL resolution) for a chat.
+
+**Selecting a row** opens its detail (beside the list when the window is wide, below it otherwise):
+
+- a bigger picture with the **depth illustration** (the same gradient and arrow as RESULT; switchable; for WALL a selector picks which resolved
+  direction to draw, the most common one at first) and why it is drawn that way (the rule or "default (not curated)", the sprite index, where the
+  picture comes from);
+- **SPRITE VIEW, preview only**: every animation of its sprite as a strip of frames (click one to choose it; flips apply on top of what the frame
+  has), FLIP H, FLIP V, ROTATE 90, RESET, and whether the choice is for this exact type or any type. These are the picker's rules in
+  `sprite_view.json` (the same data, also shown by the INFO picker); a per-entity choice made in INFO is not applied to the catalog's picture.
+  They do **not** change the game;
+- **3D DEPTH, what the port reads**: the DEPTH window's editor itself (`dpEditor`: effective mode, the seven mode buttons, applies to this type or
+  any type, "write even if it equals the default", the "never reached" warning), editing the same working copy `DP.work`;
+- **ROOMS**: every room it occurs in, with one chip per occurrence (`x,y`, and the wall direction when it is by a wall); a chip opens that room
+  and selects the entity in the viewer.
+
+**Bulk**: tick rows (or "all listed"), choose a mode and a scope, APPLY. Scope "each row's exact type" sets `PORT_SPRITE_DEPTH(kind, id, type, mode)`
+for each ticked row; "any type" sets one `PORT_ANY_TYPE` entry per kind/id. It goes through the same `dpSetQuiet` as the editor, so an entry that
+only restates what the entity already gets is not written (unless "write even if it equals the default" is ticked) and an exact entry is placed
+before the kind/id's any-type entry. Rows whose id has no name in the enums (one entity of kind 5) cannot be addressed by the list and are skipped.
+The ticked rows are unticked when a filter change removes them from the list, not when a depth change does. Nothing is written until SAVE.
+
+**One dirty state**: the CATALOG and the 3D DEPTH window show the same `UNSAVED CHANGES (n)` badge, SAVE and REVERT, because both read and edit
+`DP.work` (`dpHeadFill`); a change in either shows in the other at once. SAVE and REVERT are the DEPTH window's.
+
 ## Zones
 
 The port can draw a rectangle of one layer at the stereo depth of another, for places where the layers' own planes look wrong
@@ -551,11 +599,14 @@ need it.
   48 px of a room edge face that edge (`type & 3`); a south boss door is the
   vertical mirror of the north one; the curtain of room `20-00` lies on pixels where the
   console screenshot differs from the layers (97.7% of its pixels).
-- `test_depth_inc.py` (73 checks): the `.inc` parser and writer: header comment and entries inside comments are not
+- `test_depth_inc.py` (89 checks): the `.inc` parser and writer: header comment and entries inside comments are not
   entries, unknown lines are reported, INVERT and DOWN, any and exact types, attached comments, replace / remove / add and
   where, CRLF, the identity round trip on a sample and on the port's real file, three-way application of a change to a
   file that moved meanwhile, validation; and the two endpoints against temp copies (and that the real `.inc` and
-  `sprite_view.json` are untouched).
+  `sprite_view.json` are untouched); the catalog's bulk request (four sets, an exact type placed before its kind/id's any-type entry, the same
+  request twice, the four removes restoring the file byte for byte); and, against `maps.json` and `port/port_draw.c`, the numbers the catalog's
+  wall resolution must give (688 rows, 110 by a wall, the dojo racks 16 LEFT / 16 RIGHT / 16 UP, `MINISH_SIZED_ARCHWAY` type 1 at 120,144 of room
+  20-00 DOWN), which `index.html?test` asserts again from the JavaScript side.
 - `test_zone_inc.py` (70 checks): the zone `.inc` parser and writer (hex and decimal numbers, header and block-comment entries,
   unmanaged lines, attached comments, in-place `toBg` change, remove, where an add goes, header-only, empty and missing files,
   CRLF, the identity round trip, a file changed meanwhile), the validation (unknown room, outside the room, `bg == toBg`, bad

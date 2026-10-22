@@ -74,6 +74,27 @@ table.f td:first-child{color:var(--dim);white-space:nowrap;width:1%}
 #toast.on{opacity:1}
 #msg{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#14161acc;z-index:99998;text-align:center}
 #msg div{background:var(--panel);border:1px solid var(--line);padding:18px 26px;max-width:560px;line-height:1.6}
+.catMain{flex:1;min-height:0;display:flex;flex-direction:column}
+.catMain.wide{flex-direction:row}
+.catLeft{flex:1;min-height:110px;min-width:0;display:flex;flex-direction:column}
+.catList{flex:1;min-height:0;overflow:auto;position:relative;background:#16181e}
+.catRow{position:absolute;left:0;right:0;height:56px;display:flex;gap:6px;align-items:center;padding:0 6px;border-bottom:1px solid #262a35;cursor:pointer;overflow:hidden}
+.catRow:hover{background:#262c3a}
+.catRow.sel{background:#173a4d}
+.catRow canvas.th{flex:none;width:44px;height:44px;background:#0b0c0f;border:1px solid var(--line);image-rendering:pixelated}
+.catRow .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.catRow .tx>div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.catRow .dim{color:var(--dim)}
+.catDet{flex:none;height:48%;min-height:120px;overflow:auto;border-top:2px solid var(--line);background:var(--panel)}
+.catMain.wide .catDet{height:auto;width:50%;border-top:0;border-left:2px solid var(--line)}
+.catDet .blk{padding:4px 6px;border-bottom:1px solid #262a35}
+.catDet .strip{display:flex;flex-wrap:wrap;gap:3px;margin:2px 0 4px}
+.catDet .strip canvas{width:44px;height:44px;background:#0b0c0f;border:1px solid var(--line);image-rendering:pixelated;cursor:pointer}
+.catDet .strip canvas.cur{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.catDet .strip canvas.def{border-style:dashed}
+.catDet .occ{display:inline-block;margin:0 4px 1px 0;padding:0 4px;border:1px solid var(--line);border-radius:3px;cursor:pointer}
+.catDet .occ:hover{border-color:var(--acc2)}
+.mode-UP{color:#6dff9a}.mode-DOWN{color:#ffd24a}.mode-LEFT{color:#5ad2ff}.mode-RIGHT{color:#c08cff}.mode-FLAT{color:#bbb}.mode-RAISED{color:#ff9a3c}.mode-WALL{color:#ff8ad8}
 #testbox{position:fixed;left:280px;top:60px;z-index:99997;background:#0b0c0f;border:2px solid var(--acc);padding:8px 12px;max-height:80%;overflow:auto;white-space:pre}
 </style>
 </head>
@@ -290,7 +311,8 @@ function setSprites(d) {
   const sp = S.spr;
   sp.data = d; sp.state = 'ready'; sp.pics.clear(); sp.views.clear(); sp.err = '';
   sp.tiles.clear(); sp.poolDec.clear();
-  syncCtl(); repaintAll(); renderInfo(); renderEntityList(true);
+  catSprChanged();
+  syncCtl(); repaintAll(); renderInfo(); renderEntityList(true); catRefresh();
 }
 // The swapped tile pools, on first use.
 function loadPools() {
@@ -413,9 +435,13 @@ function svFind(o) {
   const idx = +o.key.slice(1), id = svIdOf(o);
   let c = SV.entities.find(x => x.room === S.key && x.index === idx);
   if (c) return { choice: c, level: 'entity' };
-  c = SV.rules.find(r => r.kind === o.kind && r.id === id && r.type === o.src.type);
+  return svFindRule(o.kind, id, o.src.type);
+}
+// The rule for a kind/id/type (exact type first, then any type), without the per-entity level: what the SPRITES catalog uses.
+function svFindRule(kind, id, type) {
+  let c = SV.rules.find(r => r.kind === kind && r.id === id && r.type === type);
   if (c) return { choice: c, level: 'type' };
-  c = SV.rules.find(r => r.kind === o.kind && r.id === id && r.type == null);
+  c = SV.rules.find(r => r.kind === kind && r.id === id && r.type == null);
   if (c) return { choice: c, level: 'any' };
   return null;
 }
@@ -439,7 +465,10 @@ function svPic(rec, ch) {
   let p = S.spr.views.get(key);
   if (p) return p;
   const r = renderFrame(S.spr.data.sources[rec.src], fr.frame, fr.flipX, fr.flipY, rec.dx | 0, rec.dy | 0);
-  if (r.wait) { loadPools().then(() => { S.spr.views.clear(); repaintAll(); renderInfo(); }); return { err: r.err, wait: true }; }
+  if (r.wait) {
+    if (!S.spr.poolWait) { S.spr.poolWait = true; loadPools().then(() => { S.spr.poolWait = false; S.spr.views.clear(); repaintAll(); renderInfo(); catRefresh(true); }); }
+    return { err: r.err, wait: true };
+  }
   if (r.err) p = { err: r.err };
   else p = mkPic(xformPic(r, ch.flipX | 0, ch.flipY | 0, ch.rot | 0));
   S.spr.views.set(key, p);
@@ -595,8 +624,8 @@ function infoText() {
   }
   return t.join('\n') + '\n';
 }
-async function copyInfo() {
-  const text = infoText();
+async function copyInfo() { return copyText(infoText()); }
+async function copyText(text) {
   try { await navigator.clipboard.writeText(text); toast('Copied ' + text.length + ' chars'); }
   catch (e) {
     const ta = el('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;left:-999px'; document.body.append(ta); ta.select();
@@ -614,7 +643,7 @@ function defaultRect(id) {
   const { W, H } = wsSize(), u = (a, b, c, d) => ({ x: Math.round(a * W), y: Math.round(b * H), w: Math.round(c * W), h: Math.round(d * H) });
   return ({
     RESULT: u(0, 0, .5, .64), BG2: u(.5, 0, .25, .32), BG1: u(.75, 0, .25, .32), BG3: u(.5, .32, .25, .32),
-    MAP: u(.75, .32, .25, .32), ENTITIES: u(0, .64, .3, .36), INFO: u(.3, .64, .4, .36), DEPTH: u(.7, .64, .3, .36), ZONES: u(.55, .1, .45, .9),
+    MAP: u(.75, .32, .25, .32), ENTITIES: u(0, .64, .3, .36), INFO: u(.3, .64, .4, .36), DEPTH: u(.7, .64, .3, .36), ZONES: u(.55, .1, .45, .9), CATALOG: u(.1, .03, .8, .94),
   })[id];
 }
 class Win {
@@ -684,7 +713,7 @@ function applyLayout(reset) {
   for (const id in wins) {
     const w = wins[id], r = (saved && saved[id]) || defaultRect(id);
     w.setRect(r);
-    w.setState(saved && saved[id] ? saved[id].s || 'open' : id === 'ZONES' ? 'min' : 'open');   // ZONES starts minimised: it covers the others
+    w.setState(saved && saved[id] ? saved[id].s || 'open' : id === 'ZONES' || id === 'CATALOG' ? 'min' : 'open');   // ZONES and CATALOG start minimised: they cover the others
   }
   if (reset) saveLayout();
 }
@@ -1215,14 +1244,14 @@ async function svLoad() {
     const l = store('svLocal'); if (l) { SV.rules = l.rules || []; SV.entities = l.entities || []; }
   }
   SV.loaded = true;
-  S.spr.views.clear(); repaintAll(); renderInfo();
+  S.spr.views.clear(); repaintAll(); renderInfo(); catRefresh();
 }
 function svChanged() {
   S.spr.views.clear();
   SV.state = SV.state === 'nosrv' ? 'nosrv' : 'unsaved';
   clearTimeout(SV.timer);
   if (SV.persist) SV.timer = setTimeout(svSave, 350);
-  repaintAll(); renderInfo(); renderEntityList(true);
+  repaintAll(); renderInfo(); renderEntityList(true); catRefresh();
 }
 async function svSave() {
   const doc = { format: 'tmc-sprite-view', version: 1, rules: SV.rules, entities: SV.entities };
@@ -1255,11 +1284,13 @@ function svWrite(o, scope, c) {
   if (scope === 'entity') {
     SV.entities = SV.entities.filter(x => !(x.room === S.key && x.index === idx));
     if (!svIsDefault(n)) SV.entities.push(Object.assign({ room: S.key, index: idx }, n));
-  } else {
-    const type = scope === 'type' ? o.src.type : null;
-    SV.rules = SV.rules.filter(r => !(r.kind === o.kind && r.id === id && (r.type == null ? null : r.type) === type));
-    if (!svIsDefault(n)) SV.rules.push(Object.assign({ kind: o.kind, id, type }, n));
-  }
+  } else svWriteRule(o.kind, id, scope === 'type' ? o.src.type : null, c);
+}
+// The rule of a kind/id and a type (null: any type); a default choice removes it.
+function svWriteRule(kind, id, type, c) {
+  const n = svNormalize(c);
+  SV.rules = SV.rules.filter(r => !(r.kind === kind && r.id === id && (r.type == null ? null : r.type) === type));
+  if (!svIsDefault(n)) SV.rules.push(Object.assign({ kind, id, type }, n));
 }
 function svPatch(patch) {
   const t = svTargets(); if (!t) return;
@@ -1335,11 +1366,16 @@ function buildPicker() {
     if (p.err) { const e = el('div', 'warn'); e.textContent = 'cannot draw this choice: ' + p.err; box.append(e); }
   }
   const st = el('div'); st.id = 'svBadge';
-  const label = { saved: 'saved to sprite_view.json', saving: 'saving...', unsaved: 'UNSAVED (saving in a moment)', idle: '', error: 'NOT SAVED: ' + SV.err + ' (kept in this browser)',
-    nosrv: 'not saved to a file: no serve.py here (' + SV.err + '); choices are kept in this browser only' }[SV.state];
-  st.textContent = label; st.style.color = SV.state === 'saved' ? 'var(--ok)' : SV.state === 'error' || SV.state === 'nosrv' ? 'var(--bad)' : 'var(--acc)';
+  const sv = svStatus();
+  st.textContent = sv[0]; st.style.color = sv[1];
   box.append(st);
   return box;
+}
+// Where the picker's choices stand: [text, colour].
+function svStatus() {
+  const label = { saved: 'saved to sprite_view.json', saving: 'saving...', unsaved: 'UNSAVED (saving in a moment)', idle: '', error: 'NOT SAVED: ' + SV.err + ' (kept in this browser)',
+    nosrv: 'not saved to a file: no serve.py here (' + SV.err + '); choices are kept in this browser only' }[SV.state];
+  return [label, SV.state === 'saved' ? 'var(--ok)' : SV.state === 'error' || SV.state === 'nosrv' ? 'var(--bad)' : 'var(--acc)'];
 }
 
 // info panel
@@ -1455,7 +1491,8 @@ function dpOps() {
 const dpDirty = () => { const o = dpOps(); return o.set.length + o.remove.length; };
 // Change what an entity of kind/id/type gets: type null edits the PORT_ANY_TYPE entry. An entry that would only restate what
 // the entity already gets (UP with nothing before it) is not written, unless DP.force.
-function dpSet(kind, id, type, mode) {
+function dpSet(kind, id, type, mode) { dpSetQuiet(kind, id, type, mode); renderDepth(); repaintAll(); }
+function dpSetQuiet(kind, id, type, mode) {
   const list = DP.work, i = list.findIndex(e => e.kind === kind && e.id === id && e.type === type);
   let redundant;
   if (type === null) redundant = mode === 'UP';
@@ -1467,7 +1504,6 @@ function dpSet(kind, id, type, mode) {
     if (type !== null) { const a = list.findIndex(e => e.kind === kind && e.id === id && e.type == null); if (a >= 0) at = a; }
     list.splice(at, 0, { kind, id, type, mode, line: null, comment: [], isNew: true });
   }
-  renderDepth(); repaintAll();
 }
 function dpRemove(e) { const i = DP.work.indexOf(e); if (i >= 0) DP.work.splice(i, 1); renderDepth(); repaintAll(); }
 async function dpSave() {
@@ -1550,6 +1586,17 @@ function paintDepthOverlay(ctx, view, t) {
   const w = pic ? pic.w : 16, h = pic ? pic.h : 16, ox = pic ? pic.ox : -8, oy = pic ? pic.oy : -16;
   const d = dpDir(dpResolveWall(t.mode, t.o, S.room), sp && sp.choice), s = view.s;
   const x = view.ox + (t.o.x + ox) * s, y = view.oy + (t.o.y + oy) * s;
+  const oc = dpOverlayCanvas(pic, d, w, h);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(oc, x, y, w * s, h * s);
+  ctx.strokeStyle = t.sel ? '#ffffffa0' : '#ffffff50'; ctx.lineWidth = 1; ctx.setLineDash([3, 2]); ctx.strokeRect(x + .5, y + .5, w * s, h * s); ctx.setLineDash([]);
+  dpArrow(ctx, x + w * s / 2, y + h * s / 2, clamp(Math.min(w, h) * s * .45, 10, 48), d);
+  const lab = (t.sel ? 'DEPTH ' : '') + t.mode + (t.sel ? ' (illustration, not a render)' : '');
+  ctx.font = '10px ui-monospace,Consolas,monospace'; ctx.textBaseline = 'bottom';
+  ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(lab, x, y - 2); ctx.fillStyle = '#ffd24a'; ctx.fillText(lab, x, y - 2);
+}
+// The gradient (clear at the ground edge, red at the far edge) over the opaque pixels of pic, w x h; d is the direction from dpDir.
+function dpOverlayCanvas(pic, d, w, h) {
   const oc = document.createElement('canvas'); oc.width = w; oc.height = h;
   const c = oc.getContext('2d');
   if (d[0] === 0 && d[1] === 0) { c.fillStyle = 'rgba(170,170,170,.45)'; c.fillRect(0, 0, w, h); }
@@ -1560,10 +1607,10 @@ function paintDepthOverlay(ctx, view, t) {
     c.fillStyle = g; c.fillRect(0, 0, w, h);
   }
   if (pic) { c.globalCompositeOperation = 'destination-in'; c.drawImage(pic.cv, 0, 0); }
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(oc, x, y, w * s, h * s);
-  ctx.strokeStyle = t.sel ? '#ffffffa0' : '#ffffff50'; ctx.lineWidth = 1; ctx.setLineDash([3, 2]); ctx.strokeRect(x + .5, y + .5, w * s, h * s); ctx.setLineDash([]);
-  const mx = x + w * s / 2, my = y + h * s / 2, L = clamp(Math.min(w, h) * s * .45, 10, 48);
+  return oc;
+}
+// The arrow along the direction the depth grows in, centred on (mx, my), L px long each way.
+function dpArrow(ctx, mx, my, L, d) {
   ctx.lineCap = 'round';
   if (d[0] || d[1]) {
     const ex = mx + d[0] * L, ey = my + d[1] * L, bx = mx - d[0] * L, by = my - d[1] * L, hx = -d[1], hy = d[0];
@@ -1573,9 +1620,49 @@ function paintDepthOverlay(ctx, view, t) {
       ctx.moveTo(ex, ey); ctx.lineTo(ex - d[0] * 7 - hx * 5, ey - d[1] * 7 - hy * 5); ctx.stroke();
     }
   }
-  const lab = (t.sel ? 'DEPTH ' : '') + t.mode + (t.sel ? ' (illustration, not a render)' : '');
-  ctx.font = '10px ui-monospace,Consolas,monospace'; ctx.textBaseline = 'bottom';
-  ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(lab, x, y - 2); ctx.fillStyle = '#ffd24a'; ctx.fillText(lab, x, y - 2);
+}
+// The UNSAVED badge, SAVE, REVERT and the file's path, in `head`; the 3D DEPTH window and the SPRITES catalog both show them,
+// and both read the same working copy (DP.work), so there is one dirty state.
+function dpHeadFill(head, pfx) {
+  const n = dpDirty();
+  const badge = el('span'); badge.id = pfx + 'Badge';
+  badge.textContent = n ? 'UNSAVED CHANGES (' + n + ')' : 'saved';
+  badge.style.cssText = 'font-weight:bold;padding:0 6px;border-radius:3px;' + (n ? 'background:#7a2a2a;color:#fff' : 'color:var(--ok)');
+  const save = dpBtn('SAVE', 'write the changes into ' + DP.path, dpSave); save.disabled = !n; save.id = pfx + 'Save';
+  const rev = dpBtn('REVERT', 'drop the unsaved changes (reload the file)', () => dpLoad()); rev.disabled = !n; rev.id = pfx + 'Revert';
+  const path = el('span'); path.style.color = 'var(--dim)'; path.textContent = DP.path + (DP.exists ? '' : ' (does not exist yet: SAVE creates it)');
+  head.append(badge, save, rev, path);
+}
+function dpBtn(text, title, fn, on) { const b = el('button'); b.textContent = text; b.title = title || ''; b.onclick = fn; if (on) b.classList.add('on'); return b; }
+// The mode editor of one kind/id/type: the effective mode and what decides it, the mode buttons, "applies to", the entries. `add`
+// appends a row to the host (the 3D DEPTH window, or the catalog's detail pane); pfx keeps element ids and radio groups apart.
+function dpEditor(add, kind, id, type, pfx) {
+  const btn = dpBtn, eff = dpEffective(kind, id, type);
+  const cur = add();
+  let how;
+  if (!eff.entry) how = 'UP (default: no entry matches)';
+  else {
+    how = eff.mode + ' - ' + (eff.entry.type == null ? 'by the PORT_ANY_TYPE entry' : 'by the entry for exactly type ' + type) + (eff.entry.line ? ' (line ' + eff.entry.line + ')' : ' (new)');
+    if (eff.entry.type == null && DP.work.some(e => e.kind === kind && e.id === id && e.type === type)) how += '  - an exact entry for this type exists but comes AFTER it, so the port never reaches it';
+  }
+  cur.append(el('b', null, 'effective mode: '), how);
+  const row = add(); row.style.cssText += ';display:flex;flex-wrap:wrap;gap:4px';
+  const target = DP.scope === 'any' ? null : type;
+  for (const m of DP_MODES) row.append(btn(m, DP_HELP[m], () => dpSet(kind, id, target, m), m === (target === null ? (DP.work.find(e => e.kind === kind && e.id === id && e.type == null) || { mode: 'UP' }).mode : eff.mode)));
+  const sc = add(); sc.style.cssText += ';display:flex;flex-wrap:wrap;gap:2px 12px';
+  sc.append('applies to:');
+  for (const [v, text] of [['type', 'this type only (' + type + ')'], ['any', 'any type (PORT_ANY_TYPE)']]) {
+    const r = el('input'); r.type = 'radio'; r.name = pfx + 'Scope'; r.checked = DP.scope === v;
+    r.onchange = () => { DP.scope = v; store('dpScope', v); renderDepth(); };
+    sc.append(el('label', null, r, ' ' + text));
+  }
+  const fc = el('input'); fc.type = 'checkbox'; fc.checked = DP.force; fc.onchange = () => { DP.force = fc.checked; renderDepth(); };
+  fc.id = pfx + 'Force';
+  sc.append(el('label', null, fc, ' write even if it equals the default'));
+  add().append(el('span', null, DP_HELP[eff.mode]));
+  const exact = DP.work.find(e => e.kind === kind && e.id === id && e.type === type), anyE = DP.work.find(e => e.kind === kind && e.id === id && e.type == null);
+  const st = add(); st.style.color = 'var(--dim)';
+  st.textContent = 'entries for ' + kind + '/' + id + ': ' + (exact ? 'exact type ' + type + ' = ' + exact.mode : 'none for type ' + type) + '; ' + (anyE ? 'any type = ' + anyE.mode : 'none for any type');
 }
 let depthBody;
 function buildDepth() {
@@ -1585,25 +1672,18 @@ function buildDepth() {
   return w;
 }
 function renderDepth() {
+  catRefresh();
   if (!depthBody) return;
   const top = depthBody.scrollTop;
   depthBody.textContent = '';
   const add = (...k) => { const d = el('div'); d.style.cssText = 'padding:2px 6px'; for (const x of k) d.append(x); depthBody.append(d); return d; };
-  const btn = (text, title, fn, on) => { const b = el('button'); b.textContent = text; b.title = title || ''; b.onclick = fn; if (on) b.classList.add('on'); return b; };
   if (!DP.loaded) {
     const m = add(); m.style.color = 'var(--bad)';
     m.textContent = 'No depth list: ' + (DP.err || 'loading') + '. The panel reads and writes platform/3ds/source/port_sprite_depth.inc through serve.py (/sprite-depth); open the viewer with serve.py.';
     return;
   }
-  const n = dpDirty();
-  const head = add(); head.style.cssText += ';display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;position:sticky;top:0;background:var(--panel);z-index:2;border-bottom:1px solid var(--line)';
-  const badge = el('span'); badge.id = 'dpBadge';
-  badge.textContent = n ? 'UNSAVED CHANGES (' + n + ')' : 'saved';
-  badge.style.cssText = 'font-weight:bold;padding:0 6px;border-radius:3px;' + (n ? 'background:#7a2a2a;color:#fff' : 'color:var(--ok)');
-  const save = btn('SAVE', 'write the changes into ' + DP.path, dpSave); save.disabled = !n; save.id = 'dpSave';
-  const rev = btn('REVERT', 'drop the unsaved changes (reload the file)', () => dpLoad()); rev.disabled = !n;
-  const path = el('span'); path.style.color = 'var(--dim)'; path.textContent = DP.path + (DP.exists ? '' : ' (does not exist yet: SAVE creates it)');
-  head.append(badge, save, rev, path);
+  const head = add(); head.style.cssText += ';position:sticky;top:0;background:var(--panel);z-index:2;border-bottom:1px solid var(--line)';
+  dpHeadFill(head, 'dp');
   if (DP.msg) { const m = add(); m.style.color = /NOT SAVED/.test(DP.msg) ? 'var(--bad)' : 'var(--ok)'; m.textContent = DP.msg; }
   const note = add(); note.style.cssText += ';color:var(--acc)';
   note.textContent = 'SAVE edits the PORT\'s file (it changes the next 3DS build, not this viewer). The overlay in RESULT is an illustration of the direction the depth grows in, not a render of the stereo output.';
@@ -1611,35 +1691,7 @@ function renderDepth() {
   const o = dpTarget();
   const sec = el('div', 'sec'); sec.textContent = o ? 'SELECTED  ' + o.label : 'SELECTED'; if (o) sec.style.color = kindColor(o.kind); depthBody.append(sec);
   if (!o) add().append(el('span', null, 'Select an entity (with a name) in RESULT or ENTITIES to see and change its depth mode.'));
-  else {
-    const kind = o.kind, id = o.src.idName, type = o.src.type, eff = dpEffective(kind, id, type);
-    const cur = add();
-    let how;
-    if (!eff.entry) how = 'UP (default: no entry matches)';
-    else {
-      const first = DP.work.find(e => e.kind === kind && e.id === id);
-      how = eff.mode + ' - ' + (eff.entry.type == null ? 'by the PORT_ANY_TYPE entry' : 'by the entry for exactly type ' + type) + (eff.entry.line ? ' (line ' + eff.entry.line + ')' : ' (new)');
-      if (eff.entry.type == null && DP.work.some(e => e.kind === kind && e.id === id && e.type === type)) how += '  - an exact entry for this type exists but comes AFTER it, so the port never reaches it';
-    }
-    cur.append(el('b', null, 'effective mode: '), how);
-    const row = add(); row.style.cssText += ';display:flex;flex-wrap:wrap;gap:4px';
-    const target = DP.scope === 'any' ? null : type;
-    for (const m of DP_MODES) row.append(btn(m, DP_HELP[m], () => dpSet(kind, id, target, m), m === (target === null ? (DP.work.find(e => e.kind === kind && e.id === id && e.type == null) || { mode: 'UP' }).mode : eff.mode)));
-    const sc = add(); sc.style.cssText += ';display:flex;flex-wrap:wrap;gap:2px 12px';
-    sc.append('applies to:');
-    for (const [v, text] of [['type', 'this type only (' + type + ')'], ['any', 'any type (PORT_ANY_TYPE)']]) {
-      const r = el('input'); r.type = 'radio'; r.name = 'dpScope'; r.checked = DP.scope === v;
-      r.onchange = () => { DP.scope = v; store('dpScope', v); renderDepth(); };
-      sc.append(el('label', null, r, ' ' + text));
-    }
-    const fc = el('input'); fc.type = 'checkbox'; fc.checked = DP.force; fc.onchange = () => { DP.force = fc.checked; };
-    fc.id = 'dpForce';
-    sc.append(el('label', null, fc, ' write even if it equals the default'));
-    add().append(el('span', null, DP_HELP[eff.mode]));
-    const exact = DP.work.find(e => e.kind === kind && e.id === id && e.type === type), anyE = DP.work.find(e => e.kind === kind && e.id === id && e.type == null);
-    const st = add(); st.style.color = 'var(--dim)';
-    st.textContent = 'entries for ' + kind + '/' + id + ': ' + (exact ? 'exact type ' + type + ' = ' + exact.mode : 'none for type ' + type) + '; ' + (anyE ? 'any type = ' + anyE.mode : 'none for any type');
-  }
+  else dpEditor(add, o.kind, o.src.idName, o.src.type, 'dp');
   const ov = add(); ov.style.cssText += ';display:flex;flex-wrap:wrap;gap:2px 12px';
   const fo = el('input'); fo.type = 'checkbox'; fo.checked = DP.follow; fo.id = 'dpFollow';
   fo.onchange = () => { DP.follow = fo.checked; store('dpFollow', fo.checked); repaintAll(); };
@@ -1652,7 +1704,7 @@ function renderDepth() {
   DP.work.forEach((e, i) => {
     const r = el('div', 'er'); r.style.alignItems = 'center';
     const changed = !baseKeys.has(dpKey(e)) ? 'new' : baseKeys.get(dpKey(e)).mode !== e.mode ? 'changed' : '';
-    const m = el('span'); m.textContent = e.mode; m.style.cssText = 'width:46px;font-weight:bold;color:' + ({ UP: '#6dff9a', DOWN: '#ffd24a', LEFT: '#5ad2ff', RIGHT: '#c08cff', FLAT: '#bbb' })[e.mode];
+    const m = el('span'); m.textContent = e.mode; m.style.cssText = 'width:46px;font-weight:bold;color:' + ({ UP: '#6dff9a', DOWN: '#ffd24a', LEFT: '#5ad2ff', RIGHT: '#c08cff', FLAT: '#bbb', RAISED: '#ff9a3c', WALL: '#ff8ad8' })[e.mode];
     const t = el('span'); t.textContent = e.kind + '/' + e.id + ' ' + (e.type == null ? 'any type' : 'type ' + e.type);
     const sh2 = DP.work.slice(0, i).some(p => p.kind === e.kind && p.id === e.id && p.type == null && e.type != null);
     const x = el('span', 'p'); x.textContent = (e.line ? 'line ' + e.line : '') + (changed ? ' ' + changed.toUpperCase() : '') + (e.spelling === 'PORT_DEPTH_INVERT' && !changed ? ' (INVERT)' : '') + (sh2 ? ' SHADOWED by an earlier any-type entry' : '');
@@ -1937,6 +1989,400 @@ function zInfoLines(room) {
   return t;
 }
 
+// ---------------------------------------------------------------- SPRITES catalog (CATALOG window)
+// Every kind/id/type of entity the rooms place (MANAGERs and entities that have no position left out), in one list: its picture,
+// how many there are and where, whether it is drawn, the 3D depth mode the port reads (port_sprite_depth.inc) and, for WALL, what the
+// port's wall rule makes of each occurrence. Selecting a row opens its detail: the picture with the depth illustration, the
+// sprite picker's choices (preview only, sprite_view.json) and the depth editor of the DEPTH window (the same functions and the
+// same working copy DP.work, so SAVE / REVERT / the unsaved badge are one state), the rooms it occurs in. Rows can be ticked to
+// apply one depth mode to all of them. Nothing here fetches data of its own: it reads maps.json, sprites.json and DP / SV.
+const CAT_ROW = 56;
+const CAT = { win: null, el: {}, groups: [], byKey: new Map(), built: false, sel: null, checked: new Set(),
+  q: '', kindOff: new Set(store('catKindOff') || []), depth: store('catDepth') || 'any', art: store('catArt') || 'any', wall: !!store('catWall'),
+  sort: store('catSort') || 'name', dir: store('catDir') === -1 ? -1 : 1,
+  svScope: store('catSvScope') === 'any' ? 'any' : 'type', overlay: store('catOverlay') !== false, illus: null,
+  bulkMode: store('catBulkMode') || 'WALL', bulkScope: store('catBulkScope') === 'any' ? 'any' : 'type',
+  stripAll: false, rawOpen: false, roomsAll: false, msg: '', ver: 0, drawnVer: -1, rows: null, rowsVer: -1, detailDirty: true };
+const CAT_WALLS = ['LEFT', 'RIGHT', 'DOWN', 'UP'];
+// Group the rooms' entities by kind/id/type. For each: its occurrences with the direction the port's WALL rule gives them (dpResolveWall,
+// the same code the RESULT illustration uses), how many rooms, how many sit by a wall (within 24 px of the left, right or bottom edge).
+function catBuild() {
+  const m = new Map();
+  for (const a of S.areas) for (const r of a.rooms) r.entities.forEach((e, i) => {
+    if (!e.positioned) return;
+    const kind = e.kindName || ('KIND' + e.kind);
+    if (kind === 'MANAGER') return;
+    const id = e.idName || ('0x' + hex(e.id)), key = kind + '/' + id + '/' + e.type;
+    let g = m.get(key);
+    if (!g) m.set(key, g = { key, kind, id, named: !!e.idName, numId: e.id, type: e.type, name: kind + '/' + id + ' ' + e.type, occ: [], rooms: new Set(),
+      wall: { LEFT: 0, RIGHT: 0, DOWN: 0, UP: 0 }, near: 0, spr: null,
+      hay: (kind + '/' + id + ' ' + e.type + ' ' + key + ' 0x' + hex(e.id) + ' id' + e.id + ' ' + hex(e.id)).toLowerCase() });
+    const rk = roomKey(a.id, r.id), w = dpResolveWall('WALL', e, r);
+    g.occ.push({ room: rk, idx: i, x: e.x, y: e.y, wall: w });
+    g.rooms.add(rk); g.wall[w]++; if (w !== 'UP') g.near++;
+  });
+  CAT.groups = [...m.values()]; CAT.byKey = m; CAT.built = true; CAT.rows = null;
+  return CAT.groups;
+}
+function catSprChanged() { for (const g of CAT.groups) g.spr = null; }
+// How a group is drawn: {state, drawn (occurrences with a picture), rep ({rec, room, idx}: the first drawn occurrence), reason (why the others are not)}.
+function catSprite(g) {
+  const st = S.spr.state;
+  if (st !== 'ready') return { state: st, drawn: 0, rep: null, reason: st === 'loading' ? 'sprites.json is loading' : 'no sprites.json (' + S.spr.err + ')' };
+  if (g.spr) return g.spr;
+  const D = S.spr.data; let drawn = 0, rep = null, reason = null;
+  for (const o of g.occ) {
+    const rec = (D.rooms[o.room] || {})[o.idx];
+    if (rec && rec.pic) { drawn++; if (!rep) rep = { rec, room: o.room, idx: o.idx }; }
+    else if (!reason) reason = rec ? (rec.skipped || 'no picture') : (D.notCovered[g.kind + '/' + (g.named ? g.id : '')] || (['OBJECT', 'ENEMY', 'NPC', 'PROJECTILE'].includes(g.kind) ? 'no definition for this id' : 'this kind has no sprite definition'));
+  }
+  return (g.spr = { state: 'ready', drawn, rep, reason });
+}
+// The picture of a group with the sprite picker's rule for its kind/id/type applied (never a per-entity choice): {pic, choice?, level?, err?} or null.
+function catPicOf(g) {
+  const sp = catSprite(g);
+  if (!sp.rep) return null;
+  const rec = sp.rep.rec, base = sprPic(rec.pic), f = rec.src && svFindRule(g.kind, g.id, g.type);
+  if (!f || svIsDefault(f.choice)) return { pic: base };
+  const p = svPic(rec, f.choice);
+  return p.err ? { pic: base, err: p.err } : { pic: p, choice: f.choice, level: f.level };
+}
+// The depth mode the port gives the group, and what decides it.
+function catMode(g) {
+  if (!DP.loaded) return { mode: 'UP', entry: null, text: 'UP (the depth list is not loaded)', shadowed: false };
+  if (!g.named) return { mode: 'UP', entry: null, text: 'UP (default; this id has no name, the list cannot address it)', shadowed: false };
+  const eff = dpEffective(g.kind, g.id, g.type);
+  const shadowed = !!(eff.entry && eff.entry.type == null && DP.work.some(e => e.kind === g.kind && e.id === g.id && e.type === g.type));
+  return { mode: eff.mode, entry: eff.entry, shadowed, text: eff.mode + (eff.entry ? ' (' + (eff.entry.type == null ? 'any type' : 'exact type') + ', ' + (eff.entry.line ? 'line ' + eff.entry.line : 'new') + ')' : ' (default)') + (shadowed ? ' - an exact entry after it is never reached' : '') };
+}
+const catWallText = g => CAT_WALLS.filter(k => g.wall[k]).map(k => k + ' ' + g.wall[k]).join(' / ') || 'no positioned entity';
+// What the filters and the sort keep, in order. Memoised on CAT.ver (bumped by every change of data, depth list, picker choice or filter).
+function catRows() {
+  if (CAT.rows && CAT.rowsVer === CAT.ver) return CAT.rows;
+  const terms = CAT.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const out = CAT.groups.filter(g => {
+    if (CAT.kindOff.has(g.kind)) return false;
+    for (const t of terms) if (!g.hay.includes(t)) return false;
+    if (CAT.wall && !g.near) return false;
+    if (CAT.art !== 'any') { const d = catSprite(g).drawn > 0; if (d !== (CAT.art === 'drawn')) return false; }
+    if (CAT.depth !== 'any') {
+      const m = catMode(g);
+      if (CAT.depth === 'rule' && !m.entry) return false;
+      if (CAT.depth === 'norule' && m.entry) return false;
+      if (CAT.depth.startsWith('m:') && m.mode !== CAT.depth.slice(2)) return false;
+    }
+    return true;
+  });
+  const val = { name: g => g.name.toLowerCase(), count: g => g.occ.length, rooms: g => g.rooms.size, near: g => g.near }[CAT.sort] || (g => g.name.toLowerCase());
+  out.sort((a, b) => { const x = val(a), y = val(b); return ((x < y ? -1 : x > y ? 1 : 0) * CAT.dir) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0); });
+  CAT.rows = out; CAT.rowsVer = CAT.ver;
+  return out;
+}
+// A filter, the sort or the data changed: new rows, and the ticked rows that are no longer listed are unticked.
+function catFilterChanged(keepChecked) {
+  CAT.ver++;
+  if (!keepChecked) { const vis = new Set(catRows().map(g => g.key)); for (const k of [...CAT.checked]) if (!vis.has(k)) CAT.checked.delete(k); }
+  catRefresh(true);
+}
+function catListText() {
+  const rows = catRows(), t = [];
+  const f = [];
+  if (CAT.q.trim()) f.push('search "' + CAT.q.trim() + '"');
+  if (CAT.kindOff.size) f.push('without ' + [...CAT.kindOff].sort().join(', '));
+  if (CAT.depth !== 'any') f.push('depth: ' + ({ rule: 'has a rule', norule: 'no rule' }[CAT.depth] || CAT.depth.slice(2)));
+  if (CAT.art !== 'any') f.push(CAT.art === 'drawn' ? 'drawn only' : 'marker only');
+  if (CAT.wall) f.push('sits by a wall');
+  t.push('TMC sprite catalog (' + S.maps.rom.region + ' ROM): ' + rows.length + ' of ' + CAT.groups.length + ' kind/id/type rows' + (f.length ? ' (' + f.join('; ') + ')' : '') + ', sorted by ' + CAT.sort + (CAT.dir < 0 ? ' descending' : ''));
+  t.push('Format: kind/id type | entities, rooms, near a wall (<= 24 px of the left, right or bottom edge) | drawn or marker only | depth mode (what decides it) | WALL resolution of the occurrences');
+  for (const g of rows) {
+    const sp = catSprite(g), m = catMode(g);
+    t.push(g.name + ' | ' + g.occ.length + ' entities, ' + g.rooms.size + ' rooms, near wall ' + g.near + '/' + g.occ.length + ' | ' +
+      (sp.drawn ? 'drawn' + (sp.drawn < g.occ.length ? ' (' + sp.drawn + ' of ' + g.occ.length + ')' : '') : 'marker only (' + sp.reason + ')') + ' | ' + m.text +
+      (m.mode === 'WALL' ? ' | ' + catWallText(g) : ''));
+  }
+  return t.join('\n') + '\n';
+}
+// ---- selection, jumps, bulk
+function catOpen(rk, idx) {
+  const [a, r] = rk.split('-').map(x => parseInt(x, 16));
+  if (!openRoom(a, r, true)) return;
+  const o = S.objs.find(x => x.key === 'e' + idx);
+  if (o) { selectObjs([o.key], false); for (const v of S.views) if (v.centerOn) v.centerOn(o.x, o.y); }
+}
+function catSvPatch(g, patch) {
+  const cur = (svFindRule(g.kind, g.id, g.type) || {}).choice || {};
+  svWriteRule(g.kind, g.id, CAT.svScope === 'any' ? null : g.type, Object.assign({ anim: cur.anim, step: cur.step, frame: cur.frame, flipX: cur.flipX, flipY: cur.flipY, rot: cur.rot }, patch));
+  svChanged();
+}
+function catSvReset(g) { svWriteRule(g.kind, g.id, g.type, {}); svWriteRule(g.kind, g.id, null, {}); svChanged(); }
+// Apply one mode to every ticked row: for each, the entry of its exact type or (scope 'any') of PORT_ANY_TYPE, through dpSetQuiet: so an
+// entry that only restates what the entity gets anyway is not written, and an exact entry goes before the first any-type one. One render.
+function catApplyBulk(mode, scope) {
+  const gs = CAT.groups.filter(g => CAT.checked.has(g.key));
+  let n = 0, skipped = 0; const seen = new Set();
+  for (const g of gs) {
+    if (!g.named) { skipped++; continue; }
+    const t = scope === 'any' ? null : g.type, k = g.kind + '/' + g.id + '/' + t;
+    if (seen.has(k)) continue;
+    seen.add(k); dpSetQuiet(g.kind, g.id, t, mode); n++;
+  }
+  CAT.msg = n ? mode + ' set for ' + n + (scope === 'any' ? ' kind/id (any type)' : ' kind/id/type') + (n === 1 ? ' entry' : ' entries') + (skipped ? '; ' + skipped + ' without an enum name skipped' : '') + '. Not saved yet: SAVE writes the file.' : 'nothing to apply' + (skipped ? ' (' + skipped + ' without an enum name)' : '');
+  renderDepth(); repaintAll();
+  return { n, skipped };
+}
+// ---- pictures
+function catThumb(p, box, title) {
+  const cv = el('canvas'); cv.width = cv.height = box || 44;
+  const x = cv.getContext('2d');
+  if (!p) {
+    x.fillStyle = '#20232b'; x.fillRect(0, 0, cv.width, cv.height); x.strokeStyle = '#4a5166'; x.beginPath(); x.moveTo(4, cv.height - 4); x.lineTo(cv.width - 4, 4); x.stroke();
+  } else {
+    let s = Math.min(cv.width / p.w, cv.height / p.h); if (s >= 1) s = Math.floor(s);
+    x.imageSmoothingEnabled = s < 1;
+    x.drawImage(p.cv, Math.round((cv.width - p.w * s) / 2), Math.round((cv.height - p.h * s) / 2), Math.max(1, Math.round(p.w * s)), Math.max(1, Math.round(p.h * s)));
+  }
+  if (title) cv.title = title;
+  return cv;
+}
+// ---- the window
+function buildCatalog() {
+  const w = new Win('CATALOG', 'SPRITE CATALOG'); CAT.win = w;
+  const E = CAT.el;
+  const tb = () => { const d = el('div', 'tb'); w.bd.append(d); return d; };
+  const mkSel = (opts, val, fn, id) => { const s = el('select'); if (id) s.id = id; for (const [v, t] of opts) { const o = el('option'); o.value = v; o.textContent = t; s.append(o); } s.value = val; s.onchange = () => fn(s.value); return s; };
+  const cbx = (id, on, fn) => { const c = el('input'); c.type = 'checkbox'; c.id = id; c.checked = on; c.onchange = () => fn(c.checked); return c; };
+  E.head = tb(); E.head.style.cssText += ';background:var(--panel)';
+  E.msg = tb(); E.msg.style.cssText += ';color:var(--acc);display:block';
+  E.msg.textContent = 'Depth modes: what the PORT reads (SAVE edits port_sprite_depth.inc). Sprite choices: PREVIEW ONLY, they never change the game.';
+  const t1 = tb();
+  E.q = el('input'); E.q.type = 'search'; E.q.id = 'catQ'; E.q.placeholder = 'search: name, 0x4e, furniture/7'; E.q.style.width = '190px'; E.q.value = CAT.q;
+  E.q.oninput = () => { CAT.q = E.q.value; catFilterChanged(); };
+  E.sort = mkSel([['name', 'sort: name'], ['count', 'sort: entities'], ['rooms', 'sort: rooms'], ['near', 'sort: near a wall']], CAT.sort, v => { CAT.sort = v; CAT.dir = v === 'name' ? 1 : -1; store('catSort', v); store('catDir', CAT.dir); catFilterChanged(true); E.dir.textContent = CAT.dir < 0 ? 'DESC' : 'ASC'; }, 'catSort');
+  E.dir = dpBtn(CAT.dir < 0 ? 'DESC' : 'ASC', 'reverse the sort', () => { CAT.dir = -CAT.dir; store('catDir', CAT.dir); E.dir.textContent = CAT.dir < 0 ? 'DESC' : 'ASC'; catFilterChanged(true); }); E.dir.id = 'catDir';
+  E.copy = dpBtn('COPY LIST', 'copy the listed rows as plain text (kind/id/type, counts, mode) for a chat', async () => { await copyText(catListText()); }); E.copy.id = 'catCopy';
+  t1.append(E.q, E.sort, E.dir, E.copy);
+  const t2 = tb(); E.kinds = t2;
+  const t3 = t2;
+  E.depth = mkSel([['any', 'depth: any'], ['rule', 'has a depth rule'], ['norule', 'no rule'], ...DP_MODES.map(m => ['m:' + m, 'mode ' + m])], CAT.depth, v => { CAT.depth = v; store('catDepth', v); catFilterChanged(); }, 'catDepth');
+  E.art = mkSel([['any', 'drawn or marker'], ['drawn', 'drawn'], ['marker', 'marker only']], CAT.art, v => { CAT.art = v; store('catArt', v); catFilterChanged(); }, 'catArt');
+  E.wall = cbx('catWall', CAT.wall, v => { CAT.wall = v; store('catWall', v); catFilterChanged(); });
+  t3.append(E.depth, E.art, el('label', null, E.wall, ' sits by a wall (<= 24 px of the left, right or bottom edge)'));
+  const t4 = tb();
+  E.all = cbx('catAll', false, v => { for (const g of catRows()) { if (v) CAT.checked.add(g.key); else CAT.checked.delete(g.key); } catRefresh(true); });
+  E.nchk = el('span');
+  E.bmode = mkSel(DP_MODES.map(m => [m, m]), CAT.bulkMode, v => { CAT.bulkMode = v; store('catBulkMode', v); }, 'catBulkMode');
+  E.bscope = mkSel([['type', 'each row\'s exact type'], ['any', 'any type (PORT_ANY_TYPE)']], CAT.bulkScope, v => { CAT.bulkScope = v; store('catBulkScope', v); }, 'catBulkScope');
+  E.apply = dpBtn('APPLY', 'set that depth mode for every ticked row (a working copy: SAVE writes the file)', () => catApplyBulk(CAT.bulkMode, CAT.bulkScope)); E.apply.id = 'catApply';
+  E.none = dpBtn('UNTICK', 'untick every row', () => { CAT.checked.clear(); catRefresh(true); });
+  E.force = cbx('catForce', DP.force, v => { DP.force = v; renderDepth(); });
+  t4.append(el('label', null, E.all, ' all listed'), E.nchk, 'set depth', E.bmode, 'for', E.bscope, E.apply, E.none, el('label', null, E.force, ' write even if it equals the default'));
+  E.bmsg = tb(); E.bmsg.style.cssText += ';display:block;color:var(--ok)';
+  E.list = el('div', 'catList'); E.spacer = el('div'); E.spacer.style.cssText = 'position:relative;width:100%'; E.list.append(E.spacer);
+  E.list.onscroll = () => catRenderList();
+  E.st = el('div', 'st');
+  E.det = el('div', 'catDet'); E.det.style.display = 'none';
+  E.main = el('div', 'catMain'); E.left = el('div', 'catLeft'); E.left.append(E.list, E.st); E.main.append(E.left, E.det);
+  w.bd.append(E.main);
+  w.onResize = () => { E.main.classList.toggle('wide', w.bd.clientWidth >= 900); if (CAT.detailDirty || CAT.drawnVer !== CAT.ver) catRender(); else catRenderList(); };
+  const counts = {};
+  for (const g of CAT.groups) counts[g.kind] = (counts[g.kind] || 0) + 1;
+  for (const k of Object.keys(counts).sort()) {
+    const c = cbx('catKind_' + k, !CAT.kindOff.has(k), v => { if (v) CAT.kindOff.delete(k); else CAT.kindOff.add(k); store('catKindOff', [...CAT.kindOff]); catFilterChanged(); });
+    const lab = el('label', null, c, ' ' + k + ' ' + counts[k]); lab.style.color = kindColor(k); t2.append(lab);
+  }
+  return w;
+}
+// Called whenever something the window shows may have changed (depth list, picker choices, sprites, selection of entities); cheap when minimised.
+function catRefresh(filters) {
+  if (!CAT.win) return;
+  if (!filters) CAT.ver++;
+  CAT.detailDirty = true;
+  if (CAT.win.state === 'open') catRender();
+}
+function catRender() {
+  CAT.drawnVer = CAT.ver;
+  catHead(); catRenderList(); catRenderDetail();
+}
+function catHead() {
+  const E = CAT.el;
+  E.head.textContent = '';
+  if (!DP.loaded) { const m = el('span', 'warn'); m.textContent = 'No depth list: ' + (DP.err || 'loading') + '. Open the viewer with serve.py to read and write port_sprite_depth.inc.'; E.head.append(m); }
+  else dpHeadFill(E.head, 'cat');
+  if (DP.msg) { const m = el('span'); m.style.color = /NOT SAVED/.test(DP.msg) ? 'var(--bad)' : 'var(--ok)'; m.textContent = DP.msg; E.head.append(m); }
+  E.nchk.textContent = CAT.checked.size + ' ticked';
+  E.apply.disabled = !CAT.checked.size || !DP.loaded;
+  E.none.disabled = !CAT.checked.size;
+  const rows = catRows(), nv = rows.filter(g => CAT.checked.has(g.key)).length;
+  E.all.checked = rows.length > 0 && nv === rows.length;
+  E.bmsg.textContent = CAT.msg; E.bmsg.style.display = CAT.msg ? '' : 'none';
+  E.force.checked = DP.force;
+}
+function catRenderList() {
+  const E = CAT.el, rows = catRows();
+  E.spacer.style.height = rows.length * CAT_ROW + 'px';
+  const top = E.list.scrollTop, h = Math.max(E.list.clientHeight, CAT_ROW);
+  const i0 = Math.max(0, Math.floor(top / CAT_ROW) - 2), i1 = Math.min(rows.length, Math.ceil((top + h) / CAT_ROW) + 2);
+  E.spacer.textContent = '';
+  for (let i = i0; i < i1; i++) E.spacer.append(catRow(rows[i], i));
+  const sp = S.spr.state;
+  E.st.textContent = rows.length + ' of ' + CAT.groups.length + ' kind/id/type rows' + (sp === 'ready' ? '' : ' (sprites.json: ' + sp + ')') + (rows.length ? '' : ': no row matches the filters');
+}
+function catRow(g, i) {
+  const r = el('div', 'catRow' + (CAT.sel === g.key ? ' sel' : '')); r.style.top = i * CAT_ROW + 'px'; r.dataset.key = g.key;
+  const cb = el('input'); cb.type = 'checkbox'; cb.checked = CAT.checked.has(g.key); cb.title = 'tick for a bulk depth change';
+  cb.onclick = ev => ev.stopPropagation();
+  cb.onchange = () => { if (cb.checked) CAT.checked.add(g.key); else CAT.checked.delete(g.key); catHead(); };
+  const sp = catSprite(g), pp = catPicOf(g);
+  const th = catThumb(pp && pp.pic, 44, pp ? '' : 'marker only: ' + sp.reason); th.className = 'th';
+  const tx = el('div', 'tx'), m = catMode(g);
+  const l1 = el('div'); const nm = el('b'); nm.textContent = g.name; nm.style.color = kindColor(g.kind); l1.append(nm);
+  if (g.named) { const idn = el('span', 'dim'); idn.textContent = '  id 0x' + hex(g.numId); l1.append(idn); }
+  const l2 = el('div', 'dim');
+  l2.textContent = g.occ.length + ' entit' + (g.occ.length === 1 ? 'y' : 'ies') + ', ' + g.rooms.size + ' room' + (g.rooms.size === 1 ? '' : 's') + ', near a wall ' + g.near + '/' + g.occ.length + '  |  ' +
+    (sp.drawn ? 'drawn' + (sp.drawn < g.occ.length ? ' (' + sp.drawn + ' of ' + g.occ.length + ')' : '') : 'marker only (' + sp.reason + ')');
+  const l3 = el('div'); const mt = el('span', 'mode-' + m.mode); mt.textContent = m.text; mt.style.fontWeight = 'bold'; if (m.shadowed) mt.style.color = 'var(--bad)';
+  l3.append(el('span', 'dim', 'depth '), mt);
+  if (m.mode === 'WALL') { const wc = el('span'); wc.textContent = '  -> ' + catWallText(g); l3.append(wc); }
+  tx.append(l1, l2, l3);
+  r.append(cb, th, tx);
+  r.title = g.name + '\n' + (m.entry && m.entry.comment && m.entry.comment.length ? m.entry.comment.join('\n') + '\n' : '') + 'click: details';
+  r.onclick = () => { CAT.sel = g.key; CAT.illus = null; CAT.stripAll = false; CAT.rawOpen = false; CAT.roomsAll = false; CAT.detailDirty = true; catRender(); };
+  return r;
+}
+// ---- the detail pane
+function catIllusMode(g, mode) {
+  if (mode !== 'WALL') return mode;
+  if (!CAT.illus || !g.wall[CAT.illus]) { let best = null; for (const k of CAT_WALLS) if (g.wall[k] && (!best || g.wall[k] > g.wall[best])) best = k; CAT.illus = best || 'UP'; }
+  return CAT.illus;
+}
+function catRenderDetail() {
+  const D = CAT.el.det, g = CAT.byKey.get(CAT.sel);
+  CAT.detailDirty = false;
+  if (!g) { D.style.display = 'none'; return; }
+  D.style.display = '';
+  const top = D.scrollTop; D.textContent = '';
+  const sec = t => { const h = el('div', 'sec'); h.textContent = t; D.append(h); };
+  const blk = () => { const b = el('div', 'blk'); D.append(b); return b; };
+  const line = (b, ...k) => { const d = el('div'); for (const x of k) d.append(x); b.append(d); return d; };
+  const dim = t => { const s = el('span', 'dim'); s.textContent = t; return s; };
+  const sp = catSprite(g), pp = catPicOf(g), m = catMode(g);
+  sec(g.name + (g.named ? '   (id 0x' + hex(g.numId) + ' = ' + g.numId + ')' : ''));
+  D.firstChild.style.color = kindColor(g.kind);
+  // numbers
+  const b0 = blk();
+  line(b0, g.occ.length + ' entit' + (g.occ.length === 1 ? 'y' : 'ies') + ' in ' + g.rooms.size + ' room' + (g.rooms.size === 1 ? '' : 's') + '; near a wall (<= 24 px of the left, right or bottom edge): ' + g.near + ' of ' + g.occ.length);
+  line(b0, el('b', null, 'the port\'s WALL rule would make them: '), catWallText(g), dim('   (nearest of left, right, bottom within 24 px, else UP: port_draw.c WallDepthMode)'));
+  // the picture
+  sec('PICTURE');
+  const b1 = blk(); b1.style.cssText += ';display:flex;gap:10px;flex-wrap:wrap';
+  const big = el('canvas'); big.id = 'catBig'; big.width = big.height = 176; big.style.cssText = 'flex:none;width:176px;height:176px;border:1px solid var(--line);image-rendering:pixelated';
+  const bx = big.getContext('2d'); bx.imageSmoothingEnabled = false; bx.fillStyle = bx.createPattern(checker, 'repeat'); bx.fillRect(0, 0, 176, 176);
+  const eff = m.mode === 'WALL' ? catIllusMode(g, 'WALL') : m.mode;
+  if (pp && pp.pic) {
+    const p = pp.pic, s = clamp(Math.floor(160 / Math.max(p.w, p.h)), 1, 8), x0 = Math.round((176 - p.w * s) / 2), y0 = Math.round((176 - p.h * s) / 2);
+    bx.drawImage(p.cv, x0, y0, p.w * s, p.h * s);
+    if (CAT.overlay) {
+      const d = dpDir(eff, pp.choice);
+      bx.drawImage(dpOverlayCanvas(p, d, p.w, p.h), x0, y0, p.w * s, p.h * s);
+      dpArrow(bx, x0 + p.w * s / 2, y0 + p.h * s / 2, clamp(Math.min(p.w, p.h) * s * .45, 10, 48), d);
+      bx.font = '10px ui-monospace,Consolas,monospace'; bx.textBaseline = 'bottom'; bx.lineWidth = 3; bx.strokeStyle = '#000'; bx.fillStyle = '#ffd24a';
+      bx.strokeText(eff + ' (illustration)', 3, 173); bx.fillText(eff + ' (illustration)', 3, 173);
+    }
+  } else { bx.fillStyle = '#8a92a6'; bx.font = '11px ui-monospace,Consolas,monospace'; bx.fillText('no picture', 52, 90); }
+  b1.append(big);
+  const side = el('div'); side.style.cssText = 'flex:1;min-width:200px;display:flex;flex-direction:column;gap:3px';
+  b1.append(side);
+  line(side, sp.drawn ? el('b', null, 'drawn') : el('b', 'warn', 'marker only'), sp.drawn ? ' (' + sp.drawn + ' of ' + g.occ.length + ' occurrences have a picture; this one is from ' + sp.rep.room + ' entity ' + sp.rep.idx + ')' : ': ' + sp.reason);
+  if (sp.rep) {
+    const rec = sp.rep.rec;
+    line(side, dim(rec.default ? 'DEFAULT (not curated) - ' : 'curated - '), rec.rule || rec.family);
+    line(side, dim('sprite ' + rec.sprite + (rec.anim != null ? ', animation ' + rec.anim : ', frame ' + rec.frame) + '; ' + (rec.gfx || '') + (rec.palette != null ? ', OBJ palette id ' + rec.palette : '')));
+    if (pp.choice) line(side, el('span', 'warn', 'PREVIEW: showing ' + svText(pp.choice) + ' (a viewer choice; the game is unchanged)'));
+    if (pp.err) line(side, el('span', 'warn', 'cannot draw the choice: ' + pp.err));
+  }
+  const ov = el('input'); ov.type = 'checkbox'; ov.id = 'catOverlay'; ov.checked = CAT.overlay; ov.onchange = () => { CAT.overlay = ov.checked; store('catOverlay', ov.checked); catRefresh(true); };
+  line(side, el('label', null, ov, ' depth illustration over the picture (mode ' + eff + '; follows the picker\'s flips when "overlay follows" is on in 3D DEPTH)'));
+  if (m.mode === 'WALL') {
+    const s2 = el('select'); s2.id = 'catIllus';
+    for (const k of CAT_WALLS) if (g.wall[k]) { const o = el('option'); o.value = k; o.textContent = k + ' (' + g.wall[k] + ')'; s2.append(o); }
+    s2.value = eff; s2.onchange = () => { CAT.illus = s2.value; catRefresh(true); };
+    line(side, 'WALL: illustrate as', s2);
+  }
+  // sprite view
+  if (sp.rep && sp.rep.rec.src) {
+    const rec = sp.rep.rec, cat = S.spr.data.sprites[rec.sprite], f = svFindRule(g.kind, g.id, g.type), cur = f ? f.choice : {};
+    sec('SPRITE VIEW - PREVIEW ONLY, does not change the game (saved in sprite_view.json)');
+    const b2 = blk();
+    const tg = (text, on, title, fn) => { const b = dpBtn(text, title, fn, on); return b; };
+    const rot = cur.rot || 0, ctl = line(b2);
+    ctl.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center';
+    ctl.append(tg('FLIP H', cur.flipX, 'mirror left-right about the entity\'s position (preview only)', () => catSvPatch(g, { flipX: cur.flipX ? 0 : 1 })),
+      tg('FLIP V', cur.flipY, 'mirror top-bottom (preview only)', () => catSvPatch(g, { flipY: cur.flipY ? 0 : 1 })),
+      tg('ROTATE 90' + (rot ? ' (now ' + rot + ')' : ''), rot, 'a quarter turn clockwise about the picture\'s centre (preview only)', () => catSvPatch(g, { rot: (rot + 90) % 360 })));
+    const rs = dpBtn('RESET', 'drop the choices of this kind/id/type and of this kind/id', () => catSvReset(g)); rs.id = 'catSvReset'; rs.disabled = !f; ctl.append(rs);
+    ctl.append('apply to:');
+    for (const [v, text] of [['type', 'type ' + g.type], ['any', 'any type']]) {
+      const r = el('input'); r.type = 'radio'; r.name = 'catSvScope'; r.checked = CAT.svScope === v;
+      r.onchange = () => { CAT.svScope = v; store('catSvScope', v); };
+      ctl.append(el('label', null, r, ' ' + text));
+    }
+    const stt = svStatus(); const ss = el('span'); ss.textContent = stt[0]; ss.style.color = stt[1]; ctl.append(ss);
+    line(b2, dim('showing: ' + (f ? svText(cur) + ' (the rule for ' + (f.level === 'type' ? 'this kind/id/type' : 'this kind/id, any type') + ')' : 'the default sprite') + '. Click a frame to choose it; flips apply on top of the frame\'s own.'));
+    const fl = { flipX: cur.flipX | 0, flipY: cur.flipY | 0, rot: cur.rot | 0 };
+    let budget = CAT.stripAll ? 1e9 : 120, cut = false;
+    const mkStrip = (lab, items) => {   // items: [[choice, title, isDefault, isCurrent]]
+      if (budget <= 0) { cut = true; return; }
+      const h = el('div', 'dim'); h.textContent = lab; b2.append(h);
+      const st = el('div', 'strip'); b2.append(st);
+      for (const [ch, title, isDef, isCur] of items) {
+        if (budget-- <= 0) { cut = true; break; }
+        const p = svPic(rec, Object.assign({}, ch, fl));
+        const cv = catThumb(p.err ? null : p, 44, title + (isDef ? ' (the default)' : '') + (p.err ? ' - cannot draw: ' + p.err : ''));
+        if (isCur) cv.classList.add('cur'); if (isDef) cv.classList.add('def');
+        cv.onclick = () => catSvPatch(g, ch.anim != null ? { anim: ch.anim, step: ch.step, frame: null } : { anim: null, step: null, frame: ch.frame });
+        st.append(cv);
+      }
+    };
+    cat.anims.forEach((a, i) => mkStrip('animation ' + i + ' (' + a.f.length + ' step' + (a.f.length === 1 ? '' : 's') + (a.l ? ', loops to ' + (a.l - 1 < 0 ? 0 : a.l - 1) : '') + ')',
+      a.f.map((fr, j) => [{ anim: i, step: j }, 'animation ' + i + ' step ' + j + ': frame ' + (fr[0] === 255 ? '255 (nothing drawn)' : fr[0]) + ', ' + fr[1] + ' ticks' + (fr[2] & 0xC0 ? ', flip ' + (fr[2] & 0x40 ? 'H' : '') + (fr[2] & 0x80 ? 'V' : '') : ''),
+        rec.anim === i && j === 0, cur.anim === i && (cur.step || 0) === j])));
+    const frKeys = Object.keys(cat.frames).map(Number).sort((a, b) => a - b);
+    if (!cat.anims.length || CAT.rawOpen) mkStrip('frames listed for this sprite (' + frKeys.length + ')', frKeys.map(k => [{ frame: k }, 'frame ' + k + ' (' + cat.frames[k].length + ' pieces)', rec.anim == null && rec.frame === k, cur.anim == null && cur.frame === k]));
+    const more = line(b2); more.style.cssText = 'display:flex;gap:6px';
+    if (cat.anims.length && !CAT.rawOpen) more.append(dpBtn('RAW FRAMES (' + frKeys.length + ')', 'the frames listed for this sprite, outside any animation', () => { CAT.rawOpen = true; catRefresh(true); }));
+    if (cut) more.append(dpBtn('SHOW ALL', 'only the first 120 pictures are drawn', () => { CAT.stripAll = true; catRefresh(true); }));
+  } else if (sp.drawn) { sec('SPRITE VIEW'); line(blk(), dim('this picture has no catalog source to draw alternatives from')); }
+  // depth
+  sec('3D DEPTH - what the port reads (port_sprite_depth.inc)');
+  const b3 = blk();
+  if (!DP.loaded) line(b3, el('span', 'warn', 'No depth list loaded: open the viewer with serve.py.'));
+  else if (!g.named) line(b3, el('span', 'warn', 'This id has no name in the enums, and the depth list names entities: it cannot hold an entry for it.'));
+  else {
+    const add = (...k) => { const d = el('div'); d.style.cssText = 'padding:2px 0'; for (const x of k) d.append(x); b3.append(d); return d; };
+    dpEditor(add, g.kind, g.id, g.type, 'cat');
+    if (m.mode === 'WALL') add(el('b', null, 'WALL resolves over the ' + g.occ.length + ' occurrence(s): '), catWallText(g));
+  }
+  // rooms
+  sec('ROOMS (' + g.rooms.size + ') - click an occurrence to open its room and select the entity');
+  const b4 = blk();
+  const byRoom = new Map();
+  for (const o of g.occ) { if (!byRoom.has(o.room)) byRoom.set(o.room, []); byRoom.get(o.room).push(o); }
+  const rks = [...byRoom.keys()].sort();
+  for (const rk of CAT.roomsAll ? rks : rks.slice(0, 40)) {
+    const d = el('div'), rm = S.byKey.get(rk), nm = el('b'); nm.textContent = rk; d.append(nm, ' ' + ((rm && rm.name) || '') + '  ');
+    for (const o of byRoom.get(rk)) {
+      const c = el('span', 'occ'); c.textContent = o.x + ',' + o.y + (o.wall !== 'UP' ? ' ' + o.wall : '');
+      if (o.wall !== 'UP') c.classList.add('mode-' + o.wall);
+      c.title = 'entity ' + o.idx + ' of ' + rk + (o.wall !== 'UP' ? ': by a wall, the WALL rule gives ' + o.wall : ': not within 24 px of the left, right or bottom edge: UP') + '. Click: open the room and select it';
+      c.onclick = () => catOpen(rk, o.idx);
+      d.append(c);
+    }
+    b4.append(d);
+  }
+  if (!CAT.roomsAll && rks.length > 40) b4.append(dpBtn('SHOW ALL ' + rks.length + ' ROOMS', '', () => { CAT.roomsAll = true; catRefresh(true); }));
+  D.scrollTop = top;
+}
+
 // ---------------------------------------------------------------- left list
 const isOpen = a => S.groupsOpen[a.id] !== undefined ? !!S.groupsOpen[a.id] : !!(S.room && S.room._a === a);
 function buildList() {
@@ -2120,7 +2566,7 @@ function start(maps) {
   for (const a of S.areas) for (const r of a.rooms) { r._a = a; S.byKey.set(roomKey(a.id, r.id), r); }
   const o = store('opts'); if (o) Object.assign(S, { entities: o.entities !== false, labels: o.labels !== false, grid: !!o.grid, sync: o.sync !== false, sprOn: o.sprites !== false });
   buildTop();
-  buildResult(); buildLayer('BG2'); buildLayer('BG1'); buildLayer('BG3'); buildMap(); buildEntities(); buildInfo(); buildDepth(); buildZones();
+  buildResult(); buildLayer('BG2'); buildLayer('BG1'); buildLayer('BG3'); buildMap(); buildEntities(); buildInfo(); buildDepth(); buildZones(); catBuild(); buildCatalog();
   if (store('listHidden')) $('#listB').click();
   applyLayout(false); syncCtl();
   $('#q').oninput = buildList;
@@ -2334,6 +2780,136 @@ async function runTests() {
     chk(document.querySelectorAll('.znEd').length === 6, 'zones: the selected zone shows its six editable fields');
     ZN.work = saveWork; ZN.base = saveBase; ZN.sel = saveSel; ZN.loaded = saveLoaded; ZN.rect = saveRect; ZN.parallax = savePar; ZN.preview = savePrev; wins.ZONES.setState(wasState);
     renderZones(); repaintAll();
+  }
+  // the SPRITES catalog: grouping, counts, the port's wall rule, filters, bulk apply, the detail pane (nothing is written)
+  {
+    const saveWork = DP.work, saveBase = DP.base, saveForce = DP.force, saveScope = DP.scope, saveUnm = DP.unmanaged, saveLoaded = DP.loaded;
+    const saveF = { q: CAT.q, kindOff: CAT.kindOff, depth: CAT.depth, art: CAT.art, wall: CAT.wall, sort: CAT.sort, dir: CAT.dir, sel: CAT.sel, checked: CAT.checked, bm: CAT.bulkMode, bs: CAT.bulkScope, svs: CAT.svScope };
+    const saveRules = SV.rules, saveEnts = SV.entities, savePersist = SV.persist, wasState = wins.CATALOG.state, cur0 = S.room;
+    SV.persist = false; SV.rules = []; SV.entities = [];
+    const reset = () => { CAT.q = ''; CAT.kindOff = new Set(); CAT.depth = 'any'; CAT.art = 'any'; CAT.wall = false; CAT.sort = 'name'; CAT.dir = 1; CAT.checked = new Set(); CAT.sel = null; CAT.msg = ''; CAT.ver++; };
+    const G = k => CAT.byKey.get(k), W = (n, o) => Object.assign({ kind: 'OBJECT', id: 'X', type: null, mode: 'UP', line: n }, o);
+    reset();
+    // grouping: every positioned entity that is not a MANAGER, once, under kind/id/type
+    let expect = 0; const seenK = new Set();
+    for (const a of S.areas) for (const r of a.rooms) for (const e of r.entities) if (e.positioned && e.kindName !== 'MANAGER') expect++;
+    let sum = 0; for (const g of CAT.groups) { sum += g.occ.length; seenK.add(g.key); }
+    chk(CAT.groups.length === 688 && seenK.size === 688 && sum === expect && !CAT.groups.some(g => g.kind === 'MANAGER'), 'catalog: ' + CAT.groups.length + ' kind/id/type rows (688) cover the ' + expect + ' positioned entities that are not MANAGERs, once each');
+    // the port's rule written the way port_draw.c WallDepthMode writes it, over every group: the groups' counts must agree
+    const portWall = (x, y, w, h) => { const l = x, r = w - x, b = h - y; let best = 25, m = 'UP'; if (l >= 0 && l < best) { best = l; m = 'LEFT'; } if (r >= 0 && r < best) { best = r; m = 'RIGHT'; } if (b >= 0 && b < best) { best = b; m = 'DOWN'; } return m; };
+    let bad = 0, nearAll = 0;
+    for (const g of CAT.groups) {
+      const c = { LEFT: 0, RIGHT: 0, DOWN: 0, UP: 0 };
+      for (const o of g.occ) { const r = S.byKey.get(o.room); c[portWall(o.x, o.y, r.width, r.height)]++; }
+      if (CAT_WALLS.some(k => c[k] !== g.wall[k]) || g.near !== c.LEFT + c.RIGHT + c.DOWN) bad++;
+      if (g.near) nearAll++;
+    }
+    chk(bad === 0 && nearAll === 110, 'catalog: the wall resolution of every row equals the port\'s rule (' + bad + ' differ), 110 rows sit by a wall (' + nearAll + ')');
+    const fu = G('OBJECT/FURNITURE/7');
+    chk(fu && fu.occ.length === 48 && fu.rooms.size === 8 && fu.near === 32 && fu.wall.LEFT === 16 && fu.wall.RIGHT === 16 && fu.wall.UP === 16 && fu.wall.DOWN === 0, 'catalog: the dojo racks (FURNITURE 7): 48 in 8 rooms, LEFT 16 / RIGHT 16 / UP 16, 32 by a wall');
+    const at = (k, room, x, y) => (G(k).occ.find(o => o.room === room && o.x === x && o.y === y) || {}).wall;
+    chk(['25-00', '25-06', '28-01'].every(rk => at('OBJECT/FURNITURE/7', rk, 16, 56) === 'LEFT' && at('OBJECT/FURNITURE/7', rk, 224, 120) === 'RIGHT' && at('OBJECT/FURNITURE/7', rk, 76, 24) === 'UP'),
+      'catalog: dojo racks at x16 are LEFT, at x224 RIGHT, on the top wall UP (areas 0x25 and 0x28)');
+    const ar = G('OBJECT/MINISH_SIZED_ARCHWAY/1');
+    chk(ar && ar.occ.length === 1 && ar.occ[0].room === '20-00' && ar.occ[0].x === 120 && ar.occ[0].y === 144 && ar.wall.DOWN === 1 && at('OBJECT/MINISH_SIZED_ARCHWAY/1', '20-00', 120, 144) === 'DOWN', 'catalog: MINISH_SIZED_ARCHWAY type 1 at 120,144 of 20-00 (160 high room) resolves DOWN');
+    chk(G('OBJECT/ARCHWAY/0').wall.DOWN === 14 && G('OBJECT/CUTSCENE_ORCHESTRATOR/0').near === 53 && G('NPC/NPC_UNK_4E/0').near === 22 && G('OBJECT/BACKGROUND_CLOUD/2').near === 10, 'catalog: more known counts (ARCHWAY 14 DOWN; orchestrator 53/62, NPC_UNK_4E 22/39, clouds 10/10 by the left wall)');
+    chk(dpResolveWall('WALL', { x: 24, y: 10 }, { width: 240, height: 160 }) === 'LEFT' && dpResolveWall('WALL', { x: 25, y: 10 }, { width: 240, height: 160 }) === 'UP' && dpResolveWall('WALL', { x: 216, y: 10 }, { width: 240, height: 160 }) === 'RIGHT' && dpResolveWall('WALL', { x: 100, y: 136 }, { width: 240, height: 160 }) === 'DOWN' && dpResolveWall('WALL', { x: 8, y: 150 }, { width: 240, height: 160 }) === 'LEFT',
+      'catalog: the wall margin is 24 px (inclusive), the nearest edge wins (left 8 beats bottom 10)');
+    // filters and sorting
+    DP.work = [W(5, { kind: 'OBJECT', id: 'FURNITURE', type: 7, mode: 'WALL' }), W(9, { kind: 'ENEMY', id: 'OCTOROK', type: null, mode: 'FLAT' })]; DP.base = dpClone(DP.work); DP.loaded = true;
+    const nOcto = CAT.groups.filter(g => g.kind === 'ENEMY' && g.id === 'OCTOROK').length;
+    reset(); CAT.depth = 'rule'; CAT.ver++;
+    chk(catRows().length === 1 + nOcto && catRows().some(g => g.key === 'OBJECT/FURNITURE/7'), 'catalog: "has a depth rule" lists the exact entry\'s row and every type under an any-type entry (' + catRows().length + ')');
+    CAT.depth = 'norule'; CAT.ver++; chk(catRows().length === 688 - 1 - nOcto, 'catalog: "no rule" lists the rest');
+    CAT.depth = 'm:WALL'; CAT.ver++; chk(catRows().length === 1, 'catalog: the mode filter lists the WALL row only');
+    reset(); CAT.wall = true; CAT.ver++; chk(catRows().length === 110 && catRows().every(g => g.near > 0), 'catalog: "sits by a wall" keeps the 110 rows with at least one occurrence within 24 px');
+    CAT.q = 'furniture'; CAT.ver++; chk(catRows().length === 15 && catRows().every(g => g.kind === 'OBJECT' && g.id === 'FURNITURE'), 'catalog: text search + by a wall (FURNITURE rows by a wall: ' + catRows().length + ')');
+    reset(); CAT.q = '0x4d furniture'; CAT.ver++; chk(catRows().length > 5 && catRows().every(g => g.id === 'FURNITURE') && catRows().length === CAT.groups.filter(g => g.id === 'FURNITURE').length, 'catalog: a hex id finds the id ("0x4d" is FURNITURE)');
+    reset(); CAT.kindOff = new Set(['OBJECT', 'KIND5']); CAT.ver++; chk(catRows().length === 138 + 136 + 11 && catRows().every(g => g.kind !== 'OBJECT'), 'catalog: the kind filter drops OBJECT and the odd kind 5');
+    reset(); CAT.art = 'drawn'; CAT.ver++; const nd = catRows().length; CAT.art = 'marker'; CAT.ver++; const nm = catRows().length;
+    chk(nd > 300 && nm > 100 && nd + nm === 688 && catRows().every(g => catSprite(g).drawn === 0 && catSprite(g).reason), 'catalog: drawn (' + nd + ') and marker only (' + nm + ') partition the rows, every marker row says why');
+    reset(); CAT.sort = 'count'; CAT.dir = -1; CAT.ver++; const top = catRows(); chk(top[0].occ.length === Math.max(...CAT.groups.map(g => g.occ.length)) && top.every((g, i) => !i || top[i - 1].occ.length >= g.occ.length), 'catalog: sorted by entities, most first');
+    CAT.sort = 'near'; CAT.ver++; chk(catRows()[0].near === Math.max(...CAT.groups.map(g => g.near)) && catRows()[0].key === 'OBJECT/CUTSCENE_ORCHESTRATOR/0', 'catalog: sorted by near-wall count: the orchestrator (53) first');
+    CAT.sort = 'rooms'; CAT.ver++; chk(catRows()[0].rooms.size >= catRows()[1].rooms.size, 'catalog: sorted by rooms');
+    reset(); CAT.sort = 'name'; CAT.ver++; chk(catRows().every((g, i, a) => !i || a[i - 1].name.toLowerCase() <= g.name.toLowerCase()), 'catalog: sorted by name');
+    // the mode column
+    DP.work = [W(3, { id: 'A', type: null, mode: 'FLAT' }), W(4, { id: 'A', type: 3, mode: 'LEFT' }), W(6, { kind: 'OBJECT', id: 'FURNITURE', type: 7, mode: 'WALL' })]; DP.base = dpClone(DP.work);
+    const fake = (id, type) => ({ kind: 'OBJECT', id, type, named: true });
+    const mA = catMode(fake('A', 3)), mF = catMode(G('OBJECT/FURNITURE/7')), mN = catMode(fake('Z', 1));
+    chk(mA.mode === 'FLAT' && mA.shadowed && /line 3/.test(mA.text), 'catalog: the first matching entry decides, and an exact entry after an any-type one is flagged as never reached');
+    chk(mF.text === 'WALL (exact type, line 6)' && mN.text === 'UP (default)', 'catalog: the mode text names the entry and its line; no entry is "UP (default)"');
+    // bulk apply: a working copy only, one dirty state shared with the DEPTH window, the diff the file would get
+    reset(); DP.work = []; DP.base = []; DP.scope = 'type'; DP.force = false;
+    wins.CATALOG.setState('open'); wins.DEPTH.setState('open');
+    CAT.sort = 'near'; CAT.dir = -1; CAT.ver++;
+    const picks = catRows().slice(1, 4);   // the orchestrator is first; the next three are the other wall families
+    for (const g of picks) CAT.checked.add(g.key);
+    const r1 = catApplyBulk('WALL', 'type'), o1 = dpOps();
+    chk(r1.n === 3 && o1.set.length === 3 && o1.remove.length === 0 && picks.every(g => o1.set.some(s => s.kind === g.kind && s.id === g.id && s.type === g.type && s.mode === 'WALL')), 'catalog bulk: WALL for 3 ticked rows is 3 sets of their exact types: ' + picks.map(g => g.name).join(', '));
+    chk(dpDirty() === 3 && document.querySelector('#catBadge').textContent === 'UNSAVED CHANGES (3)' && document.querySelector('#dpBadge').textContent === 'UNSAVED CHANGES (3)' && !document.querySelector('#catSave').disabled && !document.querySelector('#dpSave').disabled,
+      'catalog bulk: one unsaved state: the catalog and the DEPTH window show the same badge and enable SAVE');
+    chk(picks.every(g => catMode(g).text === 'WALL (exact type, new)'), 'catalog bulk: the rows now read WALL (exact type, new)');
+    const r1b = catApplyBulk('WALL', 'type'); chk(dpOps().set.length === 3 && DP.work.length === 3 && r1b.n === 3, 'catalog bulk: applying the same mode again changes nothing');
+    catApplyBulk('UP', 'type'); chk(DP.work.length === 0 && dpDirty() === 0, 'catalog bulk: UP, the default, removes the new entries (nothing is written for it)');
+    DP.work = [W(1, { kind: picks[0].kind, id: picks[0].id, type: null, mode: 'FLAT' })]; DP.base = dpClone(DP.work);
+    catApplyBulk('WALL', 'type');
+    const ix0 = DP.work.findIndex(e => e.kind === picks[0].kind && e.id === picks[0].id && e.type === picks[0].type), ax0 = DP.work.findIndex(e => e.kind === picks[0].kind && e.id === picks[0].id && e.type === null);
+    chk(DP.work.length === 4 && ix0 >= 0 && ix0 < ax0 && picks.every(g => DP.work.some(e => e.id === g.id && e.type === g.type && e.mode === 'WALL')) && dpEffective(picks[0].kind, picks[0].id, picks[0].type).mode === 'WALL',
+      'catalog bulk: an exact entry goes before the kind/id\'s any-type entry (the first match wins)');
+    reset(); DP.work = []; DP.base = [];
+    for (const g of picks) CAT.checked.add(g.key);
+    catApplyBulk('LEFT', 'any'); const o2 = dpOps();
+    chk(o2.set.length === new Set(picks.map(g => g.kind + '/' + g.id)).size && o2.set.every(s => s.type === null && s.mode === 'LEFT'), 'catalog bulk: scope "any type" writes one PORT_ANY_TYPE entry per kind/id');
+    const un = G('KIND5/0x00/0'); CAT.checked.add(un.key);   // the one entity of kind 5 (not in EntityKind): no enum name
+    DP.work = []; const r3 = catApplyBulk('FLAT', 'type'); chk(un && !un.named && r3.skipped === 1 && r3.n === picks.length && DP.work.every(e => e.kind !== 'KIND5'), 'catalog bulk: a row whose id has no name (kind 5) cannot be addressed and is skipped');
+    DP.work = dpClone(DP.base); chk(dpDirty() === 0, 'catalog bulk: REVERT (the base copy) leaves nothing unsaved');
+    // the detail pane
+    reset(); DP.work = [W(6, { kind: 'OBJECT', id: 'FURNITURE', type: 7, mode: 'WALL' })]; DP.base = dpClone(DP.work);
+    CAT.sel = 'OBJECT/FURNITURE/7'; CAT.overlay = true; CAT.ver++; catRender();
+    const det = CAT.el.det, dt = det.textContent;
+    chk(det.style.display !== 'none' && /LEFT 16 \/ RIGHT 16 \/ UP 16/.test(dt) && /WALL \(exact type, line 6\)|effective mode: WALL/.test(dt) && /PREVIEW ONLY, does not change the game/.test(dt) && /what the port reads/.test(dt), 'catalog detail: the WALL resolution counts, the effective mode, and the preview-only / port-reads labels');
+    chk(CAT.el.det.querySelectorAll('.occ').length === 48 && /25-00/.test(dt) && /28-01/.test(dt), 'catalog detail: the rooms list has every occurrence of the 8 rooms');
+    const bigHash = () => fnv(document.querySelector('#catBig').getContext('2d').getImageData(0, 0, 176, 176).data);
+    const hOn = bigHash(); CAT.overlay = false; catRender(); const hOff = bigHash(); CAT.overlay = true; catRender();
+    chk(hOn !== hOff, 'catalog detail: the depth illustration over the big picture switches off');
+    const ill = (m) => { CAT.illus = m; catRender(); return bigHash(); };
+    chk(ill('LEFT') !== ill('RIGHT') && ill('UP') !== ill('LEFT'), 'catalog detail: for WALL the illustration follows the resolved direction picked');
+    const chip = [...det.querySelectorAll('.occ')].find(c => /^16,56 LEFT/.test(c.textContent));
+    chip.click();
+    const se = S.objs.find(o => S.sel.objs.has(o.key));
+    chk(S.key === '25-00' && se && se.src.idName === 'FURNITURE' && se.src.type === 7 && se.x === 16 && se.y === 56, 'catalog detail: clicking an occurrence opens its room and selects that entity');
+    // the editor is the DEPTH window's: setting a mode edits DP.work, both windows agree
+    catRender();
+    const btnFlat = [...CAT.el.det.querySelectorAll('button')].find(b => b.textContent === 'FLAT');
+    btnFlat.click();
+    chk(dpEffective('OBJECT', 'FURNITURE', 7).mode === 'FLAT' && dpDirty() === 1 && document.querySelector('#dpBadge').textContent === 'UNSAVED CHANGES (1)' && /FLAT \(exact type, line 6\)/.test(catMode(G('OBJECT/FURNITURE/7')).text), 'catalog detail: the mode buttons are the DEPTH editor: one change, the same badge');
+    DP.work = [W(1, { kind: 'OBJECT', id: 'FURNITURE', type: null, mode: 'FLAT' }), W(2, { kind: 'OBJECT', id: 'FURNITURE', type: 7, mode: 'WALL' })]; DP.base = dpClone(DP.work); CAT.sel = 'OBJECT/FURNITURE/7'; catRefresh();
+    chk(/never reaches it/.test(CAT.el.det.textContent), 'catalog detail: the "never reached" warning for an exact entry behind an any-type one');
+    // sprite view: choices are settings on the kind/id/type, shown in the picture, removed by RESET, never art
+    const rect = G('OBJECT/FURNITURE/7'), p0 = catPicOf(rect), strips = CAT.el.det.querySelectorAll('.strip canvas');
+    chk(p0 && !p0.choice && strips.length > 0, 'catalog detail: the picture and the strip of the sprite\'s frames (' + strips.length + ')');
+    CAT.svScope = 'type'; catSvPatch(rect, { flipX: 1 });
+    chk(SV.rules.length === 1 && SV.rules[0].kind === 'OBJECT' && SV.rules[0].id === 'FURNITURE' && SV.rules[0].type === 7 && SV.rules[0].flipX === 1 && catPicOf(rect).choice && catPicOf(rect).pic !== p0.pic && !/rgba|png|data:/.test(JSON.stringify(SV.rules)), 'catalog detail: a flip is stored as a setting for the exact type and changes the catalog picture');
+    CAT.svScope = 'any'; catSvPatch(rect, { rot: 90 });
+    chk(SV.rules.length === 2 && SV.rules.some(r => r.type === null && r.rot === 90), 'catalog detail: scope "any type" stores a rule with type null');
+    catSvReset(rect); chk(SV.rules.length === 0 && catPicOf(rect).pic === p0.pic && !catPicOf(rect).choice, 'catalog detail: RESET drops both rules and the default picture is back');
+    const nbtn = [...CAT.el.det.querySelectorAll('.strip canvas')].length;
+    if (nbtn > 1) { CAT.svScope = 'type'; CAT.el.det.querySelectorAll('.strip canvas')[1].click(); chk(SV.rules.length === 1 && (SV.rules[0].anim != null || SV.rules[0].frame != null), 'catalog detail: clicking a frame of the strip chooses it'); }
+    SV.rules = []; S.spr.views.clear();
+    // COPY LIST and the list's virtualisation
+    reset(); DP.work = [W(6, { kind: 'OBJECT', id: 'FURNITURE', type: 7, mode: 'WALL' })]; DP.base = dpClone(DP.work); CAT.q = 'furniture'; CAT.wall = true; CAT.ver++;
+    const lt = catListText();
+    chk(/^TMC sprite catalog .*: 15 of 688/.test(lt) && lt.split('\n').filter(l => /^OBJECT\/FURNITURE /.test(l)).length === 15 && /OBJECT\/FURNITURE 7 \| 48 entities, 8 rooms, near wall 32\/48 \| drawn \| WALL \(exact type, line 6\) \| LEFT 16 \/ RIGHT 16 \/ UP 16/.test(lt),
+      'catalog COPY LIST: a header with the filters, one line per visible row with counts, drawn, mode and the WALL resolution');
+    reset(); catRender(); chk(CAT.el.spacer.children.length > 5 && CAT.el.spacer.children.length < 60 && parseInt(CAT.el.spacer.style.height) === 688 * CAT_ROW, 'catalog: the list draws only the visible rows (' + CAT.el.spacer.children.length + ' of 688)');
+    const t0 = performance.now(); for (let k = 0; k < 20; k++) { CAT.el.list.scrollTop = k * 700; catRenderList(); } const dtl = performance.now() - t0;
+    chk(dtl < 1500, 'catalog: 20 scroll steps render in ' + dtl.toFixed(0) + ' ms');
+    // restore
+    DP.work = saveWork; DP.base = saveBase; DP.force = saveForce; DP.scope = saveScope; DP.unmanaged = saveUnm; DP.loaded = saveLoaded;
+    CAT.q = saveF.q; CAT.kindOff = saveF.kindOff; CAT.depth = saveF.depth; CAT.art = saveF.art; CAT.wall = saveF.wall; CAT.sort = saveF.sort; CAT.dir = saveF.dir; CAT.sel = saveF.sel; CAT.checked = saveF.checked; CAT.bulkMode = saveF.bm; CAT.bulkScope = saveF.bs; CAT.svScope = saveF.svs; CAT.msg = '';
+    SV.rules = saveRules; SV.entities = saveEnts; SV.persist = savePersist; S.spr.views.clear();
+    wins.CATALOG.setState(wasState); wins.DEPTH.setState('open');
+    await dpLoad(); clearSel(); if (cur0) openRoom(cur0._a.id, cur0.id, false); catRefresh();
   }
   // layers the game hides: their windows start minimised, and reopen with the next room that shows them
   openRoom(0x20, 0, false);
