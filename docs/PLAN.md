@@ -1410,3 +1410,16 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   (the numbers box at the HUD's depth) was already in the release as `f605dd8`. The Minish Village's 3D will be attacked by hand,
   case by case, directly from the release line instead of through a branch of its own; the 2026-10-17 entry on the leaf blocks
   stays as the record of what that approach found.
+- **2026-10-22** The **layer workbench** (`tools/layer-workbench/`, README there) exists for TMC, modelled on `../mzm` and `../sm-3ds`:
+  `build_maps.py` / `sprites.py` read the EU ROM into `maps.json` / `sprites.json` (gitignored, game art), `index.html` + `serve.py` is
+  the desktop viewer (rooms, layers, entities with their sprites, a picker for animation / frame / flips that is preview only, and a
+  DEPTH window that reads and writes `platform/3ds/source/port_sprite_depth.inc`). Run it from a normal terminal (`TMC_ROM=... python3
+  tools/layer-workbench/serve.py`); from the sandbox the browser cannot reach it. Along with it the per-entity depth modes grew to
+  `UP`, `DOWN`, `LEFT`, `RIGHT`, `FLAT`, `RAISED` and `WALL` (docs/stereo-3d.md, "Sprite depth corrections"): `LEFT` / `RIGHT` lean by
+  columns and give their whole disparity to one eye so neighbouring columns overlap instead of parting (a 1 px seam showed on the
+  Gentari curtain); `RAISED` was tried on the Gentari archway and looked odd, it is `FLAT` there; `WALL` picks the direction from the
+  wall the entity stands in and is what every `MINISH_SIZED_ARCHWAY` without its own entry uses. Also: while a `GENTARI_CURTAIN` is shut
+  the neighbour rooms are not drawn (`CurtainClosed`, `port_neighbour_rooms.c`); the owner would prefer a camera sweep when it opens
+  (not done). The owner checked all of it on the New 3DS (2026-10-22), not on the Old 3DS/2DS. `port_draw.c`'s 3DS-only depth code is
+  now guarded by `TMC_3DS` (the PC build of it was broken at HEAD).
+
