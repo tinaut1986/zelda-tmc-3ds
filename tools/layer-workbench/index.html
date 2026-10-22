@@ -1416,9 +1416,9 @@ function renderInfo() {
 // the old PORT_DEPTH_INVERT), LEFT / RIGHT (the ground is the right / left edge, for a sprite on a side wall) or FLAT (no lean).
 // The port takes the FIRST entry of the file that matches (kind, id, and type equal or PORT_ANY_TYPE). The panel keeps a working
 // copy; SAVE sends the difference to serve.py, which edits the file in place (depth_inc.py) and keeps comments and other lines.
-const DP_MODES = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'FLAT'];
+const DP_MODES = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'FLAT', 'RAISED'];
 const DP_HELP = { UP: 'ground at the bottom edge, depth grows upwards (the normal rule)', DOWN: 'hangs from the top edge, depth grows downwards (a door in a south wall)',
-  LEFT: 'ground at the right edge, depth grows towards the left (a sprite on a left wall)', RIGHT: 'ground at the left edge, depth grows towards the right (a sprite on a right wall)', FLAT: 'no lean at all' };
+  LEFT: 'ground at the right edge, depth grows towards the left (a sprite on a left wall)', RIGHT: 'ground at the left edge, depth grows towards the right (a sprite on a right wall)', FLAT: 'no lean at all', RAISED: 'the whole sprite at one constant raised depth (the depth the normal lean gives its top edge), no lean' };
 const DP = { loaded: false, err: '', path: '', exists: true, base: [], work: [], unmanaged: [], scope: store('dpScope') || 'type', force: false,
   follow: store('dpFollow') !== false, showAll: !!store('dpShowAll'), msg: '', persist: true, index: null };
 const dpKey = e => e.kind + '/' + e.id + '/' + (e.type == null ? '*' : e.type);
@@ -1523,7 +1523,7 @@ function dpTargets() {
 // The direction the depth grows in, on the screen: modes are in screen terms; the preview's own flips and turns apply to it
 // when DP.follow (the sprite was transformed, so the illustration is too).
 function dpDir(mode, choice) {
-  let d = { UP: [0, -1], DOWN: [0, 1], LEFT: [-1, 0], RIGHT: [1, 0], FLAT: [0, 0] }[mode].slice();
+  let d = { UP: [0, -1], DOWN: [0, 1], LEFT: [-1, 0], RIGHT: [1, 0], FLAT: [0, 0], RAISED: [0, 0] }[mode].slice();
   if (DP.follow && choice) {
     if (choice.flipX) d[0] = -d[0];
     if (choice.flipY) d[1] = -d[1];

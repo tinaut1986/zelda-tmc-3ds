@@ -1,7 +1,7 @@
 """Reader and writer of platform/3ds/source/port_sprite_depth.inc, the port's per-entity stereo depth list.
 
     PORT_SPRITE_DEPTH(kind, id, type, mode)      type: a number or PORT_ANY_TYPE
-    mode: PORT_DEPTH_UP | PORT_DEPTH_DOWN (= PORT_DEPTH_INVERT) | PORT_DEPTH_LEFT | PORT_DEPTH_RIGHT | PORT_DEPTH_FLAT
+    mode: PORT_DEPTH_UP | PORT_DEPTH_DOWN (= PORT_DEPTH_INVERT) | PORT_DEPTH_LEFT | PORT_DEPTH_RIGHT | PORT_DEPTH_FLAT | PORT_DEPTH_RAISED
 
 The file is hand-written and shared with other people (and other tools), so the writer is a minimal-diff editor,
 not a serialiser: it keeps every line it does not manage (the header block, comments, blank lines, entries it does
@@ -26,10 +26,11 @@ import json
 import os
 import re
 
-MODES = ("UP", "DOWN", "LEFT", "RIGHT", "FLAT")
+MODES = ("UP", "DOWN", "LEFT", "RIGHT", "FLAT", "RAISED")
 WRITE_MODE = {m: "PORT_DEPTH_" + m for m in MODES}
 READ_MODE = {"PORT_DEPTH_UP": "UP", "PORT_DEPTH_DOWN": "DOWN", "PORT_DEPTH_INVERT": "DOWN",
-             "PORT_DEPTH_LEFT": "LEFT", "PORT_DEPTH_RIGHT": "RIGHT", "PORT_DEPTH_FLAT": "FLAT"}
+             "PORT_DEPTH_LEFT": "LEFT", "PORT_DEPTH_RIGHT": "RIGHT", "PORT_DEPTH_FLAT": "FLAT",
+             "PORT_DEPTH_RAISED": "RAISED"}
 ANY = "PORT_ANY_TYPE"
 ANY_VALUE = 0xFF            # PORT_ANY_TYPE: no real entity type uses it
 
