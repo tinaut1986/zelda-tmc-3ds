@@ -175,7 +175,10 @@ static bool BuildHyruleTown(void) {
     }
     const u16* regions[PORT_ZONE_SLOTS] = { Port_HyruleTownZoneRegions(0), Port_HyruleTownZoneRegions(1),
                                             Port_HyruleTownZoneRegions(2) };
-    MapCells(regions, 0);
+    /* The town's tables leave gaps too (slot 1: 256 px between its two columns, slot 0: 128 px between its two rows):
+     * a wide view shows a gap cell before the game has loaded its neighbour's set, as in the Minish village. 256 px
+     * is the widest gap, so every gap cell takes the nearest region's set. */
+    MapCells(regions, 256);
     return true;
 }
 
