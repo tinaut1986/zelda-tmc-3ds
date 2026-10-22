@@ -2,7 +2,7 @@
 """Serves the layer workbench and opens it in the browser.
 
     python3 tools/layer-workbench/serve.py [--rom PATH] [--port 8765] [--no-browser] [--rebuild]
-                                           [--depth-inc PATH] [--sprite-view PATH]
+                                           [--depth-inc PATH] [--sprite-view PATH] [--zone-inc PATH]
 
 maps.json is built from the ROM (TMC_ROM or --rom) when it is missing or older
 than build_maps.py / tmcdata.py / sprites.py (the same build writes sprites.json).
@@ -10,7 +10,7 @@ A maps.json.gz alone is accepted too. Python 3 standard library only. maps.json
 and sprites.json are the game's art: they are served to 127.0.0.1 only and must
 never be committed or shared.
 
-Two files are written back, through two endpoints and nothing else:
+Three files are written back, through three endpoints and nothing else:
 
   /sprite-view   GET / POST   sprite_view.json: the sprite picker's choices (which animation, frame, flips a
                               kind of entity is previewed with). Choices only, no art; meant to be committed.
@@ -18,8 +18,12 @@ Two files are written back, through two endpoints and nothing else:
   /sprite-depth  GET / POST   platform/3ds/source/port_sprite_depth.inc: the port's stereo depth list, edited by
                               the viewer's 3D DEPTH panel (depth_inc.py keeps comments and unknown lines).
                               --depth-inc PATH points both at another file (the tests use a temp copy).
+  /zone-depth    GET / POST   platform/3ds/source/port_zone_depth.inc: the port's zone depth fixes (PORT_ZONE_DEPTH),
+                              edited by the viewer's ZONES window (zone_inc.py, same minimal-diff design; a POST checks
+                              the zones against maps.json and creates the file, with its header, when it is missing).
+                              --zone-inc PATH points it at another file.
 
-Both writes are atomic (temp file, then rename), accept only application/json from the page this server serves
+The writes are atomic (temp file, then rename), accept only application/json from the page this server serves
 (Host must be 127.0.0.1/localhost), and are capped at 1 MB.
 """
 import argparse
@@ -33,11 +37,13 @@ import threading
 import webbrowser
 
 import depth_inc
+import zone_inc
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 PORT = 8765
 DEPTH_INC = os.path.join(ROOT, "platform", "3ds", "source", "port_sprite_depth.inc")
+ZONE_INC = os.path.join(ROOT, "platform", "3ds", "source", "port_zone_depth.inc")
 SPRITE_VIEW = os.path.join(HERE, "sprite_view.json")
 MAX_BODY = 1 << 20
 SPRITE_VIEW_FORMAT = "tmc-sprite-view"
@@ -93,11 +99,31 @@ def check_sprite_view(d):
     return {"format": SPRITE_VIEW_FORMAT, "version": 1, "rules": d.get("rules", []), "entities": d.get("entities", [])}
 
 
+_ZONE_ROOMS = []
+
+
+def load_zone_rooms():
+    """The ROM's rooms from maps.json (or .gz), for the zone checks; read once. None if there is no maps file."""
+    if not _ZONE_ROOMS:
+        import gzip
+        for name, op in (("maps.json", open), ("maps.json.gz", gzip.open)):
+            p = os.path.join(HERE, name)
+            if os.path.isfile(p):
+                with op(p, "rb") as f:
+                    _ZONE_ROOMS.append(zone_inc.rooms_from_maps(json.loads(f.read().decode("utf-8"))))
+                break
+        else:
+            _ZONE_ROOMS.append(None)
+    return _ZONE_ROOMS[0]
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     extensions_map = dict(http.server.SimpleHTTPRequestHandler.extensions_map,
                           **{".json": "application/json", ".gz": "application/gzip", ".js": "text/javascript"})
     depth_inc = DEPTH_INC
     sprite_view = SPRITE_VIEW
+    zone_inc = ZONE_INC
+    zone_rooms = staticmethod(lambda: load_zone_rooms())   # (area, room) -> size and layers; tests replace it
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
@@ -152,8 +178,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         d.update(extra or {})
         return json.dumps(d)
 
+    def _zone_json(self, extra=None):
+        p = self.zone_inc
+        rel = os.path.relpath(p, ROOT) if p.startswith(ROOT) else p
+        if os.path.isfile(p):
+            with open(p, encoding="utf-8", newline="") as f:
+                d = json.loads(zone_inc.to_json(f.read(), rel))
+            d["exists"] = True
+        else:
+            d = {"path": rel, "entries": [], "unmanaged": [], "exists": False}
+        d.update(extra or {})
+        return json.dumps(d)
+
     def do_GET(self):
         path = self.path.split("?")[0]
+        if path == "/zone-depth":
+            return self._send(200, self._zone_json())
         if path == "/sprite-depth":
             return self._send(200, self._depth_json())
         if path == "/sprite-view":
@@ -165,8 +205,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?")[0]
-        if path not in ("/sprite-depth", "/sprite-view"):
-            return self._err(404, "only /sprite-depth and /sprite-view accept POST")
+        if path not in ("/sprite-depth", "/sprite-view", "/zone-depth"):
+            return self._err(404, "only /sprite-depth, /sprite-view and /zone-depth accept POST")
         req = self._body_json()
         if req is None:
             return
@@ -179,6 +219,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             doc["entities"].sort(key=lambda e: (e["room"], e["index"]))
             depth_inc.write_atomic(self.sprite_view, json.dumps(doc, indent=1, sort_keys=True) + "\n")
             return self._send(200, json.dumps({"saved": True, "rules": len(doc["rules"]), "entities": len(doc["entities"])}))
+        if path == "/zone-depth":
+            p = self.zone_inc
+            text = None
+            if os.path.isfile(p):
+                with open(p, encoding="utf-8", newline="") as f:
+                    text = f.read()
+            try:
+                new, rep = zone_inc.apply_request(text, req, self.zone_rooms())
+            except zone_inc.ZoneError as e:
+                return self._err(400, str(e))
+            if new != text:
+                os.makedirs(os.path.dirname(os.path.abspath(p)), exist_ok=True)
+                zone_inc.write_atomic(p, new)
+                print("zone depth: %s -> %s" % ({k: v for k, v in rep.items() if k != "warnings"}, os.path.relpath(p, ROOT) if p.startswith(ROOT) else p), flush=True)
+            return self._send(200, self._zone_json({"report": rep, "changed": new != text}))
         p = self.depth_inc
         text = ""
         if os.path.isfile(p):
@@ -206,11 +261,14 @@ def main():
                     "(default: platform/3ds/source/port_sprite_depth.inc)")
     ap.add_argument("--sprite-view", default=SPRITE_VIEW, help="the sprite picker's choices /sprite-view reads and "
                     "writes (default: sprite_view.json next to this script)")
+    ap.add_argument("--zone-inc", default=ZONE_INC, help="the zone depth list /zone-depth reads and writes "
+                    "(default: platform/3ds/source/port_zone_depth.inc)")
     a = ap.parse_args()
     if not ensure_maps(a.rom, a.rebuild):
         sys.exit(1)
     Handler.depth_inc = os.path.abspath(a.depth_inc)
     Handler.sprite_view = os.path.abspath(a.sprite_view)
+    Handler.zone_inc = os.path.abspath(a.zone_inc)
     handler = functools.partial(Handler, directory=HERE)
     try:
         srv = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), handler)
@@ -219,7 +277,8 @@ def main():
     url = "http://127.0.0.1:%d/" % a.port
     print("Layer workbench at", url, "(Ctrl+C to stop)")
     print("  /sprite-depth writes", Handler.depth_inc)
-    print("  /sprite-view  writes", Handler.sprite_view, flush=True)
+    print("  /sprite-view  writes", Handler.sprite_view)
+    print("  /zone-depth   writes", Handler.zone_inc, flush=True)
     if not a.no_browser:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     try:

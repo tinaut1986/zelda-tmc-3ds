@@ -7,13 +7,14 @@ Stage 2b adds sprites as pictures (`sprites.py` -> `sprites.json`, see "Sprites"
 where the init code is known, and the default sprite of the definition table for every other object, enemy, NPC and
 projectile. Stage 3 adds two editing aids, neither of which touches the game itself: a sprite picker (preview only,
 choices kept in `sprite_view.json`) and a 3D DEPTH panel that edits the port's `port_sprite_depth.inc` (see "Sprite
-picker" and "3D depth panel").
+picker" and "3D depth panel"). A ZONES window edits the port's `port_zone_depth.inc` (see "Zones").
 
 ```sh
 export TMC_ROM=/path/to/the-minish-cap.gba    # USA (BZME) or EU (BZMP)
 python3 tools/layer-workbench/build_maps.py   # writes maps.json, maps.json.gz, sprites.json, sprites_tiles.json.gz (~7 s)
 python3 tools/layer-workbench/test_maps.py    # ~2.3 million checks (~6 s)
 python3 tools/layer-workbench/test_depth_inc.py   # the .inc reader/writer and the two write endpoints (temp copies only)
+python3 tools/layer-workbench/test_zone_inc.py    # the zone .inc reader/writer, its validation and /zone-depth (temp copies only)
 python3 tools/layer-workbench/render_room.py 0x20 0 /tmp/room.png [--entities]
 ```
 
@@ -34,9 +35,10 @@ un-hides its scripts, so `git add tools/layer-workbench` picks them up.
 | `sprites.py` | The OBJ side: object and NPC definitions, sprite/animation/frame tables, OAM pieces, tiles and palettes read from the ROM, the per-family rules (which animation/frame/flip the entity's init code picks) and the default sprite of every other entity; also the catalog of animations and frames the picker draws alternatives from. |
 | `entdefs.py` | The enemy and projectile definition tables (`src/enemy.c`, `src/projectile.c`): a small C preprocessor and table parser, and the ROM lookup by content. |
 | `depth_inc.py` | Reader and minimal-diff writer of `platform/3ds/source/port_sprite_depth.inc`. |
+| `zone_inc.py` | Reader and minimal-diff writer of `platform/3ds/source/port_zone_depth.inc` (same design as `depth_inc.py`), with the zone checks the server runs on save. |
 | `render_room.py` | Draws one room from `maps.json` as the BG hardware would. Also the reference for the viewer. |
-| `test_maps.py`, `test_depth_inc.py` | The checks (below). |
-| `serve.py`, `index.html` | The desktop viewer (see "Viewer"); `serve.py` also serves the two write endpoints. |
+| `test_maps.py`, `test_depth_inc.py`, `test_zone_inc.py` | The checks (below). |
+| `serve.py`, `index.html` | The desktop viewer (see "Viewer"); `serve.py` also serves the three write endpoints. |
 | `sprite_view.json` | The sprite picker's choices (committed, no art; created by the first choice). |
 
 ## How the data is read
@@ -201,7 +203,7 @@ An exit (`Transition`, 20 bytes, `include/transitions.h`): `warpType`(`Name`), `
 
 ```sh
 python3 tools/layer-workbench/serve.py [--rom PATH] [--port 8765] [--no-browser] [--rebuild]
-                                       [--depth-inc PATH] [--sprite-view PATH]
+                                       [--depth-inc PATH] [--sprite-view PATH] [--zone-inc PATH]
 ```
 
 Serves this folder on `127.0.0.1:8765` and opens the browser. `maps.json` (and
@@ -217,8 +219,9 @@ and the composite of 14 rooms (all layers, flips, palettes, special mode) hashed
 against `render_room.py`'s output, the pictures of `sprites.json` (hashes in
 `EXPECT_SPR`, curated and default), that the viewer's own `renderFrame` reproduces every distinct
 picture, the picker's transforms and precedence, the depth panel's logic (first match, what is and is not
-written, the illustration's direction, the jump), that RESULT draws a sprite when SPRITES is on, and that a hidden layer's
-window starts minimised. They never write a file (use `serve.py --depth-inc TEMP` anyway when running them); the result shows in a box and as the page title
+written, the illustration's direction, the jump), the ZONES window's (the checks, what SAVE sends, snapping, the outline and the
+illustration, COPY INFO, the jump), that RESULT draws a sprite when SPRITES is on, and that a hidden layer's
+window starts minimised. They never write a file (use `serve.py --depth-inc TEMP --zone-inc TEMP` anyway when running them); the result shows in a box and as the page title
 (`TEST PASS`). After changing `build_maps.py`, `sprites.py` or `render_room.py`,
 regenerate the hashes in `EXPECT` / `EXPECT_SPR`.
 
@@ -241,6 +244,7 @@ kept in `localStorage`; RELAYOUT restores the default arrangement.
 | ENTITIES | Markers switch, SPRITES switch, text filter, one checkbox per kind (ENEMY, OBJECT, NPC, MANAGER, ..., plus TILE for tile entities and EXIT), and the list. Click selects (Ctrl adds), double click centres the views on it. |
 | INFO | The selection: for an entity with a sprite record, the **sprite picker** (below), the picture and **why it is drawn that way** (the rule and the repo function it comes from, or "default (not curated)" and the definition table; animation/frame, flips, offset, tiles, palette, and the runtime state the pose assumes); then every field of the objects, the metatile index, type and the four tile entries of each block (with a preview). COPY INFO and CLEAR SELECTION. |
 | 3D DEPTH | The selected entity's stereo depth mode from `port_sprite_depth.inc`, a selector to change it, the list of all entries, SAVE (below). |
+| ZONES | The port's zone depth fixes from `port_zone_depth.inc`: draw a rectangle, the room's zones and all zones, edit, SAVE (see "Zones"). Starts minimised (the bottom bar opens it). |
 
 The left list groups rooms by area (collapsible, remembered); search takes a name, a
 hex area (`48`, `0x48`) or `AA-RR`. The top bar shows area/room, size, mode, each layer's
@@ -419,6 +423,53 @@ block comment are not entries.
 the picker); `test_depth_inc.py` and any experiment should use a copy. The endpoints accept only `application/json`
 POSTs whose Host is local, up to 1 MB, and only these two paths.
 
+## Zones
+
+The port can draw a rectangle of one layer at the stereo depth of another, for places where the layers' own planes look wrong
+(the first case: Hyrule Town's log hut, a one-metatile hole in its BG1 roof through which BG2 shows a chick, which belongs at the
+roof's plane). Each fix is one line of `platform/3ds/source/port_zone_depth.inc` (optional, hand-curated):
+
+```
+PORT_ZONE_DEPTH(area, room, bg, x, y, w, h, toBg)      e.g. PORT_ZONE_DEPTH(0x02, 0x00, 2, 272, 864, 16, 16, 1)
+```
+
+`area`, `room`: the room the fix belongs to (numbers, hex ok); `bg`: 1, 2 or 3, the layer whose pixels inside the rectangle are
+moved; `x`, `y`, `w`, `h`: the rectangle in **room pixel coordinates** (the coordinates the viewer shows for the room, so the
+status line and the zone agree); `toBg`: 1, 2 or 3, the layer whose stereo plane the rectangle takes. "Draw this rectangle of layer
+`bg` at the depth of layer `toBg`." The file's header comment says the same; the writer creates a missing file with that header.
+
+The **ZONES** window (starts minimised; the outline, the illustration and DRAW mode work while it is open):
+
+- **DRAW mode**: tick it, then drag on RESULT or on a layer window (Shift+drag and the wheel still pan and zoom). The rectangle
+  snaps to 8 px (a tile) or 16 px (a metatile) and covers every cell the drag touched, so a click is one cell; its size shows live
+  and in the fields below, which can also be typed. Dragging on a layer window sets `bg` to that layer (on RESULT it stays what the
+  selector says, BG2 at first); `toBg` is the other selector (BG1 at first, the other of BG1/BG2 when it would equal `bg`). ADD adds
+  it to the room's zones; ADD is disabled while a check fails (below).
+- **THIS ROOM** lists the room's zones, each outlined and tinted on the views (colour by `toBg`, label `BG2 -> BG1`; a layer window
+  tints the zones of its own layer more). Click selects, jumps (centres the views) and opens its fields: x, y, w, h, bg, toBg, committed
+  on change; **x** removes the zone. **ALL ZONES** lists every zone of every room; clicking one opens its room. Lines the tool does not
+  understand are listed read-only.
+- **SAVE**, **REVERT** and an **UNSAVED CHANGES (n)** badge, like the depth panel: SAVE sends the difference (what to set, what to remove
+  by key `area, room, bg, x, y, w, h`; editing a rectangle is a remove plus a set) to `serve.py` (`GET`/`POST /zone-depth`), which
+  edits the file as it is on disk now through `zone_inc.py`, atomically, and creates it with its header when missing.
+- **Checks** (the window shows them per zone and the server repeats them on save): the room exists in `maps.json`, the rectangle lies
+  inside the room (it may touch the edge), `bg` and `toBg` are 1..3 and different, `w`, `h` >= 1, the same rectangle is not listed
+  twice; these are errors (they disable SAVE, and a POST gets a 400). A layer the room does not define (no data, e.g. BG3 of Hyrule
+  Town) is only a warning.
+- **Preview**: "outline the zones" draws every zone of the room as a dashed outline with its label (faint in RESULT). "RESULT: shift each
+  zone's layer 2 px" is an illustration: inside each rectangle the layer `bg` is drawn 2 px to the side (right when `toBg` is a lower
+  number, i.e. nearer, left otherwise), over the other layers in their order, labelled "illustration, not a render". It is an
+  exaggerated hint that something changes plane there, not the stereo renderer's output (the console shows that, 3D WORLD on).
+- **COPY INFO** adds the room's zones as `PORT_ZONE_DEPTH(...)` lines.
+
+`zone_inc.py` is a minimal-diff editor like `depth_inc.py`: the header, comments, blank lines, entries it cannot read (symbolic or
+octal-looking numbers, a missing argument), the line ending and the final newline are kept byte for byte; a changed entry keeps its
+indentation, number spelling and trailing comment (only `toBg` changes in place); the comment lines directly above an entry belong to it
+and go with it on removal; a new zone goes after the last zone of its room (else the last zone, else the end of the file); entries inside
+a block comment are not entries. `--zone-inc PATH` points the window and the tests at another copy; `test_zone_inc.py` and any experiment
+should use one. The endpoint has the same limits as the others (`application/json`, local Host, 1 MB). The server reads `maps.json` (or
+the `.gz`) the first time it needs the room table; without one it skips the room checks.
+
 ## Decisions
 
 - **Default sprites mark themselves.** A record made by the default path says `default (not curated)`, never carries a
@@ -505,6 +556,11 @@ need it.
   where, CRLF, the identity round trip on a sample and on the port's real file, three-way application of a change to a
   file that moved meanwhile, validation; and the two endpoints against temp copies (and that the real `.inc` and
   `sprite_view.json` are untouched).
+- `test_zone_inc.py` (70 checks): the zone `.inc` parser and writer (hex and decimal numbers, header and block-comment entries,
+  unmanaged lines, attached comments, in-place `toBg` change, remove, where an add goes, header-only, empty and missing files,
+  CRLF, the identity round trip, a file changed meanwhile), the validation (unknown room, outside the room, `bg == toBg`, bad
+  numbers, the undefined-layer warning, the first example against the real `maps.json`), and the endpoint against temp copies
+  (creation with the header, edit, refusals, and that the real `port_zone_depth.inc` is not touched).
 - Regression checksums of layers, entities, tile entities, exits, gfx, metatiles
   and the sprite records, pictures, catalog and swapped tiles. They say nothing changed by accident, not that it is right; on a
   deliberate change the test prints the new values to paste.
@@ -542,5 +598,8 @@ need it.
 - **The USA ROM** is supported by the code (its offsets are in `port/port_rom.c`)
   but untested: the counts and checksums in `test_maps.py` are for EU only. The enemy/projectile table reader
   preprocesses the source for EU (`EU` defined, no `MULTI_REGION`); the USA branch is untried.
+- **The zones' effect**: the window writes the file and draws an outline and a 2 px illustration; that the port honours the rectangle
+  at the right plane is for the console to show. Zones are static: they do not follow runtime tile changes, and the illustration
+  ignores sprites and layer priorities beyond the draw order.
 - **The depth modes' effect**: the panel writes the file and draws an illustration; whether the renderer does what the
   mode says is for the console to show (3D WORLD on, FORCE 3D).
