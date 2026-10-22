@@ -2,6 +2,7 @@
 #include "port_ppu_gpu_3ds_model.h"
 #include "port_zone_tiles.h"
 #include "sprite_lean_3ds.h"
+#include "sprite_support_3ds.h"
 
 #if defined(__3DS__)
 #include "arm11_fast_mem.h"
@@ -4529,20 +4530,20 @@ static bool build_bg_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCac
 
 /* The 3D depth every OAM entry takes from what it rests on, in quarter pixels (obj_support_depth at the middle of
  * each of its tiles, the highest): the tiles of a sprite that overhangs the thing it stands on (balloons over a roof's
- * edge) then share one depth, and so do the entries of one entity (objGroup), which are one object. The HUD's
- * sprites (priority 0) take none. */
+ * edge) then share one depth, and so do the entries of one entity (objGroup), which are one object. An entity's shadow
+ * (its group with SPRITE_SUPPORT_3DS_SHADOW) takes the surface under it, never more than its entity
+ * (SpriteSupport3DS_Resolve). The HUD's sprites (priority 0) and what no entity wrote (DrawDirect) take none. */
 static void compute_obj_support(const PpuGpu3DSFrameView* frame, const PpuGpu3DSOamSet* oam, const PpuGpu3DSBand* bands,
                                 size_t bandCount, uint8_t out[MODE1_GBA_OAM_COUNT]) {
     memset(out, 0, MODE1_GBA_OAM_COUNT);
-    if (!frame->objSupport || bandCount == 0) return;
-    uint8_t group[256];
-    memset(group, 0, sizeof(group));
+    if (!frame->objSupport || bandCount == 0 || frame->objGroup == NULL) return;
+    uint8_t own[MODE1_GBA_OAM_COUNT];
+    bool eligible[MODE1_GBA_OAM_COUNT];
+    memset(own, 0, sizeof(own));
+    memset(eligible, 0, sizeof(eligible));
     for (unsigned entry = 0; entry < oam->count; ++entry) {
         const PpuGpu3DSObj* obj = &oam->entries[entry];
-        /* Not for what no entity wrote (the shadows, DrawDirect): a shadow in front of its sprite's feet would hide them. */
-        if (obj->affine || obj->mode == 2u || obj->priority == 0 ||
-            frame->objGroup == NULL || frame->objGroup[obj->index] == 0u)
-            continue;
+        if (obj->affine || obj->mode == 2u || obj->priority == 0 || frame->objGroup[obj->index] == 0u) continue;
         const int middle = obj->y + obj->boundsHeight / 2;
         const PpuGpu3DSBand* band = &bands[0];
         for (size_t b = 0; b < bandCount; ++b)
@@ -4559,17 +4560,10 @@ static void compute_obj_support(const PpuGpu3DSFrameView* frame, const PpuGpu3DS
                                                          obj->y + row * PPU_GPU3DS_TILE_SIDE + PPU_GPU3DS_TILE_SIDE / 2);
                 if (depth > best) best = depth;
             }
-        out[obj->index] = (uint8_t)best;
-        const unsigned g = frame->objGroup != NULL ? frame->objGroup[obj->index] : 0u;
-        if (g != 0u && best > group[g]) group[g] = (uint8_t)best;
+        own[obj->index] = (uint8_t)best;
+        eligible[obj->index] = true;
     }
-    if (frame->objGroup == NULL) return;
-    for (unsigned entry = 0; entry < oam->count; ++entry) {
-        const PpuGpu3DSObj* obj = &oam->entries[entry];
-        const unsigned g = frame->objGroup[obj->index];
-        if (g != 0u && !obj->affine && obj->mode != 2u && obj->priority != 0 && group[g] > out[obj->index])
-            out[obj->index] = group[g];
-    }
+    SpriteSupport3DS_Resolve(frame->objGroup, own, eligible, MODE1_GBA_OAM_COUNT, out);
 }
 
 static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,

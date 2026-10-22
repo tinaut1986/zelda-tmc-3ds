@@ -61,6 +61,15 @@ scenes below override it for their layers. The values are in pixels at the full 
   it rests on is inside a zone depth fix of that layer ("Zone depth fixes" below), the sample takes the zone's plane
   (`toBg`'s depth) instead: the chick on the log hut's roof stands on BG2 pixels inside BG1's hole and takes the roof's
   depth, and its jump rises from there (`ZoneDepth3DS_SupportPlane`, host test `platform/3ds/tests/zone_depth_3ds_test.c`).
+- **Shadows.** An entity's shadow is drawn in `port_draw.c`'s deferred pass (`ProcessDeferredList`) after the entities, so
+  it used to carry no group and took no support: on any raised surface (a roof, the roof's chick in a zone) the shadow
+  stayed on the ground's plane under a raised entity. Now the deferred entry keeps its entity's group and the shadow's OAM
+  entries are tagged with it plus `SPRITE_SUPPORT_3DS_SHADOW` (bit 7; entity groups run 1..127). The model samples the
+  surface under the shadow like any sprite but does not add it to the entity's group, and holds it to at most the
+  entity's support (`SpriteSupport3DS_Resolve`, `platform/3ds/source/sprite_support_3ds.h`; host test
+  `platform/3ds/tests/sprite_support_3ds_test.c`): a shadow in front of its entity's feet would be drawn over them by
+  the eyes' base / front split. Its own depth stays 0, so a jumping entity's shadow stays on the surface, never at the
+  entity's height. On flat ground nothing changes (support 0).
 - **The HUD is in front.** Sprites at priority 0 take nothing from their pieces' height and the world's sum is capped at
   5 px, under the HUD's 6.
 - **Strips a moved layer leaves.** BG1-BG3 in front move one pixel per eye; where the art relies on them covering a hole
@@ -172,7 +181,8 @@ How it works (`zone_depth_3ds.c`, `zone_depth_3ds.h`, `port_ppu_gpu_3ds.c`):
 - **Sprites on a zone.** The support sample ("Support" above) of a sprite whose frontmost opaque layer behind it is `bg`
   inside one of the frame's zones takes `toBg`'s depth at `toBg`'s priority, so a sprite resting there (the roof's chick)
   starts from the zone's plane and its height adds on top. Every sprite, not a list. The GPU model gets the frame's zones
-  in `PpuGpu3DSFrameView.depthZones` (set only with `objSupport`); with none nothing is looked up.
+  in `PpuGpu3DSFrameView.depthZones` (set only with `objSupport`); with none nothing is looked up. Its shadow takes the
+  zone's plane the same way (the shadow samples the zone's pixels under it, "Shadows" above), without the jump height.
 - **PLANE TINT.** The copy is tinted as `toBg` at its priority (LAYERS: `toBg`'s colour; DEPTH: its depth), so the view
   shows the zone at the plane it is drawn at. With a tint view up the zones are placed and drawn (unmoved) with the slider
   down too, and when the slider rounds both planes to one shift.

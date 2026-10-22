@@ -48,8 +48,13 @@ static u8 sRenderingDepth = 0;
 /* Set while an entity's pieces are written: the upper pieces of a tall sprite stand out a little (Port_Config_StereoBodyDepthQ),
  * the lowest stays on the ground's plane, so it leans out instead of floating. */
 static int sRenderingBody = 0;
-/* The entity whose pieces are being written (1..255, 0 outside one): its OAM entries are tagged with it. */
+/* The entity whose pieces are being written (1..127, 0 outside one): its OAM entries are tagged with it. Its shadow, drawn
+ * in the deferred pass, is tagged with it plus SPRITE_SUPPORT_3DS_SHADOW (platform/3ds/source/sprite_support_3ds.h): the
+ * GPU model gives a shadow the support of the surface under it, never its entity's height. sLastGroup is the entity drawn
+ * last, whose shadow ProcessEntityForDrawNative defers. */
+#include "../platform/3ds/source/sprite_support_3ds.h"
 static u8 sRenderingGroup = 0;
+static u8 sLastGroup = 0;
 /* The big Chuchu is three entities stacked 14-18 px apart, each with its own feet: measured from those, the depth would
  * start again at 0 in every part. Its ground is the lowest bottom edge among its pieces (the shadow's), taken from the
  * frame before (the draw order of the parts is not known) and refreshed as they are drawn. */
@@ -916,6 +921,7 @@ static void ClearEntityDrawLists(void) {
 typedef struct {
     s16 packed0; /* (screenX << 6) | shadowType */
     s16 packed1; /* (screenY << 6) | priority   */
+    u8 group;    /* port: the entity's group (sRenderingGroup), for its shadow's stereo support */
 } DeferredEntry;
 
 typedef struct {
@@ -1191,7 +1197,8 @@ static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra
      * whole of it, every part reached the cap at the top of a jump and the ramp was lost. */
     if (sRenderingBoss && sRenderingDepth > 4) sRenderingDepth = 4;
     static u8 sNextGroup = 0;
-    sRenderingGroup = (u8)(++sNextGroup == 0 ? ++sNextGroup : sNextGroup);
+    sNextGroup = SpriteSupport3DS_NextGroup(sNextGroup);
+    sRenderingGroup = sLastGroup = sNextGroup;
     DrawEntitySpritesOf(entity, x, y, flags, extra);
     sRenderingGroup = 0;
     sRenderingBody = 0;
@@ -1399,6 +1406,7 @@ static void ProcessEntityForDrawNative(Entity* entity) {
     de->packed1 = (s16)(u16)(((u32)(u16)deferY << 6) | (u32)prioBits);
     u8 shadowType = (*(u8*)&entity->spriteSettings & 0x30) >> 4;
     de->packed0 = (s16)(u16)(((u32)(u16)x << 6) | (u32)shadowType);
+    de->group = sLastGroup;
 }
 
 /* ---- ProcessDrawList (port of sub_080B2534) ---- */
@@ -1538,7 +1546,11 @@ static void ProcessDeferredList(void) {
         if (frameData == NULL)
             continue;
         const int wide = WideSpritesBegin();
+        /* On the surface under it (its own support, at most its entity's), never at the entity's height:
+         * sRenderingDepth stays 0. */
+        sRenderingGroup = de->group != 0 ? (u8)(de->group | SPRITE_SUPPORT_3DS_SHADOW) : 0;
         RenderSpritePieces(frameData, (s16)screenX, (s16)screenY, 0, extra);
+        sRenderingGroup = 0;
         WideSpritesEnd(wide);
     }
 }
