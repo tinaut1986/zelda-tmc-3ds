@@ -1606,6 +1606,15 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
                                                  &px, &py)) {
         int32_t base = (int32_t)(7.0f * u);
         uint32_t gold = Port_SecondScreenTheme_Color(SSC_GOLD);
+#ifdef TMC_3DS
+        /* Link's head, the marker the game's own map draws for him (frame 0x59), at the region's markers' size and
+         * ringed like them. The diamond stays while it can't be decoded. */
+        int32_t lscale = (int32_t)(2.5f * u + 0.5f);
+        if (lscale < 1) lscale = 1;
+        if (!Port_SecondScreenWorldMap_DrawMarker(s->px, s->w, s->h, s->stride, dx + px - 8 * lscale,
+                                                  dy + py - 8 * lscale, lscale, 0x59u, region,
+                                                  Port_SecondScreenTheme_Color(SSC_MENU_INK)))
+#endif
         DrawMapMarker(s, dx + px, dy + py, base, (tick & 8) ? RGB(0xF8, 0xF8, 0xF8) : gold);
     }
 
