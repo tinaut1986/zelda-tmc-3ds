@@ -28,7 +28,7 @@ PORT_SPRITE_DEPTH(OBJECT, CHUCHU_BOSS_START_PARTICLE, PORT_ANY_TYPE, PORT_DEPTH_
 /* The curtain on the left wall of a room (area 0x20, room 00): drawn as a standing sprite, but it hangs on the wall, so
  * its depth grows from the room (its right edge, on the floor's plane) towards the wall on the left. */
 PORT_SPRITE_DEPTH(OBJECT, GENTARI_CURTAIN, PORT_ANY_TYPE, PORT_DEPTH_LEFT)
-/* The small archway left of that curtain (area 0x20, room 00, x 8 y 80): it is part of the wall, so it stands out as a
- * whole, at the height of its top, instead of leaning out of the floor. Type 2 only: type 1 of the same object sits at
- * the bottom of the room and keeps the normal rule. */
-PORT_SPRITE_DEPTH(OBJECT, MINISH_SIZED_ARCHWAY, 2, PORT_DEPTH_RAISED)
+/* The small archway left of that curtain (area 0x20, room 00, x 8 y 80): part of the wall, so it stays flat with the
+ * rest of the scenery. Raised (one constant depth at its top's height) was tried and looked odd on the console. Type 2
+ * only: type 1 of the same object sits at the bottom of the room and keeps the normal rule. */
+PORT_SPRITE_DEPTH(OBJECT, MINISH_SIZED_ARCHWAY, 2, PORT_DEPTH_FLAT)
