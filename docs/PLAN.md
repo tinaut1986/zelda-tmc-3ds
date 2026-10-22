@@ -1429,4 +1429,14 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   (frame 0x59 of the world map's own marker sheet; the region's sheet gave a cap seen from above), blinking like the game's (bit 5 of the
   frame count), and also while he is indoors, at the spot the game's map keeps (`Port_SecondScreenWorldMap_LocateWorldInRegion`). The
   other markers of the region (hints, kinstones) do not blink with him yet. The owner checked both on the New 3DS.
+- **2026-10-22** **Zone depth fixes** (`platform/3ds/source/port_zone_depth.inc`, `zone_depth_3ds.[ch]`, docs/stereo-3d.md "Zone depth fixes"):
+  `PORT_ZONE_DEPTH(area, room, bg, x, y, w, h, toBg)` draws a rectangle of layer `bg` at layer `toBg`'s stereo plane, authored in the workbench's
+  ZONES window. The first use is Hyrule Town's log hut (02/00): a hole in the BG1 roof through which BG2 showed at depth 0 (the roof's chick), 40x48
+  px at 264,848. The copy is drawn in `bg`'s own place in the order, under the layers in front, so BG1's opaque pixels stay on top; a moving copy
+  on BG2 makes that frame draw both eyes whole (reason 8, a cost near the hut: not measured on the Old 3DS/2DS). PLANE TINT shows a zone at its
+  target plane, and a sprite resting on a zone takes that plane as its support. Shadows (`ProcessDeferredList`) now take the support under them,
+  never the entity's height: before, every shadow stayed on the ground plane over any raised surface, a roof included; a shadow is held to its
+  entity's support so it never covers its feet (`sprite_support_3ds.h`). Also this day: `PORT_DEPTH_WALL`, a Keese's depth only while it flies, Link's
+  head on the region map, the Hyrule Town zone-gap fix and the world event (kinstone fusion) in wide view (see the entries above). The owner
+  checked them on the New 3DS.
 
