@@ -10,14 +10,22 @@
  * the left one). Both are in screen coordinates: a flipped sprite has its rows and columns the other way round.
  *
  * Tiles are drawn in runs of equal depth, a batch each, so a column lean is drawn column by column (SpriteLean3DS_TileAt)
- * and a row lean row by row. Header only, no dependencies: the GPU model (port_ppu_gpu_3ds_model.c) and its host test
- * (platform/3ds/tests/sprite_lean_3ds_test.c) include it. */
+ * and a row lean row by row. Each run is moved sideways by its own shift for each eye. Across rows that leaves no hole
+ * (rows only move sideways), but across columns two neighbours with different whole-pixel shifts open a gap in the eye
+ * that moves the higher column away from the lower one: SpriteLean3DS_EyeShift gives every entry of a side lean its
+ * shifts so that never happens. Header only, no dependencies: the GPU model (port_ppu_gpu_3ds_model.c), the renderer
+ * (port_ppu_gpu_3ds.c) and the host test (platform/3ds/tests/sprite_lean_3ds_test.c) include it. */
 
 #include <stdbool.h>
 #include <stdint.h>
 
 enum {
     SPRITE_LEAN_3DS_COLUMNS = 0x80u, /* bit 7 of the top depth: lean across the columns (right edge to left edge) */
+    /* Bit 6 of the top depth, with bit 7: the sprite's depth rises towards the right (PORT_DEPTH_RIGHT); clear, towards
+     * the left (PORT_DEPTH_LEFT). Both bits are set on every entry of a side-leaning sprite, even one whose two edges
+     * have the same depth (capped), so all its entries take their shifts the same way (SpriteLean3DS_EyeShift). */
+    SPRITE_LEAN_3DS_RISES_RIGHT = 0x40u,
+    SPRITE_LEAN_3DS_DEPTH_MASK = 0x3fu, /* the depth itself, quarter pixels (never more than SPRITE_LEAN_3DS_MAX_DEPTH) */
     SPRITE_LEAN_3DS_MAX_RUNS = 20,   /* more changes of depth than this in one sprite: one depth, the highest */
     SPRITE_LEAN_3DS_MAX_TILES = 64,  /* a bigger sprite (only affine double-size ones) does not lean */
     SPRITE_LEAN_3DS_MAX_DEPTH = 20,  /* never past the HUD's 6 px (24 quarters): the HUD is always in front */
@@ -34,6 +42,53 @@ typedef struct SpriteLean3DS {
     bool columns;
     unsigned support;   /* what the layer under it adds to every tile */
 } SpriteLean3DS;
+
+/* Which way a batch's sprite leans across its columns (PpuGpu3DSBatch.side), from its entry's top depth. */
+enum {
+    SPRITE_LEAN_3DS_SIDE_NONE = 0,
+    SPRITE_LEAN_3DS_SIDE_RISES_LEFT = 1,  /* PORT_DEPTH_LEFT: ground at the right edge */
+    SPRITE_LEAN_3DS_SIDE_RISES_RIGHT = 2, /* PORT_DEPTH_RIGHT: ground at the left edge */
+};
+static inline unsigned SpriteLean3DS_Side(unsigned depthTopRaw) {
+    if ((depthTopRaw & SPRITE_LEAN_3DS_COLUMNS) == 0u) return SPRITE_LEAN_3DS_SIDE_NONE;
+    return (depthTopRaw & SPRITE_LEAN_3DS_RISES_RIGHT) != 0u ? SPRITE_LEAN_3DS_SIDE_RISES_RIGHT : SPRITE_LEAN_3DS_SIDE_RISES_LEFT;
+}
+
+/* The sideways move, whole view pixels, of a batch for one eye. `leftShift` and `rightShift` are the moves the normal
+ * rule gives its depth (Stereo3DS_SpriteShift rounded: the disparity split between the eyes, the odd pixel to the left
+ * one). A batch that is not part of a side lean keeps them.
+ *
+ * A side lean keeps the disparity (leftShift - rightShift, which is all the eyes see as depth) but gives all of it to one
+ * eye and nothing to the other: the eye whose move takes the higher columns towards the ground edge (the lower ones).
+ * With the normal split the other eye moved the higher columns away from their lower neighbours, and wherever two
+ * neighbouring columns (of one entry, or of two entries of the sprite) rounded to different shifts a gap of a pixel or
+ * more opened between them (the curtain's dark seam in the right eye). Now one eye has every column at 0, so its columns
+ * meet as drawn, and the other moves a higher column at least as far towards its lower neighbour as that neighbour
+ * moves, so they overlap (the higher column's edge pixels are covered, as the normal split already did in that eye) and
+ * never part. The fixed eye is the same for every column of every entry of the sprite (it depends only on the side and
+ * on the sign of the disparity, the slider's), and a column with no disparity stays in place in both eyes, as the
+ * floor does. The price: the sprite's middle (what the two eyes average) sits half its disparity towards the ground
+ * edge instead of where the normal split puts it, at most a pixel or two. */
+static inline int SpriteLean3DS_EyeShift(int leftShift, int rightShift, unsigned side, bool leftEye) {
+    if (side == SPRITE_LEAN_3DS_SIDE_NONE) return leftEye ? leftShift : rightShift;
+    const int disparity = leftShift - rightShift; /* > 0: out of the screen; the left eye moves right */
+    /* Towards the ground edge: to the right when the depth rises to the left. The left eye moves in the disparity's
+     * direction, the right eye against it. */
+    const bool towardsRight = side == SPRITE_LEAN_3DS_SIDE_RISES_LEFT;
+    const bool leftEyeMoves = (disparity >= 0) == towardsRight;
+    if (leftEye != leftEyeMoves) return 0;
+    return leftEye ? disparity : -disparity;
+}
+
+/* PORT_DEPTH_RAISED (port_draw.c): the one depth of the whole sprite, quarter pixels: the entity's own depth (`baseQ`)
+ * plus the rise the normal rule gives the sprite's top edge (`riseQ`, Port_Config_StereoBodyDepthQ of its height from
+ * its feet to the top of its highest piece, itself 12 at most), capped as every lean is. The pieces carry it at both
+ * edges, so the GPU model draws each in one batch (more only over a layer that stands out, SpriteLean3DS_Fill's
+ * support). */
+static inline unsigned SpriteLean3DS_RaisedDepth(int baseQ, int riseQ) {
+    const int depth = baseQ + (riseQ > 0 ? riseQ : 0);
+    return depth < 0 ? 0u : depth > SPRITE_LEAN_3DS_MAX_DEPTH ? (unsigned)SPRITE_LEAN_3DS_MAX_DEPTH : (unsigned)depth;
+}
 
 /* The tile drawn at `step` (0 .. rows * cols - 1): row by row, or column by column for a column lean, so that each run of
  * equal depth is one stretch of the drawing order. The tiles of one sprite never overlap, so their order changes nothing

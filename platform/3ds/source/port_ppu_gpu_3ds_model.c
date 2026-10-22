@@ -2093,7 +2093,7 @@ static bool batches_extend(const PpuGpu3DSBatch* a, const PpuGpu3DSBatch* b) {
            a->priority == b->priority && a->windowControl == b->windowControl && a->target2 == b->target2 &&
            a->effect == b->effect && a->eva == b->eva && a->evb == b->evb && a->evy == b->evy &&
            a->objectIndex == b->objectIndex && a->color == b->color && a->objWindow == b->objWindow &&
-           a->semiTransparent == b->semiTransparent && a->depth == b->depth && a->front == b->front && a->texture == b->texture && a->offsetX == b->offsetX &&
+           a->semiTransparent == b->semiTransparent && a->depth == b->depth && a->front == b->front && a->side == b->side && a->texture == b->texture && a->offsetX == b->offsetX &&
            a->offsetY == b->offsetY;
 }
 
@@ -3235,11 +3235,13 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     const bool forceFront = (depthRaw & 0x80u) != 0;
     const unsigned depthBottom = depthRaw & 0x7fu;
     const unsigned depthTopRaw = !stencilOnly && frame->objDepthTop != NULL ? frame->objDepthTop[obj->index] : depthBottom;
-    const unsigned depthTop = depthTopRaw & 0x7fu;
     /* Up (a standing sprite), down (one that hangs, PORT_DEPTH_INVERT), or across its columns (one on a side wall,
-     * PORT_DEPTH_LEFT/RIGHT: then depthBottom is the depth at its right edge and depthTop at its left one). */
+     * PORT_DEPTH_LEFT/RIGHT: then depthBottom is the depth at its right edge and depthTop at its left one, and every
+     * batch of the entry carries the side, which decides how the renderer splits its shift between the eyes). */
+    const unsigned side = SpriteLean3DS_Side(depthTopRaw);
+    const unsigned depthTop = depthTopRaw & (side != SPRITE_LEAN_3DS_SIDE_NONE ? SPRITE_LEAN_3DS_DEPTH_MASK : 0x7fu);
     const bool leans = depthTop != depthBottom;
-    const bool leanColumns = leans && (depthTopRaw & SPRITE_LEAN_3DS_COLUMNS) != 0u;
+    const bool leanColumns = leans && side != SPRITE_LEAN_3DS_SIDE_NONE;
     const unsigned support = supportQ != NULL && !stencilOnly ? supportQ[obj->index] : 0u;
     const bool perTile = !mosaicEnabled && (leans || support != 0u) &&
                          (!obj->affine || determinant != 0) &&
@@ -3452,6 +3454,7 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
         .semiTransparent = obj->mode == 1u,
         .depth = (uint8_t)depthBottom,
         .front = forceFront,
+        .side = (uint8_t)side,
     };
     if (perTile && runCount == 1) base.depth = runDepth[0];
     if (perTile && runCount > 1) {

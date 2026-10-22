@@ -78,11 +78,28 @@ scenes below override it for their layers. The values are in pixels at the full 
   follow either way). `PORT_DEPTH_LEFT`: a sprite on a wall to its left (the curtain, `GENTARI_CURTAIN`, on the west wall of
   area 0x20 room 00) has its ground at the right edge of its pieces and the depth grows towards the left of the screen;
   `PORT_DEPTH_RIGHT` is the mirror. A side lean is written per OAM entry as the depth at its right edge (`obj_depth`) and at
-  its left edge (`obj_depth_top`, with bit 7, `SPRITE_LEAN_3DS_COLUMNS`, set); `build_obj` gives each column of tiles the
+  its left edge (`obj_depth_top`, with bit 7, `SPRITE_LEAN_3DS_COLUMNS`, set on every piece of the sprite, even one whose
+  edges are equal, and bit 6, `SPRITE_LEAN_3DS_RISES_RIGHT`, for `PORT_DEPTH_RIGHT`); `build_obj` gives each column of tiles the
   depth at its middle, in screen coordinates (an h-flipped entry has its columns reversed, an affine one is measured where
   the middle of each tile lands), and draws such an entry column by column, so its runs of equal depth are its columns (8 at
   most). An affine entry rotated off the axes makes more runs and may hit the cap (one depth, the highest). Each run keeps
-  the entry's scissor moved by its own shift, as a row lean does. `PORT_DEPTH_FLAT`: no lean. To find the kind and id of a sprite on screen, read the OAM entry's group (`virtuappu_mode1_obj_group`) against the
+  the entry's scissor moved by its own shift, as a row lean does. Its batches carry the side (`PpuGpu3DSBatch.side`) and
+  the renderer gives each the whole disparity in one eye and none in the other (`SpriteLean3DS_EyeShift`, from
+  `SpritePx`): with the normal split two neighbouring columns (of one entry or of two) that rounded to different shifts
+  parted by a pixel in the eye that moves the higher one away from the lower one, a dark seam down the curtain in the
+  right eye (owner, 2026-10-22). Now the fixed eye has every column at 0 and the moving one is the eye that takes the
+  higher columns towards the ground edge, so neighbours overlap (by the step of their disparity; the normal split
+  already overlapped them in that eye) and never part, at any slider, in or out of the screen. The disparity of each
+  column, which is what is seen as depth, is the same as before; the sprite's middle sits half of it (a pixel or two at
+  most) towards the ground edge. Rows keep the normal split: they only move sideways, so they never part. The host test
+  (`platform/3ds/tests/sprite_lean_3ds_test.c`) measures the gap between every pair of neighbouring columns, both
+  eyes, every slider from -1 to 1. `PORT_DEPTH_FLAT`: no lean. `PORT_DEPTH_RAISED` (5): no lean either, the whole sprite at
+  one depth, the one the normal rule gives its top edge: the entity's own depth plus `Port_Config_StereoBodyDepthQ` of its
+  whole height (feet to the top of its highest piece, 12 quarters at most), 20 quarters at most
+  (`SpriteLean3DS_RaisedDepth`), even for a sprite the normal rule would not lean (one piece 16 px tall or less). Every
+  piece carries it at both edges, so each is one batch (affine and flipped ones too). For the small archway in a wall
+  (`MINISH_SIZED_ARCHWAY` type 2, left of the curtain in area 0x20 room 00). Every mode leaves the HUD's sprites
+  (priority 0) alone. To find the kind and id of a sprite on screen, read the OAM entry's group (`virtuappu_mode1_obj_group`) against the
   entity that wrote it (kind, id and type are in `Entity`); BOSS_DOOR is `OBJECT`, 57.
 - **The big Chuchu** (`feat/stereo-boss`): it is three entities stacked 14-18 px apart, each piece of them a rotated or scaled
   (affine) 64 px sprite. Its ground is the lowest bottom edge among its pieces (the frame before), and the rise from feet to
