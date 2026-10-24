@@ -59,6 +59,27 @@ static uint8_t sPendingEquipSlot = 0;
  * dungeon map. Game-thread only. */
 static uint64_t sVisitedByArea[256];
 
+/* The place names, read from the game's own text once per language (game thread: the text engine is not
+ * ours to call from the bottom screen's thread). Retried while the first one comes back empty. */
+extern u32 Port_GameText_ToUtf8(u32 textIndex, char* out, u32 cap);
+static char sRegionNames[SECOND_SCREEN_REGION_COUNT][SECOND_SCREEN_REGION_NAME_LEN];
+static int sRegionNamesLang = -1;
+
+static void RefreshRegionNames(int saveLanguage) {
+    if (sRegionNamesLang == saveLanguage) {
+        return;
+    }
+    memset(sRegionNames, 0, sizeof(sRegionNames));
+    for (const OverworldLocation* loc = gOverworldLocations; loc->minX != 0xFF; loc++) {
+        if (loc->windcrestId < SECOND_SCREEN_REGION_COUNT && sRegionNames[loc->windcrestId][0] == '\0') {
+            Port_GameText_ToUtf8(loc->textIndex, sRegionNames[loc->windcrestId], SECOND_SCREEN_REGION_NAME_LEN);
+        }
+    }
+    if (sRegionNames[0][0] != '\0') {
+        sRegionNamesLang = saveLanguage;
+    }
+}
+
 void Port_SecondScreenState_Publish(void) {
     /* Assembled outside the lock: this runs on the game thread itself, the
      * same thread that owns gRoomControls/gPlayerEntity/gSave during normal
@@ -118,6 +139,15 @@ void Port_SecondScreenState_Publish(void) {
             next.overworldMapX = gRoomTransition.player_status.overworld_map_x;
             next.overworldMapY = gRoomTransition.player_status.overworld_map_y;
         }
+        next.linkRegion = 0xFF;
+        if ((next.overworldMapX | next.overworldMapY) != 0) {
+            const OverworldLocation* here = GetOverworldLocation((u32)next.overworldMapX, (u32)next.overworldMapY);
+            if (here != NULL && here->windcrestId < SECOND_SCREEN_REGION_COUNT) {
+                next.linkRegion = here->windcrestId;
+            }
+        }
+        RefreshRegionNames(gSaveHeader->language);
+        memcpy(next.regionNames, sRegionNames, sizeof(next.regionNames));
         next.equippedA = gSave.stats.equipped[SLOT_A];
         next.equippedB = gSave.stats.equipped[SLOT_B];
         next.equippedSlotA = next.equippedA ? gItemMetaData[next.equippedA].menuSlot : 0xFF;

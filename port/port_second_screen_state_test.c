@@ -26,6 +26,10 @@ u32 GetInventoryValue(u32 item) { return item == ITEM_MAP ? mapOwned : item == I
 void ForceEquipItem(u32 item, u32 slot) { gSave.stats.equipped[slot] = item; }
 bool Port_Config_GetHideTopHud(void) { return false; }
 u32 sub_080A6F40(void) { return 0xffff; }
+RoomTransition gRoomTransition;
+const OverworldLocation gOverworldLocations[] = {{0xFF,0xFF,0xFF,0xFF,99,0}};
+const OverworldLocation* GetOverworldLocation(u32 x, u32 y) { (void)x; (void)y; return NULL; }
+u32 Port_GameText_ToUtf8(u32 textIndex, char* out, u32 cap) { (void)textIndex; if (cap) out[0] = 0; return 0; }
 int main(void) {
     SecondScreenSnapshot original, next;
     gMain.task = TASK_GAME; gMain.substate = GAMEMAIN_UPDATE;

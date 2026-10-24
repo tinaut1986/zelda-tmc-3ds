@@ -256,7 +256,7 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
         /* The camera glide, region bracket and floor preview advance inside
          * paint. Keep repainting until they settle, even when the engine
          * snapshot and marker animation signature have not changed. */
-        if (cameraMoving || regionState == SS_REGION_BRACKET || floorPreview != SS_NO_FLOOR) {
+        if (cameraMoving || regionState == SS_REGION_BRACKET || regionState == SS_REGION_SELECTED || floorPreview != SS_NO_FLOOR) {
             return 1;
         }
         if (Port_SecondScreen_MapPhaseChanged(snap)) return 1; /* the hints and Link swap every 32 game frames */

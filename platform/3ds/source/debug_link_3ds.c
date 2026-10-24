@@ -387,6 +387,8 @@ static void RunRequest(LinkOp op) {
     switch (op) {
         case LINK_OP_TOUCH:
             Port_SecondScreen_3DS_OnTap(sArgA, sArgB, 0);
+            /* A finger lifts too: the map and the scrolling panels act on release. */
+            Port_SecondScreen_3DS_OnTouchRelease();
             snprintf(sResult, sizeof(sResult), "200 Tapped %d,%d.", sArgA, sArgB);
             break;
         case LINK_OP_SHOT: {

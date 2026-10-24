@@ -262,7 +262,8 @@ int Port_SecondScreen_GameOnSecondaryDisplay(void) {
 /* Map-tile zoom states. The bracket beat exists so the zoom reads without
  * a cursor: the tapped tile is outlined on the whole map for a moment
  * (0.35 s at the 20 Hz paint rate) before the regional map replaces it. */
-enum { SS_REGION_OFF = 0, SS_REGION_BRACKET, SS_REGION_VIEW };
+enum { SS_REGION_OFF = 0, SS_REGION_BRACKET, SS_REGION_VIEW,
+       SS_REGION_SELECTED /* 3DS: the tile is picked and named; a second tap on it opens it */ };
 #define SS_REGION_BRACKET_TICKS 7
 
 typedef struct {
@@ -425,6 +426,23 @@ static uint32_t MixColor(uint32_t a, uint32_t b, uint32_t t) {
     uint32_t bl = (((a >> 16) & 0xFF) * (256 - t) + ((b >> 16) & 0xFF) * t) >> 8;
     return RGB(r, g, bl);
 }
+
+#ifdef TMC_3DS
+/* A translucent colour laid over a rectangle (alpha 0..255), for marking a tile of a picture. */
+static void TintRect(const SSurf* s, int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color,
+                     uint32_t alpha) {
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > s->w) x1 = s->w;
+    if (y1 > s->h) y1 = s->h;
+    for (int32_t y = y0; y < y1; y++) {
+        uint32_t* row = s->px + (size_t)y * (size_t)s->stride;
+        for (int32_t x = x0; x < x1; x++) {
+            row[x] = MixColor(row[x], color, alpha);
+        }
+    }
+}
+#endif
 
 /* Nearest-neighbor integer-scale blit of a cached theme sprite; alpha-0
  * source pixels are skipped so sprites sit on whatever is behind them. */
@@ -1128,6 +1146,9 @@ static void BlitMapRegion(const SSurf* s, const uint32_t* img, int32_t imgW, int
 #ifdef TMC_3DS
 static void Compact_MapChip(const SSurf* s, const char* label, float cx, float cyBottom, float* out);
 static void Compact_MapFrame(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h);
+#define COMPACT_MAP_LABEL_H 15 /* the plate's height, bottom_compact_3ds.inc */
+static void Compact_MapLabel(const SSurf* s, const char* name, int32_t x, int32_t y, int lit);
+static int32_t Compact_MapLabelWidth(const char* name);
 static void Compact_MapToggleChip(const SSurf* s, const char* label, bool on, float x, float yBottom, bool right,
                                   float* out);
 #endif
@@ -1470,6 +1491,48 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
         }
     }
 
+#ifdef TMC_3DS
+    /* A selected tile: a light tint, the game's blinking cursor and its name beside it, following the selection.
+     * Otherwise Link's own place is named right above his marker (one name at a time: the selection has the focus). */
+    if (regionState == SS_REGION_SELECTED) {
+        const float bx0 = ox + br[0] * sCam.scale, by0 = oy + br[1] * sCam.scale;
+        const float bx1 = ox + br[2] * sCam.scale, by1 = oy + br[3] * sCam.scale;
+        TintRect(s, (int32_t)fmaxf(bx0, rx0), (int32_t)fmaxf(by0, ry0), (int32_t)fminf(bx1, rx1),
+                 (int32_t)fminf(by1, ry1), Port_SecondScreenTheme_Color(SSC_GOLD), 44);
+        Port_SecondScreenWorldMap_DrawRegionCursor(s->px, s->w, s->h, s->stride, cursorRegion,
+                                                   (int32_t)((tick >> 2) & 1u), ox, oy, sCam.scale,
+                                                   (int32_t)rx0, (int32_t)ry0, (int32_t)rx1, (int32_t)ry1);
+        if (cursorRegion >= 0 && cursorRegion < SECOND_SCREEN_REGION_COUNT &&
+            snap->regionNames[cursorRegion][0] != '\0') {
+            const char* name = snap->regionNames[cursorRegion];
+            const int32_t w = Compact_MapLabelWidth(name);
+            int32_t lx = (int32_t)((bx0 + bx1) / 2.0f) - w / 2;
+            int32_t ly = (int32_t)by0 - 17;           /* above the tile */
+            if (ly < (int32_t)ry0 + 1) ly = (int32_t)by1 + 3; /* else below it */
+            if (ly > (int32_t)ry1 - 38) ly = (int32_t)fmaxf(ry0 + 3, by0 + 3); /* nor below: inside its top */
+            if (lx + w > (int32_t)rx1 - 2) lx = (int32_t)rx1 - 2 - w;
+            if (lx < (int32_t)rx0 + 2) lx = (int32_t)rx0 + 2;
+            Compact_MapLabel(s, name, lx, ly, 1);
+        }
+    } else if (sLastFix.valid && snap->linkRegion < SECOND_SCREEN_REGION_COUNT &&
+               snap->regionNames[snap->linkRegion][0] != '\0') {
+        const char* name = snap->regionNames[snap->linkRegion];
+        const int32_t w = Compact_MapLabelWidth(name);
+        int32_t lscale = (int32_t)(wholeScale * 0.75f + 0.5f);
+        if (lscale < 1) lscale = 1;
+        const float px = ox + (sLastFix.mapX + 0.5f) * sCam.scale;
+        const float py = oy + (sLastFix.mapY + 0.5f) * sCam.scale;
+        int32_t lx = (int32_t)px - w / 2;
+        int32_t ly = (int32_t)py - 8 * lscale - COMPACT_MAP_LABEL_H - 1; /* right above his head */
+        if (ly < (int32_t)ry0 + 1) ly = (int32_t)py + 8 * lscale + 2; /* no room above: below */
+        if (px >= rx0 && px < rx1 && py >= ry0 && py < ry1) {
+            if (lx + w > (int32_t)rx1 - 2) lx = (int32_t)rx1 - 2 - w;
+            if (lx < (int32_t)rx0 + 2) lx = (int32_t)rx0 + 2;
+            Compact_MapLabel(s, name, lx, ly, 0);
+        }
+    }
+#endif
+
     /* Publish the transform (a tap becomes map-image coordinates for the
      * tile pick) and the map rect as one big view target. */
     UI_LOCK();
@@ -1628,6 +1691,11 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
         DrawMapMarker(s, dx + px, dy + py, base, (tick & 8) ? RGB(0xF8, 0xF8, 0xF8) : gold);
     }
 
+#ifdef TMC_3DS
+    if (region >= 0 && region < SECOND_SCREEN_REGION_COUNT && snap->regionNames[region][0] != '\0') {
+        Compact_MapLabel(s, snap->regionNames[region], (int32_t)rx0 + 4, (int32_t)ry0 + 4, 0);
+    }
+#endif
     float chip[4];
     DrawMapChip(s, "BACK", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
     AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPVIEW, 0);
@@ -3584,15 +3652,27 @@ static int PickMapRegion(int x, int y) {
             ix < sUi.mapImgW && iy < sUi.mapImgH &&
             Port_SecondScreenWorldMap_GetRegionAt(ix, iy, &region, &rx0, &ry0, &rx1, &ry1) &&
             Port_SecondScreenWorldMap_IsRegionRevealed(sUi.mapWindcrests, region)) {
+#ifdef TMC_3DS
+            /* The first tap on a tile only selects it (highlighted, named); the same tile tapped again opens it.
+             * Another tile moves the selection. */
+            const int again = sUi.regionState == SS_REGION_SELECTED && sUi.regionId == region;
+            sUi.regionState = again ? SS_REGION_BRACKET : SS_REGION_SELECTED;
+#else
+            sUi.regionState = SS_REGION_BRACKET;
+#endif
             sUi.regionId = region;
             sUi.regionX0 = rx0;
             sUi.regionY0 = ry0;
             sUi.regionX1 = rx1;
             sUi.regionY1 = ry1;
             sUi.regionTick = sUi.lastTick;
-            sUi.regionState = SS_REGION_BRACKET;
             picked = 1;
         }
+#ifdef TMC_3DS
+        else if (sUi.regionState == SS_REGION_SELECTED) {
+            sUi.regionState = SS_REGION_OFF; /* a tap beside every tile drops the selection */
+        }
+#endif
     }
     UI_UNLOCK();
     return picked;
@@ -4000,7 +4080,7 @@ static void DispatchTap(int x, int y, int longPress) {
             UI_UNLOCK();
 #ifdef TMC_3DS
             /* Decided on release (Port_SecondScreen_OnTouchRelease): the touch may become a drag. */
-            if (state == SS_REGION_OFF) {
+            if (state == SS_REGION_OFF || state == SS_REGION_SELECTED) {
                 UI_LOCK();
                 sUi.mapTouch = 1;
                 sUi.mapTouchMoved = 0;

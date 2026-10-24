@@ -169,7 +169,7 @@ tools/tmc-link/tmc-link.py wait                 # until the game answers (after 
 tools/tmc-link/tmc-link.py state                # frame=... ingame=1 area=03 room=01 x=... y=...
 tools/tmc-link/tmc-link.py press LEFT 120       # hold LEFT 120 logic frames and wait for them
 tools/tmc-link/tmc-link.py keys A+B 2           # buttons by their 3DS names, joined by +
-tools/tmc-link/tmc-link.py touch 160 120        # a bottom-screen tap
+tools/tmc-link/tmc-link.py touch 160 120        # a bottom-screen tap (finger down and up, so the map and the scrolling lists act)
 tools/tmc-link/tmc-link.py savestate            # a new save state; `savestate 2` saves over number 2
 tools/tmc-link/tmc-link.py loadstate            # the newest save state; `loadstate 3` loads number 3
 tools/tmc-link/tmc-link.py states               # number=area/room for each
