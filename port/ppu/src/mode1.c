@@ -1575,7 +1575,7 @@ void virtuappu_mode1_render_obj_line(int line, bool obj_1d, uint32_t* line_buffe
                         const int screen_x = obj_x + sx + j;
                         if (obj_mode == 2u) {
                             virtuappu_mode1_obj_window[screen_x] = 1u;
-                        } else if (!object_color_clipped) {
+                        } else if (!object_color_clipped && priority <= priority_buffer[screen_x]) {
                             line_buffer[screen_x] = mode1_obj_abgr_lut[obj_palette_base + color_index];
                             priority_buffer[screen_x] = priority;
                             virtuappu_mode1_obj_semitrans[screen_x] = obj_semitransparent ? 1u : 0u;
@@ -1675,13 +1675,14 @@ void virtuappu_mode1_render_obj_line(int line, bool obj_1d, uint32_t* line_buffe
                 continue;
             }
 
-            /* OBJ-vs-OBJ is resolved by OAM index ALONE (GBATEK): the lowest
-             * OAM index's opaque pixel wins the OBJ layer, and only that
-             * pixel's priority then competes against BGs. This loop walks
-             * i = 127..0, so the later (lower-index) sprite must ALWAYS
-             * overwrite — the old `priority_buffer < priority` guard let a
-             * higher-index sprite with a lower priority number stay on top
-             * (wrong sprite visible in the classic quirk case). */
+            /* OBJ-vs-OBJ: the lower priority number wins, then the lower OAM
+             * index (mGBA's model, and what the GBA shows: the Crenel paths'
+             * twig, priority 1, covers Link, priority 2, though Link is earlier
+             * in OAM). This loop walks i = 127..0, so a later sprite overwrites
+             * at an equal or lower priority number (0xFF: nothing drawn yet). */
+            if (priority > priority_buffer[screen_x]) {
+                continue;
+            }
 
             /* Per-pixel vertical OBJ clip (swamp sink): drop this marked entry's
              * pixels at or below the waterline. `i` is the OAM index, `line` the
