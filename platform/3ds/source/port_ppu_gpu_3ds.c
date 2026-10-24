@@ -1695,8 +1695,18 @@ static int EyesOverBaseRefusal(void) {
             }
         } else if (anyFront && !batch->objWindow) {
             if (batch->layer != PPU_GPU3DS_OBJ || frontObjsFull) {
-                for (unsigned line = first; line < end; ++line)
-                    if (frontLines[line / 32u] & (1u << (line % 32u))) return SPLIT_BASE_OVER_FRONT;
+                bool over = false;
+                for (unsigned line = first; line < end && !over; ++line)
+                    over = (frontLines[line / 32u] & (1u << (line % 32u))) != 0;
+                if (!over) continue;
+                /* A background over what is in front (the Minish Woods' shadow layer, BG3 over the sprites with a
+                 * depth) is drawn with the front passes, unmoved, over what they have drawn. */
+                if (batch->layer > PPU_GPU3DS_BG3 || frontObjsFull) return SPLIT_BASE_OVER_FRONT;
+                sPromoted[i] = true;
+                for (unsigned line = first; line < end; ++line) {
+                    frontLines[line / 32u] |= 1u << (line % 32u);
+                    frontBgLines[line / 32u] |= 1u << (line % 32u);
+                }
             } else {
                 bool over = false;
                 for (unsigned line = first; line < end && !over; ++line)
