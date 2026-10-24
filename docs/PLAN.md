@@ -19,7 +19,10 @@ change (what goes where: the table in `CLAUDE.md`).
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.4.4` (renamed from `release/v0.4.3` right after the `v0.4.3` tag). Published:
+**Release line:** `release/v0.4.5` (renamed from `release/v0.4.4` right after the `v0.4.4` tag). Published:
+**`v0.4.4`** (2026-10-24, **stable**, straight to stable at the owner's request: `release/v0.4.4` merged `--no-ff` into `main`,
+`bf4a455`, and tagged there; the Minish Woods' fog at 60 fps in 3D (`perf/stereo-fog`), zone depth fixes, FIXED and WALL
+sprite depths, Link's head on the region map, the kinstone world event in wide, Hyrule Town's zone gaps; `docs/release-notes/v0.4.4.md`),
 **`v0.4.3`** (2026-10-21, **stable**: first a beta, then promoted by merging the release into `main`, `544da18`, and re-running the workflow on the tag; 3D WORLD, from PR #47 by bheppe, with the owner's corrections and a question at the start; the bottom map's cursor, zoom and drag;
 OPTIONS in groups and scrolling lists; `docs/release-notes/v0.4.3.md`),
 **`v0.4.2`** (2026-10-20, **stable**, straight to stable at the owner's request: `release/v0.4.2` merged `--no-ff` into
@@ -1448,3 +1451,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   value; the workbench does not read or write `FIXED(n)` yet. `docs/investigations/wall-depth-candidates.md` lists the other entities by a wall.
   `sprite_view.json` holds the owner's preview choices only (the game is unchanged by them).
 - **2026-10-24** `perf/stereo-fog` (Minish Woods fog in 3D, 33-38 fps against 60 in 2D, New 3DS): the first guess (reason 4 from Link's lean runs) was only part of it; the cost was the fog itself. Measured on the console with the owner's state 1: (1) `build_bg_ring` refused BG3 because its HOFS differs per band (`gPpuGpu3DSRingWhy[3]` = 4), so the fog was ~100 bands of tile quads; bands with different scrolls now share a ring; (2) `merge_band_runs` makes the adjacent ring bands one draw (a complement/blend pair stays a pair); (3) the ghost copy (`IsGhostBatch`) is no longer drawn for a blended layer: it flipped the blend's stencil mark so the moved fog drew nowhere over anything blendable, i.e. the fog had almost no depth, and doubled its draws. Sprites the game draws over a sprite in front are promoted to the front passes instead of refusing the over-one-base split (the box test of 6c5f862 stays, the lean runs of one sprite never conflict). Result in the fog, 3D on: 33-40 fps and GPU 18-23 ms -> 59.8 fps and GPU 7-9 ms (2D 59.8 fps). Note: the fog now really moves between the eyes, which it hardly did before; the owner judges the look. The debug log line that named the refusing batch was dropped: it pushed the read-only segment past the 0x63A000 pin (3dsx.ld).
+- **2026-10-24** `v0.4.4` (**stable**) tagged on `main` (`bf4a455`), the owner's call, no beta first: everything on the release line
+  had been seen on the New 3DS. The branch was renamed to `release/v0.4.5` right after the tag; deleting the old remote branch
+  `release/v0.4.4` was left to the owner (the session's permissions refused it). The light rays of the Minish Woods can show
+  cut, sideways-shifted segments after loading a save state in the woods (seen with the slider down too, so not the stereo
+  work); leaving and re-entering the room fixes them. The owner chose to leave it as it is.
