@@ -16,6 +16,8 @@
  * counts of cells decoded and character chunks found changed; the SD log's
  * `scene:` line prints them. */
 uint32_t gPpuGpu3DSRingWhy[4];
+/* Debug: poke 1 to keep every ring band its own draw (merge_band_runs). */
+volatile uint8_t gPpuGpu3DSBandMergeDisable;
 uint32_t gPpuGpu3DSRingCells, gPpuGpu3DSRingStale, gPpuGpu3DSRingMemoHits;
 uint32_t gPpuGpu3DSBankChanges[16]; /* frames each BG palette bank changed in */
 
@@ -2672,6 +2674,13 @@ static bool build_bg_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
     uint16_t sharedBgcnt = 0;
     bool any = false;
     unsigned firstTileX = 0, fine = 0, rowLo = ~0u, rowHi = 0;
+    /* Bands that differ in their horizontal scroll (a per-line wave: the Minish Woods' fog, written to BG3HOFS by an
+     * HBlank DMA) still draw from one ring when each band's quad carries its own scroll (emit_ring_quad): the ring
+     * only has to hold the columns of the whole range. Only for the layer drawn from its native ring alone; a layer
+     * with a shadow's extension piece, or the HUD's right-hand anchor, needs one set of columns. The scrolls are
+     * unwrapped around the first band's (the map repeats every 512 px). */
+    const bool scrollMayVary = !shadow && !hudRight;
+    int refScroll = 0, minScroll = 0, maxScroll = 0;
     for (size_t index = 0; index < bandCount; ++index) {
         const PpuGpu3DSBand* band = &bands[index];
         if ((frame->dispcntPerLine[band->firstLine] & (MODE1_DISP_BG0_ON << bg)) == 0) continue;
@@ -2686,7 +2695,16 @@ static bool build_bg_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
         const unsigned scrollX = read16(io, MODE1_IO_BG0HOFS + bg * 4u) & 0x1ffu;
         const unsigned scrollY = read16(io, MODE1_IO_BG0VOFS + bg * 4u) & 0x1ffu;
         /* One set of columns serves every band, so they must agree on it. */
-        if (any && scrollX != (firstTileX << 3u | fine)) {
+        if (!any) {
+            refScroll = minScroll = maxScroll = (int)scrollX;
+        } else if (scrollMayVary) {
+            int unwrapped = (int)scrollX - refScroll;
+            if (unwrapped > 256) unwrapped -= 512;
+            else if (unwrapped < -256) unwrapped += 512;
+            unwrapped += refScroll;
+            if (unwrapped < minScroll) minScroll = unwrapped;
+            if (unwrapped > maxScroll) maxScroll = unwrapped;
+        } else if (scrollX != (firstTileX << 3u | fine)) {
             gPpuGpu3DSRingWhy[bg] = 4;
             return false;
         }
@@ -2699,12 +2717,20 @@ static bool build_bg_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
         if (rTop < rowLo) rowLo = rTop;
         if (rBot > rowHi) rowHi = rBot;
     }
-    if (!any || rowHi - rowLo + 1u > PPU_GPU3DS_RING_ROWS || fine + (unsigned)width > (PPU_GPU3DS_RING_COLS - 1u) * 8u) {
+    unsigned spread = 0;
+    if (any && scrollMayVary && maxScroll != minScroll) {
+        /* The columns from the leftmost band's first to the rightmost band's last. +512 keeps them positive and
+         * changes no ring cell (64 columns of 8 px). */
+        firstTileX = (unsigned)(minScroll + 512) >> 3u;
+        fine = (unsigned)(minScroll + 512) & 7u;
+        spread = (unsigned)(maxScroll - minScroll);
+    }
+    if (!any || rowHi - rowLo + 1u > PPU_GPU3DS_RING_ROWS || fine + spread + (unsigned)width > (PPU_GPU3DS_RING_COLS - 1u) * 8u) {
         gPpuGpu3DSRingWhy[bg] = 5;
         return false;
     }
     if (nativeEnd > 0 &&
-        !ring_update(frame, cache, native, bg, false, false, firstTileX, 0, (fine + (unsigned)nativeEnd - 1u) >> 3u,
+        !ring_update(frame, cache, native, bg, false, false, firstTileX, 0, (fine + spread + (unsigned)nativeEnd - 1u) >> 3u,
                      rowLo, rowHi, sharedBgcnt, 0)) {
         gPpuGpu3DSRingWhy[bg] = 6;
         return false;
@@ -4795,6 +4821,73 @@ static void fold_covered_alpha_layers(PpuGpu3DSCommandBuffer* cmd) {
     }
 }
 
+/* Bands of a layer drawn from a view ring (build_bg_ring) are one exact quad each, over their own lines, so the
+ * bands that follow one another down the frame with the same state can be one draw: the scissor takes the union of
+ * their lines and the quads are the run of indices. A per-line scroll (the Minish Woods' fog: a band every line or
+ * two, each blended in two batches, the complement and the blend, over the same quads) was ~100 draws a pass, and
+ * each draw has a fixed cost that is the whole bill of such a layer. The bands cover different lines, so the order of
+ * the draws between them changes nothing; the run keeps its pair's order (all the complements, then all the blends).
+ * The emptied batches stay in the list with no indices (DrawBatch skips them). */
+static bool same_band_state(const PpuGpu3DSBatch* a, const PpuGpu3DSBatch* b) {
+    return a->layer == b->layer && a->priority == b->priority && a->windowControl == b->windowControl &&
+           a->target2 == b->target2 && a->effect == b->effect && a->eva == b->eva && a->evb == b->evb &&
+           a->evy == b->evy && a->color == b->color && a->objWindow == b->objWindow && a->depth == b->depth &&
+           a->front == b->front && a->side == b->side && a->texture == b->texture && a->offsetX == b->offsetX &&
+           a->offsetY == b->offsetY && a->scissorLeft == b->scissorLeft && a->scissorRight == b->scissorRight &&
+           a->semiTransparent == b->semiTransparent;
+}
+
+static bool is_ring_band(const PpuGpu3DSBatch* b) {
+    return b->layer <= PPU_GPU3DS_BG3 && !b->objWindow && b->texture != 0 && b->texture != PPU_GPU3DS_PICTURE_TEXTURE &&
+           b->indexCount != 0;
+}
+
+static bool follows_band(const PpuGpu3DSBatch* run, const PpuGpu3DSBatch* next) {
+    return next->firstLine == run->firstLine + run->lineCount && next->firstIndex == run->firstIndex + run->indexCount;
+}
+
+static void merge_band_runs(PpuGpu3DSCommandBuffer* cmd) {
+    if (gPpuGpu3DSBandMergeDisable) return;
+    size_t i = 1;
+    while (i < cmd->batchCount) {
+        PpuGpu3DSBatch* const first = &cmd->batches[i];
+        if (!is_ring_band(first)) {
+            ++i;
+            continue;
+        }
+        /* One batch a band, or a pair (complement and blend) over the same quads. */
+        size_t size = 1;
+        if (i + 1 < cmd->batchCount) {
+            const PpuGpu3DSBatch* const second = &cmd->batches[i + 1];
+            if (is_ring_band(second) && second->layer == first->layer && second->priority == first->priority &&
+                second->firstIndex == first->firstIndex && second->indexCount == first->indexCount &&
+                second->firstLine == first->firstLine && second->lineCount == first->lineCount)
+                size = 2;
+        }
+        PpuGpu3DSBatch* const partner = size == 2 ? &cmd->batches[i + 1] : NULL;
+        size_t j = i + size;
+        while (j + size <= cmd->batchCount) {
+            PpuGpu3DSBatch* const next = &cmd->batches[j];
+            PpuGpu3DSBatch* const nextPartner = size == 2 ? &cmd->batches[j + 1] : NULL;
+            if (!is_ring_band(next) || !same_band_state(first, next) || !follows_band(first, next)) break;
+            if (size == 2 && (!is_ring_band(nextPartner) || !same_band_state(partner, nextPartner) ||
+                              nextPartner->firstIndex != next->firstIndex || nextPartner->indexCount != next->indexCount ||
+                              nextPartner->firstLine != next->firstLine || nextPartner->lineCount != next->lineCount))
+                break;
+            first->lineCount = (uint16_t)(first->lineCount + next->lineCount);
+            first->indexCount += next->indexCount;
+            next->indexCount = 0;
+            if (partner) {
+                partner->lineCount = first->lineCount;
+                partner->indexCount = first->indexCount;
+                nextPartner->indexCount = 0;
+            }
+            j += size;
+        }
+        i = j;
+    }
+}
+
 bool PpuGpu3DS_BuildCommands(const PpuGpu3DSFrameView* frame,
                              PpuGpu3DSCache* cache, uint16_t* atlas,
                              PpuGpu3DSCommandBuffer* cmd) {
@@ -4901,5 +4994,6 @@ bool PpuGpu3DS_BuildCommands(const PpuGpu3DSFrameView* frame,
     cmd->indexCount = indexCursor;
     cmd->batchCount = batchCursor;
     fold_covered_alpha_layers(cmd);
+    merge_band_runs(cmd);
     return true;
 }

@@ -491,6 +491,7 @@ extern uint32_t gPpuGpu3DSLastBands, gPpuGpu3DSLastVertices, gPpuGpu3DSLastBatch
 #endif
 
 extern uint32_t gPpuGpu3DSRingWhy[4];
+extern volatile uint8_t gPpuGpu3DSBandMergeDisable;
 extern uint32_t gPpuGpu3DSRingCells, gPpuGpu3DSRingStale, gPpuGpu3DSRingMemoHits;
 extern volatile uint8_t gPpuGpu3DSRingDisable, gPpuGpu3DSRingMemoDisable;
 extern uint32_t gPpuGpu3DSBankChanges[16];
