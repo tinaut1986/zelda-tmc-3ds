@@ -49,6 +49,10 @@ static u8 sRenderingDepth = 0;
 /* Set while an entity's pieces are written: the upper pieces of a tall sprite stand out a little (Port_Config_StereoBodyDepthQ),
  * the lowest stays on the ground's plane, so it leans out instead of floating. */
 static int sRenderingBody = 0;
+/* The pieces of an entity drawn in several calls (a carpenter: body, head, tool) lean as one: JoinMeasureParts measures the box
+ * of all the parts first (sJoinMeasure), then each part leans from it (sJoinKnown). */
+static int sJoinMeasure = 0, sJoinKnown = 0;
+static s32 sJoinFeet, sJoinTop, sJoinLeft, sJoinRight;
 /* The entity whose pieces are being written (1..127, 0 outside one): its OAM entries are tagged with it. Its shadow, drawn
  * in the deferred pass, is tagged with it plus SPRITE_SUPPORT_3DS_SHADOW (platform/3ds/source/sprite_support_3ds.h): the
  * GPU model gives a shadow the support of the surface under it, never its entity's height. sLastGroup is the entity drawn
@@ -469,6 +473,39 @@ static const u8* LookupFrameData(u16 spriteIndex, u8 frameIndex) {
  *     byte 3: tile index low byte
  *     byte 4: tile index high / palette addend
  */
+#ifdef TMC_3DS
+/* The box a sprite's pieces cover: the bottom edge of the lowest (its feet), the top edge of the highest, the left and right
+ * edges (for a side lean). Extends what is in the out parameters. */
+static void ScanPieceBox(const u8* data, u8 count, u32 flags, s16 baseX, s16 baseY, const u8* sizeTab, u32 tableOff,
+                         s32* feetBottom, s32* topMin, s32* leftMin, s32* rightMax) {
+    const u8* scan = data;
+    for (int i = 0; i < count; i++, scan += 5) {
+        s8 scanYoff = (s8)scan[1];
+        if (!(flags & 0x300) && (flags & 0x20000000))
+            scanYoff = -scanYoff;
+        const u32 scanSize = (scan[2] & 0xF0) >> 2;
+        if ((size_t)tableOff + scanSize + 3 >= sizeof(sSizeTable))
+            continue;
+        const u8* scanEntry = sizeTab + scanSize;
+        const s32 bottom = (s32)scanYoff + (s32)baseY - (s32)scanEntry[1] + (s32)scanEntry[3];
+        s8 scanXoff = (s8)scan[0];
+        if (!(flags & 0x300) && (flags & 0x10000000))
+            scanXoff = -scanXoff;
+        const s32 left = (s32)scanXoff + (s32)baseX - (s32)scanEntry[0];
+        if (left < *leftMin)
+            *leftMin = left;
+        if (left + (s32)scanEntry[2] > *rightMax)
+            *rightMax = left + (s32)scanEntry[2];
+        if (bottom > *feetBottom)
+            *feetBottom = bottom;
+        if (bottom - (s32)scanEntry[3] < *topMin)
+            *topMin = bottom - (s32)scanEntry[3];
+        if (sRenderingBoss && bottom - (s32)scanEntry[3] < sBossTopNext)
+            sBossTopNext = bottom - (s32)scanEntry[3];
+    }
+}
+#endif
+
 static void RenderSpritePieces(const u8* data, /* pointer to frame data (count byte + pieces) */
                                s16 baseX,      /* OAMCommand.x */
                                s16 baseY,      /* OAMCommand.y */
@@ -512,6 +549,12 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
         tableOff = v + (v << 1); /* v * 3 */
     }
     const u8* sizeTab = &sSizeTable[tableOff];
+#ifdef TMC_3DS
+    if (sJoinMeasure) {
+        ScanPieceBox(data, count, flags, baseX, baseY, sizeTab, tableOff, &sJoinFeet, &sJoinTop, &sJoinLeft, &sJoinRight);
+        return;
+    }
+#endif
 
     u8 updated = gOAMControls.updated;
 
@@ -561,33 +604,13 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
     /* Its left and right edges: the ground of a sprite on a side wall (PORT_DEPTH_RIGHT, PORT_DEPTH_LEFT). */
     s32 leftMin = 0x7fffffff, rightMax = -0x7fffffff;
     if (bodyShear) {
-        const u8* scan = data;
-        for (int i = 0; i < count; i++, scan += 5) {
-            s8 scanYoff = (s8)scan[1];
-            if (!(flags & 0x300) && (flags & 0x20000000))
-                scanYoff = -scanYoff;
-            const u32 scanSize = (scan[2] & 0xF0) >> 2;
-            if ((size_t)tableOff + scanSize + 3 >= sizeof(sSizeTable))
-                continue;
-            const u8* scanEntry = sizeTab + scanSize;
-            const s32 bottom = (s32)scanYoff + (s32)baseY - (s32)scanEntry[1] + (s32)scanEntry[3];
-            if (sRenderingSide) {
-                /* On the screen, as the pieces are placed below (an h-flip mirrors the offsets, the anchor stays). */
-                s8 scanXoff = (s8)scan[0];
-                if (!(flags & 0x300) && (flags & 0x10000000))
-                    scanXoff = -scanXoff;
-                const s32 left = (s32)scanXoff + (s32)baseX - (s32)scanEntry[0];
-                if (left < leftMin)
-                    leftMin = left;
-                if (left + (s32)scanEntry[2] > rightMax)
-                    rightMax = left + (s32)scanEntry[2];
-            }
-            if (bottom > feetBottom)
-                feetBottom = bottom;
-            if (bottom - (s32)scanEntry[3] < topMin)
-                topMin = bottom - (s32)scanEntry[3];
-            if (sRenderingBoss && bottom - (s32)scanEntry[3] < sBossTopNext)
-                sBossTopNext = bottom - (s32)scanEntry[3];
+        ScanPieceBox(data, count, flags, baseX, baseY, sizeTab, tableOff, &feetBottom, &topMin, &leftMin, &rightMax);
+        if (sJoinKnown) {
+            /* A part of an entity of several: the lean is the whole entity's (JoinMeasureParts). */
+            feetBottom = sJoinFeet;
+            topMin = sJoinTop;
+            leftMin = sJoinLeft;
+            rightMax = sJoinRight;
         }
         if (sRenderingBoss) {
             if (feetBottom > sBossGroundNext)
@@ -660,7 +683,7 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
             /* On every piece, even one whose edges have the same depth: the renderer splits the shifts of all the pieces
              * of the sprite between the eyes the same way, so neighbouring columns never part (SpriteLean3DS_EyeShift). */
             pieceColumns = (u8)(SPRITE_LEAN_3DS_COLUMNS | (sRenderingSide == PORT_DEPTH_RIGHT ? SPRITE_LEAN_3DS_RISES_RIGHT : 0));
-        } else if (bodyShear && (count > 1 || se[3] > 16 || sRenderingInvert)) {
+        } else if (bodyShear && (count > 1 || se[3] > 16 || sRenderingInvert || sJoinKnown)) {
             /* The depth rises with the height over the feet: at the piece's bottom edge, and at its top edge, so the
              * GPU renderer can give each tile row of the piece its own (the lean is then not one step per piece). */
             const s32 above = feetBottom - (y + (s32)se[3]); /* how far this piece's bottom is over the feet */
@@ -1240,68 +1263,93 @@ static void DrawEntitySpritesOf(Entity* entity, s32 x, s32 y, u32 flags, u16 ext
         struct_gUnk_020000C0* slot = &gUnk_020000C0[(u8)renderMode];
         u16 cleanExtra = extra & 0x0FFF; /* clear palette bits */
 
-        for (int part = 0; part < 4; part++) {
-            struct_gUnk_020000C0_1* sub = &slot->unk_00[part];
-            if (!(*(u8*)&sub->unk_00 & 1)) /* not active */
-                return;
+        /* The parts of one entity (a carpenter's body, head and tool) lean as one: measured first, over all of them, then
+         * each leans from the whole box instead of from its own feet (the head started again at 0). Not Link (tuned by
+         * hand) nor the big Chuchu (its own ground, below). */
+#ifdef TMC_3DS
+        const int join = sRenderingBody && !sRenderingFlat && !sRenderingPlayer && !sRenderingBoss;
+#else
+        const int join = 0;
+#endif
+        for (int pass = join ? 0 : 1; pass < 2; ++pass) {
+#ifdef TMC_3DS
+            if (pass == 0) {
+                sJoinFeet = -0x7fffffff;
+                sJoinTop = 0x7fffffff;
+                sJoinLeft = 0x7fffffff;
+                sJoinRight = -0x7fffffff;
+                sJoinMeasure = 1;
+            } else if (join) {
+                sJoinMeasure = 0;
+                sJoinKnown = sJoinFeet > -0x7fffffff;
+            }
+#endif
+            for (int part = 0; part < 4; part++) {
+                struct_gUnk_020000C0_1* sub = &slot->unk_00[part];
+                if (!(*(u8*)&sub->unk_00 & 1)) /* not active */
+                    break;
 
-            if (*(u8*)&sub->unk_00 & 2) {
-                /* Sub-entity mode — entity pointer at offset 0x0C */
-                Entity* subEntity = (Entity*)sub->unk_0C;
-                if (subEntity) {
-                    s32 sx, sy;
-                    u32 sf;
-                    u16 se;
-                    ResolveEntitySpriteParams(subEntity, &sx, &sy, &sf, &se);
-                    u8 extraYOff = ((u8*)&gOAMControls)[0x12]; /* fp[0x12] */
-                    sy += extraYOff;
-                    LookupAndRenderNormal(subEntity, sx, sy, sf, se);
-                }
-            } else {
-                /* Direct sub-sprite */
-                u8 subSprSlot = sub->unk_01;
-                if (subSprSlot == 0xFF)
-                    continue; /* skip to next part (don't return!) */
+                if (*(u8*)&sub->unk_00 & 2) {
+                    /* Sub-entity mode — entity pointer at offset 0x0C */
+                    Entity* subEntity = (Entity*)sub->unk_0C;
+                    if (subEntity) {
+                        s32 sx, sy;
+                        u32 sf;
+                        u16 se;
+                        ResolveEntitySpriteParams(subEntity, &sx, &sy, &sf, &se);
+                        u8 extraYOff = ((u8*)&gOAMControls)[0x12]; /* fp[0x12] */
+                        sy += extraYOff;
+                        LookupAndRenderNormal(subEntity, sx, sy, sf, se);
+                    }
+                } else {
+                    /* Direct sub-sprite */
+                    u8 subSprSlot = sub->unk_01;
+                    if (subSprSlot == 0xFF)
+                        continue; /* skip to next part (don't return!) */
 
-                /* Apply sub-part overrides */
-                u32 partFlags = flags;
-                s32 partX = x;
-                s32 partY = y;
-                u16 partExtra = cleanExtra;
+                    /* Apply sub-part overrides */
+                    u32 partFlags = flags;
+                    s32 partX = x;
+                    s32 partY = y;
+                    u16 partExtra = cleanExtra;
 
-                u8 flipOverride = sub->unk_04.BYTES.byte0; /* GBA: LDRB r2, [r4, #4] */
-                partFlags ^= (u32)flipOverride << 28;
+                    u8 flipOverride = sub->unk_04.BYTES.byte0; /* GBA: LDRB r2, [r4, #4] */
+                    partFlags ^= (u32)flipOverride << 28;
 
-                s8 xOff = (s8)((sub->unk_04.WORD >> 16) & 0xFF); /* byte at +6 */
-                s8 yOff = (s8)((sub->unk_04.WORD >> 24) & 0xFF); /* byte at +7 */
+                    s8 xOff = (s8)((sub->unk_04.WORD >> 16) & 0xFF); /* byte at +6 */
+                    s8 yOff = (s8)((sub->unk_04.WORD >> 24) & 0xFF); /* byte at +7 */
 
-                if (!(partFlags & 0x10000000))
-                    partX += xOff;
-                else
-                    partX -= xOff;
-                if (!(partFlags & 0x20000000))
-                    partY += yOff;
-                else
-                    partY += yOff; /* Note: GBA uses ADD for both vflip cases */
+                    if (!(partFlags & 0x10000000))
+                        partX += xOff;
+                    else
+                        partX -= xOff;
+                    if (!(partFlags & 0x20000000))
+                        partY += yOff;
+                    else
+                        partY += yOff; /* Note: GBA uses ADD for both vflip cases */
 
-                u8 palBits = (u8)((sub->unk_04.WORD >> 8) & 0xFF); /* byte at +5 */
-                partExtra |= (u16)palBits << 12;
+                    u8 palBits = (u8)((sub->unk_04.WORD >> 8) & 0xFF); /* byte at +5 */
+                    partExtra |= (u16)palBits << 12;
 
-                u8 tileOff = (u8)(sub->unk_08.WORD & 0xFF); /* byte at +8 */
-                partExtra += tileOff;
+                    u8 tileOff = (u8)(sub->unk_08.WORD & 0xFF); /* byte at +8 */
+                    partExtra += tileOff;
 
-                u16 sprIdx = sub->unk_02 & 0xFFFF;
+                    u16 sprIdx = sub->unk_02 & 0xFFFF;
 
-                /* Look up and render — GBA uses sub-part's own frame index
-                 * (r0 = sub->unk_01, loaded at 080B2754), NOT entity->frameIndex */
-                if (subSprSlot != 0xFF) {
-                    const u8* frameData = LookupFrameData(sprIdx, subSprSlot);
-                    if (frameData) {
-                        RenderSpritePieces(frameData, (s16)partX, (s16)partY, partFlags, partExtra);
+                    /* Look up and render — GBA uses sub-part's own frame index
+                     * (r0 = sub->unk_01, loaded at 080B2754), NOT entity->frameIndex */
+                    if (subSprSlot != 0xFF) {
+                        const u8* frameData = LookupFrameData(sprIdx, subSprSlot);
+                        if (frameData) {
+                            RenderSpritePieces(frameData, (s16)partX, (s16)partY, partFlags, partExtra);
+                        }
                     }
                 }
             }
         }
+#ifdef TMC_3DS
+        sJoinMeasure = sJoinKnown = 0;
+#endif
     }
 }
 
