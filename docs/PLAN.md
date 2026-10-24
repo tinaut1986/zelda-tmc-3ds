@@ -1469,3 +1469,10 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   beat, then the detail map, which shows its name top left); another tile moves the selection and a tap on no tile drops it.
   PC/Android keep the one-tap zoom. Side fix: `tmc-link.py touch` now sends the finger-up too (the map and the OPTIONS / STATES lists
   act on release, so a link tap used to do nothing there).
+- **2026-10-24** Each Minish portal's falling scene has its own picture (`src/enterPortalSubtask.c` loads one of 4 by
+  `gArea.portal_type`: tree stump, rock, PT_2 in area 2, else the dungeon's), and the presenter drew the stump's strips on all of
+  them. `Port_Widescreen_CutsceneStrips` now says which one is shown and `sPortalStrips` holds a strips file and the picture's width
+  per portal: the rock's picture is 240x320, not 256, so its strips are 80 + 80 columns (`portal-rock-strips.bin`, the owner's pick of
+  three Antigravity variants, `portal-rock-3.png`; seen on the New 3DS). The other two have no picture yet and get black, assuming the
+  stump's 256 width: dump them (`extract_bg.py` prints the width) when the owner passes one. Antigravity, asked only for the images,
+  also edited code (the owner undid it); give it a brief that restricts it to its folder.
