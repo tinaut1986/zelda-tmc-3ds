@@ -136,12 +136,17 @@ causes, all fixed (`perf/stereo-fog`, 2026-10-24; GPU 7-9 ms, 59.8 fps in the fo
   the whole range (the scrolls unwrapped around the first band's), and each band's quad carries its own scroll
   (`emit_ring_quad` already did). Not for a layer with a shadow's extension piece or the HUD's right anchor.
 - **Ring bands are merged** (`merge_band_runs`, after `fold_covered_alpha_layers`): consecutive bands of a ring-drawn layer
-  with the same state, on adjacent lines and adjacent quads, are one batch (a complement/blend pair stays a pair), the
+  with the same state, on adjacent lines and adjacent quads, are one batch (only consecutive batches: a blend with its complement stays as it is), the
   rest emptied. The fog went from ~100 draws a pass to a handful. `gPpuGpu3DSBandMergeDisable 01` turns it off.
 - **No ghost copy for a blended layer** (`IsGhostBatch`). The unmoved copy drawn first made the blend pass flip the stencil
   mark of every pixel it covered, so the moved copy drew nowhere there: the fog did not actually move between the eyes
   (it only did where nothing blendable lay under it) and cost four draws a band per eye. Now the fog moves by its depth
-  in each eye. A translucent layer covering the frame has no strip to fill.
+  in each eye. A translucent layer covering the frame has no strip to fill. (The rays looked cut once after loading states; they were also
+  cut with the slider down, so that is an older stale-state bug, not this.)
+- **No complement pass when it would draw nowhere** (`bg_complement_needed`, `noComplement` on the batch): a blended BG is
+  two batches, the blend and the complement (the layer plain over pixels whose top layer so far is not a target). When the
+  backdrop, the sprites and every enabled layer under it are targets (the fog: BLDCNT 0x3648) the complement is not
+  emitted: one full-frame pass less per eye, and with the merge the fog is one draw an eye.
 
 GPU CHECK on the fog is not reliable on its own: it differs by one colour step across the whole frame for some phases of the
 fog's alpha cycle (the same count with the rings on and off for the same frame), because the CPU frame is drawn later.
