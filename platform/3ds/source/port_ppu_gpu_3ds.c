@@ -1381,7 +1381,7 @@ static bool DrawOutput(C3D_RenderTarget* target, OutputPass pass) {
     const u32 yOffset = sViewportOffset;
     C3D_SetViewport(0, yOffset, sPreparedWidth, sPreparedHeight);
     SetScissorCached(0, yOffset, sPreparedWidth, yOffset + sPreparedHeight);
-    /* Depth is emitted as -(128 - index)/129, so state the mapping instead of
+    /* Depth is emitted as -(512 - order)/513 (obj_order_depth), so state the mapping instead of
      * inheriting whatever the Citro2D presenter last configured. */
     C3D_DepthMap(true, -1.0f, 0.0f);
     C3D_BindProgram(&sProgram);

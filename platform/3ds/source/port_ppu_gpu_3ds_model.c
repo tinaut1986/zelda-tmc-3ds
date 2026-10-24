@@ -664,6 +664,15 @@ static void build_oam_set(const PpuGpu3DSFrameView* frame,
     }
 }
 
+/* Which sprite's pixel wins where sprites overlap, as the GBA decides it (mGBA's model): the lower priority
+ * number, then the lower OAM index. The depth pre-pass keeps the nearest, so that order is the depth: the
+ * Crenel paths' twig (priority 1, after Link in OAM) covers Link (priority 2) as on the GBA. Index alone let
+ * the earlier sprite win over a later one in front of it. */
+static float obj_order_depth(const PpuGpu3DSObj* obj) {
+    const unsigned order = (obj->priority & 3u) * MODE1_GBA_OAM_COUNT + obj->index;
+    return -(float)(4u * MODE1_GBA_OAM_COUNT - order) * (1.0f / (4.0f * MODE1_GBA_OAM_COUNT + 1.0f));
+}
+
 static bool window_vertical_active(uint16_t dispcnt, uint16_t enable,
                                    uint16_t vertical, unsigned line) {
     unsigned top = vertical >> 8u;
@@ -3129,7 +3138,7 @@ static bool build_mosaic_obj_geometry(
             obj->bpp8 ? (uint16_t)(obj->baseTile & ~1u) : obj->baseTile;
     const bool obj1d =
             (frame->dispcntPerLine[band->firstLine] & MODE1_DISP_OBJ_1D) != 0;
-    const float z = -(128.0f - (float)obj->index) * (1.0f / 129.0f);
+    const float z = obj_order_depth(obj);
     for (int y = firstY; y < clipBottom; y += blockHeight) {
         if (y < obj->y) continue;
         for (int x = firstX; x < clipRight; x += blockWidth) {
@@ -3276,7 +3285,7 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
      * to run nine times per sprite tile. */
     const float invWidth = 2.0f / (float)frame->width;
     const float invHeight = 2.0f / (float)frame->height;
-    const float objDepth = -(128.0f - (float)obj->index) * (1.0f / 129.0f);
+    const float objDepth = obj_order_depth(obj);
     const size_t firstIndex = *indexCursor;
     const uint8_t* bandIo =
             frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;

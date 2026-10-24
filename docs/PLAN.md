@@ -1476,3 +1476,11 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   three Antigravity variants, `portal-rock-3.png`; seen on the New 3DS). The other two have no picture yet and get black, assuming the
   stump's 256 width: dump them (`extract_bg.py` prints the width) when the owner passes one. Antigravity, asked only for the images,
   also edited code (the owner undid it); give it a brief that restricts it to its folder.
+- **2026-10-24** OBJ against OBJ is decided by priority first, then OAM index, as mGBA does
+  (`software-obj.c`: a sprite pixel replaces another only with a lower priority number; equal ones keep the lower index)
+  and as the GBA shows it: the Crenel paths' giant twig, priority 1 and after Link in OAM, covers Link, priority 2 (the
+  owner's video of the GBA game). Both renderers had followed GBATEK's note that OBJ0 is always above OBJ1-127 (upstream's
+  `mode1_draw_order_profile_test`, "NEW-1b"), so Link was drawn over the twig. Changed in `mode1.c` (both write sites) and
+  in the GPU's depth pre-pass (`obj_order_depth`: priority * 128 + index); the test now checks both rules. mGBA's other quirk
+  (a transparent pixel of a sprite with a lower priority number still lowers the priority of the pixel under it) is not
+  modelled. Changes every scene where sprites of different priorities overlap: seen only in the Crenel paths so far.
