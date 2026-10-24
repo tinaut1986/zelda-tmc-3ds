@@ -290,7 +290,7 @@ configure_file(
 # Extensions of scenes the GBA drew at 240x160, for Full View (docs/wide-scene-extension.md):
 # made by tools/scene-extend/to_console.py from platform/3ds/assets/wide-scenes/.
 file(MAKE_DIRECTORY "${TMC_ROMFS}/wide-scenes")
-foreach(scene portal-cutscene-strips title-forest fileselect-cave)
+foreach(scene portal-cutscene-strips portal-rock-strips title-forest fileselect-cave)
     configure_file("${CMAKE_CURRENT_LIST_DIR}/romfs/wide-scenes/${scene}.bin"
                    "${TMC_ROMFS}/wide-scenes/${scene}.bin" COPYONLY)
 endforeach()

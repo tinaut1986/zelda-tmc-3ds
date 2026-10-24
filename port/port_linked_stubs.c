@@ -1770,8 +1770,15 @@ int Port_Widescreen_TitleForestShown(void) {
 #endif
 }
 
-int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {
+int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY, int* portal) {
     if (!Port_Widescreen_CutsceneViewLive()) return 0;
+    /* The picture Subtask_PortalCutscene_0 loaded (src/enterPortalSubtask.c): PT_2 outside area 2
+     * and anything past the table's 4 entries take the dungeon's. Fixed for the whole scene. */
+    if (portal) {
+        u32 id = gArea.portal_type;
+        if ((id == PT_2 && gUI.roomControls.area != 2) || id > 3) id = PT_DUNGEON;
+        *portal = (int)id;
+    }
     /* Where the picture's top-left lands on screen: BG1's offsets in the registers the shown
      * frame was drawn from (gScreen is already the next tick's, a frame ahead: the strips
      * slid against the picture). 9-bit, so 0x1B0 is -80. */
@@ -3103,9 +3110,10 @@ int Port_Widescreen_ContentRects(PortBlurRect* rects, int max) {
     (void)max;
     return 0;
 }
-int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {
+int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY, int* portal) {
     (void)pictureX;
     (void)pictureY;
+    (void)portal;
     return 0;
 }
 void Port_Widescreen_UpdateShadows(void) { /* no-op at native 240 */

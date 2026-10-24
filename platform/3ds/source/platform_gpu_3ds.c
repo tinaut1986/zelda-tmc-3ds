@@ -1104,6 +1104,7 @@ typedef struct ScenePicture {
 
 static void LoadScenePicture(ScenePicture* picture) {
     picture->state = -1;
+    if (picture->path == NULL) return;
     FILE* f = fopen(picture->path, "rb");
     if (f == NULL) f = fopen(picture->romfsPath, "rb");
     if (f == NULL) return;
@@ -1179,21 +1180,33 @@ static void VeilScenePicture(int x, int y, int w, int h) {
         C2D_DrawRectSolid((float)x, (float)y, 0.5f, (float)w, (float)h, C2D_Color32(level, level, level, weight));
 }
 
-/* The Minish portal cutscene in Full View (Port_Widescreen_CutsceneStrips): its 256x320 picture is
- * centred in the 400x240 view and BG1 repeats past its edges, so the presenter covers the columns
- * left and right of it, black or from portal-cutscene-strips.bin (the 80 columns left of the
- * original and the 64 right of it, 144x320), scrolling with the picture. */
-enum { STRIPS_LEFT_W = 80, STRIPS_RIGHT_W = 64, PICTURE_W = 256 };
-static ScenePicture sPortalStrips = { .path = TMC3DS_APP_DIR "/portal-cutscene-strips.bin",
-                                      .romfsPath = "romfs:/wide-scenes/portal-cutscene-strips.bin",
-                                      .width = STRIPS_LEFT_W + STRIPS_RIGHT_W, .height = 320,
-                                      .texWidth = 256, .texHeight = 512 };
+/* The Minish portal cutscene in Full View (Port_Widescreen_CutsceneStrips): its picture (BG1, 320
+ * lines) starts 80 columns into the 400x240 view and BG1 repeats past its edges, so the presenter
+ * covers the columns left and right of it, black or from the portal's strips file (its 80 columns
+ * left of the original and those right of it to the view's edge, 320 lines), scrolling with the
+ * picture. Each portal has its own picture: the tree stump's is 256 wide, the rock's 240. The
+ * other two have no strips yet and get black, at the stump's width. */
+enum { STRIPS_LEFT_W = 80, PORTAL_PICTURES = 4 };
+typedef struct {
+    int pictureW; /* the game's picture */
+    ScenePicture strips; /* STRIPS_LEFT_W + (400 - STRIPS_LEFT_W - pictureW) columns */
+} PortalStrips;
+#define PORTAL_STRIPS(w, name)                                                                        \
+    { .pictureW = (w),                                                                               \
+      .strips = { .path = TMC3DS_APP_DIR "/" name, .romfsPath = "romfs:/wide-scenes/" name,         \
+                  .width = 400 - (w), .height = 320, .texWidth = 256, .texHeight = 512 } }
+static PortalStrips sPortalStrips[PORTAL_PICTURES] = {
+    PORTAL_STRIPS(256, "portal-cutscene-strips.bin"), /* tree stump */
+    PORTAL_STRIPS(240, "portal-rock-strips.bin"),
+    { .pictureW = 256 }, /* no file: black */
+    { .pictureW = 256 }, /* dungeon */
+};
 
-static void DrawCutsceneStrip(int screenX, int width, int srcX, int pictureY) {
-    if (sPortalStrips.state != 1)
+static void DrawCutsceneStrip(ScenePicture* strips, int screenX, int width, int srcX, int pictureY) {
+    if (strips->state != 1)
         C2D_DrawRectSolid((float)screenX, 0.0f, 0.5f, (float)width, 240.0f, C2D_Color32(0, 0, 0, 255));
     else
-        DrawScenePicturePart(&sPortalStrips, srcX, 0, width, 320, screenX, pictureY);
+        DrawScenePicturePart(strips, srcX, 0, width, 320, screenX, pictureY);
 }
 
 /* The title screen at 1x in Full View (Port_Widescreen_TitleForestShown): the game draws its 240x160
@@ -1271,11 +1284,17 @@ static bool CaveReady(bool shown) {
 /* After the game's frame. frameX, frameY, frameW, frameH: where it was drawn on the top screen.
  * abgrAfter: the texture env the caller leaves set (ABGR or identity) is put back. */
 static void DrawScenePictures(int frameX, int frameY, int frameW, int frameH, bool abgrAfter) {
-    int pictureX, pictureY;
-    const bool portal = Port_Widescreen_CutsceneStrips(&pictureX, &pictureY);
+    int pictureX, pictureY, portalIndex = 0;
+    const bool portal = Port_Widescreen_CutsceneStrips(&pictureX, &pictureY, &portalIndex);
     const bool title = frameW == 240 && frameH == 160 && Port_Widescreen_TitleForestShown();
     const bool cave = frameW == 240 && frameH == 160 && Port_Widescreen_FileSelectCaveShown();
-    const bool portalReady = ScenePictureReady(&sPortalStrips, portal);
+    bool portalReady = false;
+    for (int i = 0; i < PORTAL_PICTURES; ++i) {
+        const bool ready = ScenePictureReady(&sPortalStrips[i].strips, portal && i == portalIndex);
+        if (portal && i == portalIndex) portalReady = ready;
+    }
+    PortalStrips* const strips = &sPortalStrips[portal ? portalIndex : 0];
+    const int pictureW = strips->pictureW, rightW = 400 - STRIPS_LEFT_W - pictureW;
     const bool titleReady = ScenePictureReady(&sTitleForest, title);
     const bool caveReady = CaveReady(cave);
     if (!portal && !title && !caveReady) return;
@@ -1285,8 +1304,8 @@ static void DrawScenePictures(int frameX, int frameY, int frameW, int frameH, bo
     if (portalReady || titleReady || caveReady) ConfigureAbgrTextureEnv(); /* the pictures are in the frame's pixel order */
     if (portal) {
         /* Left of the picture, then right of it; each strip is drawn from its own columns. */
-        DrawCutsceneStrip(pictureX - STRIPS_LEFT_W, STRIPS_LEFT_W, 0, pictureY);
-        DrawCutsceneStrip(pictureX + PICTURE_W, STRIPS_RIGHT_W, STRIPS_LEFT_W, pictureY);
+        DrawCutsceneStrip(&strips->strips, pictureX - STRIPS_LEFT_W, STRIPS_LEFT_W, 0, pictureY);
+        DrawCutsceneStrip(&strips->strips, pictureX + pictureW, rightW, STRIPS_LEFT_W, pictureY);
     }
     const int left = frameX - 80, top = frameY - 40; /* the picture's top-left on screen */
     if (titleReady) {
@@ -1305,7 +1324,7 @@ static void DrawScenePictures(int frameX, int frameY, int frameW, int frameH, bo
     if ((portalReady || titleReady || caveReady) && !abgrAfter) ConfigureIdentityTextureEnv();
     if (portal) {
         VeilScenePicture(0, 0, pictureX, 240);
-        VeilScenePicture(pictureX + PICTURE_W, 0, 400 - pictureX - PICTURE_W, 240);
+        VeilScenePicture(pictureX + pictureW, 0, 400 - pictureX - pictureW, 240);
     }
     if (titleReady || caveReady) {
         VeilScenePicture(left, top, 400, 40);
