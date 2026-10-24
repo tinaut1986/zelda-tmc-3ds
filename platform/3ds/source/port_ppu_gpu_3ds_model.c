@@ -1,6 +1,8 @@
 #include <math.h>
 #include "port_ppu_gpu_3ds_model.h"
 #include "port_zone_tiles.h"
+#include "sprite_lean_3ds.h"
+#include "sprite_support_3ds.h"
 
 #if defined(__3DS__)
 #include "arm11_fast_mem.h"
@@ -14,6 +16,8 @@
  * counts of cells decoded and character chunks found changed; the SD log's
  * `scene:` line prints them. */
 uint32_t gPpuGpu3DSRingWhy[4];
+/* Debug: poke 1 to keep every ring band its own draw (merge_band_runs). */
+volatile uint8_t gPpuGpu3DSBandMergeDisable;
 uint32_t gPpuGpu3DSRingCells, gPpuGpu3DSRingStale, gPpuGpu3DSRingMemoHits;
 uint32_t gPpuGpu3DSBankChanges[16]; /* frames each BG palette bank changed in */
 
@@ -939,6 +943,11 @@ static void append_layer_batches(PpuGpu3DSCommandBuffer* cmd,
             batch.effect = PPU_GPU3DS_EFFECT_ALPHA;
             batch.eva = clamp_coefficient(bldalpha & 0x1fu);
             batch.evb = clamp_coefficient((bldalpha >> 8u) & 0x1fu);
+            if (base->noComplement) {
+                store_batch(cmd, *batchCursor, &batch, emit);
+                ++*batchCursor;
+                continue;
+            }
             PpuGpu3DSBatch complement = batch;
             complement.effect = PPU_GPU3DS_EFFECT_NONE;
             complement.color |= PPU_GPU3DS_ALPHA_COMPLEMENT;
@@ -2092,7 +2101,7 @@ static bool batches_extend(const PpuGpu3DSBatch* a, const PpuGpu3DSBatch* b) {
            a->priority == b->priority && a->windowControl == b->windowControl && a->target2 == b->target2 &&
            a->effect == b->effect && a->eva == b->eva && a->evb == b->evb && a->evy == b->evy &&
            a->objectIndex == b->objectIndex && a->color == b->color && a->objWindow == b->objWindow &&
-           a->semiTransparent == b->semiTransparent && a->depth == b->depth && a->front == b->front && a->texture == b->texture && a->offsetX == b->offsetX &&
+           a->semiTransparent == b->semiTransparent && a->depth == b->depth && a->front == b->front && a->side == b->side && a->texture == b->texture && a->offsetX == b->offsetX &&
            a->offsetY == b->offsetY;
 }
 
@@ -2670,6 +2679,13 @@ static bool build_bg_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
     uint16_t sharedBgcnt = 0;
     bool any = false;
     unsigned firstTileX = 0, fine = 0, rowLo = ~0u, rowHi = 0;
+    /* Bands that differ in their horizontal scroll (a per-line wave: the Minish Woods' fog, written to BG3HOFS by an
+     * HBlank DMA) still draw from one ring when each band's quad carries its own scroll (emit_ring_quad): the ring
+     * only has to hold the columns of the whole range. Only for the layer drawn from its native ring alone; a layer
+     * with a shadow's extension piece, or the HUD's right-hand anchor, needs one set of columns. The scrolls are
+     * unwrapped around the first band's (the map repeats every 512 px). */
+    const bool scrollMayVary = !shadow && !hudRight;
+    int refScroll = 0, minScroll = 0, maxScroll = 0;
     for (size_t index = 0; index < bandCount; ++index) {
         const PpuGpu3DSBand* band = &bands[index];
         if ((frame->dispcntPerLine[band->firstLine] & (MODE1_DISP_BG0_ON << bg)) == 0) continue;
@@ -2684,7 +2700,16 @@ static bool build_bg_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
         const unsigned scrollX = read16(io, MODE1_IO_BG0HOFS + bg * 4u) & 0x1ffu;
         const unsigned scrollY = read16(io, MODE1_IO_BG0VOFS + bg * 4u) & 0x1ffu;
         /* One set of columns serves every band, so they must agree on it. */
-        if (any && scrollX != (firstTileX << 3u | fine)) {
+        if (!any) {
+            refScroll = minScroll = maxScroll = (int)scrollX;
+        } else if (scrollMayVary) {
+            int unwrapped = (int)scrollX - refScroll;
+            if (unwrapped > 256) unwrapped -= 512;
+            else if (unwrapped < -256) unwrapped += 512;
+            unwrapped += refScroll;
+            if (unwrapped < minScroll) minScroll = unwrapped;
+            if (unwrapped > maxScroll) maxScroll = unwrapped;
+        } else if (scrollX != (firstTileX << 3u | fine)) {
             gPpuGpu3DSRingWhy[bg] = 4;
             return false;
         }
@@ -2697,12 +2722,20 @@ static bool build_bg_ring(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
         if (rTop < rowLo) rowLo = rTop;
         if (rBot > rowHi) rowHi = rBot;
     }
-    if (!any || rowHi - rowLo + 1u > PPU_GPU3DS_RING_ROWS || fine + (unsigned)width > (PPU_GPU3DS_RING_COLS - 1u) * 8u) {
+    unsigned spread = 0;
+    if (any && scrollMayVary && maxScroll != minScroll) {
+        /* The columns from the leftmost band's first to the rightmost band's last. +512 keeps them positive and
+         * changes no ring cell (64 columns of 8 px). */
+        firstTileX = (unsigned)(minScroll + 512) >> 3u;
+        fine = (unsigned)(minScroll + 512) & 7u;
+        spread = (unsigned)(maxScroll - minScroll);
+    }
+    if (!any || rowHi - rowLo + 1u > PPU_GPU3DS_RING_ROWS || fine + spread + (unsigned)width > (PPU_GPU3DS_RING_COLS - 1u) * 8u) {
         gPpuGpu3DSRingWhy[bg] = 5;
         return false;
     }
     if (nativeEnd > 0 &&
-        !ring_update(frame, cache, native, bg, false, false, firstTileX, 0, (fine + (unsigned)nativeEnd - 1u) >> 3u,
+        !ring_update(frame, cache, native, bg, false, false, firstTileX, 0, (fine + spread + (unsigned)nativeEnd - 1u) >> 3u,
                      rowLo, rowHi, sharedBgcnt, 0)) {
         gPpuGpu3DSRingWhy[bg] = 6;
         return false;
@@ -2797,6 +2830,25 @@ static bool build_bg_picture(const PpuGpu3DSFrameView* frame, PpuGpu3DSCommandBu
     return true;
 }
 
+/* Whether anything under background `bg` (priority `priority`) in this band is not a second blend target. The blend
+ * draws the layer blended over the pixels whose top layer so far is a target, and a second batch, the complement, draws
+ * it plain over the rest; when the backdrop, the sprites and every enabled layer under it are targets, the complement
+ * draws nowhere and is not emitted (the Minish Woods' fog: half of its passes, each a full frame). Under means a lower
+ * priority, or the same priority and a higher layer number; sprites count whatever their priority. */
+static __attribute__((noinline)) bool bg_complement_needed(const PpuGpu3DSFrameView* frame, const PpuGpu3DSBand* band, const uint8_t* io,
+                                 unsigned bg, unsigned priority, uint16_t bldcnt) {
+    const unsigned targets = (bldcnt >> 8u) & 0x3fu;
+    const unsigned dispcnt = frame->dispcntPerLine[band->firstLine];
+    if ((targets & 0x20u) == 0) return true; /* the backdrop */
+    if ((dispcnt & (MODE1_DISP_OBJ_ON | MODE1_DISP_OBJWIN_ON)) != 0 && (targets & 0x10u) == 0) return true;
+    for (unsigned other = 0; other < MODE1_GBA_BG_COUNT; ++other) {
+        if (other == bg || (dispcnt & (MODE1_DISP_BG0_ON << other)) == 0) continue;
+        const unsigned p = read16(io, MODE1_IO_BG0CNT + other * 2u) & 3u;
+        if ((p > priority || (p == priority && other > bg)) && (targets & (1u << other)) == 0) return true;
+    }
+    return false;
+}
+
 static bool build_text_bg(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                           uint16_t* atlas, PpuGpu3DSCommandBuffer* cmd,
                           const PpuGpu3DSBand* band, unsigned bg,
@@ -2811,6 +2863,7 @@ static bool build_text_bg(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
             frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;
     const uint16_t bgcnt = read16(io, MODE1_IO_BG0CNT + bg * 2u);
     const unsigned priority = bgcnt & 3u;
+    const bool noComplement = !bg_complement_needed(frame, band, io, bg, priority, read16(io, MODE1_IO_BLDCNT));
     const uint32_t charBase = ((bgcnt >> 2u) & 3u) * 0x4000u;
     const bool bpp8 = ((bgcnt >> 7u) & 1u) != 0;
     const uint32_t screenBase = ((bgcnt >> 8u) & 0x1fu) * 0x800u;
@@ -2922,6 +2975,7 @@ static bool build_text_bg(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
                     .target2 = (uint8_t)((ringBldcnt >> (PPU_GPU3DS_BG0 + bg + 8u)) & 1u),
                     .objectIndex = UINT8_MAX,
                     .texture = (uint8_t)(1u + bg * 2u + variant),
+                    .noComplement = noComplement,
                 };
                 append_layer_batches(cmd, &ringBase, regions, regionCount, ringBldcnt,
                                      read16(io, MODE1_IO_BLDALPHA), read16(io, MODE1_IO_BLDY), emit, batchCursor);
@@ -3048,6 +3102,7 @@ static bool build_text_bg(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
         .objectIndex = UINT8_MAX,
         .offsetX = offsetX,
         .offsetY = offsetY,
+        .noComplement = noComplement,
     };
     append_layer_batches(cmd, &base, regions, regionCount, bldcnt,
                          read16(io, MODE1_IO_BLDALPHA),
@@ -3157,27 +3212,32 @@ static bool bg_opaque_at(const PpuGpu3DSFrameView* frame, const PpuGpu3DSBand* b
     return ((sample.pixelX & 1u) ? (packed >> 4u) : (packed & 0xfu)) != 0;
 }
 
+typedef struct SupportSample {
+    const PpuGpu3DSFrameView* frame;
+    const PpuGpu3DSBand* band;
+    int x, y;
+} SupportSample;
+
+static bool support_opaque(void* context, unsigned bg) {
+    const SupportSample* sample = (const SupportSample*)context;
+    return bg_opaque_at(sample->frame, sample->band, bg, sample->x, sample->y);
+}
+
 /* The depth, in quarter pixels, a sprite takes from what it rests on at the view pixel (x, y): the frontmost opaque
- * background layer behind it (priority at or after its own). 0 where a layer in front covers it (it is behind that
- * layer there) or the layer under it has no depth. */
+ * background layer behind it (priority at or after its own), at its plane, or at a zone depth fix's plane over its
+ * pixels (ZoneDepth3DS_SupportPlane). 0 where a layer in front covers it (it is behind that layer there) or the plane
+ * under it has no depth. */
 static unsigned obj_support_depth(const PpuGpu3DSFrameView* frame, const PpuGpu3DSBand* band, unsigned objPriority,
                                   int x, int y) {
-    int best = -1;
-    unsigned bestPriority = 4;
     const uint8_t* io = frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;
-    for (unsigned bg = 1; bg < 4u; ++bg) {
-        const unsigned priority = read16(io, MODE1_IO_BG0CNT + bg * 2u) & 3u;
-        if (priority < objPriority) {
-            if (bg_opaque_at(frame, band, bg, x, y)) return 0;
-            continue;
-        }
-        if (priority >= bestPriority) continue;
-        if (bg_opaque_at(frame, band, bg, x, y)) {
-            best = (int)bg;
-            bestPriority = priority;
-        }
-    }
-    return best < 0 ? 0u : frame->bgDepthQ[best][bestPriority];
+    unsigned priorities[4] = { 0 };
+    for (unsigned bg = 1; bg < 4u; ++bg) priorities[bg] = read16(io, MODE1_IO_BG0CNT + bg * 2u) & 3u;
+    SupportSample sample = { frame, band, x, y };
+    unsigned layer, priority;
+    if (!ZoneDepth3DS_SupportPlane(objPriority, priorities, support_opaque, &sample, frame->depthZones,
+                                   frame->depthZoneCount, x, y, &layer, &priority))
+        return 0u;
+    return frame->bgDepthQ[layer][priority];
 }
 
 static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
@@ -3229,12 +3289,18 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
      * out (its tiles over a roof take the roof's depth, the lean starting from there). Each run of tiles with the
      * same depth, in drawing order, is a batch of its own, so the depth changes one tile at a time (8 px) rather
      * than one piece at a time. */
-    enum { LEAN_MAX_RUNS = 20, OBJ_MAX_TILES = 64 };
+    enum { LEAN_MAX_RUNS = SPRITE_LEAN_3DS_MAX_RUNS, OBJ_MAX_TILES = SPRITE_LEAN_3DS_MAX_TILES };
     const unsigned depthRaw = !stencilOnly && frame->objDepth != NULL ? frame->objDepth[obj->index] : 0u;
     const bool forceFront = (depthRaw & 0x80u) != 0;
     const unsigned depthBottom = depthRaw & 0x7fu;
-    const unsigned depthTop = !stencilOnly && frame->objDepthTop != NULL ? (frame->objDepthTop[obj->index] & 0x7fu) : depthBottom;
-    const bool leans = depthTop != depthBottom; /* up (a standing sprite) or down (one that hangs, PORT_DEPTH_INVERT) */
+    const unsigned depthTopRaw = !stencilOnly && frame->objDepthTop != NULL ? frame->objDepthTop[obj->index] : depthBottom;
+    /* Up (a standing sprite), down (one that hangs, PORT_DEPTH_INVERT), or across its columns (one on a side wall,
+     * PORT_DEPTH_LEFT/RIGHT: then depthBottom is the depth at its right edge and depthTop at its left one, and every
+     * batch of the entry carries the side, which decides how the renderer splits its shift between the eyes). */
+    const unsigned side = SpriteLean3DS_Side(depthTopRaw);
+    const unsigned depthTop = depthTopRaw & (side != SPRITE_LEAN_3DS_SIDE_NONE ? SPRITE_LEAN_3DS_DEPTH_MASK : 0x7fu);
+    const bool leans = depthTop != depthBottom;
+    const bool leanColumns = leans && side != SPRITE_LEAN_3DS_SIDE_NONE;
     const unsigned support = supportQ != NULL && !stencilOnly ? supportQ[obj->index] : 0u;
     const bool perTile = !mosaicEnabled && (leans || support != 0u) &&
                          (!obj->affine || determinant != 0) &&
@@ -3244,46 +3310,14 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     uint8_t runDepth[LEAN_MAX_RUNS];
     int runCount = 0;
     if (perTile) {
-        const int rows = obj->height / PPU_GPU3DS_TILE_SIDE, cols = obj->width / PPU_GPU3DS_TILE_SIDE;
-        int runs = 0;
-        unsigned tallest = 0;
-        for (int row = 0; row < rows; ++row) {
-            for (int col = 0; col < cols; ++col) {
-                /* The tile's place on the screen (a flipped sprite has its rows and columns the other way round). */
-                const int screenRow = obj->vflip ? rows - 1 - row : row;
-                const int screenCol = obj->hflip ? cols - 1 - col : col;
-                int depthI = (int)depthBottom;
-                if (leans) {
-                    unsigned heightMid = (unsigned)(rows - 1 - screenRow) * PPU_GPU3DS_TILE_SIDE +
-                                         PPU_GPU3DS_TILE_SIDE / 2u;
-                    unsigned span = (unsigned)rows * PPU_GPU3DS_TILE_SIDE;
-                    if (obj->affine) {
-                        /* Rotated or scaled: how high the middle of the tile lands over the bottom of the piece's
-                         * bounds on the screen (the same inverse mapping as the geometry below), not its row. */
-                        const float centerY = obj->y + obj->boundsHeight * 0.5f + 0.5f;
-                        const int sx = (col * PPU_GPU3DS_TILE_SIDE + PPU_GPU3DS_TILE_SIDE / 2 - obj->width / 2) * 512 - 1;
-                        const int sy = (row * PPU_GPU3DS_TILE_SIDE + PPU_GPU3DS_TILE_SIDE / 2 - obj->height / 2) * 512 - 1;
-                        const float py = centerY + (float)(-(int64_t)obj->pc * sx + (int64_t)obj->pa * sy) /
-                                                           (2.0f * (float)determinant);
-                        float above = (float)(obj->y + obj->boundsHeight) - py;
-                        if (above < 0.0f) above = 0.0f;
-                        span = (unsigned)obj->boundsHeight > 0u ? (unsigned)obj->boundsHeight : span;
-                        heightMid = above > (float)span ? span : (unsigned)above;
-                    }
-                    depthI += ((int)depthTop - (int)depthBottom) * (int)heightMid / (int)span;
-                }
-                unsigned depth = (unsigned)(depthI < 0 ? 0 : depthI) + support;
-                /* Never past the HUD's 6 px (24 quarters): the HUD is always in front. */
-                if (depth > 20u) depth = 20u;
-                tileDepth[row * cols + col] = (uint8_t)depth;
-                if (depth > tallest) tallest = depth;
-            }
-        }
-        /* Too many changes of depth for one sprite (each is a batch): one depth, the highest. */
-        for (int tile = 0; tile < rows * cols; ++tile)
-            if (tile == 0 || tileDepth[tile] != tileDepth[tile - 1]) ++runs;
-        if (runs > LEAN_MAX_RUNS)
-            for (int tile = 0; tile < rows * cols; ++tile) tileDepth[tile] = (uint8_t)tallest;
+        const SpriteLean3DS lean = {
+            .x = obj->x, .y = obj->y, .width = obj->width, .height = obj->height,
+            .boundsWidth = obj->boundsWidth, .boundsHeight = obj->boundsHeight,
+            .affine = obj->affine, .hflip = obj->hflip, .vflip = obj->vflip,
+            .pa = obj->pa, .pb = obj->pb, .pc = obj->pc, .pd = obj->pd,
+            .depthNear = depthBottom, .depthFar = depthTop, .columns = leanColumns, .support = support,
+        };
+        SpriteLean3DS_Fill(&lean, tileDepth);
     }
     if (mosaicEnabled) {
         if (!build_mosaic_obj_geometry(
@@ -3296,8 +3330,11 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
     const unsigned tileScale = obj->bpp8 ? 2u : 1u;
     const uint16_t baseTile =
             obj->bpp8 ? (uint16_t)(obj->baseTile & ~1u) : obj->baseTile;
-    for (int tileRow = 0; tileRow < tilesHigh; ++tileRow) {
-        for (int tileCol = 0; tileCol < tilesWide; ++tileCol) {
+    /* Row by row, or column by column for a column lean (its runs of equal depth are its columns). */
+    for (int tileStep = 0; tileStep < tilesHigh * tilesWide; ++tileStep) {
+        {
+            int tileRow, tileCol;
+            SpriteLean3DS_TileAt(tilesHigh, tilesWide, perTile && leanColumns, tileStep, &tileRow, &tileCol);
             if (perTile) {
                 const unsigned rowDepth = tileDepth[tileRow * tilesWide + tileCol];
                 if (runCount == 0 || (runDepth[runCount - 1] != rowDepth && runCount < LEAN_MAX_RUNS)) {
@@ -3476,6 +3513,7 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
         .semiTransparent = obj->mode == 1u,
         .depth = (uint8_t)depthBottom,
         .front = forceFront,
+        .side = (uint8_t)side,
     };
     if (perTile && runCount == 1) base.depth = runDepth[0];
     if (perTile && runCount > 1) {
@@ -4545,20 +4583,20 @@ static bool build_bg_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCac
 
 /* The 3D depth every OAM entry takes from what it rests on, in quarter pixels (obj_support_depth at the middle of
  * each of its tiles, the highest): the tiles of a sprite that overhangs the thing it stands on (balloons over a roof's
- * edge) then share one depth, and so do the entries of one entity (objGroup), which are one object. The HUD's
- * sprites (priority 0) take none. */
+ * edge) then share one depth, and so do the entries of one entity (objGroup), which are one object. An entity's shadow
+ * (its group with SPRITE_SUPPORT_3DS_SHADOW) takes the surface under it, never more than its entity
+ * (SpriteSupport3DS_Resolve). The HUD's sprites (priority 0) and what no entity wrote (DrawDirect) take none. */
 static void compute_obj_support(const PpuGpu3DSFrameView* frame, const PpuGpu3DSOamSet* oam, const PpuGpu3DSBand* bands,
                                 size_t bandCount, uint8_t out[MODE1_GBA_OAM_COUNT]) {
     memset(out, 0, MODE1_GBA_OAM_COUNT);
-    if (!frame->objSupport || bandCount == 0) return;
-    uint8_t group[256];
-    memset(group, 0, sizeof(group));
+    if (!frame->objSupport || bandCount == 0 || frame->objGroup == NULL) return;
+    uint8_t own[MODE1_GBA_OAM_COUNT];
+    bool eligible[MODE1_GBA_OAM_COUNT];
+    memset(own, 0, sizeof(own));
+    memset(eligible, 0, sizeof(eligible));
     for (unsigned entry = 0; entry < oam->count; ++entry) {
         const PpuGpu3DSObj* obj = &oam->entries[entry];
-        /* Not for what no entity wrote (the shadows, DrawDirect): a shadow in front of its sprite's feet would hide them. */
-        if (obj->affine || obj->mode == 2u || obj->priority == 0 ||
-            frame->objGroup == NULL || frame->objGroup[obj->index] == 0u)
-            continue;
+        if (obj->affine || obj->mode == 2u || obj->priority == 0 || frame->objGroup[obj->index] == 0u) continue;
         const int middle = obj->y + obj->boundsHeight / 2;
         const PpuGpu3DSBand* band = &bands[0];
         for (size_t b = 0; b < bandCount; ++b)
@@ -4575,17 +4613,10 @@ static void compute_obj_support(const PpuGpu3DSFrameView* frame, const PpuGpu3DS
                                                          obj->y + row * PPU_GPU3DS_TILE_SIDE + PPU_GPU3DS_TILE_SIDE / 2);
                 if (depth > best) best = depth;
             }
-        out[obj->index] = (uint8_t)best;
-        const unsigned g = frame->objGroup != NULL ? frame->objGroup[obj->index] : 0u;
-        if (g != 0u && best > group[g]) group[g] = (uint8_t)best;
+        own[obj->index] = (uint8_t)best;
+        eligible[obj->index] = true;
     }
-    if (frame->objGroup == NULL) return;
-    for (unsigned entry = 0; entry < oam->count; ++entry) {
-        const PpuGpu3DSObj* obj = &oam->entries[entry];
-        const unsigned g = frame->objGroup[obj->index];
-        if (g != 0u && !obj->affine && obj->mode != 2u && obj->priority != 0 && group[g] > out[obj->index])
-            out[obj->index] = group[g];
-    }
+    SpriteSupport3DS_Resolve(frame->objGroup, own, eligible, MODE1_GBA_OAM_COUNT, out);
 }
 
 static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
@@ -4817,6 +4848,47 @@ static void fold_covered_alpha_layers(PpuGpu3DSCommandBuffer* cmd) {
     }
 }
 
+/* Bands of a layer drawn from a view ring (build_bg_ring) are one exact quad each, over their own lines, so bands that
+ * follow one another down the frame with the same state can be one draw: the scissor takes the union of their lines and
+ * the quads are the run of indices. A per-line scroll (the Minish Woods' fog: a band every line or two) was ~100 draws
+ * a pass, and each draw has a fixed cost. Only consecutive batches merge: a blend with its complement (two batches a
+ * band) stays as it is, which is why the fog drops the complement (bg_complement_needed). The emptied batches stay in
+ * the list with no indices (DrawBatch skips them). */
+static bool same_band_state(const PpuGpu3DSBatch* a, const PpuGpu3DSBatch* b) {
+    return a->layer == b->layer && a->priority == b->priority && a->windowControl == b->windowControl &&
+           a->target2 == b->target2 && a->effect == b->effect && a->eva == b->eva && a->evb == b->evb &&
+           a->evy == b->evy && a->color == b->color && a->objWindow == b->objWindow && a->depth == b->depth &&
+           a->front == b->front && a->side == b->side && a->texture == b->texture && a->offsetX == b->offsetX &&
+           a->offsetY == b->offsetY && a->scissorLeft == b->scissorLeft && a->scissorRight == b->scissorRight &&
+           a->semiTransparent == b->semiTransparent;
+}
+
+static bool is_ring_band(const PpuGpu3DSBatch* b) {
+    return b->layer <= PPU_GPU3DS_BG3 && !b->objWindow && b->texture != 0 && b->texture != PPU_GPU3DS_PICTURE_TEXTURE &&
+           b->indexCount != 0;
+}
+
+static bool follows_band(const PpuGpu3DSBatch* run, const PpuGpu3DSBatch* next) {
+    return next->firstLine == run->firstLine + run->lineCount && next->firstIndex == run->firstIndex + run->indexCount;
+}
+
+static void merge_band_runs(PpuGpu3DSCommandBuffer* cmd) {
+    if (gPpuGpu3DSBandMergeDisable) return;
+    PpuGpu3DSBatch* run = NULL;
+    for (size_t i = 1; i < cmd->batchCount; ++i) {
+        PpuGpu3DSBatch* const batch = &cmd->batches[i];
+        if (!is_ring_band(batch)) {
+            run = NULL;
+        } else if (run && same_band_state(run, batch) && follows_band(run, batch)) {
+            run->lineCount = (uint16_t)(run->lineCount + batch->lineCount);
+            run->indexCount += batch->indexCount;
+            batch->indexCount = 0;
+        } else {
+            run = batch;
+        }
+    }
+}
+
 bool PpuGpu3DS_BuildCommands(const PpuGpu3DSFrameView* frame,
                              PpuGpu3DSCache* cache, uint16_t* atlas,
                              PpuGpu3DSCommandBuffer* cmd) {
@@ -4923,5 +4995,6 @@ bool PpuGpu3DS_BuildCommands(const PpuGpu3DSFrameView* frame,
     cmd->indexCount = indexCursor;
     cmd->batchCount = batchCursor;
     fold_covered_alpha_layers(cmd);
+    merge_band_runs(cmd);
     return true;
 }

@@ -51,11 +51,25 @@ scenes below override it for their layers. The values are in pixels at the full 
   layer's, so in the title, the file select and GAME OVER they flattened what those scenes tune by hand.
 - **Lean per tile row.** Each OAM entry carries the depth at its bottom (`virtuappu_mode1_obj_depth`) and at its top edge
   (`virtuappu_mode1_obj_depth_top`); `build_obj` gives each row of tiles (8 px) the depth in between and batches runs of equal
-  depth (at most 12 per sprite, else one depth, the highest).
+  depth (at most 20 per sprite, `SPRITE_LEAN_3DS_MAX_RUNS`, else one depth, the highest; sprites of up to 64 tiles). The
+  per-tile depths are `SpriteLean3DS_Fill` (`platform/3ds/source/sprite_lean_3ds.h`, host test
+  `platform/3ds/tests/sprite_lean_3ds_test.c`).
 - **Support.** A sprite takes the depth of the background layer it rests on (the roof under a statue): `compute_obj_support`
   samples the frontmost opaque BG1-BG3 layer behind it (priority at or after its own) at the middle of each tile with
   `text_bg_sample`, takes the highest of the entry's tiles and the highest of the entries of one entity
-  (`virtuappu_mode1_obj_group`, the entity that wrote them). A layer in front of the sprite gives nothing.
+  (`virtuappu_mode1_obj_group`, the entity that wrote them). A layer in front of the sprite gives nothing. Where the layer
+  it rests on is inside a zone depth fix of that layer ("Zone depth fixes" below), the sample takes the zone's plane
+  (`toBg`'s depth) instead: the chick on the log hut's roof stands on BG2 pixels inside BG1's hole and takes the roof's
+  depth, and its jump rises from there (`ZoneDepth3DS_SupportPlane`, host test `platform/3ds/tests/zone_depth_3ds_test.c`).
+- **Shadows.** An entity's shadow is drawn in `port_draw.c`'s deferred pass (`ProcessDeferredList`) after the entities, so
+  it used to carry no group and took no support: on any raised surface (a roof, the roof's chick in a zone) the shadow
+  stayed on the ground's plane under a raised entity. Now the deferred entry keeps its entity's group and the shadow's OAM
+  entries are tagged with it plus `SPRITE_SUPPORT_3DS_SHADOW` (bit 7; entity groups run 1..127). The model samples the
+  surface under the shadow like any sprite but does not add it to the entity's group, and holds it to at most the
+  entity's support (`SpriteSupport3DS_Resolve`, `platform/3ds/source/sprite_support_3ds.h`; host test
+  `platform/3ds/tests/sprite_support_3ds_test.c`): a shadow in front of its entity's feet would be drawn over them by
+  the eyes' base / front split. Its own depth stays 0, so a jumping entity's shadow stays on the surface, never at the
+  entity's height. On flat ground nothing changes (support 0).
 - **The HUD is in front.** Sprites at priority 0 take nothing from their pieces' height and the world's sum is capped at
   5 px, under the HUD's 6.
 - **Strips a moved layer leaves.** BG1-BG3 in front move one pixel per eye; where the art relies on them covering a hole
@@ -67,10 +81,37 @@ scenes below override it for their layers. The values are in pixels at the full 
   until the player has been asked once. The game was drawn for flat 2D and some scenes show graphic errors that are hard to fix, the
   message says so and asks whether to turn it on anyway. The answer is kept; OPTIONS -> 3D WORLD changes it and counts as an answer.
 - **Sprite depth corrections** (`platform/3ds/source/port_sprite_depth.inc`, optional, hand-curated, in the manner of the
-  sibling ports): `PORT_SPRITE_DEPTH(kind, id, type, mode)` per kind of entity. `PORT_DEPTH_INVERT`: a sprite that hangs
-  from its top edge (the boss door in a south wall) has its ground at the top of its pieces and the depth grows downwards
-  (the pieces carry a bottom depth higher than the top one, and the model's rows follow either way). `PORT_DEPTH_FLAT`: no
-  lean. To find the kind and id of a sprite on screen, read the OAM entry's group (`virtuappu_mode1_obj_group`) against the
+  sibling ports): `PORT_SPRITE_DEPTH(kind, id, type, mode)` per kind of entity. The mode says where the sprite meets the
+  ground; the depth is nil there and grows across the sprite by the normal rule's amount (`Port_Config_StereoBodyDepthQ` of
+  the distance from that edge, 12 quarters at most, 20 with its height). `PORT_DEPTH_UP` (0) is the normal rule, what an
+  entity without an entry gets: ground at the bottom of its pieces, the depth grows upwards. `PORT_DEPTH_DOWN` (alias
+  `PORT_DEPTH_INVERT`): a sprite that hangs from its top edge (the boss door in a south wall) has its ground at the top of
+  its pieces and the depth grows downwards (the pieces carry a bottom depth higher than the top one, and the model's rows
+  follow either way). `PORT_DEPTH_LEFT`: a sprite on a wall to its left (the curtain, `GENTARI_CURTAIN`, on the west wall of
+  area 0x20 room 00) has its ground at the right edge of its pieces and the depth grows towards the left of the screen;
+  `PORT_DEPTH_RIGHT` is the mirror. A side lean is written per OAM entry as the depth at its right edge (`obj_depth`) and at
+  its left edge (`obj_depth_top`, with bit 7, `SPRITE_LEAN_3DS_COLUMNS`, set on every piece of the sprite, even one whose
+  edges are equal, and bit 6, `SPRITE_LEAN_3DS_RISES_RIGHT`, for `PORT_DEPTH_RIGHT`); `build_obj` gives each column of tiles the
+  depth at its middle, in screen coordinates (an h-flipped entry has its columns reversed, an affine one is measured where
+  the middle of each tile lands), and draws such an entry column by column, so its runs of equal depth are its columns (8 at
+  most). An affine entry rotated off the axes makes more runs and may hit the cap (one depth, the highest). Each run keeps
+  the entry's scissor moved by its own shift, as a row lean does. Its batches carry the side (`PpuGpu3DSBatch.side`) and
+  the renderer gives each the whole disparity in one eye and none in the other (`SpriteLean3DS_EyeShift`, from
+  `SpritePx`): with the normal split two neighbouring columns (of one entry or of two) that rounded to different shifts
+  parted by a pixel in the eye that moves the higher one away from the lower one, a dark seam down the curtain in the
+  right eye (owner, 2026-10-22). Now the fixed eye has every column at 0 and the moving one is the eye that takes the
+  higher columns towards the ground edge, so neighbours overlap (by the step of their disparity; the normal split
+  already overlapped them in that eye) and never part, at any slider, in or out of the screen. The disparity of each
+  column, which is what is seen as depth, is the same as before; the sprite's middle sits half of it (a pixel or two at
+  most) towards the ground edge. Rows keep the normal split: they only move sideways, so they never part. The host test
+  (`platform/3ds/tests/sprite_lean_3ds_test.c`) measures the gap between every pair of neighbouring columns, both
+  eyes, every slider from -1 to 1. `PORT_DEPTH_FLAT`: no lean. `PORT_DEPTH_RAISED` (5): no lean either, the whole sprite at
+  one depth, the one the normal rule gives its top edge: the entity's own depth plus `Port_Config_StereoBodyDepthQ` of its
+  whole height (feet to the top of its highest piece, 12 quarters at most), 20 quarters at most
+  (`SpriteLean3DS_RaisedDepth`), even for a sprite the normal rule would not lean (one piece 16 px tall or less). Every
+  piece carries it at both edges, so each is one batch (affine and flipped ones too). For the small archway in a wall
+  (`MINISH_SIZED_ARCHWAY` type 2, left of the curtain in area 0x20 room 00). `PORT_DEPTH_FIXED(n)` (0x40 + n, n up to 20): the same, but at an explicit n quarters over the entity's own depth, for sprites whose pieces must sit on a surface of a known height (Rem's hands and boots over his counter, `NPC` `REM`, n = 8). `PORT_DEPTH_WALL` (6): picked from the wall the entity stands in (`WallDepthMode`). Every mode leaves the HUD's sprites
+  (priority 0) alone. To find the kind and id of a sprite on screen, read the OAM entry's group (`virtuappu_mode1_obj_group`) against the
   entity that wrote it (kind, id and type are in `Entity`); BOSS_DOOR is `OBJECT`, 57.
 - **The big Chuchu** (`feat/stereo-boss`): it is three entities stacked 14-18 px apart, each piece of them a rotated or scaled
   (affine) 64 px sprite. Its ground is the lowest bottom edge among its pieces (the frame before), and the rise from feet to
@@ -82,6 +123,100 @@ scenes below override it for their layers. The values are in pixels at the full 
   order of the list (back to front). With the pre-pass, the colour pass of a sprite drew only where the depth was equal, and with
   the boss cut into many small batches some of those draws were lost (two rows of tiles of its legs, in one eye, in ~4 % of the
   frames; 0 of 116 with the change, 5 of 122 without, alternating the two on the console).
+
+## The fog (Minish Woods) in 3D
+
+BG3 at priority 0 with BLDCNT 0x3648 (`LightRayManager`, the fog and the sun rays) is in front (scene bit 2) and is the
+most expensive layer: with the fog's per-line HBlank wave in BG3HOFS it is a band every line or two, each blended in two
+batches (the complement and the blend). It cost 33-38 fps in 3D against 60 in 2D (New 3DS, GPU 23 ms against 8.7). Three
+causes, all fixed (`perf/stereo-fog`, 2026-10-24; GPU 7-9 ms, 59.8 fps in the fog with 3D on):
+
+- **Rings refused it.** `build_bg_ring` wanted one horizontal scroll for all bands (reason 4 in `gPpuGpu3DSRingWhy`), so the
+  fog came from tile quads (300-1800 indices a band). Bands whose scrolls differ now share a ring: it holds the columns of
+  the whole range (the scrolls unwrapped around the first band's), and each band's quad carries its own scroll
+  (`emit_ring_quad` already did). Not for a layer with a shadow's extension piece or the HUD's right anchor.
+- **Ring bands are merged** (`merge_band_runs`, after `fold_covered_alpha_layers`): consecutive bands of a ring-drawn layer
+  with the same state, on adjacent lines and adjacent quads, are one batch (only consecutive batches: a blend with its complement stays as it is), the
+  rest emptied. The fog went from ~100 draws a pass to a handful. `gPpuGpu3DSBandMergeDisable 01` turns it off.
+- **No ghost copy for a blended layer** (`IsGhostBatch`). The unmoved copy drawn first made the blend pass flip the stencil
+  mark of every pixel it covered, so the moved copy drew nowhere there: the fog did not actually move between the eyes
+  (it only did where nothing blendable lay under it) and cost four draws a band per eye. Now the fog moves by its depth
+  in each eye. A translucent layer covering the frame has no strip to fill. (The rays looked cut once after loading states; they were also
+  cut with the slider down, so that is an older stale-state bug, not this.)
+- **No complement pass when it would draw nowhere** (`bg_complement_needed`, `noComplement` on the batch): a blended BG is
+  two batches, the blend and the complement (the layer plain over pixels whose top layer so far is not a target). When the
+  backdrop, the sprites and every enabled layer under it are targets (the fog: BLDCNT 0x3648) the complement is not
+  emitted: one full-frame pass less per eye, and with the merge the fog is one draw an eye.
+
+GPU CHECK on the fog is not reliable on its own: it differs by one colour step across the whole frame for some phases of the
+fog's alpha cycle (the same count with the rings on and off for the same frame), because the CPU frame is drawn later.
+
+## Zone depth fixes
+
+A layer is all the PPU can move, and some art is split between layers: in Hyrule Town (area 0x02, room 0x00) the log
+hut's roof is BG1 (raised, `stereo_world_bg1`), but BG1 is transparent at x 272..296, y 856..896 (the beaded log pillar
+and the ladder's top with the little chick, all BG2, the ground's layer), so that part of the roof sat on the ground's
+plane. A zone depth fix draws the pixels of one layer inside a rectangle at another layer's plane. They are hand-curated
+in `platform/3ds/source/port_zone_depth.inc` (optional, like `port_sprite_depth.inc`; the layer workbench in
+`tools/layer-workbench/` edits it too):
+
+    PORT_ZONE_DEPTH(area, room, bg, x, y, w, h, toBg)
+
+- `area`, `room`: the room (`gRoomControls.area` / `.room`), numbers, hex ok.
+- `bg`: 1, 2 or 3, the layer whose pixels in the rectangle are moved.
+- `x`, `y`, `w`, `h`: the rectangle in room pixels, from the room's origin (multiples of 8 in practice).
+- `toBg`: 1, 2 or 3, not `bg`: the layer whose plane (its depth, so its shift for each eye) the rectangle takes.
+
+Nothing else about the layering changes: a layer in front of `bg` keeps its opaque pixels on top, and only its
+transparent ones show the moved copy. So the rectangle can (and should) be bigger than the hole: where the hole runs past
+the rectangle's edge, `bg`'s picture breaks by a pixel there. The log hut's fix is
+`PORT_ZONE_DEPTH(0x02, 0x00, 2, 264, 848, 40, 48, 1)`, the hole and the partly transparent BG1 tiles around it. Left at
+the ground's plane on purpose: the thin gaps of the roof's sign above (y 840..848, BG2's red letters behind them), most of
+the shutters (x 304..328) and the door (x 304..320, y 880..896). The hole is open at its bottom (y 896), where the ladder
+meets the ground: the ladder steps by the roof's disparity there.
+
+How it works (`zone_depth_3ds.c`, `zone_depth_3ds.h`, `port_ppu_gpu_3ds.c`):
+
+- **When.** Only in the world scene with 3D on (`Stereo3DS_BeginFrame` calls `ZoneDepth3DS_BeginFrame` with the slider up and
+  scene bit 128), only while the current room is the fix's, only when the two layers have different shifts in either eye
+  (3D WORLD off, or both layers on one plane: nothing is drawn), and only while the rectangle is on the frame. The room's
+  fixes are looked up when the room changes; a room with none costs one compare a frame. 16 fixes per room at most. The
+  software renderer is flat and ignores them.
+- **Where.** The rectangle follows the layer's pixels: the room's origin in the frame is `origin - scroll` of the frame,
+  with the scroll the layer's own offset registers (`gIoMem`, the frame's) say (`ZoneDepth3DS_FrameScroll`: the game writes
+  the low four bits of `scroll - origin`, plus 8 on y, plus any shake, and the registers can be a tick behind the camera),
+  as `Port_Widescreen_ContentRects` does. In Full View the frame is the whole 400x240 view and the scroll its corner, so a
+  room narrower than the view (resting at a positive origin) and the 240x160 view are the same arithmetic.
+- **How it is drawn.** The batches of `bg` are drawn once more, each with its scissor cut to the rectangle and to its own
+  lines and columns, moved by `toBg`'s shift for the eye, art and scissor together (`ZoneDepth3DS_BatchScissor`). They go
+  right after `bg`'s own last batch (`ZoneDraw.anchor`), in `bg`'s place in the drawing order: over `bg`'s unmoved picture
+  and over what was drawn before it, under everything drawn after it (the sprites at `bg`'s priority or in front of it, the
+  layers in front such as BG1). No depth write, like every background. The first version drew it after the later of the
+  two layers (BG1) and covered BG1's own opaque pixels in the rectangle (the chick's): the owner saw it on the console.
+- **Base picture.** With BG2 on the screen plane its batches are drawn in the base, which has no shift, and the eyes'
+  passes come after the sprites the base draws over BG2 (Link in front of the hut must stay over the copy). So while a
+  moving copy anchored to a base layer is on the frame, the frame is drawn whole for each eye (reason 8): near the log hut
+  the GPU does both eyes' work, as with any reason.
+- **No seam, no black line.** Under the copy lies `bg`'s own unmoved picture, so the 1 px strip the moved copy uncovers at
+  one edge of the rectangle shows `bg`'s pixels (what was there without the fix), never the clear colour. The hole in
+  `toBg` moves by the same whole pixels as the copy, so in each eye the copy shows through the moved hole as the art
+  lines up at `toBg`'s plane; the hole's edge is a pixel thicker on one side, from `toBg`'s unmoved copy (`IsGhostBatch`),
+  as everywhere else in the world. Where the rectangle's edge lies under `toBg`'s opaque pixels it cannot be seen at all.
+  Nothing is copied or edited in VRAM. The host test (`platform/3ds/tests/zone_depth_3ds_test.c`) models this order on a
+  line of pixels, every shift from -3 to 3: BG1's moved opaque pixels are never covered, the moved hole shows the moved
+  copy, nothing outside the rectangle changes, and no pixel is left empty; and the first version's order fails it.
+- **Sprites on a zone.** The support sample ("Support" above) of a sprite whose frontmost opaque layer behind it is `bg`
+  inside one of the frame's zones takes `toBg`'s depth at `toBg`'s priority, so a sprite resting there (the roof's chick)
+  starts from the zone's plane and its height adds on top. Every sprite, not a list. The GPU model gets the frame's zones
+  in `PpuGpu3DSFrameView.depthZones` (set only with `objSupport`); with none nothing is looked up. Its shadow takes the
+  zone's plane the same way (the shadow samples the zone's pixels under it, "Shadows" above), without the jump height.
+- **PLANE TINT.** The copy is tinted as `toBg` at its priority (LAYERS: `toBg`'s colour; DEPTH: its depth), so the view
+  shows the zone at the plane it is drawn at. With a tint view up the zones are placed and drawn (unmoved) with the slider
+  down too, and when the slider rounds both planes to one shift.
+- **Limits.** One rectangle of one layer. The copy's transparent texels show `bg`'s unmoved picture under it. A `bg` batch
+  that blends (an alpha first target) blends again over its own copy. The layers' priorities are taken from their last
+  batch of the frame (a layer that changes priority between bands takes one). While the camera crosses into another room
+  the fixes are the current room's.
 
 ## What Link holds up or throws
 
@@ -117,12 +252,18 @@ eye (reason 4). The software renderer leaves them flat.
   - **share one picture** (6): no batch of the frame is on a layer with a depth (the HUD hidden):
     drawn once, the presenter shows it to both eyes.
   - **drawn whole** (any other number, the reason): the whole frame twice, as before. When something
-    on the screen plane is drawn after a layer in front on the same lines (4), an OBJ window moves
+    on the screen plane is drawn after a layer in front on the same lines (4: a background on the screen plane, or a blended sprite, `EyesOverBaseRefusal`), an OBJ window moves
     (1, 2; the map screens' window follows their grey, BG2, which stays on the screen plane, so it does
     not move and they are drawn over one base), a sprite in front blends (3: the GBA blends it with the
     background, never with the lower sprite the base would have under it; a semi-transparent sprite with
     no second target in BLDCNT does not blend and does not count), `gpu_scissor_mode` is 0
-    (7), or the debug poke `gPpuGpu3DSEyesWhole 01` asks for it (5, to compare).
+    (7), the debug poke `gPpuGpu3DSEyesWhole 01` asks for it (5, to compare), or a zone depth fix that moves is
+    drawn on a layer on the screen plane (8, "Zone depth fixes").
+
+  A sprite on the screen plane that the game draws over a sprite or layer in front is not a reason to draw the frame
+  whole: it is *promoted* (`sPromoted`), drawn in the front passes, unmoved, in the batches' order, so it lands over
+  what it lands over on the GBA (it must not blend: that still refuses). Overlap is by box (the front sprite's box
+  grown by its move in either eye), and the runs of one sprite never count against each other.
 
   The whole frame twice doubled the GPU's work: 9.0 ms a frame in 2D, 17.1 ms in 3D in the Deepwood
   Shrine's dark room, 12.6 ms over one base (PLAN, decisions log 2026-10-18). With no depth at all
@@ -150,7 +291,7 @@ splash stays flat whatever is drawn per eye. 3D is turned off again in `Platform
 the presenter links the right eye itself. `tools/make_splash.py` makes `romfs/splash.rgb565` (logo cut to its
 bounds and centred, a 14 px margin so the shift crops nothing).
 
-## Minish Village: unfinished (branch `feat/village-3d`, not merged)
+## Minish Village: unfinished (the `feat/village-3d` branch was deleted on 2026-10-22; what follows is what it found)
 
 - The flowers and plants over everything (BG1 at priority 1 in area 1) hang in front; so do the leaf
   blocks they stand in. Those are on BG2 with the ground, and a layer is all the PPU can move, so while 3D

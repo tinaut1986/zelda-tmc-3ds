@@ -35,6 +35,7 @@
 #include "scene_pictures_3ds.h"
 #include "port_zone_tiles.h"
 #include "stereo_3ds.h"
+#include "zone_depth_3ds.h"
 #include "scene_rec_3ds.h"
 #include "cpu/mode1.h"
 #include "main.h"
@@ -322,6 +323,9 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
                 view->bgDepthQ[bg][priority] = (uint8_t)(depth > 0 ? (depth > 30 ? 30 : depth) * 4 : 0);
             }
     }
+    /* A sprite on the pixels a zone depth fix moves rests at the zone's plane (zone_depth_3ds.h). */
+    view->depthZoneCount = view->objSupport ? ZoneDepth3DS_Zones(&view->depthZones) : 0u;
+    if (view->depthZoneCount == 0u) view->depthZones = NULL;
     bool anyShadow = false;
     bool anyZone = false;
     for (unsigned bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {

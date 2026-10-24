@@ -1871,6 +1871,12 @@ static int Port_WidescreenFixedCanvasSubtask(void) {
         (gUI.nextToLoad == 2 || gUI.nextToLoad == 3)) {
         return 0;
     }
+    /* The world event shown after fusing two kinstones (src/subtask/subtaskWorldEvent.c: the place where something
+     * changed, a camera on the map as in play; the PC port already re-clamps its camera for the wide view) is the
+     * world drawn as in play too, like the aux cutscenes above, fade out included. */
+    if (gUI.lastState == SUBTASK_WORLDEVENT && (gUI.nextToLoad == 2 || gUI.nextToLoad == 3)) {
+        return 0;
+    }
     /* Pause/inventory replace the world with a fixed GBA canvas. State 3 is
      * still fixed while its fade is active; fail closed until gameplay is
      * visibly restored. */

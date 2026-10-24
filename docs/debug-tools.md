@@ -72,7 +72,7 @@ blue: changed). None needs a restart.
 | COMPACT UP | `compact_upload` | ON / OFF | smaller upload surfaces, Old 3DS only; taken at the start of the next frame |
 | CPU LIMIT | `app_cpu_limit` | AUTO / 80 / 70 / 50 / 30 % | the app's share of core 1 (the rest goes to GSP and the sysmodules); the cell shows the share granted |
 | STEREO 3D | `stereo_3d_on` | OFF / ON | stereoscopic 3D on the top screen while the slider is up; ON by default (`docs/stereo-3d.md`) |
-| PLANE TINT | not saved (OFF at boot) | OFF / LAYERS / DEPTH | GPU renderer only: every quad painted in one flat colour, keeping its silhouette. LAYERS: BG0 magenta, BG1 cyan, BG2 orange, BG3 green, sprites white, darker the further back the priority. DEPTH: the depth `stereo_3ds.c` gives each layer (`Stereo3DS_LayerDepth`), or a sprite's own (`PpuGpu3DSBatch.depth`, so a tall sprite shows its lean tile row by tile row), blue, dark behind the screen and bright in front of it; it works with the slider down. The backdrop and OBJ windows are left as they are. After `../mzm` and `../sm-3ds`. `tmc-link.py switch "PLANE TINT"` cycles it. |
+| PLANE TINT | not saved (OFF at boot) | OFF / LAYERS / DEPTH | GPU renderer only: every quad painted in one flat colour, keeping its silhouette. LAYERS: BG0 magenta, BG1 cyan, BG2 orange, BG3 green, sprites white, darker the further back the priority. DEPTH: the depth `stereo_3ds.c` gives each layer (`Stereo3DS_LayerDepth`), or a sprite's own (`PpuGpu3DSBatch.depth`, so a tall sprite shows its lean tile row by tile row), blue, dark behind the screen and bright in front of it; it works with the slider down. A zone depth fix (docs/stereo-3d.md, "Zone depth fixes") is painted as the plane it is drawn at, the `toBg` it names, in both views, slider down too. The backdrop and OBJ windows are left as they are. After `../mzm` and `../sm-3ds`. `tmc-link.py switch "PLANE TINT"` cycles it. |
 | FORCE 3D | not saved (OFF at boot) | OFF / ON | the 3D slider reads fully up whatever it is (`Stereo3DS_SetForce`): the right eye is drawn and `tmc-link.py shot` writes it as `top-right.png`, so a 3D scene can be checked from the PC; a 2DS shows the depth in PLANE TINT's DEPTH view too |
 
 `bottom_rgb565` is not offered: upstream's own note says it turns the bottom
@@ -181,6 +181,7 @@ tools/tmc-link/tmc-link.py gpucheck             # next frame by both renderers: 
 tools/tmc-link/tmc-link.py perf start / perf stop [DIR]   # the perf recorder; stop fetches the CSV
 tools/tmc-link/tmc-link.py poke gPpuGpu3DSRingDisable 0f   # bit per BG: draw it from quads again (00 = rings on)
 tools/tmc-link/tmc-link.py poke gPpuGpu3DSSerialBuild 01   # claim the GPU frame before building it, as before (docs/gpu-build-ahead.md)
+tools/tmc-link/tmc-link.py poke gPpuGpu3DSBandMergeDisable 01   # every ring band its own draw (docs/stereo-3d.md, "The fog")
 tools/tmc-link/tmc-link.py poke gPpuGpu3DSEyesWhole 01     # 3D: both eyes drawn whole, not over one base (docs/stereo-3d.md)
 tools/tmc-link/tmc-link.py log                  # flush (MARK) and fetch the newest SD log
 tools/tmc-link/tmc-link.py run tools/tmc-link/examples/walk-left.txt

@@ -1602,10 +1602,29 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
     }
 
     int32_t px, py;
-    if (Port_SecondScreenWorldMap_LocateInRegion(region, snap->area, snap->playerX, snap->playerY, dw, dh,
-                                                 &px, &py)) {
+    /* Link blinks like the game's map (sub_080A6378): shown while bit 5 of its frame count is clear. The phase is
+     * recorded so the panel repaints when it flips (Port_SecondScreen_MapPhaseChanged). */
+    const int hintsPhase = SecondScreen_HintsPhase(snap);
+    sPaintedHintsPhase = hintsPhase;
+    /* Indoors (caves, houses) the game's own map keeps Link at his last spot on the overworld; use it there. */
+    if (!hintsPhase &&
+        (Port_SecondScreenWorldMap_LocateInRegion(region, snap->area, snap->playerX, snap->playerY, dw, dh,
+                                                  &px, &py) ||
+        ((snap->overworldMapX | snap->overworldMapY) != 0 &&
+         Port_SecondScreenWorldMap_LocateWorldInRegion(region, snap->overworldMapX, snap->overworldMapY, dw, dh,
+                                                       &px, &py)))) {
         int32_t base = (int32_t)(7.0f * u);
         uint32_t gold = Port_SecondScreenTheme_Color(SSC_GOLD);
+#ifdef TMC_3DS
+        /* Link's head, the marker the game's own map draws for him (frame 0x59, from the world map's own sheet, not the
+         * region's), at the region's markers' size and ringed like them. The diamond stays while it can't be decoded. */
+        int32_t lscale = (int32_t)(2.5f * u + 0.5f);
+        if (lscale < 1) lscale = 1;
+        if (!Port_SecondScreenWorldMap_DrawMarker(s->px, s->w, s->h, s->stride, dx + px - 8 * lscale,
+                                                  dy + py - 8 * lscale, lscale, 0x59u,
+                                                  SECOND_SCREEN_WORLDMAP_NO_REGION,
+                                                  Port_SecondScreenTheme_Color(SSC_MENU_INK)))
+#endif
         DrawMapMarker(s, dx + px, dy + py, base, (tick & 8) ? RGB(0xF8, 0xF8, 0xF8) : gold);
     }
 

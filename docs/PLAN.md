@@ -20,7 +20,7 @@ Only what no other place records. Bugs: the open GitHub issues. Tasks: the untic
 boxes below. History: `git log` and the decisions log.
 
 **Release line:** `release/v0.4.4` (renamed from `release/v0.4.3` right after the `v0.4.3` tag). Published:
-**`v0.4.3`** (2026-10-21, **beta**: 3D WORLD, from PR #47 by bheppe, with the owner's corrections and a question at the start; the bottom map's cursor, zoom and drag;
+**`v0.4.3`** (2026-10-21, **stable**: first a beta, then promoted by merging the release into `main`, `544da18`, and re-running the workflow on the tag; 3D WORLD, from PR #47 by bheppe, with the owner's corrections and a question at the start; the bottom map's cursor, zoom and drag;
 OPTIONS in groups and scrolling lists; `docs/release-notes/v0.4.3.md`),
 **`v0.4.2`** (2026-10-20, **stable**, straight to stable at the owner's request: `release/v0.4.2` merged `--no-ff` into
 `main` and tagged there; the betas' contents plus 3D by height for what Link lifts or throws, which was not seen on
@@ -33,7 +33,7 @@ were widened by hand to cover `v0.3.1` too, see the decisions log), **`v0.3.1`**
 to stable without a beta at the owner's request), `v0.2.0` (2026-10-14, stable), `v0.1.2`
 (2026-10-13, beta), `v0.1.1` (2026-10-12, stable) and `v0.1.0` (2026-10-11, beta).
 
-**Branches:** `feat/village-3d` is parked (local only, not pushed). Every other branch
+**Branches:** none open besides the local backup below. Every other branch
 merged into the release line was deleted, here and on origin (2026-10-17: `fix/title-live-view`,
 `feat/gba-look`, `feat/hud-auto`, `feat/title-rays-3d`, `feat/minish-paths-centred`,
 `feat/wide-ai-ask`, `feat/stereo-fileselect`, `feat/splash-3d`, `docs/plan-branches-2026-10-17`; the
@@ -43,8 +43,8 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 
 | Branch | State |
 |---|---|
+| `perf/stereo-fog` (local, not pushed, NOT checked on the console) | Reason 4 (`SPLIT_BASE_OVER_FRONT`) in the Minish Woods fog: Link's lean runs and neighbouring sprites no longer count as drawn over a sprite in front unless their boxes meet; debug log names the batch. See the decisions log 2026-10-24. |
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
-| `feat/village-3d` | Parked on purpose (owner, 2026-10-17): kept only to see whether it can be taken up again one day; **nothing of it goes into any release** because it causes visual problems (the Minish Village's flowers and leaf blocks in 3D: the houses go forward instead of back, the hanging fruits are not found). Local only, not pushed. Notes: `docs/stereo-3d.md`, "Minish Village". |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
 tile 0 (area 0x20 room 09), the village's gap cells taking the nearest zone's graphics, the top-frame HOLD
@@ -57,7 +57,7 @@ Minish walking in). Not seen on the Old 3DS: the stereo once-drawn base, the GPU
 
 **Save states across builds:** closed by the owner (2026-10-17). The history is in docs/save-states.md and issues #13, #14 and #31.
 
-**What `v0.4.3` holds beyond `v0.4.2` (2026-10-20 and 21, all seen by the owner on the New 3DS, not on the Old 3DS/2DS; the whole of 3D WORLD and the strips' double draw not on the Old 3DS/2DS at all):** the 3D WORLD work (decisions log of 2026-10-21; PR #47 stays open until `main` reaches it), the bottom map's cursor, zoom and drag, OPTIONS in groups and the scrolling STATES list (decisions logs of 2026-10-20 and 21); and, as before:
+**What `v0.4.3` holds beyond `v0.4.2` (2026-10-20 and 21, all seen by the owner on the New 3DS, not on the Old 3DS/2DS; the whole of 3D WORLD and the strips' double draw not on the Old 3DS/2DS at all):** the 3D WORLD work (decisions log of 2026-10-21; PR #47, merged), the bottom map's cursor, zoom and drag, OPTIONS in groups and the scrolling STATES list (decisions logs of 2026-10-20 and 21); and, as before:
 Gentari's two halves (picture rooms) scroll in Full View and show their neighbours; a state saved with the camera
 frozen loads in Full View; the Deepwood door cutscene keeps the wide view through its fade out; no HUD keys over the
 pause menu; GOD MODE in debug builds (a heart beside the rupees); the map screens at 60 fps in 3D. One entry each in
@@ -66,7 +66,7 @@ leaves pots unliftable).
 
 **Start here (2026-10-20):** `v0.4.1` (beta, tagged on what `release/v0.4.2` starts from) holds, on top of `v0.4.0`, the neighbour-list fix, the GPU split
 flush, the Zz bubble fix, the NEIGHBOURS setting (ON / OFF) and the drop of WIDE + BLUR (decisions log of 2026-10-19 and
-2026-10-20); pushed to origin on 2026-10-20. Open branches: the parked `feat/village-3d` and the local backup
+2026-10-20); pushed to origin on 2026-10-20. Open branches: the local backup
 `backup/blur-neighbours-all`; `origin/feat/frame-blur` is merged and left on origin. Next, in this order:
 0. **Review of the neighbour rooms.** The blur is gone from WIDE (decisions log 2026-10-20, third entry): VIEW is WIDE,
    WIDE + AI, ORIGINAL and NEIGHBOURS is ON / OFF. What is open, with where to look:
@@ -108,7 +108,7 @@ flush, the Zz bubble fix, the NEIGHBOURS setting (ON / OFF) and the drop of WIDE
    (look when the owner reports one); P3.4's old claim that dialogues go per pixel was not borne out (the C
    line of the numbers box read C0 through a dialogue), recheck before rebuilding anything; the generated
    side strips of the Minish Paths corridor (P4.6); the README's before/after GIF of the portal shrink (P1.6).
-Parked (owner, 2026-10-17): **`feat/village-3d`**, none of it goes into a release; do not work on it unasked.
+Dropped (owner, 2026-10-22): `feat/village-3d` was deleted; the Minish Village's 3D is taken by hand, case by case, from the release line (decisions log).
 Closed by the owner (2026-10-17), do not re-propose: RetroAchievements (the achievements he looked at
 work; he will report any that should fire and does not), the save states across builds, issue #5
 (the dissolve works), the sibling updaters' hardening (done), #25, #4, #23, #26 and #20 (all closed on
@@ -590,7 +590,7 @@ mosaic, which ours has, so ours stays and takes their build techniques (the orde
   *Done 2026-10-17, New 3DS, in the release* (table in `docs/stereo-3d.md`): the sun rays of the Minish
   Woods, the leaves of the Minish Paths, the title's rays (with the logo and sword in front of them), the
   file select (sprites, hearts, languages, name letters), the Nintendo and Capcom logos, the boot splash
-  and the numbers box (SHOW FPS, at the HUD's depth). **Open:** the Minish Village (`feat/village-3d`:
+  and the numbers box (SHOW FPS, at the HUD's depth). **Open:** the Minish Village (by hand, case by case from the release line:
   houses back, hanging fruits), more scenes as the owner asks, the edges a moved layer uncovers, an OPTIONS
   cell, and the cost on the Old 3DS (it has no slider, so only a New 3DS shows it).
 
@@ -1404,6 +1404,47 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   layout does not load). Details: `docs/stereo-3d.md`, "What was added on top of PR #47". Open: the Minish village's leaf blocks
   (BG2, sunk) and dungeon effects. The PR's comment 1 text is in `build-3ds/3d-world-captures/pr47-comment-1.md` (ignored by git).
 - **2026-10-21** `v0.4.3` (**beta**) cut from `release/v0.4.3`: everything of `feat/stereo-world`, `feat/options-groups` and `feat/map-zoom-pan` merged `--no-ff`. PR #47
-  (bheppe, 3D WORLD) is in the release by its own commits but stays **open** on GitHub: its base is `main`, and a PR is marked merged when `main`
-  contains its commits, which happens when a stable release merges into `main`. The branch was renamed to `release/v0.4.4` right after the tag.
-
+  (bheppe, 3D WORLD) was marked **Merged** by GitHub when the release reached `main` (its base) the same day, when `v0.4.3` was promoted to stable (`544da18`);
+  until then it stayed open. The branch was renamed to `release/v0.4.4` right after the tag. The owner asked for the promotion so that Old 3DS/2DS owners can test it.
+- **2026-10-22** `feat/village-3d` (local only, never pushed) was deleted at the owner's request: its one unmerged commit
+  (`1b5d13b`, the leaf-block copy to BG3, WIP) caused the visual problems noted in `docs/stereo-3d.md` and its other commit
+  (the numbers box at the HUD's depth) was already in the release as `f605dd8`. The Minish Village's 3D will be attacked by hand,
+  case by case, directly from the release line instead of through a branch of its own; the 2026-10-17 entry on the leaf blocks
+  stays as the record of what that approach found.
+- **2026-10-22** The **layer workbench** (`tools/layer-workbench/`, README there) exists for TMC, modelled on `../mzm` and `../sm-3ds`:
+  `build_maps.py` / `sprites.py` read the EU ROM into `maps.json` / `sprites.json` (gitignored, game art), `index.html` + `serve.py` is
+  the desktop viewer (rooms, layers, entities with their sprites, a picker for animation / frame / flips that is preview only, and a
+  DEPTH window that reads and writes `platform/3ds/source/port_sprite_depth.inc`). Run it from a normal terminal (`TMC_ROM=... python3
+  tools/layer-workbench/serve.py`); from the sandbox the browser cannot reach it. Along with it the per-entity depth modes grew to
+  `UP`, `DOWN`, `LEFT`, `RIGHT`, `FLAT`, `RAISED` and `WALL` (docs/stereo-3d.md, "Sprite depth corrections"): `LEFT` / `RIGHT` lean by
+  columns and give their whole disparity to one eye so neighbouring columns overlap instead of parting (a 1 px seam showed on the
+  Gentari curtain); `RAISED` was tried on the Gentari archway and looked odd, it is `FLAT` there; `WALL` picks the direction from the
+  wall the entity stands in and is what every `MINISH_SIZED_ARCHWAY` without its own entry uses. Also: while a `GENTARI_CURTAIN` is shut
+  the neighbour rooms are not drawn (`CurtainClosed`, `port_neighbour_rooms.c`); the owner would prefer a camera sweep when it opens
+  (not done). The owner checked all of it on the New 3DS (2026-10-22), not on the Old 3DS/2DS. `port_draw.c`'s 3DS-only depth code is
+  now guarded by `TMC_3DS` (the PC build of it was broken at HEAD).
+- **2026-10-22** A Keese has 3D depth only while it flies (`SpriteDepth`, `port_draw.c`): its z never tells flight from rest (type 0 stays at
+  z 0 and fakes the height with `spriteOffsetY`; the other types sit at z -16 even asleep), so the rule is its action (1 = fly) and the
+  height is taken as 16 px. Other fliers (peahat, flying skull, wallmaster, ghini, pesto...) change their z for real and already follow the
+  height rule; give one its own rule like the Keese's if it looks wrong. The bottom screen's region detail map now marks Link with his head
+  (frame 0x59 of the world map's own marker sheet; the region's sheet gave a cap seen from above), blinking like the game's (bit 5 of the
+  frame count), and also while he is indoors, at the spot the game's map keeps (`Port_SecondScreenWorldMap_LocateWorldInRegion`). The
+  other markers of the region (hints, kinstones) do not blink with him yet. The owner checked both on the New 3DS.
+- **2026-10-22** **Zone depth fixes** (`platform/3ds/source/port_zone_depth.inc`, `zone_depth_3ds.[ch]`, docs/stereo-3d.md "Zone depth fixes"):
+  `PORT_ZONE_DEPTH(area, room, bg, x, y, w, h, toBg)` draws a rectangle of layer `bg` at layer `toBg`'s stereo plane, authored in the workbench's
+  ZONES window. The first use is Hyrule Town's log hut (02/00): a hole in the BG1 roof through which BG2 showed at depth 0 (the roof's chick), 40x48
+  px at 264,848. The copy is drawn in `bg`'s own place in the order, under the layers in front, so BG1's opaque pixels stay on top; a moving copy
+  on BG2 makes that frame draw both eyes whole (reason 8, a cost near the hut: not measured on the Old 3DS/2DS). PLANE TINT shows a zone at its
+  target plane, and a sprite resting on a zone takes that plane as its support. Shadows (`ProcessDeferredList`) now take the support under them,
+  never the entity's height: before, every shadow stayed on the ground plane over any raised surface, a roof included; a shadow is held to its
+  entity's support so it never covers its feet (`sprite_support_3ds.h`). Also this day: `PORT_DEPTH_WALL`, a Keese's depth only while it flies, Link's
+  head on the region map, the Hyrule Town zone-gap fix and the world event (kinstone fusion) in wide view (see the entries above). The owner
+  checked them on the New 3DS.
+- **2026-10-22** The workbench grew a **SPRITE CATALOG** window (every kind/id/type with its picture, counts, depth mode and the line that decides it,
+  filters incl. "sits by a wall", bulk modes; `tools/layer-workbench/README.md`) and its edits are the port's depth rules: `port_sprite_depth.inc` now
+  also holds the owner's rules (`MINISH_LIGHT` type 1 DOWN, `DUST` type 0 FLAT), `WALL` for the dojo's wall racks (`FURNITURE` type 7) and every
+  `ARCHWAY`, and `PORT_DEPTH_FIXED(n)` (0x40 + n quarters over the entity's own depth, no lean) for Rem the shoemaker (n = 14, tuned on the console:
+  8 left his hands and the boots under the counter's top). A sprite resting on another sprite (the counter) has no support rule, only this hand
+  value; the workbench does not read or write `FIXED(n)` yet. `docs/investigations/wall-depth-candidates.md` lists the other entities by a wall.
+  `sprite_view.json` holds the owner's preview choices only (the game is unchanged by them).
+- **2026-10-24** `perf/stereo-fog` (Minish Woods fog in 3D, 33-38 fps against 60 in 2D, New 3DS): the first guess (reason 4 from Link's lean runs) was only part of it; the cost was the fog itself. Measured on the console with the owner's state 1: (1) `build_bg_ring` refused BG3 because its HOFS differs per band (`gPpuGpu3DSRingWhy[3]` = 4), so the fog was ~100 bands of tile quads; bands with different scrolls now share a ring; (2) `merge_band_runs` makes the adjacent ring bands one draw (a complement/blend pair stays a pair); (3) the ghost copy (`IsGhostBatch`) is no longer drawn for a blended layer: it flipped the blend's stencil mark so the moved fog drew nowhere over anything blendable, i.e. the fog had almost no depth, and doubled its draws. Sprites the game draws over a sprite in front are promoted to the front passes instead of refusing the over-one-base split (the box test of 6c5f862 stays, the lean runs of one sprite never conflict). Result in the fog, 3D on: 33-40 fps and GPU 18-23 ms -> 59.8 fps and GPU 7-9 ms (2D 59.8 fps). Note: the fog now really moves between the eyes, which it hardly did before; the owner judges the look. The debug log line that named the refusing batch was dropped: it pushed the read-only segment past the 0x63A000 pin (3dsx.ld).

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cpu/mode1.h"
+#include "zone_depth_3ds.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -263,7 +264,8 @@ typedef struct PpuGpu3DSFrameView {
     /* Each OAM entry's stereo 3D depth, quarter pixels (virtuappu_mode1_obj_depth): what Link holds up or threw. */
     const uint8_t* objDepth;
     /* The same at each entry's top edge (virtuappu_mode1_obj_depth_top): the depth of a tile row goes from objDepth
-     * at the entry's bottom to this at its top; NULL or equal: one depth for the entry. */
+     * at the entry's bottom to this at its top; NULL or equal: one depth for the entry. With bit 7 set (and bit 6 for
+     * the direction) the entry leans across its columns instead (sprite_lean_3ds.h). */
     const uint8_t* objDepthTop;
     /* Stereo 3D "support": a sprite resting on a background layer that stands out (the objects on a roof) takes that
      * layer's depth for its tiles over it. bgDepthQ[bg][priority] is the layer's depth in quarter pixels at the full
@@ -272,6 +274,10 @@ typedef struct PpuGpu3DSFrameView {
     /* Which entity wrote each OAM entry (virtuappu_mode1_obj_group; 0: none): an entity's entries share one support. */
     const uint8_t* objGroup;
     uint8_t bgDepthQ[4][4];
+    /* The zone depth fixes on this frame (zone_depth_3ds.h): a sprite resting on a zone's pixels takes the zone's plane
+     * (toBg's depth) instead of its layer's. NULL / 0: none, nothing is looked up. */
+    const ZoneDepth3DSZone* depthZones;
+    unsigned depthZoneCount;
     /* A uniform screen fade the renderer applies itself (docs/gpu-fade.md):
      * `memory`'s palettes are then the unfaded ones and the finished picture is
      * blended toward grey `fadeLevel` by fadeWeight/255. 0 weight: none. */
@@ -353,8 +359,14 @@ typedef struct PpuGpu3DSBatch {
     /* Drawn with the layers in front even with no depth of its own (the pieces of one big sprite stay in one pass, so
      * what the game draws over what keeps its order); bit 7 of the OAM entry's depth (virtuappu_mode1_obj_depth). */
     bool front;
+    /* A sprite that leans across its columns (SPRITE_LEAN_3DS_SIDE_*, sprite_lean_3ds.h): its shift goes to one eye
+     * only (SpriteLean3DS_EyeShift), so its columns never part. 0 for everything else. */
+    uint8_t side;
     /* 0 samples the tile atlas; 1 + n samples view ring n (bg * 2 + variant). */
     uint8_t texture;
+    /* Input of append_layer_batches, not read by the renderer: nothing under this layer is not a blend target, so the
+     * blend's complement (the layer drawn plain where the pixel under it is not a target) would draw nowhere. */
+    bool noComplement;
     /* Added to every vertex position by the shader. Zero except for
      * background batches that share one map-space copy of the tiles. */
     float offsetX, offsetY;
@@ -482,6 +494,7 @@ extern uint32_t gPpuGpu3DSLastBands, gPpuGpu3DSLastVertices, gPpuGpu3DSLastBatch
 #endif
 
 extern uint32_t gPpuGpu3DSRingWhy[4];
+extern volatile uint8_t gPpuGpu3DSBandMergeDisable;
 extern uint32_t gPpuGpu3DSRingCells, gPpuGpu3DSRingStale, gPpuGpu3DSRingMemoHits;
 extern volatile uint8_t gPpuGpu3DSRingDisable, gPpuGpu3DSRingMemoDisable;
 extern uint32_t gPpuGpu3DSBankChanges[16];
