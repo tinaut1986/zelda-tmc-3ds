@@ -1476,3 +1476,12 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   three Antigravity variants, `portal-rock-3.png`; seen on the New 3DS). The other two have no picture yet and get black, assuming the
   stump's 256 width: dump them (`extract_bg.py` prints the width) when the owner passes one. Antigravity, asked only for the images,
   also edited code (the owner undid it); give it a brief that restricts it to its folder.
+- **2026-10-24** The Crenel paths (area 0x12, a 240x800 shaft like the Minish Paths corridor, area 0x11) showed the
+  room at view columns 0-240 with its parallax layers (BG1 branches, BG3 shadows) still at 80-320: the camera rested aside
+  for a neighbour room, and `Port_WidescreenParallaxShadows` assumed a centred room. The layers now follow the camera
+  (`origin_x - scroll_x`). The rest itself was off centre only after arriving through the rock's Minish portal; the
+  probable cause, a rest worked out from the previous area's room table, is guarded in `port_neighbour_rooms.c` (the
+  cached rest keeps the `RoomResInfo` it came from). Not reproduced before the guard, so not proven. The giant twig there
+  (`GIANT_TWIG`) is three entities at one spot; each leant from its own feet and the middle one (type 0x41, 8 px higher
+  feet) stood at another depth, a pixel apart in one eye. `JoinSiblingEntities` (`port_draw.c`) gives entities of one
+  object at one position the lean of their joined box, as `sJoinMeasure` already did for the parts of one entity.
