@@ -64,7 +64,9 @@ scenes below override it for their layers. The values are in pixels at the full 
 - **One lean for an entity of several parts.** An NPC drawn as parts (a carpenter: body, head, tool, `gUnk_020000C0`) was
   leant part by part, each from its own feet, so the head's depth started again at 0 over the body's and the tool did not match
   what it touches. `DrawEntitySpritesOf` now measures the box of all the parts first (`sJoinMeasure`, `ScanPieceBox`) and every
-  part leans from that box (`sJoinKnown`). Not Link (tuned by hand) nor the big Chuchu (its own ground).
+  part leans from that box (`sJoinKnown`). Not Link (tuned by hand) nor the big Chuchu (its own ground). A part that lies
+  on the ground (a carpenter's plank, part 2) is `PORT_PART_FLAT(kind, id, part)` in `port_sprite_depth.inc`: no lean, and
+  not in the box the others lean from.
 - **Shadows.** An entity's shadow is drawn in `port_draw.c`'s deferred pass (`ProcessDeferredList`) after the entities, so
   it used to carry no group and took no support: on any raised surface (a roof, the roof's chick in a zone) the shadow
   stayed on the ground's plane under a raised entity. Now the deferred entry keeps its entity's group and the shadow's OAM

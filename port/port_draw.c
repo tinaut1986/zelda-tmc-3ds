@@ -103,16 +103,32 @@ typedef struct { u8 kind, id, type, mode; } PortSpriteDepthFix;
 #if defined(__has_include)
 #if __has_include("../platform/3ds/source/port_sprite_depth.inc")
 #define PORT_SPRITE_DEPTH(kind, id, type, mode) { (u8)(kind), (u8)(id), (u8)(type), (u8)(mode) },
+#define PORT_PART_FLAT(kind, id, part)
 static const PortSpriteDepthFix sSpriteDepthFixes[] = {
 #include "../platform/3ds/source/port_sprite_depth.inc"
 };
 #undef PORT_SPRITE_DEPTH
+#undef PORT_PART_FLAT
 #define PORT_SPRITE_FIXES ((int)(sizeof(sSpriteDepthFixes) / sizeof(sSpriteDepthFixes[0])))
+/* PORT_PART_FLAT(kind, id, part): one part of an entity drawn as several (gUnk_020000C0, `part` 0-3) stays flat, with no
+ * lean, and does not count in the box the other parts lean from (a carpenter's plank lies on the ground). */
+typedef struct { u8 kind, id, part; } PortPartFlatFix;
+#define PORT_SPRITE_DEPTH(kind, id, type, mode)
+#define PORT_PART_FLAT(kind, id, part) { (u8)(kind), (u8)(id), (u8)(part) },
+static const PortPartFlatFix sPartFlats[] = {
+#include "../platform/3ds/source/port_sprite_depth.inc"
+};
+#undef PORT_SPRITE_DEPTH
+#undef PORT_PART_FLAT
+#define PORT_PART_FLATS ((int)(sizeof(sPartFlats) / sizeof(sPartFlats[0])))
 #endif
 #endif
 #ifndef PORT_SPRITE_FIXES
+typedef struct { u8 kind, id, part; } PortPartFlatFix;
 static const PortSpriteDepthFix sSpriteDepthFixes[1];
+static const PortPartFlatFix sPartFlats[1];
 #define PORT_SPRITE_FIXES 0
+#define PORT_PART_FLATS 0
 #endif
 static int sRenderingInvert = 0, sRenderingFlat = 0;
 static int sRenderingSide = 0; /* PORT_DEPTH_LEFT or PORT_DEPTH_RIGHT: the depth rises across the sprite, not up or down */
@@ -129,6 +145,12 @@ static int WallDepthMode(const Entity* entity) {
     if (right >= 0 && right < best) { best = right; mode = PORT_DEPTH_RIGHT; }
     if (bottom >= 0 && bottom < best) { best = bottom; mode = PORT_DEPTH_DOWN; }
     return mode;
+}
+
+static int PartIsFlat(const Entity* entity, int part) {
+    for (int i = 0; i < PORT_PART_FLATS; ++i)
+        if (sPartFlats[i].kind == entity->kind && sPartFlats[i].id == entity->id && sPartFlats[i].part == part) return 1;
+    return 0;
 }
 
 static int SpriteDepthMode(const Entity* entity) {
@@ -551,7 +573,8 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
     const u8* sizeTab = &sSizeTable[tableOff];
 #ifdef TMC_3DS
     if (sJoinMeasure) {
-        ScanPieceBox(data, count, flags, baseX, baseY, sizeTab, tableOff, &sJoinFeet, &sJoinTop, &sJoinLeft, &sJoinRight);
+        if (!sRenderingFlat)
+            ScanPieceBox(data, count, flags, baseX, baseY, sizeTab, tableOff, &sJoinFeet, &sJoinTop, &sJoinLeft, &sJoinRight);
         return;
     }
 #endif
@@ -1341,7 +1364,15 @@ static void DrawEntitySpritesOf(Entity* entity, s32 x, s32 y, u32 flags, u16 ext
                     if (subSprSlot != 0xFF) {
                         const u8* frameData = LookupFrameData(sprIdx, subSprSlot);
                         if (frameData) {
+#ifdef TMC_3DS
+                            const int savedFlat = sRenderingFlat;
+                            if (PartIsFlat(entity, part))
+                                sRenderingFlat = 1;
+#endif
                             RenderSpritePieces(frameData, (s16)partX, (s16)partY, partFlags, partExtra);
+#ifdef TMC_3DS
+                            sRenderingFlat = savedFlat;
+#endif
                         }
                     }
                 }
