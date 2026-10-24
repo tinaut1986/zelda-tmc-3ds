@@ -2725,9 +2725,14 @@ static void Port_WidescreenParallaxShadows(int fullView) {
             wrapRows = (settings->yOffset & 0xff) >> 3;
             srcLimit = (layer ? 0x2000 : 0x1000) - (int)(((uintptr_t)src - (uintptr_t)gMapDataTopSpecial) >> 1);
         }
+        /* Centred unless neighbour rooms drew the camera aside (P4.9: the Crenel paths, area 0x12): the
+         * layers then go where the ground is, at the camera's distance from the room's left edge. */
         int shift = 0, firstCol = 0, endCol = shadowCols;
         if (fullView && (int)gRoomControls.width < 400) {
-            shift = (400 - (int)gRoomControls.width) / 16;
+            const int margin = (400 - (int)gRoomControls.width) / 8;
+            shift = ((int)gRoomControls.origin_x - gRoomControls.scroll_x + 4) >> 3;
+            if (shift < 0) shift = 0;
+            if (shift > margin) shift = margin;
             firstCol = shift;
             endCol = shift + (int)gRoomControls.width / 8;
         }

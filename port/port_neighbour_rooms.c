@@ -402,10 +402,14 @@ static int Coverage(const RoomResInfo* r, int axis, int start, int view) {
     return covered;
 }
 
-/* The camera asks every frame: each candidate's coverage is kept per area, room, axis and view size. */
+/* The camera asks every frame: each candidate's coverage is kept per area, room, axis and view size, and for the
+ * room table it was worked out from. Right after an area change (a Minish portal's landing) the camera can ask while
+ * gArea.roomResInfos is still the previous area's: a rest worked out from that kept the camera off centre for the
+ * whole room (the Crenel paths, area 0x12, drawn at 0-240 of the view). */
 enum { REST_CANDIDATES = 64 };
 static struct {
     u32 key;
+    RoomResInfo room; /* the entry it was worked out from */
     int first, count, centred;
     uint16_t score[REST_CANDIDATES];
 } sRestCache[4];
@@ -425,12 +429,18 @@ static void ComputeRest(unsigned room, int axis, int view, int* first, int* coun
 static unsigned RestSlot(unsigned room, int axis, int view) {
     const u32 key = ((u32)gRoomControls.area << 24) | ((room & 0xFFu) << 16) | ((u32)(axis & 1) << 15) | ((u32)view & 0x7FFFu);
     unsigned slot = sizeof(sRestCache) / sizeof(sRestCache[0]);
+    const RoomResInfo* info = &gArea.roomResInfos[room < MAX_ROOMS ? room : 0];
     for (unsigned i = 0; i < sizeof(sRestCache) / sizeof(sRestCache[0]); ++i)
         if (sRestCache[i].key == key && key != 0) slot = i;
+    if (slot < sizeof(sRestCache) / sizeof(sRestCache[0]) && memcmp(&sRestCache[slot].room, info, sizeof(*info)) != 0) {
+        sRestCache[slot].key = 0; /* worked out from another room table */
+        slot = sizeof(sRestCache) / sizeof(sRestCache[0]);
+    }
     if (slot == sizeof(sRestCache) / sizeof(sRestCache[0])) {
         slot = sRestNext;
         sRestNext = (sRestNext + 1) % (sizeof(sRestCache) / sizeof(sRestCache[0]));
         sRestCache[slot].key = key;
+        sRestCache[slot].room = *info;
         ComputeRest(room, axis, view, &sRestCache[slot].first, &sRestCache[slot].count, &sRestCache[slot].centred,
                     sRestCache[slot].score);
     }

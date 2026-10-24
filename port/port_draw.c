@@ -1264,6 +1264,48 @@ static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra
     sRenderingDepth = 0; /* what is drawn next (the HUD, DrawDirect) stays on the screen plane */
 }
 
+#ifdef TMC_3DS
+/* An object drawn as several entities at one spot leans as one, like the parts of one entity (sJoinMeasure): the giant
+ * twig of the Crenel paths (area 0x12) is three (types 0, 0x40, 0x41), and the middle one, leant from its own feet 8 px
+ * above the others', stood at another depth and moved a pixel apart from them. Each of them measures the pieces of all
+ * of them (at their own screen positions) and leans from that box. */
+static int JoinSiblingEntities(Entity* entity, s32 x, s32 y) {
+    if (entity->kind != OBJECT || entity->id != GIANT_TWIG) return 0;
+    sJoinFeet = -0x7fffffff;
+    sJoinTop = 0x7fffffff;
+    sJoinLeft = 0x7fffffff;
+    sJoinRight = -0x7fffffff;
+    sJoinMeasure = 1;
+    for (LinkedList* list = gEntityLists; list < &gEntityLists[9]; ++list) {
+        if (list->first == NULL) continue;
+        for (Entity* e = list->first; e != (Entity*)list && e != NULL; e = e->next) {
+            if (e->kind != entity->kind || e->id != entity->id || e->x.HALF.HI != entity->x.HALF.HI ||
+                e->y.HALF.HI != entity->y.HALF.HI || (s8)e->spriteAnimation[2] != 0)
+                continue;
+            s32 sx, sy;
+            u32 sf;
+            u16 se;
+            ResolveEntitySpriteParams(e, &sx, &sy, &sf, &se);
+            LookupAndRenderNormal(e, sx, sy, sf, se);
+        }
+    }
+    sJoinMeasure = 0;
+    sJoinKnown = sJoinFeet > -0x7fffffff;
+    if (sJoinKnown) {
+        /* Where this one is drawn, against where it was measured (the caller's position may carry offsets). */
+        s32 ox, oy;
+        u32 of;
+        u16 oe;
+        ResolveEntitySpriteParams(entity, &ox, &oy, &of, &oe);
+        sJoinFeet += y - oy;
+        sJoinTop += y - oy;
+        sJoinLeft += x - ox;
+        sJoinRight += x - ox;
+    }
+    return sJoinKnown;
+}
+#endif
+
 static void DrawEntitySpritesOf(Entity* entity, s32 x, s32 y, u32 flags, u16 extra) {
     s8 renderMode = (s8)entity->spriteAnimation[2]; /* offset 0x28 */
 
@@ -1274,6 +1316,13 @@ static void DrawEntitySpritesOf(Entity* entity, s32 x, s32 y, u32 flags, u16 ext
 
     if (renderMode == 0) {
         /* Normal sprite rendering */
+#ifdef TMC_3DS
+        if (sRenderingBody && !sRenderingFlat && JoinSiblingEntities(entity, x, y)) {
+            LookupAndRenderNormal(entity, x, y, flags, extra);
+            sJoinKnown = 0;
+            return;
+        }
+#endif
         LookupAndRenderNormal(entity, x, y, flags, extra);
     } else if (renderMode < 0) {
         /* Direct frame data from myHeap */
