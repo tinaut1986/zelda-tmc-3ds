@@ -43,6 +43,7 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 
 | Branch | State |
 |---|---|
+| `perf/stereo-fog` (local, not pushed, NOT checked on the console) | Reason 4 (`SPLIT_BASE_OVER_FRONT`) in the Minish Woods fog: Link's lean runs and neighbouring sprites no longer count as drawn over a sprite in front unless their boxes meet; debug log names the batch. See the decisions log 2026-10-24. |
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -1446,4 +1447,4 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   8 left his hands and the boots under the counter's top). A sprite resting on another sprite (the counter) has no support rule, only this hand
   value; the workbench does not read or write `FIXED(n)` yet. `docs/investigations/wall-depth-candidates.md` lists the other entities by a wall.
   `sprite_view.json` holds the owner's preview choices only (the game is unchanged by them).
-
+- **2026-10-24** `perf/stereo-fog` (Minish Woods fog, 3D: 33 fps vs 60 in 2D, owner): the frame was mostly drawn whole twice (SD log reason 4, `SPLIT_BASE_OVER_FRONT`), not because of BG3's per-line HOFS wave (BG3's per-line bands reuse the ring geometry: a host replay of a console dump, `port_ppu_gpu_3ds_bench`, gives 124 batches and almost no dynamic vertices). A live read of the console's batch list (`tmc-link peek` of `sCommands.batches`, torn but readable) showed the refusal came from sprites, not from the fog: `EyesOverBaseRefusal` tested only lines, so Link's own lean runs (one OAM entry split by depth, 3 then 1 quarter px, the first rounds to a pixel in front and the second to 0, both on the entry's lines) and the depth-0 pieces beside his body (lines 120-127 against the body's 107-122, different x) counted as drawn over a front sprite. It now compares boxes (the front sprite's grown by its move) and skips the runs of one sprite. Not measured on the console (the session could not install); unexplained: why hiding BG3 cleared the refusal for the owner. If the fog still drains it, the next step is BG3's own draws: each of its 124 line bands is drawn twice (blend + complement) and again for the ghost copy, in both eyes.

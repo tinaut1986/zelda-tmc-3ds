@@ -1614,6 +1614,16 @@ enum { SPLIT_OK, SPLIT_WINDOW_FOLLOWS, SPLIT_FRONT_WINDOW, SPLIT_FRONT_BLENDED_O
  * moves, and no sprite in front blends: the GBA blends a sprite with the background under it,
  * never with a lower sprite, which the base would have drawn there. The lines are a batch's only while the scissor
  * cuts them (gpu_scissor_mode 0 lets a band's tile rows overhang). */
+enum { EYES_FRONT_OBJ_MAX = 192 };
+static size_t sRefusalBatch;
+
+/* The most a sprite moves in either eye, in whole pixels, from its two shifts. */
+static int EyeMovePx(float left, float right) {
+    const int l = (int)(left < 0.0f ? -left + 0.5f : left + 0.5f);
+    const int r = (int)(right < 0.0f ? -right + 0.5f : right + 0.5f);
+    return l > r ? l : r;
+}
+
 static int EyesOverBaseRefusal(void) {
     for (unsigned layer = 0; layer <= PPU_GPU3DS_OBJ; ++layer)
         for (unsigned priority = 0; priority < 4; ++priority)
@@ -1629,8 +1639,17 @@ static int EyesOverBaseRefusal(void) {
             !IsFrontBatch(&sCommands.batches[sZoneDraws[z].anchor]))
             return SPLIT_ZONE_UNDER_BASE;
     sFrontHasObj = false;
+    /* frontLines: the lines any batch in front covers. frontBgLines: the same for those that are not sprites. A sprite is
+     * only as wide as its own box, so a sprite left on the screen plane is refused only where it meets a sprite in front
+     * (frontObjs: its box, grown by the most it moves in either eye), not wherever the two share a line: Link's feet
+     * (depth 0) beside his leaning body (depth 3) are on the same lines and never touch. */
     uint32_t frontLines[(PPU_GPU3DS_OUTPUT_HEIGHT + 31) / 32] = { 0 };
+    uint32_t frontBgLines[(PPU_GPU3DS_OUTPUT_HEIGHT + 31) / 32] = { 0 };
+    struct { int left, right, top, bottom; uint8_t object; } frontObjs[EYES_FRONT_OBJ_MAX];
+    unsigned frontObjCount = 0;
+    bool frontObjsFull = false;
     bool anyFront = false;
+    sRefusalBatch = 0;
     for (size_t i = 1; i < sCommands.batchCount; ++i) {
         const PpuGpu3DSBatch* batch = &sCommands.batches[i];
         const unsigned first = batch->firstLine;
@@ -1643,13 +1662,45 @@ static int EyesOverBaseRefusal(void) {
             if (batch->layer == PPU_GPU3DS_OBJ &&
                 (batch->effect == PPU_GPU3DS_EFFECT_ALPHA || (batch->color & PPU_GPU3DS_ALPHA_COMPLEMENT) != 0))
                 return SPLIT_FRONT_BLENDED_OBJ;
-            for (unsigned line = first; line < end; ++line)
+            for (unsigned line = first; line < end; ++line) {
                 frontLines[line / 32u] |= 1u << (line % 32u);
+                if (batch->layer != PPU_GPU3DS_OBJ) frontBgLines[line / 32u] |= 1u << (line % 32u);
+            }
             anyFront = true;
-            if (batch->layer == PPU_GPU3DS_OBJ) sFrontHasObj = true;
+            if (batch->layer == PPU_GPU3DS_OBJ) {
+                sFrontHasObj = true;
+                if (frontObjCount < EYES_FRONT_OBJ_MAX) {
+                    /* Forced to the front without a depth (the big Chuchu's pieces): assume the most. */
+                    const int move = batch->depth != 0 ? EyeMovePx(Stereo3DS_SpriteShift(batch->depth, STEREO3DS_LEFT),
+                                                                   Stereo3DS_SpriteShift(batch->depth, STEREO3DS_RIGHT))
+                                                       : 8;
+                    frontObjs[frontObjCount].left = (int)batch->scissorLeft - move;
+                    frontObjs[frontObjCount].right = (int)batch->scissorRight + move;
+                    frontObjs[frontObjCount].top = (int)first;
+                    frontObjs[frontObjCount].bottom = (int)end;
+                    frontObjs[frontObjCount].object = batch->objectIndex;
+                    ++frontObjCount;
+                } else {
+                    frontObjsFull = true;
+                }
+            }
         } else if (anyFront && !batch->objWindow) {
-            for (unsigned line = first; line < end; ++line)
-                if (frontLines[line / 32u] & (1u << (line % 32u))) return SPLIT_BASE_OVER_FRONT;
+            if (batch->layer != PPU_GPU3DS_OBJ || frontObjsFull) {
+                for (unsigned line = first; line < end; ++line)
+                    if (frontLines[line / 32u] & (1u << (line % 32u))) { sRefusalBatch = i; return SPLIT_BASE_OVER_FRONT; }
+            } else {
+                for (unsigned line = first; line < end; ++line)
+                    if (frontBgLines[line / 32u] & (1u << (line % 32u))) { sRefusalBatch = i; return SPLIT_BASE_OVER_FRONT; }
+                for (unsigned f = 0; f < frontObjCount; ++f) {
+                    /* The runs of one sprite (its rows of tiles at different depths) share its box but not its pixels. */
+                    if (frontObjs[f].object == batch->objectIndex) continue;
+                    if ((int)first < frontObjs[f].bottom && (int)end > frontObjs[f].top &&
+                        (int)batch->scissorLeft < frontObjs[f].right && (int)batch->scissorRight > frontObjs[f].left) {
+                        sRefusalBatch = i;
+                        return SPLIT_BASE_OVER_FRONT;
+                    }
+                }
+            }
         }
     }
     return anyFront ? SPLIT_OK : SPLIT_NOTHING_IN_FRONT;
@@ -1678,6 +1729,17 @@ static void NoteEyesPath(int refusal) {
                                                 : refusal == SPLIT_NOTHING_IN_FRONT ? "share one picture"
                                                                                     : "drawn whole",
                         refusal);
+    if (refusal == SPLIT_BASE_OVER_FRONT && sRefusalBatch != 0) {
+        /* Which batch was drawn over a layer in front, the first time and when it changes kind. */
+        static unsigned lastKind = ~0u, logged = 0;
+        const PpuGpu3DSBatch* b = &sCommands.batches[sRefusalBatch];
+        const unsigned kind = (unsigned)b->layer * 4u + (b->priority & 3u);
+        if (kind != lastKind && logged++ < 200)
+            DebugLog_Printf("stereo: base over front: batch %u layer %u pri %u obj %u depth %u lines %u+%u x %u..%u",
+                            (unsigned)sRefusalBatch, b->layer, b->priority, b->objectIndex, b->depth, b->firstLine,
+                            b->lineCount, b->scissorLeft, b->scissorRight);
+        lastKind = kind;
+    }
     last = refusal;
 #else
     (void)refusal;
