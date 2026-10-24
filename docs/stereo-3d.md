@@ -124,6 +124,33 @@ scenes below override it for their layers. The values are in pixels at the full 
   the boss cut into many small batches some of those draws were lost (two rows of tiles of its legs, in one eye, in ~4 % of the
   frames; 0 of 116 with the change, 5 of 122 without, alternating the two on the console).
 
+## The fog (Minish Woods) in 3D
+
+BG3 at priority 0 with BLDCNT 0x3648 (`LightRayManager`, the fog and the sun rays) is in front (scene bit 2) and is the
+most expensive layer: with the fog's per-line HBlank wave in BG3HOFS it is a band every line or two, each blended in two
+batches (the complement and the blend). It cost 33-38 fps in 3D against 60 in 2D (New 3DS, GPU 23 ms against 8.7). Three
+causes, all fixed (`perf/stereo-fog`, 2026-10-24; GPU 7-9 ms, 59.8 fps in the fog with 3D on):
+
+- **Rings refused it.** `build_bg_ring` wanted one horizontal scroll for all bands (reason 4 in `gPpuGpu3DSRingWhy`), so the
+  fog came from tile quads (300-1800 indices a band). Bands whose scrolls differ now share a ring: it holds the columns of
+  the whole range (the scrolls unwrapped around the first band's), and each band's quad carries its own scroll
+  (`emit_ring_quad` already did). Not for a layer with a shadow's extension piece or the HUD's right anchor.
+- **Ring bands are merged** (`merge_band_runs`, after `fold_covered_alpha_layers`): consecutive bands of a ring-drawn layer
+  with the same state, on adjacent lines and adjacent quads, are one batch (only consecutive batches: a blend with its complement stays as it is), the
+  rest emptied. The fog went from ~100 draws a pass to a handful. `gPpuGpu3DSBandMergeDisable 01` turns it off.
+- **No ghost copy for a blended layer** (`IsGhostBatch`). The unmoved copy drawn first made the blend pass flip the stencil
+  mark of every pixel it covered, so the moved copy drew nowhere there: the fog did not actually move between the eyes
+  (it only did where nothing blendable lay under it) and cost four draws a band per eye. Now the fog moves by its depth
+  in each eye. A translucent layer covering the frame has no strip to fill. (The rays looked cut once after loading states; they were also
+  cut with the slider down, so that is an older stale-state bug, not this.)
+- **No complement pass when it would draw nowhere** (`bg_complement_needed`, `noComplement` on the batch): a blended BG is
+  two batches, the blend and the complement (the layer plain over pixels whose top layer so far is not a target). When the
+  backdrop, the sprites and every enabled layer under it are targets (the fog: BLDCNT 0x3648) the complement is not
+  emitted: one full-frame pass less per eye, and with the merge the fog is one draw an eye.
+
+GPU CHECK on the fog is not reliable on its own: it differs by one colour step across the whole frame for some phases of the
+fog's alpha cycle (the same count with the rings on and off for the same frame), because the CPU frame is drawn later.
+
 ## Zone depth fixes
 
 A layer is all the PPU can move, and some art is split between layers: in Hyrule Town (area 0x02, room 0x00) the log
@@ -225,13 +252,18 @@ eye (reason 4). The software renderer leaves them flat.
   - **share one picture** (6): no batch of the frame is on a layer with a depth (the HUD hidden):
     drawn once, the presenter shows it to both eyes.
   - **drawn whole** (any other number, the reason): the whole frame twice, as before. When something
-    on the screen plane is drawn after a layer in front on the same lines (4), an OBJ window moves
+    on the screen plane is drawn after a layer in front on the same lines (4: a background on the screen plane, or a blended sprite, `EyesOverBaseRefusal`), an OBJ window moves
     (1, 2; the map screens' window follows their grey, BG2, which stays on the screen plane, so it does
     not move and they are drawn over one base), a sprite in front blends (3: the GBA blends it with the
     background, never with the lower sprite the base would have under it; a semi-transparent sprite with
     no second target in BLDCNT does not blend and does not count), `gpu_scissor_mode` is 0
     (7), the debug poke `gPpuGpu3DSEyesWhole 01` asks for it (5, to compare), or a zone depth fix that moves is
     drawn on a layer on the screen plane (8, "Zone depth fixes").
+
+  A sprite on the screen plane that the game draws over a sprite or layer in front is not a reason to draw the frame
+  whole: it is *promoted* (`sPromoted`), drawn in the front passes, unmoved, in the batches' order, so it lands over
+  what it lands over on the GBA (it must not blend: that still refuses). Overlap is by box (the front sprite's box
+  grown by its move in either eye), and the runs of one sprite never count against each other.
 
   The whole frame twice doubled the GPU's work: 9.0 ms a frame in 2D, 17.1 ms in 3D in the Deepwood
   Shrine's dark room, 12.6 ms over one base (PLAN, decisions log 2026-10-18). With no depth at all

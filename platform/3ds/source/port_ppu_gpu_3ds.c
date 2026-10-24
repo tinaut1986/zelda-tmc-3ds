@@ -1154,7 +1154,12 @@ static bool sFrontLayer[PPU_GPU3DS_OBJ + 1][4];
 /* Whether a sprite is among them: only then does each eye reset the depth (ClearDepthPlane). */
 static bool sFrontHasObj;
 
+/* Sprites that stay put but are drawn with the layers in front, because the game draws them over a sprite or layer in
+ * front (EyesOverBaseRefusal): a front pass draws in the batches' order, so they land over it as on the GBA. */
+static bool sPromoted[PPU_GPU3DS_MAX_BATCHES];
+
 static bool IsFrontBatch(const PpuGpu3DSBatch* batch) {
+    if (sPromoted[batch - sCommands.batches]) return true;
     /* An OBJ window that follows a layer (Stereo3DS_ObjWindowFollows) moves with that layer, not with the sprites'. */
     if (batch->objWindow && sEyeWindowFollows) return sEyeWindowPx != 0;
     /* Its eye's shift is the other's negated: in front for both or for neither. */
@@ -1236,8 +1241,13 @@ static void ClearDepthPlane(void) {
  * first: the strip then shows the layer's own pixels (its edge, as if it were one pixel thicker), not black. */
 static bool sUnderlay;
 static bool IsGhostBatch(const PpuGpu3DSBatch* batch) {
+    /* Not a blended layer (the Minish Woods' fog, BG3 at priority 0): its picture is translucent and wholly covers the
+     * frame, so there is no strip to fill, and drawing the unmoved copy first made its blend pass mark every pixel it
+     * covered as done (the stencil mark flips), so the moved copy drew nowhere there: the fog did not move, and cost
+     * four draws a band in each eye instead of two. */
     return sUnderlay && !batch->objWindow && batch->depth == 0 && batch->layer >= PPU_GPU3DS_BG1 &&
-           batch->layer <= PPU_GPU3DS_BG3 && sFrontLayer[batch->layer][batch->priority & 3u];
+           batch->layer <= PPU_GPU3DS_BG3 && sFrontLayer[batch->layer][batch->priority & 3u] &&
+           batch->effect != PPU_GPU3DS_EFFECT_ALPHA && (batch->color & PPU_GPU3DS_ALPHA_COMPLEMENT) == 0;
 }
 
 /* Zone depth fixes (docs/stereo-3d.md, "Zone depth fixes"; zone_depth_3ds.h): the pixels of one layer inside a rectangle
@@ -1614,7 +1624,17 @@ enum { SPLIT_OK, SPLIT_WINDOW_FOLLOWS, SPLIT_FRONT_WINDOW, SPLIT_FRONT_BLENDED_O
  * moves, and no sprite in front blends: the GBA blends a sprite with the background under it,
  * never with a lower sprite, which the base would have drawn there. The lines are a batch's only while the scissor
  * cuts them (gpu_scissor_mode 0 lets a band's tile rows overhang). */
+enum { EYES_FRONT_OBJ_MAX = 192 };
+
+/* The most a sprite moves in either eye, in whole pixels, from its two shifts. */
+static int EyeMovePx(float left, float right) {
+    const int l = (int)(left < 0.0f ? -left + 0.5f : left + 0.5f);
+    const int r = (int)(right < 0.0f ? -right + 0.5f : right + 0.5f);
+    return l > r ? l : r;
+}
+
 static int EyesOverBaseRefusal(void) {
+    memset(sPromoted, 0, sizeof(sPromoted[0]) * sCommands.batchCount);
     for (unsigned layer = 0; layer <= PPU_GPU3DS_OBJ; ++layer)
         for (unsigned priority = 0; priority < 4; ++priority)
             sFrontLayer[layer][priority] = sEyeShiftPx[layer][priority] != 0;
@@ -1629,7 +1649,15 @@ static int EyesOverBaseRefusal(void) {
             !IsFrontBatch(&sCommands.batches[sZoneDraws[z].anchor]))
             return SPLIT_ZONE_UNDER_BASE;
     sFrontHasObj = false;
+    /* frontLines: the lines any batch in front covers. frontBgLines: the same for those that are not sprites. A sprite is
+     * only as wide as its own box, so a sprite left on the screen plane is refused only where it meets a sprite in front
+     * (frontObjs: its box, grown by the most it moves in either eye), not wherever the two share a line: Link's feet
+     * (depth 0) beside his leaning body (depth 3) are on the same lines and never touch. */
     uint32_t frontLines[(PPU_GPU3DS_OUTPUT_HEIGHT + 31) / 32] = { 0 };
+    uint32_t frontBgLines[(PPU_GPU3DS_OUTPUT_HEIGHT + 31) / 32] = { 0 };
+    struct { int left, right, top, bottom; uint8_t object; } frontObjs[EYES_FRONT_OBJ_MAX];
+    unsigned frontObjCount = 0;
+    bool frontObjsFull = false;
     bool anyFront = false;
     for (size_t i = 1; i < sCommands.batchCount; ++i) {
         const PpuGpu3DSBatch* batch = &sCommands.batches[i];
@@ -1643,13 +1671,58 @@ static int EyesOverBaseRefusal(void) {
             if (batch->layer == PPU_GPU3DS_OBJ &&
                 (batch->effect == PPU_GPU3DS_EFFECT_ALPHA || (batch->color & PPU_GPU3DS_ALPHA_COMPLEMENT) != 0))
                 return SPLIT_FRONT_BLENDED_OBJ;
-            for (unsigned line = first; line < end; ++line)
+            for (unsigned line = first; line < end; ++line) {
                 frontLines[line / 32u] |= 1u << (line % 32u);
+                if (batch->layer != PPU_GPU3DS_OBJ) frontBgLines[line / 32u] |= 1u << (line % 32u);
+            }
             anyFront = true;
-            if (batch->layer == PPU_GPU3DS_OBJ) sFrontHasObj = true;
+            if (batch->layer == PPU_GPU3DS_OBJ) {
+                sFrontHasObj = true;
+                if (frontObjCount < EYES_FRONT_OBJ_MAX) {
+                    /* Forced to the front without a depth (the big Chuchu's pieces): assume the most. */
+                    const int move = batch->depth != 0 ? EyeMovePx(Stereo3DS_SpriteShift(batch->depth, STEREO3DS_LEFT),
+                                                                   Stereo3DS_SpriteShift(batch->depth, STEREO3DS_RIGHT))
+                                                       : 8;
+                    frontObjs[frontObjCount].left = (int)batch->scissorLeft - move;
+                    frontObjs[frontObjCount].right = (int)batch->scissorRight + move;
+                    frontObjs[frontObjCount].top = (int)first;
+                    frontObjs[frontObjCount].bottom = (int)end;
+                    frontObjs[frontObjCount].object = batch->objectIndex;
+                    ++frontObjCount;
+                } else {
+                    frontObjsFull = true;
+                }
+            }
         } else if (anyFront && !batch->objWindow) {
-            for (unsigned line = first; line < end; ++line)
-                if (frontLines[line / 32u] & (1u << (line % 32u))) return SPLIT_BASE_OVER_FRONT;
+            if (batch->layer != PPU_GPU3DS_OBJ || frontObjsFull) {
+                for (unsigned line = first; line < end; ++line)
+                    if (frontLines[line / 32u] & (1u << (line % 32u))) return SPLIT_BASE_OVER_FRONT;
+            } else {
+                bool over = false;
+                for (unsigned line = first; line < end && !over; ++line)
+                    over = (frontBgLines[line / 32u] & (1u << (line % 32u))) != 0;
+                for (unsigned f = 0; f < frontObjCount && !over; ++f) {
+                    /* The runs of one sprite (its rows of tiles at different depths) share its box but not its pixels. */
+                    if (frontObjs[f].object == batch->objectIndex) continue;
+                    over = (int)first < frontObjs[f].bottom && (int)end > frontObjs[f].top &&
+                           (int)batch->scissorLeft < frontObjs[f].right && (int)batch->scissorRight > frontObjs[f].left;
+                }
+                if (!over) continue;
+                /* A sprite the game draws over one in front, or over a layer in front: drawn with them, unmoved, so it
+                 * lands over them. One that blends needs what is under it, which the base has not got there. */
+                if (batch->effect == PPU_GPU3DS_EFFECT_ALPHA || (batch->color & PPU_GPU3DS_ALPHA_COMPLEMENT) != 0 ||
+                    frontObjCount >= EYES_FRONT_OBJ_MAX)
+                    return SPLIT_BASE_OVER_FRONT;
+                sPromoted[i] = true;
+                sFrontHasObj = true;
+                frontObjs[frontObjCount].left = (int)batch->scissorLeft;
+                frontObjs[frontObjCount].right = (int)batch->scissorRight;
+                frontObjs[frontObjCount].top = (int)first;
+                frontObjs[frontObjCount].bottom = (int)end;
+                frontObjs[frontObjCount].object = batch->objectIndex;
+                ++frontObjCount;
+                for (unsigned line = first; line < end; ++line) frontLines[line / 32u] |= 1u << (line % 32u);
+            }
         }
     }
     return anyFront ? SPLIT_OK : SPLIT_NOTHING_IN_FRONT;

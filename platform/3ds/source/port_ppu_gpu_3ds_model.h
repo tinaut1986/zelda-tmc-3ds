@@ -364,6 +364,9 @@ typedef struct PpuGpu3DSBatch {
     uint8_t side;
     /* 0 samples the tile atlas; 1 + n samples view ring n (bg * 2 + variant). */
     uint8_t texture;
+    /* Input of append_layer_batches, not read by the renderer: nothing under this layer is not a blend target, so the
+     * blend's complement (the layer drawn plain where the pixel under it is not a target) would draw nowhere. */
+    bool noComplement;
     /* Added to every vertex position by the shader. Zero except for
      * background batches that share one map-space copy of the tiles. */
     float offsetX, offsetY;
@@ -491,6 +494,7 @@ extern uint32_t gPpuGpu3DSLastBands, gPpuGpu3DSLastVertices, gPpuGpu3DSLastBatch
 #endif
 
 extern uint32_t gPpuGpu3DSRingWhy[4];
+extern volatile uint8_t gPpuGpu3DSBandMergeDisable;
 extern uint32_t gPpuGpu3DSRingCells, gPpuGpu3DSRingStale, gPpuGpu3DSRingMemoHits;
 extern volatile uint8_t gPpuGpu3DSRingDisable, gPpuGpu3DSRingMemoDisable;
 extern uint32_t gPpuGpu3DSBankChanges[16];

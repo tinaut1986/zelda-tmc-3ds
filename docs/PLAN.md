@@ -43,6 +43,7 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 
 | Branch | State |
 |---|---|
+| `perf/stereo-fog` (local, not pushed, NOT checked on the console) | Reason 4 (`SPLIT_BASE_OVER_FRONT`) in the Minish Woods fog: Link's lean runs and neighbouring sprites no longer count as drawn over a sprite in front unless their boxes meet; debug log names the batch. See the decisions log 2026-10-24. |
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -1446,4 +1447,4 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   8 left his hands and the boots under the counter's top). A sprite resting on another sprite (the counter) has no support rule, only this hand
   value; the workbench does not read or write `FIXED(n)` yet. `docs/investigations/wall-depth-candidates.md` lists the other entities by a wall.
   `sprite_view.json` holds the owner's preview choices only (the game is unchanged by them).
-
+- **2026-10-24** `perf/stereo-fog` (Minish Woods fog in 3D, 33-38 fps against 60 in 2D, New 3DS): the first guess (reason 4 from Link's lean runs) was only part of it; the cost was the fog itself. Measured on the console with the owner's state 1: (1) `build_bg_ring` refused BG3 because its HOFS differs per band (`gPpuGpu3DSRingWhy[3]` = 4), so the fog was ~100 bands of tile quads; bands with different scrolls now share a ring; (2) `merge_band_runs` makes the adjacent ring bands one draw (a complement/blend pair stays a pair); (3) the ghost copy (`IsGhostBatch`) is no longer drawn for a blended layer: it flipped the blend's stencil mark so the moved fog drew nowhere over anything blendable, i.e. the fog had almost no depth, and doubled its draws. Sprites the game draws over a sprite in front are promoted to the front passes instead of refusing the over-one-base split (the box test of 6c5f862 stays, the lean runs of one sprite never conflict). Result in the fog, 3D on: 33-40 fps and GPU 18-23 ms -> 59.8 fps and GPU 7-9 ms (2D 59.8 fps). Note: the fog now really moves between the eyes, which it hardly did before; the owner judges the look. The debug log line that named the refusing batch was dropped: it pushed the read-only segment past the 0x63A000 pin (3dsx.ld).
