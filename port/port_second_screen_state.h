@@ -49,6 +49,9 @@ typedef struct {
 #define SECOND_SCREEN_AR_IS_DUNGEON 0x04
 #define SECOND_SCREEN_AR_HAS_MAP 0x08
 
+#define SECOND_SCREEN_REGION_COUNT 17
+#define SECOND_SCREEN_REGION_NAME_LEN 48
+
 typedef struct {
     uint8_t inGame; /* gMain.task == TASK_GAME; nothing else below is valid otherwise */
     uint8_t introCinema; /* Picori legend auxiliary cutscene, including its fades. */
@@ -79,6 +82,11 @@ typedef struct {
      * a place like the Minish village), and saved with the game. */
     int32_t overworldMapX;
     int32_t overworldMapY;
+    /* The map region (gOverworldLocations windcrestId, 0..16) Link is in, from the spot above; 0xFF = none. */
+    uint8_t linkRegion;
+    /* The game's own name of each map region (gOverworldLocations[].textIndex, the text the pause map shows
+     * under its cursor), UTF-8 in the language of the save; empty until read. Only on the 3DS. */
+    char regionNames[SECOND_SCREEN_REGION_COUNT][SECOND_SCREEN_REGION_NAME_LEN];
     /* Area identity: SECOND_SCREEN_AR_* bits plus the dungeon slot the
      * engine's own key/compass logic indexes with. */
     uint8_t areaFlags;  /* gArea.areaMetadata */

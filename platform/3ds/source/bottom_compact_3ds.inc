@@ -1429,6 +1429,18 @@ static void Compact_MapToggleChip(const SSurf* s, const char* label, bool on, fl
     out[3] = (float)(y + h);
 }
 
+/* A place name on a plate on the map: the game's own text (already in the player's language) in the bottom UI's
+ * font, on a theme box (`lit`: the selected tab's colours). `x`, `y` is its top left; it is 15 px tall. */
+static int32_t Compact_MapLabelWidth(const char* name) {
+    return CTextWidth(name) + 10;
+}
+
+static void Compact_MapLabel(const SSurf* s, const char* name, int32_t x, int32_t y, int lit) {
+    const int32_t w = Compact_MapLabelWidth(name);
+    CBox(s, x, y, w, COMPACT_MAP_LABEL_H, lit ? CC_TAB_ON : CC_CELL, lit ? CC_TAB_ON_EDGE : CC_CELL_EDGE);
+    CText(s, x + 5, y + (COMPACT_MAP_LABEL_H - kUiGlyphH) / 2, lit ? CC_TAB_ON_TEXT : CC_TEXT, name);
+}
+
 /* The box around the whole world map: the map is drawn over its inside. */
 static void Compact_MapFrame(const SSurf* s, int32_t x, int32_t y, int32_t w, int32_t h) {
     CBox(s, x, y, w, h, CC_CELL, CC_CELL_EDGE);

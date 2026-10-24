@@ -47,6 +47,7 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 | Branch | State |
 |---|---|
 | `perf/stereo-fog` (local, not pushed, NOT checked on the console) | Reason 4 (`SPLIT_BASE_OVER_FRONT`) in the Minish Woods fog: Link's lean runs and neighbouring sprites no longer count as drawn over a sprite in front unless their boxes meet; debug log names the batch. See the decisions log 2026-10-24. |
+| `feat/map-region-names` (local, not pushed; checked by the owner on the New 3DS, 2026-10-24, waiting to be merged) | Bottom MAP tab: Link's region named above his marker, a first tap selects a tile (tinted, game cursor, name) and a second tap on it opens it, the detail map shows its name. See the decisions log 2026-10-24. |
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -1456,3 +1457,15 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   `release/v0.4.4` was left to the owner (the session's permissions refused it). The light rays of the Minish Woods can show
   cut, sideways-shifted segments after loading a save state in the woods (seen with the slider down too, so not the stereo
   work); leaving and re-entering the room fixes them. The owner chose to leave it as it is.
+- **2026-10-24** Bottom map names and two-tap pick (`feat/map-region-names`, owner's request, then made discreet at his word: no
+  "you are here" or "tap again" text, names only). The names are the game's own: the text of `gOverworldLocations[].textIndex`
+  (`TEXT_WINDCRESTS`, the line the pause map shows under its cursor), read on the game thread by `Port_GameText_ToUtf8`
+  (`src/message.c`; Latin-1 accents to UTF-8, newlines to spaces) once per save language and published in
+  `SecondScreenSnapshot.regionNames[17]` with `linkRegion` (the region of the spot the game's map keeps for Link, indoors too). They
+  are drawn in the bottom UI's 5x7 font (`Compact_MapLabel`: a theme-coloured plate on the map, accents included; the owner prefers it to bare outlined text), not the banner
+  font, to match the other labels; all 17 regions have a name, so there is no fallback. On the 3DS Link's region is named right above
+  his marker; the first tap on a tile only selects it (light gold tint, the game's blinking cursor, its name in gold above the tile,
+  or below it when there is no room), which hides Link's label (one name at a time); the same tile again opens it (the old bracket
+  beat, then the detail map, which shows its name top left); another tile moves the selection and a tap on no tile drops it.
+  PC/Android keep the one-tap zoom. Side fix: `tmc-link.py touch` now sends the finger-up too (the map and the OPTIONS / STATES lists
+  act on release, so a link tap used to do nothing there).
