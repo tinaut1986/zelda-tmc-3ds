@@ -943,6 +943,11 @@ static void append_layer_batches(PpuGpu3DSCommandBuffer* cmd,
             batch.effect = PPU_GPU3DS_EFFECT_ALPHA;
             batch.eva = clamp_coefficient(bldalpha & 0x1fu);
             batch.evb = clamp_coefficient((bldalpha >> 8u) & 0x1fu);
+            if (base->noComplement) {
+                store_batch(cmd, *batchCursor, &batch, emit);
+                ++*batchCursor;
+                continue;
+            }
             PpuGpu3DSBatch complement = batch;
             complement.effect = PPU_GPU3DS_EFFECT_NONE;
             complement.color |= PPU_GPU3DS_ALPHA_COMPLEMENT;
@@ -2825,6 +2830,25 @@ static bool build_bg_picture(const PpuGpu3DSFrameView* frame, PpuGpu3DSCommandBu
     return true;
 }
 
+/* Whether anything under background `bg` (priority `priority`) in this band is not a second blend target. The blend
+ * draws the layer blended over the pixels whose top layer so far is a target, and a second batch, the complement, draws
+ * it plain over the rest; when the backdrop, the sprites and every enabled layer under it are targets, the complement
+ * draws nowhere and is not emitted (the Minish Woods' fog: half of its passes, each a full frame). Under means a lower
+ * priority, or the same priority and a higher layer number; sprites count whatever their priority. */
+static __attribute__((noinline)) bool bg_complement_needed(const PpuGpu3DSFrameView* frame, const PpuGpu3DSBand* band, const uint8_t* io,
+                                 unsigned bg, unsigned priority, uint16_t bldcnt) {
+    const unsigned targets = (bldcnt >> 8u) & 0x3fu;
+    const unsigned dispcnt = frame->dispcntPerLine[band->firstLine];
+    if ((targets & 0x20u) == 0) return true; /* the backdrop */
+    if ((dispcnt & (MODE1_DISP_OBJ_ON | MODE1_DISP_OBJWIN_ON)) != 0 && (targets & 0x10u) == 0) return true;
+    for (unsigned other = 0; other < MODE1_GBA_BG_COUNT; ++other) {
+        if (other == bg || (dispcnt & (MODE1_DISP_BG0_ON << other)) == 0) continue;
+        const unsigned p = read16(io, MODE1_IO_BG0CNT + other * 2u) & 3u;
+        if ((p > priority || (p == priority && other > bg)) && (targets & (1u << other)) == 0) return true;
+    }
+    return false;
+}
+
 static bool build_text_bg(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                           uint16_t* atlas, PpuGpu3DSCommandBuffer* cmd,
                           const PpuGpu3DSBand* band, unsigned bg,
@@ -2839,6 +2863,7 @@ static bool build_text_bg(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
             frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;
     const uint16_t bgcnt = read16(io, MODE1_IO_BG0CNT + bg * 2u);
     const unsigned priority = bgcnt & 3u;
+    const bool noComplement = !bg_complement_needed(frame, band, io, bg, priority, read16(io, MODE1_IO_BLDCNT));
     const uint32_t charBase = ((bgcnt >> 2u) & 3u) * 0x4000u;
     const bool bpp8 = ((bgcnt >> 7u) & 1u) != 0;
     const uint32_t screenBase = ((bgcnt >> 8u) & 0x1fu) * 0x800u;
@@ -2950,6 +2975,7 @@ static bool build_text_bg(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
                     .target2 = (uint8_t)((ringBldcnt >> (PPU_GPU3DS_BG0 + bg + 8u)) & 1u),
                     .objectIndex = UINT8_MAX,
                     .texture = (uint8_t)(1u + bg * 2u + variant),
+                    .noComplement = noComplement,
                 };
                 append_layer_batches(cmd, &ringBase, regions, regionCount, ringBldcnt,
                                      read16(io, MODE1_IO_BLDALPHA), read16(io, MODE1_IO_BLDY), emit, batchCursor);
@@ -3076,6 +3102,7 @@ static bool build_text_bg(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache
         .objectIndex = UINT8_MAX,
         .offsetX = offsetX,
         .offsetY = offsetY,
+        .noComplement = noComplement,
     };
     append_layer_batches(cmd, &base, regions, regionCount, bldcnt,
                          read16(io, MODE1_IO_BLDALPHA),
@@ -4821,13 +4848,12 @@ static void fold_covered_alpha_layers(PpuGpu3DSCommandBuffer* cmd) {
     }
 }
 
-/* Bands of a layer drawn from a view ring (build_bg_ring) are one exact quad each, over their own lines, so the
- * bands that follow one another down the frame with the same state can be one draw: the scissor takes the union of
- * their lines and the quads are the run of indices. A per-line scroll (the Minish Woods' fog: a band every line or
- * two, each blended in two batches, the complement and the blend, over the same quads) was ~100 draws a pass, and
- * each draw has a fixed cost that is the whole bill of such a layer. The bands cover different lines, so the order of
- * the draws between them changes nothing; the run keeps its pair's order (all the complements, then all the blends).
- * The emptied batches stay in the list with no indices (DrawBatch skips them). */
+/* Bands of a layer drawn from a view ring (build_bg_ring) are one exact quad each, over their own lines, so bands that
+ * follow one another down the frame with the same state can be one draw: the scissor takes the union of their lines and
+ * the quads are the run of indices. A per-line scroll (the Minish Woods' fog: a band every line or two) was ~100 draws
+ * a pass, and each draw has a fixed cost. Only consecutive batches merge: a blend with its complement (two batches a
+ * band) stays as it is, which is why the fog drops the complement (bg_complement_needed). The emptied batches stay in
+ * the list with no indices (DrawBatch skips them). */
 static bool same_band_state(const PpuGpu3DSBatch* a, const PpuGpu3DSBatch* b) {
     return a->layer == b->layer && a->priority == b->priority && a->windowControl == b->windowControl &&
            a->target2 == b->target2 && a->effect == b->effect && a->eva == b->eva && a->evb == b->evb &&
@@ -4848,43 +4874,18 @@ static bool follows_band(const PpuGpu3DSBatch* run, const PpuGpu3DSBatch* next) 
 
 static void merge_band_runs(PpuGpu3DSCommandBuffer* cmd) {
     if (gPpuGpu3DSBandMergeDisable) return;
-    size_t i = 1;
-    while (i < cmd->batchCount) {
-        PpuGpu3DSBatch* const first = &cmd->batches[i];
-        if (!is_ring_band(first)) {
-            ++i;
-            continue;
+    PpuGpu3DSBatch* run = NULL;
+    for (size_t i = 1; i < cmd->batchCount; ++i) {
+        PpuGpu3DSBatch* const batch = &cmd->batches[i];
+        if (!is_ring_band(batch)) {
+            run = NULL;
+        } else if (run && same_band_state(run, batch) && follows_band(run, batch)) {
+            run->lineCount = (uint16_t)(run->lineCount + batch->lineCount);
+            run->indexCount += batch->indexCount;
+            batch->indexCount = 0;
+        } else {
+            run = batch;
         }
-        /* One batch a band, or a pair (complement and blend) over the same quads. */
-        size_t size = 1;
-        if (i + 1 < cmd->batchCount) {
-            const PpuGpu3DSBatch* const second = &cmd->batches[i + 1];
-            if (is_ring_band(second) && second->layer == first->layer && second->priority == first->priority &&
-                second->firstIndex == first->firstIndex && second->indexCount == first->indexCount &&
-                second->firstLine == first->firstLine && second->lineCount == first->lineCount)
-                size = 2;
-        }
-        PpuGpu3DSBatch* const partner = size == 2 ? &cmd->batches[i + 1] : NULL;
-        size_t j = i + size;
-        while (j + size <= cmd->batchCount) {
-            PpuGpu3DSBatch* const next = &cmd->batches[j];
-            PpuGpu3DSBatch* const nextPartner = size == 2 ? &cmd->batches[j + 1] : NULL;
-            if (!is_ring_band(next) || !same_band_state(first, next) || !follows_band(first, next)) break;
-            if (size == 2 && (!is_ring_band(nextPartner) || !same_band_state(partner, nextPartner) ||
-                              nextPartner->firstIndex != next->firstIndex || nextPartner->indexCount != next->indexCount ||
-                              nextPartner->firstLine != next->firstLine || nextPartner->lineCount != next->lineCount))
-                break;
-            first->lineCount = (uint16_t)(first->lineCount + next->lineCount);
-            first->indexCount += next->indexCount;
-            next->indexCount = 0;
-            if (partner) {
-                partner->lineCount = first->lineCount;
-                partner->indexCount = first->indexCount;
-                nextPartner->indexCount = 0;
-            }
-            j += size;
-        }
-        i = j;
     }
 }
 
