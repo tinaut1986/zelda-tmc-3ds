@@ -138,10 +138,11 @@ causes, all fixed (`perf/stereo-fog`, 2026-10-24; GPU 7-9 ms, 59.8 fps in the fo
 - **Ring bands are merged** (`merge_band_runs`, after `fold_covered_alpha_layers`): consecutive bands of a ring-drawn layer
   with the same state, on adjacent lines and adjacent quads, are one batch (a complement/blend pair stays a pair), the
   rest emptied. The fog went from ~100 draws a pass to a handful. `gPpuGpu3DSBandMergeDisable 01` turns it off.
-- **No ghost copy for a blended layer** (`IsGhostBatch`). The unmoved copy drawn first made the blend pass flip the stencil
-  mark of every pixel it covered, so the moved copy drew nowhere there: the fog did not actually move between the eyes
-  (it only did where nothing blendable lay under it) and cost four draws a band per eye. Now the fog moves by its depth
-  in each eye. A translucent layer covering the frame has no strip to fill.
+- **Ghost copy of a blended layer.** The unmoved copy drawn first makes the blend pass flip the stencil mark of every pixel it
+  covers, so the moved copy draws only where the ghost did not: a blended full-frame layer (fog, rays) hardly moves between the
+  eyes, and costs four draws a band per eye. Dropping it (`gPpuGpu3DSNoBlendedGhost 1`, debug) makes the fog move by its depth
+  but showed seams along the rays' 64 px blocks on the console (owner, 2026-10-24), so the default keeps the ghost. With the
+  rings and the merged bands the fog's draws are few enough that the ghost is cheap again (to be confirmed on the console).
 
 GPU CHECK on the fog is not reliable on its own: it differs by one colour step across the whole frame for some phases of the
 fog's alpha cycle (the same count with the rings on and off for the same frame), because the CPU frame is drawn later.

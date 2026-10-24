@@ -1240,14 +1240,16 @@ static void ClearDepthPlane(void) {
  * the moved layer used to hide. Each eye draws such a layer (BG1-BG3 in front, the world only) twice, the unmoved copy
  * first: the strip then shows the layer's own pixels (its edge, as if it were one pixel thicker), not black. */
 static bool sUnderlay;
+volatile uint8_t gPpuGpu3DSNoBlendedGhost; /* debug poke, see IsGhostBatch */
 static bool IsGhostBatch(const PpuGpu3DSBatch* batch) {
-    /* Not a blended layer (the Minish Woods' fog, BG3 at priority 0): its picture is translucent and wholly covers the
-     * frame, so there is no strip to fill, and drawing the unmoved copy first made its blend pass mark every pixel it
-     * covered as done (the stencil mark flips), so the moved copy drew nowhere there: the fog did not move, and cost
-     * four draws a band in each eye instead of two. */
+    /* A blended layer (the Minish Woods' fog and rays, BG3 at priority 0) keeps its ghost copy as it always had: with
+     * the copy first its blend pass flips the stencil mark of what it covers, so the moved copy only draws where the
+     * ghost did not, and the layer stays where it is. Without it (gPpuGpu3DSNoBlendedGhost 1, debug) the moved layer
+     * showed seams along the rays' 64 px blocks (owner, 2026-10-24). */
+    const bool blended = batch->effect == PPU_GPU3DS_EFFECT_ALPHA || (batch->color & PPU_GPU3DS_ALPHA_COMPLEMENT) != 0;
     return sUnderlay && !batch->objWindow && batch->depth == 0 && batch->layer >= PPU_GPU3DS_BG1 &&
            batch->layer <= PPU_GPU3DS_BG3 && sFrontLayer[batch->layer][batch->priority & 3u] &&
-           batch->effect != PPU_GPU3DS_EFFECT_ALPHA && (batch->color & PPU_GPU3DS_ALPHA_COMPLEMENT) == 0;
+           !(blended && gPpuGpu3DSNoBlendedGhost);
 }
 
 /* Zone depth fixes (docs/stereo-3d.md, "Zone depth fixes"; zone_depth_3ds.h): the pixels of one layer inside a rectangle
