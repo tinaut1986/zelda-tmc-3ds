@@ -18,6 +18,8 @@ SCENE      portal: the Minish portal cutscene, PICTURE 400x320, the original at 
            minish-water-ground: the stalks beside the Minish Paths' water corridor (area 0x11 room 01), 400x64: room rows
                    0-63, repeated by the game; writes minish-water-ground.bin (160x64). minish-water-leaves and
                    -shadows: its BG1 and BG3, as minish-leaves
+           minish-town-leaves, -town-shadows, -ranch-shadows, -cabin-leaves, -cabin-shadows: rooms 02-04's BG1 and
+                   BG3, as minish-leaves (02 and 03 share the leaves); writes the file of the scene's name
            title:  the title screen's forest, PICTURE 400x240, the original at 80,40 (240x160);
                    writes title-forest.bin (the whole 400x240; the centre is not drawn)
            fileselect: the file select screen's cave (BG3), PICTURE 400x240, the original at
@@ -60,6 +62,11 @@ SCENES = {
     'minish-water-leaves': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-water-leaves.bin'),
     'minish-water-shadows': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-water-shadows.bin'),
     'minish-water-ground': ((400, 64), list(range(0, 80)) + list(range(320, 400)), 'minish-water-ground.bin'),
+    'minish-town-leaves': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-town-leaves.bin'),
+    'minish-town-shadows': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-town-shadows.bin'),
+    'minish-ranch-shadows': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-ranch-shadows.bin'),
+    'minish-cabin-leaves': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-cabin-leaves.bin'),
+    'minish-cabin-shadows': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-cabin-shadows.bin'),
     'title': ((400, 240), None, 'title-forest.bin'),
     'fileselect': ((400, 240), None, 'fileselect-cave.bin'),
 }

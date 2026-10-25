@@ -52,6 +52,7 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 |---|---|
 | `feat/pause-wide-view` _(merged into release/v0.4.6 2026-10-25, at the owner's request; seen in Azahar, not on the console)_ | The pause menu at 400x240 (GPU renderer): L and R whole when pressed, the title banner closed on the left, the background made by the game from its own BG3. Still to see on the New 3DS: the three pages, the map page, the save prompt, 3D, the Old 3DS. It raised the linker pins to 0x644000/0x64C000. |
 | `feat/minish-path-leaves` _(merged into release/v0.4.6 2026-10-25, at the owner's request before a console check)_ | Gemini's leaves and the derived shadows beside the Minish Paths' grass corridor (area 0x11), WIDE + AI. Still to see on the New 3DS: the corridor centred, the strips moving with their layers, nothing in the other 0x11 rooms. Its ground's sides are the corridor's edge brown (`feat/minish-path-ground-fill`, merged the same day, seen in Azahar). |
+| `feat/minish-paths-town-ranch-cabin` _(merged into release/v0.4.6 2026-10-25, at the owner's request; seen in Azahar, not on the console)_ | The sides of Minish Paths rooms 0x11/02, 03 and 04: one set of Gemini leaves for the three (04's recoloured), derived shadows, 02's and 03's grounds their edge colour darkening outwards (03's on trial), 04's the water corridor's stalks. WIDE + AI for the leaves and 04's ground. Still to see on the New 3DS. The cut giant sprites beside them are #50-#52. |
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -74,10 +75,11 @@ leaves pots unliftable).
 
 **Start here (2026-10-25, end of day):** `v0.4.5` is the latest stable; `release/v0.4.6` holds, beyond it, the zlib-compressed
 scene pictures (seen on the New 3DS), the pause menu at 400x240 with its background made by the game (L/R whole, the title
-banner closed), and the generated sides of two Minish Paths corridors (the grass one, 0x11/00, and the water one, 0x11/01);
+banner closed), and the generated sides of five Minish Paths corridors (0x11/00 grass, 0x11/01 water, 0x11/02-04);
 all of it seen only in Azahar, none yet on the console (branch table above). No branch is open. Next, in this order:
-00. **The other vertical Minish paths, one at a time, the owner deciding each** (2026-10-25): 0x11/02, 0x11/03 and 0x11/04
-   (one set of leaves for the three), then Crenel's 0x12/01 (rocks). What each needs, their BG1 hashes, ground colours and
+00. **The last vertical Minish path, Crenel's 0x12/01 (rocks), the owner deciding its ground** (2026-10-25; 0x11/00-04 are
+   done; 0x11/03's ochre gradient is on trial, Gemini rocks in a 64-row loop the alternative). Then the cut giant sprites
+   beside 0x11/02-04 (#50 flowers and bellflowers, #51 white spirals, #52 cattails). What each needs, their BG1 hashes, ground colours and
    repeats, and where their dumps already are: `docs/wide-scene-extension.md`, "The vertical Minish paths" (nothing to
    dump again). The workflow: same doc, "AI pieces" (`tools/scene-extend/ai_pieces.py`); add each as a `kShafts` row. Show
    the owner the corridor (`tmc-link.py warp`, Azahar) before proposing its ground. The water corridor's two ends (rocks and
@@ -1529,3 +1531,9 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   each a loop made seamless by giving the join back to Gemini to repaint (the owner's idea: "otra moviendo el patrón con
   un hueco en medio"). Its two ends were left as they are, hidden by the leaves (owner). The survey of every corridor, the
   warp command used for it and the fitting tool are in `docs/wide-scene-extension.md` and `docs/debug-tools.md`.
+- 2026-10-25: Minish Paths rooms 0x11/02-04 share their leaves (03's are 02's but for 15 pixels, 04's are 03's in other
+  greens), so one Gemini set of four pieces served the three, 04's recoloured. The owner chose the gradient for 02 and asked
+  to try it on 03 and 04 "a ver si se nota"; 04's banks then turned out to be the water corridor's stalks row for row, so
+  it takes that loop instead (owner: "La del agua no encaja con los tallos de agua que hay en otra ya montada?"). The giant
+  flowers, bellflowers, white spirals and cattails beside them are sprites whose art ends at the GBA screen's edge, not
+  clipped by the port: completing them is #50-#52 (owner).

@@ -346,8 +346,8 @@ void ScenePictures_ReleaseCave(void) {
  * ground without a file is filled with the colour most of its outer columns have (a BG palette entry, palette * 16 +
  * index, read from the room's palettes), darkening away from the room: made by the game, so in plain WIDE too. BG1's
  * strips fit only the map they were made for: leavesHash, the FNV-1a hash of BG1's map (0 for the Crenel shaft, found
- * by its room). The other corridors (area 0x11 rooms 1-4, area 0x12 room 1) are decided one by one (owner,
- * 2026-10-25): not every ground should be a dark gradient. */
+ * by its room). Each corridor's ground is decided on its own (owner, 2026-10-25): not every ground should be a dark
+ * gradient; area 0x12 room 1 is still to do. */
 static const struct {
     uint8_t area, room;
     uint32_t leavesHash;
@@ -368,6 +368,18 @@ static const struct {
      * ~/Imágenes/minish-paths/gemini-tallos-agua/ and gemini-hojas-agua/). */
     [SCENE_SHAFT_MINISH_WATER] = { 0x11, 0x01, 0x46DF39A1u,
                                    { "minish-water-ground.bin", "minish-water-leaves.bin", "minish-water-shadows.bin" },
+                                   { 64, 1024, 1024 }, 0, 64, -1 },
+    /* Rooms 2-4 (to Hyrule Town, Lon Lon Ranch and the mayor's cabin) have one set of leaves: 03's are 02's but for 15
+     * pixels of the room, 04's are 03's in bluer greens, so their sides were made once, by Gemini in four pieces
+     * (2026-10-25, ~/Imágenes/minish-paths/gemini-hojas-02-04/), and 04's recoloured; the shadows from the leaves'
+     * silhouette in each room's edge colour. 02's and 03's grounds: their outer columns' commonest colour darkening
+     * outwards, as the grass corridor's (02's darkest brown, 03's ochre: its rocks; 03's on trial, owner 2026-10-25).
+     * 04's banks are the water corridor's reed stalks, row for row in the same phase, so they take its loop. */
+    [SCENE_SHAFT_MINISH_TOWN] = { 0x11, 0x02, 0xE0E89302u, { NULL, "minish-town-leaves.bin", "minish-town-shadows.bin" },
+                                  { 8, 1024, 1024 }, 0, 8, 14 * 16 + 1 },
+    [SCENE_SHAFT_MINISH_RANCH] = { 0x11, 0x03, 0x84B4D4E4u, { NULL, "minish-town-leaves.bin", "minish-ranch-shadows.bin" },
+                                   { 8, 1024, 1024 }, 0, 8, 14 * 16 + 5 },
+    [SCENE_SHAFT_MINISH_CABIN] = { 0x11, 0x04, 0x84B4D4E4u, { "minish-water-ground.bin", "minish-cabin-leaves.bin", "minish-cabin-shadows.bin" },
                                    { 64, 1024, 1024 }, 0, 64, -1 },
 };
 

@@ -13,11 +13,12 @@ enum { SCENE_TITLE_W = 400, SCENE_TITLE_H = 240, SCENE_CAVE_W = 400, SCENE_CAVE_
  * rows) and one turn of the 320 rows it repeats, which the renderer repeats too; the rock ledges (BG1) and their
  * shadows (BG3) the 960 rows their scroll shows. SCENE_SHAFT_MINISH, the grass corridor of the Minish Paths (area
  * 0x11, room 0): its leaves (BG1) and their shadows (BG3), 1024 rows; its ground filled with the colour of its outer
- * band. */
+ * band. The other Minish corridors (rooms 1-4) as that one, each with its own ground. */
 enum { SCENE_SHAFT_STRIP_W = 80, SCENE_SHAFT_ROOM_W = 240 };
 typedef enum { SCENE_SHAFT_GROUND, SCENE_SHAFT_LEDGES, SCENE_SHAFT_SHADOWS, SCENE_SHAFT_LAYERS } SceneShaftLayer;
 typedef enum {
-    SCENE_SHAFT_CRENEL, SCENE_SHAFT_MINISH, SCENE_SHAFT_MINISH_WATER, SCENE_SHAFT_SCENES
+    SCENE_SHAFT_CRENEL, SCENE_SHAFT_MINISH, SCENE_SHAFT_MINISH_WATER, SCENE_SHAFT_MINISH_TOWN, SCENE_SHAFT_MINISH_RANCH,
+    SCENE_SHAFT_MINISH_CABIN, SCENE_SHAFT_SCENES
 } SceneShaft;
 /* The shaft of a vertical Minish path room, -1 for none (or BG1's map, 0x2000 bytes, not the one its strips are of). */
 int ScenePictures_ShaftScene(int area, int room, const uint8_t* leavesMap);
