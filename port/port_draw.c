@@ -896,7 +896,7 @@ static int BannerPixel(const struct OamData* sprite, int x, int y) {
 }
 
 void Port_Draw_PauseBannerCap(void) {
-    if (!Port_Widescreen_PauseWide() || !(gScreen.lcd.displayControl & DISPCNT_OBJ_1D_MAP)) return;
+    if (!Port_Widescreen_PauseWide()) return; /* the game maps sprites 1D throughout */
     const int count = gOAMControls.updated < 0x80 ? gOAMControls.updated : 0x80;
     int left = -1, right = -1;
     for (int i = 0; i < count; i++) { /* 64x32 (shape 1, size 3), not affine, at the GBA screen's top-left */
