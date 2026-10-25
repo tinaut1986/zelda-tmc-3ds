@@ -1493,3 +1493,14 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   in the GPU's depth pre-pass (`obj_order_depth`: priority * 128 + index); the test now checks both rules. mGBA's other quirk
   (a transparent pixel of a sprite with a lower priority number still lowers the priority of the pixel under it) is not
   modelled. Changes every scene where sprites of different priorities overlap: seen only in the Crenel paths so far.
+- **2026-10-25** The Crenel paths' shaft (area 0x12 room 00) has generated sides in Full View with WIDE + AI, its three
+  layers each a picture of their own as they scroll apart: the ground (Antigravity's first piece and Gemini's bridge,
+  then repeated as the room's ground repeats), the rock ledges (two pieces repeated in the layer, each completed once by
+  Gemini and stamped beside every copy, `tools/scene-extend/stamp_pieces.py`) and their shadows (BG3's map is BG1's with
+  a palette per column band, so the shadows are the ledges' silhouette in the darkest band). Only the 80 columns each
+  side are stored and drawn (`build_bg_scroll_picture`, GPU renderer only; ~1.3 MB of textures). Gemini's JPGs were
+  read back by fitting their scale against the known half (they were neither 5x nor square) and mapping colours to the
+  palette; the owner judged the cleanups: edge trimming ate the rocks' top (Gemini drew no outline there), so the
+  shipped rocks are the plain nearest-colour recovery with one colour swapped (its main orange 192,112,40 to the
+  original's 192,120,48) and the right rock's last column repeated to the edge. The read-only segment outgrew its pin:
+  `.data` moved to 0x640000 and `.bss` to 0x648000 (format 2 states unaffected).

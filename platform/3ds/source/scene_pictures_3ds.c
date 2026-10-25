@@ -121,3 +121,60 @@ void ScenePictures_ReleaseCave(void) {
     free(sCave);
     sCave = NULL;
 }
+
+static const char* const kShaftFiles[SCENE_SHAFT_LAYERS] = { "crenel-paths-ground.bin", "crenel-paths-ledges.bin",
+                                                               "crenel-paths-shadows.bin" };
+static const unsigned kShaftHeights[SCENE_SHAFT_LAYERS] = { SCENE_SHAFT_GROUND_H, SCENE_SHAFT_LAYER_H,
+                                                            SCENE_SHAFT_LAYER_H };
+static int8_t sShaftAvailable[SCENE_SHAFT_LAYERS] = { -1, -1, -1 }; /* as sAvailable */
+static uint16_t* sShaft555[SCENE_SHAFT_LAYERS];
+static int sShaftBg = -1, sShaftX, sShaftY[SCENE_SHAFT_LAYERS];
+
+const uint16_t* ScenePictures_Shaft555(SceneShaftLayer layer, unsigned* height) {
+    if (layer >= SCENE_SHAFT_LAYERS) return NULL;
+    if (height) *height = kShaftHeights[layer];
+    if (sShaft555[layer] != NULL || !Port_Config_GetWideAi() || sShaftAvailable[layer] == 0) return sShaft555[layer];
+    char sd[160], romfs[96];
+    snprintf(sd, sizeof(sd), "%s/%s", TMC3DS_APP_DIR, kShaftFiles[layer]);
+    snprintf(romfs, sizeof(romfs), "romfs:/wide-scenes/%s", kShaftFiles[layer]);
+    FILE* f = fopen(sd, "rb");
+    if (f == NULL) f = fopen(romfs, "rb");
+    const size_t count = (size_t)2 * SCENE_SHAFT_STRIP_W * kShaftHeights[layer];
+    uint16_t* pixels = malloc(count * sizeof(uint16_t));
+    if (f == NULL || pixels == NULL || fread(pixels, sizeof(uint16_t), count, f) != count) {
+        if (f) fclose(f);
+        free(pixels);
+        sShaftAvailable[layer] = 0;
+        return NULL;
+    }
+    fclose(f);
+    for (size_t i = 0; i < count; ++i) { /* RGB565 to the GBA's 15-bit colour, as the title's */
+        const uint16_t c = pixels[i];
+        pixels[i] = (uint16_t)(((c >> 11) & 31u) | ((((c >> 5) & 63u) >> 1) << 5) | ((c & 31u) << 10));
+    }
+    sShaftAvailable[layer] = 1;
+    sShaft555[layer] = pixels;
+    return pixels;
+}
+
+void ScenePictures_ReleaseShaft(void) {
+    for (unsigned i = 0; i < SCENE_SHAFT_LAYERS; ++i) {
+        free(sShaft555[i]);
+        sShaft555[i] = NULL;
+    }
+}
+
+void ScenePictures_SetShaftView(int groundBg, int x, int groundY, int ledgesY, int shadowsY) {
+    sShaftBg = groundBg;
+    sShaftX = x;
+    sShaftY[SCENE_SHAFT_GROUND] = groundY;
+    sShaftY[SCENE_SHAFT_LEDGES] = ledgesY;
+    sShaftY[SCENE_SHAFT_SHADOWS] = shadowsY;
+}
+
+int ScenePictures_ShaftView(int* x, int y[SCENE_SHAFT_LAYERS]) {
+    if (x) *x = sShaftX;
+    if (y)
+        for (unsigned i = 0; i < SCENE_SHAFT_LAYERS; ++i) y[i] = sShaftY[i];
+    return sShaftBg;
+}
