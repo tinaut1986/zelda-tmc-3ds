@@ -167,23 +167,41 @@ void ScenePictures_ReleaseCave(void) {
     sCave = NULL;
 }
 
-static const char* const kShaftFiles[SCENE_SHAFT_LAYERS] = { "crenel-paths-ground.bin", "crenel-paths-ledges.bin",
-                                                               "crenel-paths-shadows.bin" };
-static const unsigned kShaftHeights[SCENE_SHAFT_LAYERS] = { SCENE_SHAFT_GROUND_H, SCENE_SHAFT_LAYER_H,
-                                                            SCENE_SHAFT_LAYER_H };
+static const struct {
+    const char* files[SCENE_SHAFT_LAYERS]; /* NULL: no strips for that layer */
+    unsigned heights[SCENE_SHAFT_LAYERS];
+    unsigned groundLoopStart, groundLoopLength;
+} kShafts[SCENE_SHAFT_SCENES] = {
+    [SCENE_SHAFT_CRENEL] = { { "crenel-paths-ground.bin", "crenel-paths-ledges.bin", "crenel-paths-shadows.bin" },
+                             { 352, 960, 960 }, 32, 320 },
+    [SCENE_SHAFT_MINISH] = { { NULL, "minish-paths-leaves.bin", "minish-paths-shadows.bin" }, { 0, 1024, 1024 }, 0, 0 },
+};
 static int8_t sShaftAvailable[SCENE_SHAFT_LAYERS] = { -1, -1, -1 }; /* as sAvailable */
 static uint16_t* sShaft555[SCENE_SHAFT_LAYERS];
+static int sShaftScene, sShaftLoaded = -1; /* the scene shown, the one the strips are of */
 static int sShaftBg = -1, sShaftX, sShaftY[SCENE_SHAFT_LAYERS];
 
-const uint16_t* ScenePictures_Shaft555(SceneShaftLayer layer, unsigned* height) {
+const uint16_t* ScenePictures_Shaft555(SceneShaftLayer layer, unsigned* height, unsigned* loopStart,
+                                       unsigned* loopLength) {
     if (layer >= SCENE_SHAFT_LAYERS) return NULL;
-    if (height) *height = kShaftHeights[layer];
+    if (sShaftLoaded != sShaftScene) { /* another shaft: its own strips */
+        ScenePictures_ReleaseShaft();
+        for (unsigned i = 0; i < SCENE_SHAFT_LAYERS; ++i) sShaftAvailable[i] = -1;
+        sShaftLoaded = sShaftScene;
+    }
+    const unsigned rows = kShafts[sShaftScene].heights[layer];
+    const bool ground = layer == SCENE_SHAFT_GROUND;
+    if (height) *height = rows;
+    if (loopStart) *loopStart = ground ? kShafts[sShaftScene].groundLoopStart : 0;
+    if (loopLength) *loopLength = ground ? kShafts[sShaftScene].groundLoopLength : 0;
     if (!Port_Config_GetWideAi()) return NULL; /* generated art: only WIDE + AI, checked every frame */
+    const char* file = kShafts[sShaftScene].files[layer];
+    if (file == NULL) return NULL;
     if (sShaft555[layer] != NULL || sShaftAvailable[layer] == 0) return sShaft555[layer];
     char sd[160], romfs[96];
-    snprintf(sd, sizeof(sd), "%s/%s", TMC3DS_APP_DIR, kShaftFiles[layer]);
-    snprintf(romfs, sizeof(romfs), "romfs:/wide-scenes/%s", kShaftFiles[layer]);
-    const size_t count = (size_t)2 * SCENE_SHAFT_STRIP_W * kShaftHeights[layer];
+    snprintf(sd, sizeof(sd), "%s/%s", TMC3DS_APP_DIR, file);
+    snprintf(romfs, sizeof(romfs), "romfs:/wide-scenes/%s", file);
+    const size_t count = (size_t)2 * SCENE_SHAFT_STRIP_W * rows;
     uint16_t* pixels = malloc(count * sizeof(uint16_t));
     if (pixels == NULL || !ScenePictures_ReadFile(sd, romfs, pixels, count * sizeof(uint16_t))) {
         free(pixels);
@@ -206,7 +224,8 @@ void ScenePictures_ReleaseShaft(void) {
     }
 }
 
-void ScenePictures_SetShaftView(int groundBg, int x, int groundY, int ledgesY, int shadowsY) {
+void ScenePictures_SetShaftView(int scene, int groundBg, int x, int groundY, int ledgesY, int shadowsY) {
+    if (scene >= 0 && scene < SCENE_SHAFT_SCENES) sShaftScene = scene;
     sShaftBg = groundBg;
     sShaftX = x;
     sShaftY[SCENE_SHAFT_GROUND] = groundY;
