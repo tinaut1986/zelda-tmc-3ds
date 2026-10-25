@@ -200,6 +200,20 @@ Reads and writes check that the memory is mapped first, so a wrong address answe
 `./build_3ds.sh --install IP && tools/tmc-link/tmc-link.py run SCRIPT` installs a build
 and plays a scenario on it with nobody at the console.
 
+### Sending Link to a room (warp)
+
+`tmc-link.py warp AREA ROOM [X Y [LAYER]]` fills `gRoomTransition` as an exit does (`DoExitTransition`,
+`src/scroll.c`) and the game changes room at once: e.g. `warp 0x11 1` is the Minish Paths' water corridor, `warp
+0x11 1 120 752` its bottom (X and Y room-relative, default 120,64). It changes the save like any exit, and Link keeps
+his size and items, so use it **only on a test file** (Azahar's, `CLAUDE.local.md`), never the owner's game; save
+a state where you land. A room past the area's last one loads with size 0 (area 0x11 has rooms 0-4).
+
+### Azahar
+
+The game's FTP server works in Azahar too: `tmc-link.py --ip 127.0.0.1 ...` drives it, and the dumps and states are
+in Azahar's SD on the PC (no download). Close Azahar (`pkill -9 -x azahar`) before running another build: two
+instances both serve port 5000 and the link talks to the older one.
+
 ### Which layer holds what (poke the display control)
 
 To see which GBA layer draws an element, hide layers one at a time on the running game and `shot` each
