@@ -376,14 +376,24 @@ const uint16_t* ScenePictures_Shaft555(SceneShaftLayer layer, unsigned* height, 
     const char* file = kShafts[sShaftScene].files[layer];
     if (file == NULL && ground && kShafts[sShaftScene].groundFill >= 0) {
         /* Read every frame: the room's palettes may come in after the scene is first shown. A new colour gets a new
-         * buffer (allocated before the old one is freed, so another address): the renderer remakes its texture by it. */
+         * buffer (allocated before the old one is freed, so another address): the renderer remakes its texture by it.
+         * The colour darkens in 16-column steps away from the room (more plants over it, less light). */
+        static uint16_t base = 0xFFFF;
         const uint16_t colour = FadeGpu3DS_ShownPalettes()[kShafts[sShaftScene].groundFill];
-        if (sShaft555[layer] == NULL || sShaft555[layer][0] != colour) {
+        if (sShaft555[layer] == NULL || colour != base) {
+            static const uint8_t kShade[SCENE_SHAFT_STRIP_W / 16] = { 16, 13, 10, 8, 6 }; /* sixteenths, by step */
             uint16_t* pixels = malloc(2u * SCENE_SHAFT_STRIP_W * rows * 2u);
-            if (pixels != NULL)
-                for (unsigned i = 0; i < 2u * SCENE_SHAFT_STRIP_W * rows; ++i) pixels[i] = colour;
+            for (unsigned x = 0; pixels != NULL && x < 2u * SCENE_SHAFT_STRIP_W; ++x) {
+                /* The left strip's column 0 and the right one's last are the farthest from the room. */
+                const unsigned away = x < SCENE_SHAFT_STRIP_W ? SCENE_SHAFT_STRIP_W - 1 - x : x - SCENE_SHAFT_STRIP_W;
+                const unsigned k = kShade[away / 16];
+                const uint16_t c = (uint16_t)(((colour & 31u) * k / 16u) | (((colour >> 5 & 31u) * k / 16u) << 5) |
+                                              (((colour >> 10 & 31u) * k / 16u) << 10));
+                for (unsigned y = 0; y < rows; ++y) pixels[y * 2u * SCENE_SHAFT_STRIP_W + x] = c;
+            }
             free(sShaft555[layer]);
             sShaft555[layer] = pixels;
+            base = colour;
         }
         return sShaft555[layer];
     }
