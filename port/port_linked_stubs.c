@@ -2986,6 +2986,22 @@ void Port_Widescreen_UpdateShadows(void) {
     }
 
     Port_WidescreenParallaxShadows(fullViewOutdoor);
+#ifdef TMC_3DS
+    /* The Crenel paths' shaft (area 0x12 room 00) in Full View: its three layers go on beside the room from generated
+     * strips (scene_pictures_3ds.c), each drawn as its BG at the room's place on the view: the ground moving with the
+     * room, the ledges (BG1) and shadows (BG3) with the scroll their manager gives them
+     * (src/manager/verticalMinishPathBackgroundManager.c: 1.25 and 1.125 times the room's). */
+    {
+        extern void ScenePictures_SetShaftView(int groundBg, int x, int groundY, int ledgesY, int shadowsY);
+        const int bg = fullViewOutdoor && gRoomControls.area == 0x12 && gRoomControls.room == 0 &&
+                               gMapBottom.bgSettings != NULL
+                           ? Port_WidescreenPpuBgForControl(gMapBottom.bgSettings->control)
+                           : -1;
+        const s32 dy = gRoomControls.scroll_y - gRoomControls.origin_y;
+        ScenePictures_SetShaftView(bg, (int)gRoomControls.origin_x - gRoomControls.scroll_x - 80, (int)-dy,
+                                   (int)-(dy + (dy >> 2)), (int)-(dy + (dy >> 3)));
+    }
+#endif
 
     /* Publish only shadows built for this exact room/producer generation. */
 #ifdef TMC_3DS

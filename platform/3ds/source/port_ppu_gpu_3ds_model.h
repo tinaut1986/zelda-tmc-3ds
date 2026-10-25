@@ -246,6 +246,17 @@ typedef struct PpuGpu3DSFrameView {
      * (virtuappu_mode1_bg1_picture, PortPpuGpu3DS_SetBg1Picture), the file
      * select's cave as BG3 (PortPpuGpu3DS_SetIndexedPicture). */
     uint8_t pictureMask;
+    /* Side strips of a room narrower than the view (the Crenel paths' shaft, PortPpuGpu3DS_SetScrollPicture), one
+     * picture per BG in scrollPictureMask, drawn over that BG's tiles where opaque: the strip of
+     * scrollPictureStripWidth columns left of the room and the one right of it, the room scrollPictureGap wide, the
+     * left strip's top-left at (scrollPictureX, scrollPictureY[bg]) on the frame, so they move with the camera and
+     * each BG's scroll. Picture rows past scrollPictureHeight[bg] repeat from scrollPictureLoopStart[bg] over
+     * scrollPictureLoopLength[bg] rows (0: nothing past the end). */
+    uint8_t scrollPictureMask;
+    int16_t scrollPictureX;
+    uint16_t scrollPictureStripWidth, scrollPictureGap;
+    int16_t scrollPictureY[4];
+    uint16_t scrollPictureHeight[4], scrollPictureLoopStart[4], scrollPictureLoopLength[4];
     /* BGs (bit n = BGn) drawn only in the GBA's 240x160 screen centred in a
      * bigger view, at their own scroll (the file select's windows and text,
      * whose 256-wide maps would repeat across it). */
@@ -513,6 +524,15 @@ enum { PPU_GPU3DS_AFFINE_RING = 2 * 2 };
  * PPU_GPU3DS_PICTURE_TEX_WIDTH x _HEIGHT RGBA5551 texture, rows from v = 1 down. */
 enum { PPU_GPU3DS_PICTURE_TEXTURE = 1 + PPU_GPU3DS_RING_COUNT, PPU_GPU3DS_PICTURE_TEX_WIDTH = 512,
        PPU_GPU3DS_PICTURE_TEX_HEIGHT = 256 };
+/* PpuGpu3DSBatch.texture of BG n's side strips (PpuGpu3DSFrameView::scrollPictureMask): this + n, RGBA5551, 256
+ * wide (the two strips side by side), as tall as PortPpuGpu3DS_ScrollPictureTexHeight, rows from v = 1 down. */
+enum { PPU_GPU3DS_SCROLL_PICTURE_TEXTURE = PPU_GPU3DS_PICTURE_TEXTURE + 1, PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH = 256 };
+/* The texture height a side-strip picture of `height` rows takes (the next power of two, 1024 at most). */
+static inline unsigned PpuGpu3DS_ScrollPictureTexHeight(unsigned height) {
+    unsigned h = 8;
+    while (h < height && h < 1024u) h <<= 1;
+    return h;
+}
 void PpuGpu3DS_CacheInit(PpuGpu3DSCache* cache);
 void PpuGpu3DS_CacheClearDirty(PpuGpu3DSCache* cache);
 void PpuGpu3DS_CacheBeginFrame(PpuGpu3DSCache* cache, const uint16_t* bgPalette,

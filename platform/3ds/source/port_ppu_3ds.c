@@ -252,6 +252,11 @@ static TopFrameState SelectTopFrame(void) {
 /* The frame being built is the file select at 400x240 (Port_Widescreen_FileSelectViewLive): its four
  * BGs in the middle, the cave's extension (PortPpuGpu3DS_SetIndexedPicture) as BG3 around them. */
 static bool sFileSelectFrame;
+/* The frame being built shows the Crenel paths' shaft with its strips (ScenePictures_ShaftView): the BGs they are
+ * drawn as (bits), the left strip's left edge on the frame and each layer's top, rows and loop. */
+static uint8_t sShaftMask;
+static int16_t sShaftX, sShaftY[4];
+static uint16_t sShaftHeight[4], sShaftLoopStart[4], sShaftLoopLength[4];
 
 static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     memset(view, 0, sizeof(*view));
@@ -298,6 +303,16 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     view->bgRepeatMask = virtuappu_mode1_bg_repeat_mask;
     view->pictureMask = virtuappu_mode1_bg1_picture != NULL ? 0x2u : sFileSelectFrame ? 0x8u : 0u;
     view->bgNativeMask = sFileSelectFrame ? 0xFu : 0u;
+    view->scrollPictureMask = sShaftMask;
+    view->scrollPictureX = sShaftX;
+    view->scrollPictureStripWidth = SCENE_SHAFT_STRIP_W;
+    view->scrollPictureGap = SCENE_SHAFT_ROOM_W;
+    for (unsigned bg = 0; bg < 4; ++bg) {
+        view->scrollPictureY[bg] = sShaftY[bg];
+        view->scrollPictureHeight[bg] = sShaftHeight[bg];
+        view->scrollPictureLoopStart[bg] = sShaftLoopStart[bg];
+        view->scrollPictureLoopLength[bg] = sShaftLoopLength[bg];
+    }
     view->wsFullView = virtuappu_mode1_ws_full_view != 0;
     /* The software PPU's rule (mode1_bg3_native_bounds_active). */
     view->bg3HofsBase = virtuappu_mode1_bg3_hofs_base;
@@ -1321,6 +1336,31 @@ static void PresentFrame(void) {
         PortPpuGpu3DS_SetIndexedPicture(sFileSelectFrame ? ScenePictures_CaveIndices() : NULL, SCENE_CAVE_W,
                                         SCENE_CAVE_H, SCENE_CAVE_FIRST_PALETTE);
         if (gMain.task != TASK_FILE_SELECT) ScenePictures_ReleaseCave();
+        /* The Crenel paths' shaft: its three layers' strips as their BGs (the ground's, BG1's ledges, BG3's shadows),
+         * at the room's place. */
+        int shaftX, shaftY[SCENE_SHAFT_LAYERS];
+        const int groundBg = wideFrame ? ScenePictures_ShaftView(&shaftX, shaftY) : -1;
+        const int layerBg[SCENE_SHAFT_LAYERS] = { groundBg, 1, 3 };
+        bool used[4] = { false, false, false, false };
+        sShaftMask = 0;
+        sShaftX = (int16_t)shaftX;
+        for (unsigned layer = 0; layer < SCENE_SHAFT_LAYERS && groundBg >= 0; ++layer) {
+            const unsigned bg = (unsigned)layerBg[layer] & 3u;
+            if (used[bg]) continue; /* the ground is never BG1 or BG3 here; if it were, it wins */
+            unsigned height = 0;
+            const uint16_t* pixels = ScenePictures_Shaft555((SceneShaftLayer)layer, &height);
+            PortPpuGpu3DS_SetScrollPicture(bg, pixels, 2 * SCENE_SHAFT_STRIP_W, height);
+            if (pixels == NULL) continue;
+            used[bg] = true;
+            sShaftMask |= (uint8_t)(1u << bg);
+            sShaftY[bg] = (int16_t)shaftY[layer];
+            sShaftHeight[bg] = (uint16_t)height;
+            sShaftLoopStart[bg] = layer == SCENE_SHAFT_GROUND ? SCENE_SHAFT_LOOP_START : 0;
+            sShaftLoopLength[bg] = layer == SCENE_SHAFT_GROUND ? SCENE_SHAFT_LOOP_LENGTH : 0;
+        }
+        for (unsigned bg = 0; bg < 4; ++bg)
+            if (!used[bg]) PortPpuGpu3DS_SetScrollPicture(bg, NULL, 0, 0);
+        if (sShaftMask == 0 && (gMain.task != TASK_GAME || gRoomControls.area != 0x12)) ScenePictures_ReleaseShaft();
     }
     /* Only Vaati's appearing effect is placed on the native screen (BG3 drawn at an
      * entity's screen position); the other BG3 HBlank effects (Minish Woods light

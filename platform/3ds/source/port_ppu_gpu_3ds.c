@@ -101,6 +101,10 @@ static uint8_t* sPictureSwizzled;
 static unsigned sPictureFirstPalette, sPictureTileRows, sPictureTileCols;
 static uint16_t sPicturePalettes[64];
 static bool sPicturePalettesValid;
+/* Side strips per BG (PortPpuGpu3DS_SetScrollPicture): a texture each, made when one is set, freed when cleared. */
+static C3D_Tex sScrollTex[MODE1_GBA_BG_COUNT];
+static const uint16_t* sScrollPixels[MODE1_GBA_BG_COUNT];
+static bool sScrollCorrected[MODE1_GBA_BG_COUNT];
 static unsigned sBoundTexture;
 static C3D_Tex sOutputTexture;
 static C3D_RenderTarget* sOutputTarget;
@@ -220,6 +224,11 @@ void PortPpuGpu3DS_Shutdown(void) {
     if (sPictureTex.data) C3D_TexDelete(&sPictureTex);
     memset(&sPictureTex, 0, sizeof(sPictureTex));
     sPicturePixels = NULL;
+    for (unsigned bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {
+        if (sScrollTex[bg].data) C3D_TexDelete(&sScrollTex[bg]);
+        memset(&sScrollTex[bg], 0, sizeof(sScrollTex[bg]));
+        sScrollPixels[bg] = NULL;
+    }
     free(sPictureSwizzled);
     sPictureSwizzled = NULL;
     sPictureIndices = NULL;
@@ -371,6 +380,36 @@ void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsi
     C3D_TexFlush(&sPictureTex);
     sPicturePixels = gbaPixels;
     sPictureCorrected = corrected;
+}
+
+void PortPpuGpu3DS_SetScrollPicture(unsigned bg, const uint16_t* gbaPixels, unsigned width, unsigned height) {
+    if (bg >= MODE1_GBA_BG_COUNT) return;
+    const bool corrected = Port_Config_GetColorCorrection();
+    if (gbaPixels == sScrollPixels[bg] && (gbaPixels == NULL || corrected == sScrollCorrected[bg])) return;
+    C3D_Tex* const tex = &sScrollTex[bg];
+    if (tex->data) C3D_TexDelete(tex);
+    memset(tex, 0, sizeof(*tex));
+    sScrollPixels[bg] = NULL;
+    sBoundTexture = UINT8_MAX; /* rebind */
+    const unsigned texHeight = PpuGpu3DS_ScrollPictureTexHeight(height);
+    if (gbaPixels == NULL || width > PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH || height > texHeight) return;
+    if (!C3D_TexInit(tex, PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH, texHeight, GPU_RGBA5551)) {
+        memset(tex, 0, sizeof(*tex));
+        return;
+    }
+    memset(tex->data, 0, tex->size);
+    C3D_TexSetFilter(tex, GPU_NEAREST, GPU_NEAREST);
+    C3D_TexSetWrap(tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+    /* 8x8 Morton tiles, tile rows from the top (v = 1), as the other picture. */
+    uint16_t* texels = (uint16_t*)tex->data;
+    for (unsigned y = 0; y < height; ++y)
+        for (unsigned x = 0; x < width; ++x)
+            texels[((y >> 3) * (PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH >> 3) + (x >> 3)) * 64u +
+                   PpuGpu3DS_MortonIndex(x & 7u, y & 7u)] =
+                PpuGpu3DS_PackRgba5551(gbaPixels[y * width + x], gbaPixels[y * width + x] != 0);
+    C3D_TexFlush(tex);
+    sScrollPixels[bg] = gbaPixels;
+    sScrollCorrected[bg] = corrected;
 }
 
 bool PortPpuGpu3DS_Init(void) {
@@ -1042,9 +1081,11 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
     }
     if (batch->texture != sBoundTexture) {
         sBoundTexture = batch->texture;
-        C3D_TexBind(0, batch->texture == 0                            ? &sAtlas
-                       : batch->texture == PPU_GPU3DS_PICTURE_TEXTURE ? &sPictureTex
-                                                                      : &sRingTex[batch->texture - 1u]);
+        C3D_TexBind(0, batch->texture == 0                                   ? &sAtlas
+                       : batch->texture == PPU_GPU3DS_PICTURE_TEXTURE        ? &sPictureTex
+                       : batch->texture >= PPU_GPU3DS_SCROLL_PICTURE_TEXTURE
+                           ? &sScrollTex[(batch->texture - PPU_GPU3DS_SCROLL_PICTURE_TEXTURE) & 3u]
+                           : &sRingTex[batch->texture - 1u]);
     }
     SetBatchOffset(batch->offsetX + (sEyeShifting && !sNoShift && batch->layer <= PPU_GPU3DS_OBJ
                                              ? (batch->objWindow && sEyeWindowFollows ? sEyeWindowNdc
@@ -1326,9 +1367,11 @@ static void DrawZoneBatch(const PpuGpu3DSBatch* batch, const ZoneDepth3DSRect* z
         return;
     if (batch->texture != sBoundTexture) {
         sBoundTexture = batch->texture;
-        C3D_TexBind(0, batch->texture == 0                            ? &sAtlas
-                       : batch->texture == PPU_GPU3DS_PICTURE_TEXTURE ? &sPictureTex
-                                                                      : &sRingTex[batch->texture - 1u]);
+        C3D_TexBind(0, batch->texture == 0                                   ? &sAtlas
+                       : batch->texture == PPU_GPU3DS_PICTURE_TEXTURE        ? &sPictureTex
+                       : batch->texture >= PPU_GPU3DS_SCROLL_PICTURE_TEXTURE
+                           ? &sScrollTex[(batch->texture - PPU_GPU3DS_SCROLL_PICTURE_TEXTURE) & 3u]
+                           : &sRingTex[batch->texture - 1u]);
     }
     SetBatchOffset(batch->offsetX + (float)shift * (2.0f / (float)sPreparedWidth), batch->offsetY);
     sTintLayer = (int)toBg;
