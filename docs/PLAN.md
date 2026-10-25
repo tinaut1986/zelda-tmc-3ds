@@ -1501,3 +1501,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   `ScenePictures_ReadFile` also reads the GBA BIOS's LZ77 (`to_console.py --lz77`, 173 KB for the same seven), the way out
   should zlib ever go, and uncompressed files (by their size). Lowering their resolution was ruled out: they are 1:1 pixel
   art beside the game's own.
+- **2026-10-25** The pause menu's background extended in Full View by code (`tools/scene-extend/extend_lattice.py`):
+  it is a lattice of Ezlo caps, so no AI was needed. Owner: WIDE + AI is only for players who want nothing from a
+  generative AI, so art made by code from the game's own shows in plain WIDE too (`ScenePicture.procedural`; the rule
+  in CLAUDE.md and `docs/wide-scene-extension.md`, "Patterns"). Checked on the New 3DS: the three pages, a page change
+  and closing the menu.

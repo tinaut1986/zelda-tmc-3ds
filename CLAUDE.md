@@ -197,6 +197,12 @@ git push origin --delete release/v0.1.0
 - License: GPL-3.0 (see `LICENSE`, `COPYRIGHT.md`, `THIRD-PARTY-LICENSES.md`), agbplay
   LGPLv3. Keep the notices; the build copies them into the romfs.
 
+## Scene extensions: WIDE or WIDE + AI
+
+Art drawn, even in part, by a generative AI is shown only in WIDE + AI; some players want nothing from one.
+Extensions made by code from the game's own art (patterns, the procedural room border) need no AI and show in
+plain WIDE too (owner, 2026-10-25; `docs/wide-scene-extension.md`, "Patterns").
+
 ## Build
 
 Toolchain in `/opt/devkitpro` (devkitARM, libctru, citro2d/3d). The updater's

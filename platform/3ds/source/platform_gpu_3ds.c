@@ -1100,6 +1100,7 @@ typedef struct ScenePicture {
     C3D_Tex texture;
     int state;      /* 0 not tried, 1 loaded, -1 no file */
     bool corrected; /* the colour correction the texture was made with */
+    bool procedural; /* made by code from the game's own art, no generative AI: WIDE is enough */
 } ScenePicture;
 
 static void LoadScenePicture(ScenePicture* picture) {
@@ -1144,7 +1145,7 @@ static void LoadScenePicture(ScenePicture* picture) {
 
 /* Whether the scene's picture can be drawn this frame; frees it when the scene is not shown. */
 static bool ScenePictureReady(ScenePicture* picture, bool shown) {
-    if (!Port_Config_GetWideAi()) shown = false; /* generated art: only WIDE + AI */
+    if (!picture->procedural && !Port_Config_GetWideAi()) shown = false; /* generated art: only WIDE + AI */
     if (picture->state == 1 && (!shown || picture->corrected != Port_Config_GetColorCorrection())) {
         C3D_TexDelete(&picture->texture);
         picture->state = 0;
@@ -1215,6 +1216,14 @@ static void DrawCutsceneStrip(ScenePicture* strips, int screenX, int width, int 
 static ScenePicture sTitleForest = { .path = TMC3DS_APP_DIR "/title-forest.bin",
                                      .romfsPath = "romfs:/wide-scenes/title-forest.bin", .width = 400, .height = 240,
                                      .texWidth = 512, .texHeight = 256 };
+
+/* The pause menu at 1x in Full View (Port_Widescreen_PauseBackgroundShown): its background of Ezlo caps
+ * (BG3) goes on around the 240x160 screen from pause-background.bin, the same 400x240 layout as the
+ * title's. Made by code from the game's own pattern (tools/scene-extend/extend_lattice.py), so it is
+ * drawn in plain WIDE too. */
+static ScenePicture sPauseBackground = { .path = TMC3DS_APP_DIR "/pause-background.bin",
+                                         .romfsPath = "romfs:/wide-scenes/pause-background.bin", .width = 400,
+                                         .height = 240, .texWidth = 512, .texHeight = 256, .procedural = true };
 
 /* The file select screen at 1x in Full View (Port_Widescreen_FileSelectCaveShown): its cave goes on
  * around the 240x160 screen from fileselect-cave.bin (tools/scene-extend/to_console.py fileselect):
@@ -1287,6 +1296,7 @@ static void DrawScenePictures(int frameX, int frameY, int frameW, int frameH, bo
     const bool portal = Port_Widescreen_CutsceneStrips(&pictureX, &pictureY, &portalIndex);
     const bool title = frameW == 240 && frameH == 160 && Port_Widescreen_TitleForestShown();
     const bool cave = frameW == 240 && frameH == 160 && Port_Widescreen_FileSelectCaveShown();
+    const bool pause = frameW == 240 && frameH == 160 && Port_Widescreen_PauseBackgroundShown();
     bool portalReady = false;
     for (int i = 0; i < PORTAL_PICTURES; ++i) {
         const bool ready = ScenePictureReady(&sPortalStrips[i].strips, portal && i == portalIndex);
@@ -1296,22 +1306,25 @@ static void DrawScenePictures(int frameX, int frameY, int frameW, int frameH, bo
     const int pictureW = strips->pictureW, rightW = 400 - STRIPS_LEFT_W - pictureW;
     const bool titleReady = ScenePictureReady(&sTitleForest, title);
     const bool caveReady = CaveReady(cave);
-    if (!portal && !title && !caveReady) return;
+    const bool pauseReady = ScenePictureReady(&sPauseBackground, pause);
+    /* The pictures drawn around the 240x160 screen from a whole 400x240 picture. */
+    ScenePicture* const around = titleReady ? &sTitleForest : pauseReady ? &sPauseBackground : NULL;
+    if (!portal && !title && !caveReady && !around) return;
     /* Citro2D sends a batch when the texture changes, with the env set then: send the frame's
      * quad under its own env before the pictures change it. */
     C2D_Flush();
-    if (portalReady || titleReady || caveReady) ConfigureAbgrTextureEnv(); /* the pictures are in the frame's pixel order */
+    if (portalReady || around || caveReady) ConfigureAbgrTextureEnv(); /* the pictures are in the frame's pixel order */
     if (portal) {
         /* Left of the picture, then right of it; each strip is drawn from its own columns. */
         DrawCutsceneStrip(&strips->strips, pictureX - STRIPS_LEFT_W, STRIPS_LEFT_W, 0, pictureY);
         DrawCutsceneStrip(&strips->strips, pictureX + pictureW, rightW, STRIPS_LEFT_W, pictureY);
     }
     const int left = frameX - 80, top = frameY - 40; /* the picture's top-left on screen */
-    if (titleReady) {
-        DrawScenePicturePart(&sTitleForest, 0, 0, 400, 40, left, top);
-        DrawScenePicturePart(&sTitleForest, 0, 200, 400, 40, left, frameY + 160);
-        DrawScenePicturePart(&sTitleForest, 0, 40, 80, 160, left, frameY);
-        DrawScenePicturePart(&sTitleForest, 320, 40, 80, 160, frameX + 240, frameY);
+    if (around) {
+        DrawScenePicturePart(around, 0, 0, 400, 40, left, top);
+        DrawScenePicturePart(around, 0, 200, 400, 40, left, frameY + 160);
+        DrawScenePicturePart(around, 0, 40, 80, 160, left, frameY);
+        DrawScenePicturePart(around, 320, 40, 80, 160, frameX + 240, frameY);
     }
     if (caveReady) {
         DrawScenePicturePart(&sCave.picture, 0, 0, 400, 40, left, top);
@@ -1320,12 +1333,12 @@ static void DrawScenePictures(int frameX, int frameY, int frameW, int frameH, bo
         DrawScenePicturePart(&sCave.picture, 320, 40, 80, 160, frameX + 240, frameY);
     }
     C2D_Flush();
-    if ((portalReady || titleReady || caveReady) && !abgrAfter) ConfigureIdentityTextureEnv();
+    if ((portalReady || around || caveReady) && !abgrAfter) ConfigureIdentityTextureEnv();
     if (portal) {
         VeilScenePicture(0, 0, pictureX, 240);
         VeilScenePicture(pictureX + pictureW, 0, 400 - pictureX - pictureW, 240);
     }
-    if (titleReady || caveReady) {
+    if (around || caveReady) {
         VeilScenePicture(left, top, 400, 40);
         VeilScenePicture(left, frameY + 160, 400, 40);
         VeilScenePicture(left, frameY, 80, 160);
