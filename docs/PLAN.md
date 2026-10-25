@@ -14,12 +14,16 @@ change (what goes where: the table in `CLAUDE.md`).
   audio offload, an updater, a quick memory dump (L+R+A) and an experimental New 3DS
   "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors; the 2x indoor zoom is gone, see the decisions log).
 
-## Status (2026-10-21)
+## Status (2026-10-25)
 
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.4.5` (renamed from `release/v0.4.4` right after the `v0.4.4` tag). Published:
+**Release line:** `release/v0.4.6` (renamed from `release/v0.4.5` right after the `v0.4.5` tag). Published:
+**`v0.4.5`** (2026-10-25, **stable**, straight to stable at the owner's request: `release/v0.4.5` merged `--no-ff` into `main`,
+`5daf479`, and tagged there; sprites overlapping by priority as on the GBA, the Crenel Minish paths' generated sides (WIDE + AI)
+and their camera after a portal, the rock portal's own fall strips, the procedural border in the Minish caves' first room, the
+bottom map's region names; `docs/release-notes/v0.4.5.md`. The stale `release/v0.4.4` was deleted here and on origin),
 **`v0.4.4`** (2026-10-24, **stable**, straight to stable at the owner's request: `release/v0.4.4` merged `--no-ff` into `main`,
 `bf4a455`, and tagged there; the Minish Woods' fog at 60 fps in 3D (`perf/stereo-fog`), zone depth fixes, FIXED and WALL
 sprite depths, Link's head on the region map, the kinstone world event in wide, Hyrule Town's zone gaps; `docs/release-notes/v0.4.4.md`),
@@ -46,8 +50,6 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 
 | Branch | State |
 |---|---|
-| `perf/stereo-fog` (local, not pushed, NOT checked on the console) | Reason 4 (`SPLIT_BASE_OVER_FRONT`) in the Minish Woods fog: Link's lean runs and neighbouring sprites no longer count as drawn over a sprite in front unless their boxes meet; debug log names the batch. See the decisions log 2026-10-24. |
-| `feat/map-region-names` (local, not pushed; checked by the owner on the New 3DS, 2026-10-24, waiting to be merged) | Bottom MAP tab: Link's region named above his marker, a first tap selects a tile (tinted, game cursor, name) and a second tap on it opens it, the detail map shows its name. See the decisions log 2026-10-24. |
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
