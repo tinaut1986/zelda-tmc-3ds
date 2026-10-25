@@ -98,13 +98,28 @@ static bool SharesEdge(const RoomResInfo* a, const RoomResInfo* b) {
 
 /* The rooms reachable from `room` through shared edges. An area also packs unrelated rooms side by side with a
  * gap between them (the houses of HOUSE_INTERIORS_*), which must not show; a dungeon's or a town's rooms abut. */
-static u32 sConnectedKey = 0xffffffffu;
+static u32 sConnectedKey = 0xffffffffu, sConnectedTable;
+
+/* A fingerprint of the area's room table (every room's place and size). Right after an area change (a Minish portal's
+ * landing) the room and area numbers are already the new ones while gArea.roomResInfos is still the previous area's:
+ * anything worked out then and kept under those numbers is wrong for the whole visit, so the caches below also keep
+ * the table they came from (the Crenel paths, area 0x12, came up drawn at 0-240 of the view). */
+static u32 RoomTableKey(void) {
+    u32 h = 2166136261u;
+    for (unsigned j = 0; j < MAX_ROOMS; ++j) {
+        const RoomResInfo* r = &gArea.roomResInfos[j];
+        const u32 v[4] = { r->pixel_width, r->pixel_height, r->map_x, r->map_y };
+        for (unsigned k = 0; k < 4; ++k) h = (h ^ v[k]) * 16777619u;
+    }
+    return h;
+}
 
 static u64 Connected(unsigned room) {
     static u64 mask;
-    const u32 k = ((u32)gRoomControls.area << 8) | room;
-    if (k == sConnectedKey) return mask;
+    const u32 k = ((u32)gRoomControls.area << 8) | room, table = RoomTableKey();
+    if (k == sConnectedKey && table == sConnectedTable) return mask;
     sConnectedKey = k;
+    sConnectedTable = table;
     mask = (room < MAX_ROOMS) ? (u64)1 << room : 0;
     for (bool grew = mask != 0; grew;) {
         grew = false;
@@ -570,13 +585,11 @@ static int Coverage(const RoomResInfo* r, int axis, int start, int view) {
 }
 
 /* The camera asks every frame: each candidate's coverage is kept per area, room, axis and view size, and for the
- * room table it was worked out from. Right after an area change (a Minish portal's landing) the camera can ask while
- * gArea.roomResInfos is still the previous area's: a rest worked out from that kept the camera off centre for the
- * whole room (the Crenel paths, area 0x12, drawn at 0-240 of the view). */
+ * room table it was worked out from (RoomTableKey). */
 enum { REST_CANDIDATES = 64 };
 static struct {
     u32 key;
-    RoomResInfo room; /* the entry it was worked out from */
+    u32 table; /* the room table it was worked out from (RoomTableKey) */
     int first, count, centred;
     uint16_t score[REST_CANDIDATES];
 } sRestCache[4];
@@ -596,10 +609,10 @@ static void ComputeRest(unsigned room, int axis, int view, int* first, int* coun
 static unsigned RestSlot(unsigned room, int axis, int view) {
     const u32 key = ((u32)gRoomControls.area << 24) | ((room & 0xFFu) << 16) | ((u32)(axis & 1) << 15) | ((u32)view & 0x7FFFu);
     unsigned slot = sizeof(sRestCache) / sizeof(sRestCache[0]);
-    const RoomResInfo* info = &gArea.roomResInfos[room < MAX_ROOMS ? room : 0];
+    const u32 table = RoomTableKey();
     for (unsigned i = 0; i < sizeof(sRestCache) / sizeof(sRestCache[0]); ++i)
         if (sRestCache[i].key == key && key != 0) slot = i;
-    if (slot < sizeof(sRestCache) / sizeof(sRestCache[0]) && memcmp(&sRestCache[slot].room, info, sizeof(*info)) != 0) {
+    if (slot < sizeof(sRestCache) / sizeof(sRestCache[0]) && sRestCache[slot].table != table) {
         sRestCache[slot].key = 0; /* worked out from another room table */
         slot = sizeof(sRestCache) / sizeof(sRestCache[0]);
     }
@@ -607,7 +620,7 @@ static unsigned RestSlot(unsigned room, int axis, int view) {
         slot = sRestNext;
         sRestNext = (sRestNext + 1) % (sizeof(sRestCache) / sizeof(sRestCache[0]));
         sRestCache[slot].key = key;
-        sRestCache[slot].room = *info;
+        sRestCache[slot].table = table;
         ComputeRest(room, axis, view, &sRestCache[slot].first, &sRestCache[slot].count, &sRestCache[slot].centred,
                     sRestCache[slot].score);
     }
