@@ -346,10 +346,14 @@ static const struct {
     const char* files[SCENE_SHAFT_LAYERS]; /* NULL: no strips for that layer */
     unsigned heights[SCENE_SHAFT_LAYERS];
     unsigned groundLoopStart, groundLoopLength;
+    int groundFill; /* without a ground file: the BG palette entry (palette * 16 + index) the sides are filled with */
 } kShafts[SCENE_SHAFT_SCENES] = {
     [SCENE_SHAFT_CRENEL] = { { "crenel-paths-ground.bin", "crenel-paths-ledges.bin", "crenel-paths-shadows.bin" },
-                             { 352, 960, 960 }, 32, 320 },
-    [SCENE_SHAFT_MINISH] = { { NULL, "minish-paths-leaves.bin", "minish-paths-shadows.bin" }, { 0, 1024, 1024 }, 0, 0 },
+                             { 352, 960, 960 }, 32, 320, -1 },
+    /* The grass corridor's ground ends in a band of its darkest brown (palette 14 colour 1, the outer columns are
+     * nothing else), mostly under the leaves: that colour, made by the game, so in plain WIDE too. */
+    [SCENE_SHAFT_MINISH] = { { NULL, "minish-paths-leaves.bin", "minish-paths-shadows.bin" }, { 8, 1024, 1024 }, 0, 8,
+                             14 * 16 + 1 },
 };
 static int8_t sShaftAvailable[SCENE_SHAFT_LAYERS] = { -1, -1, -1 }; /* as sAvailable */
 static uint16_t* sShaft555[SCENE_SHAFT_LAYERS];
@@ -369,8 +373,21 @@ const uint16_t* ScenePictures_Shaft555(SceneShaftLayer layer, unsigned* height, 
     if (height) *height = rows;
     if (loopStart) *loopStart = ground ? kShafts[sShaftScene].groundLoopStart : 0;
     if (loopLength) *loopLength = ground ? kShafts[sShaftScene].groundLoopLength : 0;
-    if (!Port_Config_GetWideAi()) return NULL; /* generated art: only WIDE + AI, checked every frame */
     const char* file = kShafts[sShaftScene].files[layer];
+    if (file == NULL && ground && kShafts[sShaftScene].groundFill >= 0) {
+        /* Read every frame: the room's palettes may come in after the scene is first shown. A new colour gets a new
+         * buffer (allocated before the old one is freed, so another address): the renderer remakes its texture by it. */
+        const uint16_t colour = FadeGpu3DS_ShownPalettes()[kShafts[sShaftScene].groundFill];
+        if (sShaft555[layer] == NULL || sShaft555[layer][0] != colour) {
+            uint16_t* pixels = malloc(2u * SCENE_SHAFT_STRIP_W * rows * 2u);
+            if (pixels != NULL)
+                for (unsigned i = 0; i < 2u * SCENE_SHAFT_STRIP_W * rows; ++i) pixels[i] = colour;
+            free(sShaft555[layer]);
+            sShaft555[layer] = pixels;
+        }
+        return sShaft555[layer];
+    }
+    if (!Port_Config_GetWideAi()) return NULL; /* generated art: only WIDE + AI, checked every frame */
     if (file == NULL) return NULL;
     if (sShaft555[layer] != NULL || sShaftAvailable[layer] == 0) return sShaft555[layer];
     char sd[160], romfs[96];
