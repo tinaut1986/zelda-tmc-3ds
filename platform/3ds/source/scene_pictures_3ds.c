@@ -133,7 +133,8 @@ static int sShaftBg = -1, sShaftX, sShaftY[SCENE_SHAFT_LAYERS];
 const uint16_t* ScenePictures_Shaft555(SceneShaftLayer layer, unsigned* height) {
     if (layer >= SCENE_SHAFT_LAYERS) return NULL;
     if (height) *height = kShaftHeights[layer];
-    if (sShaft555[layer] != NULL || !Port_Config_GetWideAi() || sShaftAvailable[layer] == 0) return sShaft555[layer];
+    if (!Port_Config_GetWideAi()) return NULL; /* generated art: only WIDE + AI, checked every frame */
+    if (sShaft555[layer] != NULL || sShaftAvailable[layer] == 0) return sShaft555[layer];
     char sd[160], romfs[96];
     snprintf(sd, sizeof(sd), "%s/%s", TMC3DS_APP_DIR, kShaftFiles[layer]);
     snprintf(romfs, sizeof(romfs), "romfs:/wide-scenes/%s", kShaftFiles[layer]);
