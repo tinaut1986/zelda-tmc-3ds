@@ -77,23 +77,20 @@ pictures (23151d1, seen loading on the New 3DS through the title screen). No bra
    area 0x35 room 00 by `kBorderRooms`. Proposed: drop the list, let the rule decide, log its choice per room (the
    `border:` line in the SD log already does) and review screenshots while the owner plays; walls, water and pits must stay
    black, and repeated dungeon floors may need a list of rooms left out.
-1. **Crenel Minish paths after the rock portal** (#48): the camera came up off centre again on 2026-10-25 (a rooms-connected
-   mask worked out from the previous area's table); 1bb527b keys both neighbour caches on the whole room table. Seen
-   centred after loading a save there, **not yet arriving through the rock portal in Full View**.
-2. **Sprite order** (#49, 9f47617): changed for the whole game; only the Crenel twig was checked. Look at overlaps elsewhere
+1. **Sprite order** (#49, 9f47617): changed for the whole game; only the Crenel twig was checked. Look at overlaps elsewhere
    (tree tops, doors, enemies passing in front of things).
-3. **The other two portal falls** (Hyrule Town's portal type 2 and the dungeon picture) have no strips: black, at the stump's
+2. **The other two portal falls** (Hyrule Town's portal type 2 and the dungeon picture) have no strips: black, at the stump's
    256 width (`sPortalStrips`, decisions log 2026-10-24). Dump them when the owner passes one (`extract_bg.py` prints the
    width) and make their pieces as for the rock (`~/Imágenes/minish-portal-roca/`).
-4. **Side strips for narrow map rooms (P4.6).** The shaft's code (`build_bg_scroll_picture`, a picture per BG at its layer's
+3. **Side strips for narrow map rooms (P4.6).** The shaft's code (`build_bg_scroll_picture`, a picture per BG at its layer's
    scroll, `ScenePictures_SetShaftView`) is the way to draw any map room's generated sides; it is written for the Crenel
    shaft only. The shrine yard (area 0x4A room 00) material is in `~/Imágenes/outpaint-area-4A/`.
-5. **Old 3DS/2DS check** of what only the New 3DS has seen: the shaft's three strip textures (about 1.3 MB of linear memory),
+4. **Old 3DS/2DS check** of what only the New 3DS has seen: the shaft's three strip textures (about 1.3 MB of linear memory),
    the grid on HIGH, WIDE + AI, the file select and title without 3D, TOP HUD AUTO, the neighbour rooms' cost.
-6. **#30** (2DS: the top screen's right edge breaks on room changes and while rolling; hypothesis 2 of the issue left) and
+5. **#30** (2DS: the top screen's right edge breaks on room changes and while rolling; hypothesis 2 of the issue left) and
    **#33** (WIDE + AI falls back to a bordered view in some areas, e.g. before Mt. Crenel's dungeon; not looked at).
    Waiting for the owner's word to close: #44, #37, #39-#42. Parked: #38.
-7. Smaller: the bottom screen's UI theme is not corrected by COLOURS (`port_second_screen_color.h`); sm-3ds's DRAW ORDER
+6. Smaller: the bottom screen's UI theme is not corrected by COLOURS (`port_second_screen_color.h`); sm-3ds's DRAW ORDER
    tint view could join PLANE TINT; scripted entrances may pop in Full View (look when reported); P3.4's dialogues per pixel
    (recheck the C line first); the README's before/after GIF of the portal shrink (P1.6).
 Dropped (owner, 2026-10-22): `feat/village-3d` was deleted; the Minish Village's 3D is taken by hand, case by case, from the release line (decisions log).
