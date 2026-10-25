@@ -141,6 +141,38 @@ void ScenePictures_Release(void) {
     sFadedAbgr = NULL;
 }
 
+#define PAUSE_SD TMC3DS_APP_DIR "/pause-background.bin"
+#define PAUSE_ROMFS "romfs:/wide-scenes/pause-background.bin"
+static int sPauseAvailable = -1; /* as sAvailable */
+static uint16_t* sPause555;
+
+bool ScenePictures_PauseAvailable(void) {
+    if (sPauseAvailable < 0) sPauseAvailable = access(PAUSE_SD, F_OK) == 0 || access(PAUSE_ROMFS, F_OK) == 0;
+    return sPauseAvailable != 0;
+}
+
+const uint16_t* ScenePictures_Pause555(void) {
+    if (sPause555 != NULL || !ScenePictures_PauseAvailable()) return sPause555;
+    const size_t count = SCENE_PAUSE_W * SCENE_PAUSE_H;
+    uint16_t* pixels = malloc(count * sizeof(uint16_t));
+    if (pixels == NULL || !ScenePictures_ReadFile(PAUSE_SD, PAUSE_ROMFS, pixels, count * sizeof(uint16_t))) {
+        free(pixels);
+        sPauseAvailable = 0;
+        return NULL;
+    }
+    for (size_t i = 0; i < count; ++i) { /* RGB565 to the GBA's 15-bit colour, as the title's */
+        const uint16_t c = pixels[i];
+        pixels[i] = (uint16_t)(((c >> 11) & 31u) | ((((c >> 5) & 63u) >> 1) << 5) | ((c & 31u) << 10));
+    }
+    sPause555 = pixels;
+    return sPause555;
+}
+
+void ScenePictures_ReleasePause(void) {
+    free(sPause555);
+    sPause555 = NULL;
+}
+
 static int sCaveAvailable = -1; /* as sAvailable */
 static uint8_t* sCave;
 

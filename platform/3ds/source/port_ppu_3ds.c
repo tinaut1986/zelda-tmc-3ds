@@ -216,7 +216,7 @@ static TopFrameState SelectTopFrame(void) {
     if (requested == PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
         MODE1_GBA_WIDTH >= 400 && MODE1_GBA_HEIGHT >= 240 &&
         (Port_Widescreen_ShadowsLive() || Port_Widescreen_CutsceneViewLive() || Port_Widescreen_TitleViewLive() ||
-         Port_Widescreen_FileSelectViewLive())) {
+         Port_Widescreen_FileSelectViewLive() || Port_Widescreen_PauseViewLive())) {
         state.width = 400;
         state.height = 240;
         state.validSourceWidth = 400;
@@ -252,6 +252,9 @@ static TopFrameState SelectTopFrame(void) {
 /* The frame being built is the file select at 400x240 (Port_Widescreen_FileSelectViewLive): its four
  * BGs in the middle, the cave's extension (PortPpuGpu3DS_SetIndexedPicture) as BG3 around them. */
 static bool sFileSelectFrame;
+/* Or the pause menu at 400x240 (Port_Widescreen_PauseViewLive): its BGs in the middle, its background's extension
+ * (pause-background.bin, PortPpuGpu3DS_SetBg1Picture) as BG3 around them. */
+static bool sPauseFrame;
 /* The frame being built shows the Crenel paths' shaft with its strips (ScenePictures_ShaftView): the BGs they are
  * drawn as (bits), the left strip's left edge on the frame and each layer's top, rows and loop. */
 static uint8_t sShaftMask;
@@ -301,8 +304,8 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
      * clouds) covers the whole view, not just the native 240 columns. */
     view->bg3Repeat = virtuappu_mode1_bg3_repeat || virtuappu_mode1_ws_full_view != 0;
     view->bgRepeatMask = virtuappu_mode1_bg_repeat_mask;
-    view->pictureMask = virtuappu_mode1_bg1_picture != NULL ? 0x2u : sFileSelectFrame ? 0x8u : 0u;
-    view->bgNativeMask = sFileSelectFrame ? 0xFu : 0u;
+    view->pictureMask = virtuappu_mode1_bg1_picture != NULL ? 0x2u : sFileSelectFrame || sPauseFrame ? 0x8u : 0u;
+    view->bgNativeMask = sFileSelectFrame || sPauseFrame ? 0xFu : 0u;
     view->scrollPictureMask = sShaftMask;
     view->scrollPictureX = sShaftX;
     view->scrollPictureStripWidth = SCENE_SHAFT_STRIP_W;
@@ -1330,8 +1333,11 @@ static void PresentFrame(void) {
         const bool title = wideFrame && Port_Widescreen_TitleViewLive();
         virtuappu_mode1_bg_repeat_mask = wideFrame && Port_Widescreen_CutsceneViewLive() ? 0x2u : title ? 0x3u : 0u;
         virtuappu_mode1_bg1_picture = title ? ScenePictures_TitleAbgr() : NULL; /* faded below if the CPU draws */
-        PortPpuGpu3DS_SetBg1Picture(title ? ScenePictures_Title555() : NULL, SCENE_TITLE_W, SCENE_TITLE_H);
+        sPauseFrame = wideFrame && !title && Port_Widescreen_PauseViewLive();
+        PortPpuGpu3DS_SetBg1Picture(title ? ScenePictures_Title555() : sPauseFrame ? ScenePictures_Pause555() : NULL,
+                                    SCENE_TITLE_W, SCENE_TITLE_H);
         if (!title && !Port_Widescreen_TitleWide()) ScenePictures_Release();
+        if (!sPauseFrame && !Port_Widescreen_PauseWide()) ScenePictures_ReleasePause();
         sFileSelectFrame = wideFrame && Port_Widescreen_FileSelectViewLive();
         PortPpuGpu3DS_SetIndexedPicture(sFileSelectFrame ? ScenePictures_CaveIndices() : NULL, SCENE_CAVE_W,
                                         SCENE_CAVE_H, SCENE_CAVE_FIRST_PALETTE);

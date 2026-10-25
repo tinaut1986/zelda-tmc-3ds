@@ -1528,6 +1528,7 @@ static int Port_WidescreenRead3DSView(u32* roomKey, Port3DSFullViewMode* mode) {
 #define WS_CUTSCENE_VIEW_KEY 0xC0715CE5u
 #define WS_TITLE_VIEW_KEY 0x717E5CE5u
 #define WS_FILESELECT_VIEW_KEY 0xF11E5CE5u
+#define WS_PAUSE_VIEW_KEY 0xBA05E5CEu
 
 /* The title screen in Full View (Western layout: the forest on BG1): drawn at 400x240 with the
  * GBA's screen centred (src/title.c moves the light rays, sword and sprites), the forest from the
@@ -1746,6 +1747,32 @@ int Port_Widescreen_PauseBackgroundShown(void) {
 #else
     return 0;
 #endif
+}
+
+/* The pause menu at 400x240 (Port_Widescreen_PauseWide in port_widescreen.h): with the GPU renderer only and a
+ * picture to draw its background from, while the game shows that background (gScreen, a tick ahead of the
+ * registers Port_Widescreen_PauseBackgroundShown reads). */
+int Port_Widescreen_PauseWide(void) {
+#ifdef TMC_3DS
+    extern bool Port_SoftSlots_IsPauseActive(void);
+    extern bool ScenePictures_PauseAvailable(void);
+    if (gMain.task != TASK_GAME || !Port_Config_3DSFullViewComboEnabled() || !Port_Config_GpuRenderer() ||
+        !Port_SoftSlots_IsPauseActive() || !ScenePictures_PauseAvailable())
+        return 0;
+    const unsigned dispcnt = gScreen.lcd.displayControl;
+    return !(dispcnt & DISPCNT_FORCED_BLANK) && (dispcnt & DISPCNT_BG3_ON) && gScreen.bg3.xOffset == 0 &&
+           gScreen.bg3.yOffset == 0 &&
+           gScreen.bg3.control == (BGCNT_SCREENBASE(30) | BGCNT_CHARBASE(2) | BGCNT_PRIORITY(3));
+#else
+    return 0;
+#endif
+}
+
+int Port_Widescreen_PauseViewLive(void) {
+    u32 key;
+    Port3DSFullViewMode mode;
+    return Port_WidescreenRead3DSView(&key, &mode) && key == WS_PAUSE_VIEW_KEY &&
+           mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
 }
 
 /* The file select at 400x240 (Port_Widescreen_FileSelectWide in port_widescreen.h): with the GPU
@@ -2130,7 +2157,7 @@ Port3DSFullViewMode Port_Widescreen_3DSViewMode(void) {
     u32 publishedKey;
     if (!Port_WidescreenRead3DSView(&publishedKey, &publishedMode)) return PORT_3DS_FULL_VIEW_FALLBACK;
     if (publishedKey == WS_CUTSCENE_VIEW_KEY || publishedKey == WS_TITLE_VIEW_KEY ||
-        publishedKey == WS_FILESELECT_VIEW_KEY)
+        publishedKey == WS_FILESELECT_VIEW_KEY || publishedKey == WS_PAUSE_VIEW_KEY)
         return publishedMode; /* no map shadows there */
     if (!Port_Widescreen_ShadowsLive()) return PORT_3DS_FULL_VIEW_FALLBACK;
     return publishedMode;
@@ -2904,6 +2931,11 @@ void Port_Widescreen_UpdateShadows(void) {
         Port_WidescreenPublish3DSView(WS_FILESELECT_VIEW_KEY, PORT_3DS_FULL_VIEW_OUTDOOR_1X);
         return;
     }
+    if (Port_Widescreen_PauseWide()) {
+        virtuappu_mode1_ws_full_view = 1;
+        Port_WidescreenPublish3DSView(WS_PAUSE_VIEW_KEY, PORT_3DS_FULL_VIEW_OUTDOOR_1X);
+        return;
+    }
 #endif
 
     /* Refresh painted bounds before choosing geometry. Both dimensions are
@@ -3131,6 +3163,12 @@ int Port_Widescreen_FileSelectCaveShown(void) {
     return 0;
 }
 int Port_Widescreen_PauseBackgroundShown(void) {
+    return 0;
+}
+int Port_Widescreen_PauseWide(void) {
+    return 0;
+}
+int Port_Widescreen_PauseViewLive(void) {
     return 0;
 }
 int Port_Widescreen_TitleWide(void) {

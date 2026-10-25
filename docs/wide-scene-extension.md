@@ -157,8 +157,14 @@ Convert the transparent version: a `.bin` made from the whole picture would carr
 the pattern in a few places) and gives every pixel outside the original the colour most of its copies inside it have.
 `--complete` names a motif the original cuts at its edge off the lattice (the pause background has one at its left
 edge, x 0-23, y 100-149): it is completed from a whole copy found elsewhere. `--transparent` leaves the original's
-area transparent, as everything in `platform/3ds/assets/wide-scenes/`. The game draws it around the 240x160 screen while the pause
-menu runs with its BG3 unscrolled (`Port_Widescreen_PauseBackgroundShown`).
+area transparent, as everything in `platform/3ds/assets/wide-scenes/`. With the GPU renderer the pause menu is drawn at
+400x240 while it shows that background unscrolled (`Port_Widescreen_PauseWide`, as the file select): its BGs in the
+middle, the picture as BG3 around them, and every sprite moved 80,40 as it is, so what the game slides past the GBA's
+screen (the L and R buttons when pressed) shows whole; a sprite wholly off it stays hidden. The title banner
+(INVENTORY, COLLECTION, MAP: two 64x32 sprites at the screen's top-left, cut flat by the GBA's left edge) is closed by
+`Port_Draw_PauseBannerCap` (`port/port_draw.c`): four 8x8 (or 16x8) sprites showing its right end's tile column
+flipped, after it in OAM. With the software renderer the screen stays 240x160 and the presenter draws the picture
+around it (`Port_Widescreen_PauseBackgroundShown`).
 
 ## Layers animated by palette: continue them, do not paint them
 

@@ -25,6 +25,14 @@ const uint32_t* ScenePictures_TitleAbgr(void);
 const uint32_t* ScenePictures_TitleAbgrFaded(void);
 void ScenePictures_Release(void);
 
+/* The pause menu's background, 400x240 (pause-background.bin, tools/scene-extend/to_console.py pause): made by code
+ * from the game's own pattern, so shown in plain WIDE too. GBA 15-bit colours, 0 where the game's own picture is;
+ * NULL when there is none. Freed by ScenePictures_ReleasePause. */
+enum { SCENE_PAUSE_W = 400, SCENE_PAUSE_H = 240 };
+bool ScenePictures_PauseAvailable(void);
+const uint16_t* ScenePictures_Pause555(void);
+void ScenePictures_ReleasePause(void);
+
 /* The file select's cave, 400x240 (fileselect-cave.bin, tools/scene-extend/to_console.py fileselect):
  * one byte a pixel, (palette - SCENE_CAVE_FIRST_PALETTE) * 16 + index into BG palettes 11-14, which
  * the game cycles; 0 where the game's own picture is. NULL when there is none. Freed by
