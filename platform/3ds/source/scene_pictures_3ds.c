@@ -342,19 +342,45 @@ void ScenePictures_ReleaseCave(void) {
     sCave = NULL;
 }
 
+/* Every vertical Minish path (rooms of 240x800 drawn by verticalMinishPathBackgroundManager.c), by area and room. A
+ * ground without a file is filled with the colour most of its outer columns have (a BG palette entry, palette * 16 +
+ * index, read from the room's palettes), darkening away from the room: made by the game, so in plain WIDE too. BG1's
+ * strips fit only the map they were made for: leavesHash, the FNV-1a hash of BG1's map (0 for the Crenel shaft, found
+ * by its room). The other corridors (area 0x11 rooms 1-4, area 0x12 room 1) are decided one by one (owner,
+ * 2026-10-25): not every ground should be a dark gradient. */
 static const struct {
+    uint8_t area, room;
+    uint32_t leavesHash;
     const char* files[SCENE_SHAFT_LAYERS]; /* NULL: no strips for that layer */
     unsigned heights[SCENE_SHAFT_LAYERS];
     unsigned groundLoopStart, groundLoopLength;
-    int groundFill; /* without a ground file: the BG palette entry (palette * 16 + index) the sides are filled with */
+    int groundFill; /* without a ground file: the BG palette entry the sides are filled with */
 } kShafts[SCENE_SHAFT_SCENES] = {
-    [SCENE_SHAFT_CRENEL] = { { "crenel-paths-ground.bin", "crenel-paths-ledges.bin", "crenel-paths-shadows.bin" },
+    [SCENE_SHAFT_CRENEL] = { 0x12, 0x00, 0,
+                             { "crenel-paths-ground.bin", "crenel-paths-ledges.bin", "crenel-paths-shadows.bin" },
                              { 352, 960, 960 }, 32, 320, -1 },
-    /* The grass corridor's ground ends in a band of its darkest brown (palette 14 colour 1, the outer columns are
-     * nothing else), mostly under the leaves: that colour, made by the game, so in plain WIDE too. */
-    [SCENE_SHAFT_MINISH] = { { NULL, "minish-paths-leaves.bin", "minish-paths-shadows.bin" }, { 8, 1024, 1024 }, 0, 8,
-                             14 * 16 + 1 },
+    /* The grass corridor: its outer columns are nothing but its darkest brown. */
+    [SCENE_SHAFT_MINISH] = { 0x11, 0x00, 0xA9524361u, { NULL, "minish-paths-leaves.bin", "minish-paths-shadows.bin" },
+                             { 8, 1024, 1024 }, 0, 8, 14 * 16 + 1 },
+    /* The water corridor: its banks are reed stalks repeating every 64 rows, continued by Gemini as one 64-row loop
+     * (room rows 0-63); its leaves (repeating every 512 rows) by Gemini in two pieces, the loop joined where both
+     * agree; their shadows from the leaves' silhouette, as the grass corridor's (2026-10-25,
+     * ~/Imágenes/minish-paths/gemini-tallos-agua/ and gemini-hojas-agua/). */
+    [SCENE_SHAFT_MINISH_WATER] = { 0x11, 0x01, 0x46DF39A1u,
+                                   { "minish-water-ground.bin", "minish-water-leaves.bin", "minish-water-shadows.bin" },
+                                   { 64, 1024, 1024 }, 0, 64, -1 },
 };
+
+int ScenePictures_ShaftScene(int area, int room, const uint8_t* leavesMap) {
+    for (int i = 0; i < SCENE_SHAFT_SCENES; ++i) {
+        if (kShafts[i].area != area || kShafts[i].room != room) continue;
+        if (kShafts[i].leavesHash == 0) return i;
+        uint32_t hash = 0x811C9DC5u;
+        for (int k = 0; k < 0x2000; ++k) hash = (hash ^ leavesMap[k]) * 0x01000193u;
+        return hash == kShafts[i].leavesHash ? i : -1;
+    }
+    return -1;
+}
 static int8_t sShaftAvailable[SCENE_SHAFT_LAYERS] = { -1, -1, -1 }; /* as sAvailable */
 static uint16_t* sShaft555[SCENE_SHAFT_LAYERS];
 static int sShaftScene, sShaftLoaded = -1; /* the scene shown, the one the strips are of */
