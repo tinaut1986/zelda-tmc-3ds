@@ -12,6 +12,9 @@ SCENE      portal: the Minish portal cutscene, PICTURE 400x320, the original at 
                    repeat), its rock ledges (BG1, 400x960) and their shadows (BG3, 400x960); writes
                    crenel-paths-{ground,ledges,shadows}.bin, only the 80 columns each side of the room (160 wide),
                    0 where empty
+           minish-leaves, minish-shadows: the Minish Paths' grass corridor (area 0x11, the vertical one), the 240-wide
+                   layer at x 80 of a 400x1024 PICTURE: its leaves (BG1) and their shadows (BG3); writes
+                   minish-paths-{leaves,shadows}.bin, the 80 columns each side (160 wide), 0 where empty
            title:  the title screen's forest, PICTURE 400x240, the original at 80,40 (240x160);
                    writes title-forest.bin (the whole 400x240; the centre is not drawn)
            pause:  the pause menu's background (BG3), PICTURE 400x240, the original at 80,40;
@@ -51,6 +54,8 @@ SCENES = {
     'crenel-ground': ((400, 352), list(range(0, 80)) + list(range(320, 400)), 'crenel-paths-ground.bin'),
     'crenel-ledges': ((400, 960), list(range(0, 80)) + list(range(320, 400)), 'crenel-paths-ledges.bin'),
     'crenel-shadows': ((400, 960), list(range(0, 80)) + list(range(320, 400)), 'crenel-paths-shadows.bin'),
+    'minish-leaves': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-paths-leaves.bin'),
+    'minish-shadows': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-paths-shadows.bin'),
     'title': ((400, 240), None, 'title-forest.bin'),
     'fileselect': ((400, 240), None, 'fileselect-cave.bin'),
     'pause': ((400, 240), None, 'pause-background.bin'),

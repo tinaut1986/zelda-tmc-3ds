@@ -3006,18 +3006,29 @@ void Port_Widescreen_UpdateShadows(void) {
 
     Port_WidescreenParallaxShadows(fullViewOutdoor);
 #ifdef TMC_3DS
-    /* The Crenel paths' shaft (area 0x12 room 00) in Full View: its three layers go on beside the room from generated
-     * strips (scene_pictures_3ds.c), each drawn as its BG at the room's place on the view: the ground moving with the
-     * room, the ledges (BG1) and shadows (BG3) with the scroll their manager gives them
+    /* The vertical Minish paths in Full View: the Crenel paths' shaft (area 0x12 room 00) and the grass corridor of the
+     * Minish Paths (area 0x11, told by its leaves' map: the strips were made for that one) go on beside the room from
+     * generated strips (scene_pictures_3ds.c), each layer drawn as its BG at the room's place on the view: the ground
+     * moving with the room, BG1 (ledges, leaves) and BG3 (their shadows) with the scroll their manager gives them
      * (src/manager/verticalMinishPathBackgroundManager.c: 1.25 and 1.125 times the room's). */
     {
-        extern void ScenePictures_SetShaftView(int groundBg, int x, int groundY, int ledgesY, int shadowsY);
-        const int bg = fullViewOutdoor && gRoomControls.area == 0x12 && gRoomControls.room == 0 &&
-                               gMapBottom.bgSettings != NULL
-                           ? Port_WidescreenPpuBgForControl(gMapBottom.bgSettings->control)
-                           : -1;
+        extern void ScenePictures_SetShaftView(int scene, int groundBg, int x, int groundY, int ledgesY, int shadowsY);
+        int scene = -1;
+        if (fullViewOutdoor && gMapBottom.bgSettings != NULL) {
+            if (gRoomControls.area == 0x12 && gRoomControls.room == 0) {
+                scene = 0; /* SCENE_SHAFT_CRENEL */
+            } else if (gRoomControls.area == 0x11 && gRoomControls.width == 240 &&
+                       gScreen.bg1.control ==
+                           (BGCNT_SCREENBASE(30) | BGCNT_PRIORITY(1) | BGCNT_CHARBASE(2) | BGCNT_MOSAIC)) {
+                const u8* map = (const u8*)gMapDataTopSpecial + 0x2000; /* BG1's part */
+                u32 hash = 0x811C9DC5u;
+                for (int i = 0; i < 0x2000; ++i) hash = (hash ^ map[i]) * 0x01000193u;
+                if (hash == 0xA9524361u) scene = 1; /* SCENE_SHAFT_MINISH */
+            }
+        }
+        const int bg = scene >= 0 ? Port_WidescreenPpuBgForControl(gMapBottom.bgSettings->control) : -1;
         const s32 dy = gRoomControls.scroll_y - gRoomControls.origin_y;
-        ScenePictures_SetShaftView(bg, (int)gRoomControls.origin_x - gRoomControls.scroll_x - 80, (int)-dy,
+        ScenePictures_SetShaftView(scene, bg, (int)gRoomControls.origin_x - gRoomControls.scroll_x - 80, (int)-dy,
                                    (int)-(dy + (dy >> 2)), (int)-(dy + (dy >> 3)));
     }
 #endif
