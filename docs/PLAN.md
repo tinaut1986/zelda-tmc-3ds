@@ -40,7 +40,7 @@ were widened by hand to cover `v0.3.1` too, see the decisions log), **`v0.3.1`**
 to stable without a beta at the owner's request), `v0.2.0` (2026-10-14, stable), `v0.1.2`
 (2026-10-13, beta), `v0.1.1` (2026-10-12, stable) and `v0.1.0` (2026-10-11, beta).
 
-**Branches:** `feat/pause-wide-view` (below) and the local backup. Every other branch
+**Branches:** `feat/pause-wide-view`, `feat/minish-path-leaves` (below) and the local backup. Every other branch
 merged into the release line was deleted, here and on origin (2026-10-17: `fix/title-live-view`,
 `feat/gba-look`, `feat/hud-auto`, `feat/title-rays-3d`, `feat/minish-paths-centred`,
 `feat/wide-ai-ask`, `feat/stereo-fileselect`, `feat/splash-3d`, `docs/plan-branches-2026-10-17`; the
@@ -51,6 +51,7 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 | Branch | State |
 |---|---|
 | `feat/pause-wide-view` (pushed, 2026-10-25) | The pause menu at 400x240 with the GPU renderer: the L and R buttons whole when pressed, the title banner closed on the left, the background extension made by the game from its own BG3 (no file; `pause-background.png/.bin` are removed there) (`docs/wide-scene-extension.md`, "Patterns"). Built, not yet installed: the console was off. It also raises the linker pins to 0x644000/0x64C000. To check on the New 3DS: the three pages, L/R presses, opening and closing the menu, the save prompt, 3D; then the owner's go-ahead to merge. Loading a state saved before it may fail (new port statics, #31): save a fresh one. |
+| `feat/minish-path-leaves` (pushed, 2026-10-25) | Gemini's leaves (and shadows made from them) beside the Minish Paths' grass corridor, area 0x11, in WIDE + AI (`docs/wide-scene-extension.md`, scenes table). Built, not yet seen: the console was off and Azahar's test file is far from there. To check on the New 3DS: the corridor centred, the strips moving with the leaves and shadows, nothing in the other 0x11 rooms. The ground strips still need a dump in the corridor. |
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
