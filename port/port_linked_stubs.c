@@ -1770,8 +1770,15 @@ int Port_Widescreen_TitleForestShown(void) {
 #endif
 }
 
-int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {
+int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY, int* portal) {
     if (!Port_Widescreen_CutsceneViewLive()) return 0;
+    /* The picture Subtask_PortalCutscene_0 loaded (src/enterPortalSubtask.c): PT_2 outside area 2
+     * and anything past the table's 4 entries take the dungeon's. Fixed for the whole scene. */
+    if (portal) {
+        u32 id = gArea.portal_type;
+        if ((id == PT_2 && gUI.roomControls.area != 2) || id > 3) id = PT_DUNGEON;
+        *portal = (int)id;
+    }
     /* Where the picture's top-left lands on screen: BG1's offsets in the registers the shown
      * frame was drawn from (gScreen is already the next tick's, a frame ahead: the strips
      * slid against the picture). 9-bit, so 0x1B0 is -80. */
@@ -2718,9 +2725,14 @@ static void Port_WidescreenParallaxShadows(int fullView) {
             wrapRows = (settings->yOffset & 0xff) >> 3;
             srcLimit = (layer ? 0x2000 : 0x1000) - (int)(((uintptr_t)src - (uintptr_t)gMapDataTopSpecial) >> 1);
         }
+        /* Centred unless neighbour rooms drew the camera aside (P4.9: the Crenel paths, area 0x12): the
+         * layers then go where the ground is, at the camera's distance from the room's left edge. */
         int shift = 0, firstCol = 0, endCol = shadowCols;
         if (fullView && (int)gRoomControls.width < 400) {
-            shift = (400 - (int)gRoomControls.width) / 16;
+            const int margin = (400 - (int)gRoomControls.width) / 8;
+            shift = ((int)gRoomControls.origin_x - gRoomControls.scroll_x + 4) >> 3;
+            if (shift < 0) shift = 0;
+            if (shift > margin) shift = margin;
             firstCol = shift;
             endCol = shift + (int)gRoomControls.width / 8;
         }
@@ -2974,6 +2986,22 @@ void Port_Widescreen_UpdateShadows(void) {
     }
 
     Port_WidescreenParallaxShadows(fullViewOutdoor);
+#ifdef TMC_3DS
+    /* The Crenel paths' shaft (area 0x12 room 00) in Full View: its three layers go on beside the room from generated
+     * strips (scene_pictures_3ds.c), each drawn as its BG at the room's place on the view: the ground moving with the
+     * room, the ledges (BG1) and shadows (BG3) with the scroll their manager gives them
+     * (src/manager/verticalMinishPathBackgroundManager.c: 1.25 and 1.125 times the room's). */
+    {
+        extern void ScenePictures_SetShaftView(int groundBg, int x, int groundY, int ledgesY, int shadowsY);
+        const int bg = fullViewOutdoor && gRoomControls.area == 0x12 && gRoomControls.room == 0 &&
+                               gMapBottom.bgSettings != NULL
+                           ? Port_WidescreenPpuBgForControl(gMapBottom.bgSettings->control)
+                           : -1;
+        const s32 dy = gRoomControls.scroll_y - gRoomControls.origin_y;
+        ScenePictures_SetShaftView(bg, (int)gRoomControls.origin_x - gRoomControls.scroll_x - 80, (int)-dy,
+                                   (int)-(dy + (dy >> 2)), (int)-(dy + (dy >> 3)));
+    }
+#endif
 
     /* Publish only shadows built for this exact room/producer generation. */
 #ifdef TMC_3DS
@@ -3103,9 +3131,10 @@ int Port_Widescreen_ContentRects(PortBlurRect* rects, int max) {
     (void)max;
     return 0;
 }
-int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY) {
+int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY, int* portal) {
     (void)pictureX;
     (void)pictureY;
+    (void)portal;
     return 0;
 }
 void Port_Widescreen_UpdateShadows(void) { /* no-op at native 240 */

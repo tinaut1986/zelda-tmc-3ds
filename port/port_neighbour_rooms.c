@@ -13,6 +13,7 @@
 #include "port_generic_entity.h"
 #include "port_rom.h"
 #include "port_runtime_config.h"
+#include "port_gba_mem.h"
 
 #include <string.h>
 
@@ -97,13 +98,28 @@ static bool SharesEdge(const RoomResInfo* a, const RoomResInfo* b) {
 
 /* The rooms reachable from `room` through shared edges. An area also packs unrelated rooms side by side with a
  * gap between them (the houses of HOUSE_INTERIORS_*), which must not show; a dungeon's or a town's rooms abut. */
-static u32 sConnectedKey = 0xffffffffu;
+static u32 sConnectedKey = 0xffffffffu, sConnectedTable;
+
+/* A fingerprint of the area's room table (every room's place and size). Right after an area change (a Minish portal's
+ * landing) the room and area numbers are already the new ones while gArea.roomResInfos is still the previous area's:
+ * anything worked out then and kept under those numbers is wrong for the whole visit, so the caches below also keep
+ * the table they came from (the Crenel paths, area 0x12, came up drawn at 0-240 of the view). */
+static u32 RoomTableKey(void) {
+    u32 h = 2166136261u;
+    for (unsigned j = 0; j < MAX_ROOMS; ++j) {
+        const RoomResInfo* r = &gArea.roomResInfos[j];
+        const u32 v[4] = { r->pixel_width, r->pixel_height, r->map_x, r->map_y };
+        for (unsigned k = 0; k < 4; ++k) h = (h ^ v[k]) * 16777619u;
+    }
+    return h;
+}
 
 static u64 Connected(unsigned room) {
     static u64 mask;
-    const u32 k = ((u32)gRoomControls.area << 8) | room;
-    if (k == sConnectedKey) return mask;
+    const u32 k = ((u32)gRoomControls.area << 8) | room, table = RoomTableKey();
+    if (k == sConnectedKey && table == sConnectedTable) return mask;
     sConnectedKey = k;
+    sConnectedTable = table;
     mask = (room < MAX_ROOMS) ? (u64)1 << room : 0;
     for (bool grew = mask != 0; grew;) {
         grew = false;
@@ -366,12 +382,178 @@ int Port_NeighbourRooms_DrawnRects(PortBlurRect* out, int max, int scrollX, int 
     return count;
 }
 
+/* A procedural border (owner's request, 2026-10-25): where a room smaller than the view has no neighbour to show, it
+ * goes on from its own tiles instead of black. The bottom layer gets the base, the metatile most of the room's
+ * outermost columns and rows have (plain grass); a side whose outermost line is not mostly that (a wall) stays black.
+ * The top layer gets now and then one of the room's own loose decorations (the stones on its grass: small top-layer
+ * metatiles with nothing beside them), by a hash of the cell, so they stay put while the camera moves and come back
+ * the same. For now only in the rooms of kBorderRooms (tried in the Minish caves' first room). */
+static const struct { u8 area, room; } kBorderRooms[] = { { 0x35, 0 } };
+enum { BORDER_LEFT, BORDER_RIGHT, BORDER_TOP, BORDER_BOTTOM, BORDER_DECOR_MAX = 16 };
+static struct {
+    u32 key;
+    int on; /* the room is in kBorderRooms and has a base */
+    uint16_t base;
+    uint8_t side[4]; /* which sides are filled */
+    uint16_t decor[BORDER_DECOR_MAX]; /* top-layer metatiles */
+    unsigned decorCount;
+    unsigned densityQ; /* chance (of 256) that a cell holds a decoration */
+    int metaW, metaH;
+} sBorder = { .key = 0xffffffffu };
+
+static uint16_t BorderMeta(const MapLayer* layer, int x, int y) {
+    const uint16_t m = layer->mapData[y * MAP_STRIDE + x];
+    return m < 0x4000 ? m : NO_TILE; /* special tiles (liftable, cuttable) are not copied */
+}
+
+/* How many of a metatile's 256 pixels are opaque: 4bpp tiles of the layer's character base in VRAM. */
+static unsigned MetaOpaque(const MapLayer* layer, uint16_t meta) {
+    const u32 charBase = layer->bgSettings ? ((layer->bgSettings->control >> 2) & 3u) * 0x4000u : 0;
+    unsigned n = 0;
+    for (unsigned q = 0; q < 4; ++q) {
+        const u32 tile = charBase + (layer->subTiles[meta * 4 + q] & 0x3ffu) * 32u;
+        for (unsigned i = 0; i < 32; ++i) {
+            const u8 b = tile + i < sizeof(gVram) ? gVram[tile + i] : 0;
+            n += (b & 15) != 0;
+            n += (b >> 4) != 0;
+        }
+    }
+    return n;
+}
+
+/* The colours of a metatile's 256 pixels, as (palette << 4 | index), 0 transparent. */
+static void MetaColours(const MapLayer* layer, uint16_t meta, uint8_t out[256]) {
+    const u32 charBase = layer->bgSettings ? ((layer->bgSettings->control >> 2) & 3u) * 0x4000u : 0;
+    for (unsigned q = 0; q < 4; ++q) {
+        const uint16_t e = layer->subTiles[meta * 4 + q];
+        const u32 tile = charBase + (e & 0x3ffu) * 32u;
+        for (unsigned y = 0; y < 8; ++y)
+            for (unsigned x = 0; x < 8; ++x) {
+                const unsigned sx = (e & 0x400) ? 7 - x : x, sy = (e & 0x800) ? 7 - y : y;
+                const u32 at = tile + sy * 4 + sx / 2;
+                const unsigned v = at < sizeof(gVram) ? (sx & 1 ? gVram[at] >> 4 : gVram[at] & 15) : 0;
+                out[((q >> 1) * 8 + y) * 16 + (q & 1) * 8 + x] = v ? (uint8_t)((e >> 12) << 4 | v) : 0;
+            }
+    }
+}
+
+static void BuildBorder(void) {
+    sBorder.key = RoomKey();
+    sBorder.on = 0;
+    sBorder.decorCount = 0;
+    int listed = 0;
+    for (unsigned i = 0; i < sizeof(kBorderRooms) / sizeof(kBorderRooms[0]); ++i)
+        if (kBorderRooms[i].area == gRoomControls.area && kBorderRooms[i].room == gRoomControls.room) listed = 1;
+    const int w = gRoomControls.width / 16, h = gRoomControls.height / 16;
+    if (!listed || w < 2 || h < 2 || w > MAP_STRIDE || h > MAP_STRIDE) return;
+    sBorder.metaW = w;
+    sBorder.metaH = h;
+    /* The base: the commonest bottom metatile of the outermost columns and rows. */
+    uint16_t seen[96];
+    unsigned counts[96], kinds = 0;
+    for (int s = 0; s < 4; ++s) {
+        const int along = s < 2 ? h : w;
+        for (int a = 0; a < along; ++a) {
+            const uint16_t m = BorderMeta(&gMapBottom, s == BORDER_LEFT ? 0 : s == BORDER_RIGHT ? w - 1 : a,
+                                          s == BORDER_TOP ? 0 : s == BORDER_BOTTOM ? h - 1 : a);
+            if (m == NO_TILE) continue;
+            unsigned i = 0;
+            while (i < kinds && seen[i] != m) ++i;
+            if (i == kinds) {
+                if (kinds == 96) continue;
+                seen[kinds] = m;
+                counts[kinds++] = 0;
+            }
+            ++counts[i];
+        }
+    }
+    if (kinds == 0) return;
+    unsigned best = 0;
+    for (unsigned i = 1; i < kinds; ++i)
+        if (counts[i] > counts[best]) best = i;
+    sBorder.base = seen[best];
+    /* A side is filled when a third of its outermost line is grass: metatiles with 85 % of their pixels in the base's
+     * colours (the base itself, and grass with the edge of a hedge in it). */
+    uint8_t colours[256], isBase[256] = { 0 };
+    MetaColours(&gMapBottom, sBorder.base, colours);
+    for (unsigned i = 0; i < 256; ++i) isBase[colours[i]] = 1;
+    for (int s = 0; s < 4; ++s) {
+        const int along = s < 2 ? h : w;
+        unsigned n = 0;
+        for (int a = 0; a < along; ++a) {
+            const uint16_t m = BorderMeta(&gMapBottom, s == BORDER_LEFT ? 0 : s == BORDER_RIGHT ? w - 1 : a,
+                                          s == BORDER_TOP ? 0 : s == BORDER_BOTTOM ? h - 1 : a);
+            if (m == NO_TILE) continue;
+            if (m == sBorder.base) {
+                ++n;
+                continue;
+            }
+            MetaColours(&gMapBottom, m, colours);
+            unsigned near = 0;
+            for (unsigned i = 0; i < 256; ++i) near += isBase[colours[i]];
+            n += near * 100 >= 85u * 256u;
+        }
+        sBorder.side[s] = n * 3 >= (unsigned)along;
+    }
+    /* The decorations: top-layer metatiles alone (the four cells beside them empty), at most half opaque, over base.
+     * Their rate is taken over the room's base cells. */
+    unsigned baseCells = 0, decorCells = 0;
+    if (gMapTop.bgSettings != NULL) {
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x) {
+                if (BorderMeta(&gMapBottom, x, y) != sBorder.base) continue;
+                ++baseCells;
+                const uint16_t m = BorderMeta(&gMapTop, x, y);
+                if (m == NO_TILE || m == 0) continue;
+                const int nb[4][2] = { { x - 1, y }, { x + 1, y }, { x, y - 1 }, { x, y + 1 } };
+                int alone = 1;
+                for (int k = 0; k < 4; ++k)
+                    if (nb[k][0] >= 0 && nb[k][0] < w && nb[k][1] >= 0 && nb[k][1] < h &&
+                        gMapTop.mapData[nb[k][1] * MAP_STRIDE + nb[k][0]] != 0)
+                        alone = 0;
+                const unsigned opaque = MetaOpaque(&gMapTop, m);
+                if (!alone || opaque < 8 || opaque > 128) continue;
+                ++decorCells;
+                unsigned i = 0;
+                while (i < sBorder.decorCount && sBorder.decor[i] != m) ++i;
+                if (i == sBorder.decorCount && i < BORDER_DECOR_MAX) sBorder.decor[sBorder.decorCount++] = m;
+            }
+    }
+    /* The room's rate, between 1 in 16 and 1 in 6: on any cell at random, so they make no grid. */
+    unsigned q = baseCells ? decorCells * 256u / baseCells : 0;
+    if (sBorder.decorCount && q < 16) q = 16;
+    sBorder.densityQ = q > 42 ? 42 : q;
+    sBorder.on = 1;
+    DebugLog_Printf("border: area %u room %u base %u, sides %u%u%u%u, %u stones of %u kinds on %u base cells, density %u/256",
+                    gRoomControls.area, gRoomControls.room, sBorder.base, sBorder.side[0], sBorder.side[1],
+                    sBorder.side[2], sBorder.side[3], decorCells, sBorder.decorCount, baseCells, sBorder.densityQ);
+}
+
+static uint16_t BorderTile(int topLayer, int column, int row, uint16_t blank) {
+    if (sBorder.key != RoomKey()) BuildBorder();
+    if (!sBorder.on) return blank;
+    const int mx = column >> 1, my = row >> 1; /* metatile, arithmetic shift: floor for the cells left of the room */
+    const int filled = (mx < 0 && sBorder.side[BORDER_LEFT]) || (mx >= sBorder.metaW && sBorder.side[BORDER_RIGHT]) ||
+                       (mx >= 0 && mx < sBorder.metaW &&
+                        ((my < 0 && sBorder.side[BORDER_TOP]) || (my >= sBorder.metaH && sBorder.side[BORDER_BOTTOM])));
+    if (!filled) return blank;
+    if (!topLayer) return gMapBottom.subTiles[sBorder.base * 4 + (row & 1) * 2 + (column & 1)];
+    if (!sBorder.decorCount || gMapTop.bgSettings == NULL) return blank;
+    u32 hsh = (u32)mx * 0x9E3779B1u ^ (u32)my * 0x85EBCA77u ^ sBorder.key * 0xC2B2AE3Du;
+    hsh ^= hsh >> 15;
+    hsh *= 0x2C1B3C6Du;
+    hsh ^= hsh >> 12;
+    if ((hsh & 255u) >= sBorder.densityQ) return blank;
+    const uint16_t meta = sBorder.decor[(hsh >> 8) % sBorder.decorCount];
+    return gMapTop.subTiles[meta * 4 + (row & 1) * 2 + (column & 1)];
+}
+
 uint16_t Port_NeighbourRooms_Tile(int topLayer, int column, int row, uint16_t blank) {
     if (!sActive) return blank;
     const int c = column + MARGIN_X, r = row + MARGIN_Y;
-    if (c < 0 || c >= WIN_COLS || r < 0 || r >= WIN_ROWS) return blank;
-    const uint16_t entry = sWin[topLayer ? 1 : 0][r][c];
-    return entry == NO_TILE ? blank : entry;
+    const uint16_t entry = c < 0 || c >= WIN_COLS || r < 0 || r >= WIN_ROWS ? NO_TILE : sWin[topLayer ? 1 : 0][r][c];
+    if (entry != NO_TILE) return entry;
+    return BorderTile(topLayer, column, row, blank);
 }
 
 /* The 8x8 cells of the band beside room r along `axis` (the rows above and below it for y, the columns left and
@@ -402,10 +584,12 @@ static int Coverage(const RoomResInfo* r, int axis, int start, int view) {
     return covered;
 }
 
-/* The camera asks every frame: each candidate's coverage is kept per area, room, axis and view size. */
+/* The camera asks every frame: each candidate's coverage is kept per area, room, axis and view size, and for the
+ * room table it was worked out from (RoomTableKey). */
 enum { REST_CANDIDATES = 64 };
 static struct {
     u32 key;
+    u32 table; /* the room table it was worked out from (RoomTableKey) */
     int first, count, centred;
     uint16_t score[REST_CANDIDATES];
 } sRestCache[4];
@@ -425,12 +609,18 @@ static void ComputeRest(unsigned room, int axis, int view, int* first, int* coun
 static unsigned RestSlot(unsigned room, int axis, int view) {
     const u32 key = ((u32)gRoomControls.area << 24) | ((room & 0xFFu) << 16) | ((u32)(axis & 1) << 15) | ((u32)view & 0x7FFFu);
     unsigned slot = sizeof(sRestCache) / sizeof(sRestCache[0]);
+    const u32 table = RoomTableKey();
     for (unsigned i = 0; i < sizeof(sRestCache) / sizeof(sRestCache[0]); ++i)
         if (sRestCache[i].key == key && key != 0) slot = i;
+    if (slot < sizeof(sRestCache) / sizeof(sRestCache[0]) && sRestCache[slot].table != table) {
+        sRestCache[slot].key = 0; /* worked out from another room table */
+        slot = sizeof(sRestCache) / sizeof(sRestCache[0]);
+    }
     if (slot == sizeof(sRestCache) / sizeof(sRestCache[0])) {
         slot = sRestNext;
         sRestNext = (sRestNext + 1) % (sizeof(sRestCache) / sizeof(sRestCache[0]));
         sRestCache[slot].key = key;
+        sRestCache[slot].table = table;
         ComputeRest(room, axis, view, &sRestCache[slot].first, &sRestCache[slot].count, &sRestCache[slot].centred,
                     sRestCache[slot].score);
     }

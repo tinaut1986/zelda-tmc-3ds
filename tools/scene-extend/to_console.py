@@ -5,6 +5,13 @@
 
 SCENE      portal: the Minish portal cutscene, PICTURE 400x320, the original at x 80..335;
                    writes portal-cutscene-strips.bin (its 80 columns left and 64 right, 144x320)
+           portal-rock: the rock's portal cutscene, PICTURE 400x320, the original at x 80..319;
+                   writes portal-rock-strips.bin (its 80 columns left and 80 right, 160x320)
+           crenel-ground, crenel-ledges, crenel-shadows: the Crenel paths' shaft (area 0x12 room 00), the room at
+                   x 80 of a 400-wide PICTURE: its ground (BG2, 400x352: the top and one turn of its 320-row
+                   repeat), its rock ledges (BG1, 400x960) and their shadows (BG3, 400x960); writes
+                   crenel-paths-{ground,ledges,shadows}.bin, only the 80 columns each side of the room (160 wide),
+                   0 where empty
            title:  the title screen's forest, PICTURE 400x240, the original at 80,40 (240x160);
                    writes title-forest.bin (the whole 400x240; the centre is not drawn)
            fileselect: the file select screen's cave (BG3), PICTURE 400x240, the original at
@@ -33,6 +40,10 @@ from PIL import Image
 SCENES = {
     # name: (picture size, columns kept (None: all), file name)
     'portal': ((400, 320), list(range(0, 80)) + list(range(336, 400)), 'portal-cutscene-strips.bin'),
+    'portal-rock': ((400, 320), list(range(0, 80)) + list(range(320, 400)), 'portal-rock-strips.bin'),
+    'crenel-ground': ((400, 352), list(range(0, 80)) + list(range(320, 400)), 'crenel-paths-ground.bin'),
+    'crenel-ledges': ((400, 960), list(range(0, 80)) + list(range(320, 400)), 'crenel-paths-ledges.bin'),
+    'crenel-shadows': ((400, 960), list(range(0, 80)) + list(range(320, 400)), 'crenel-paths-shadows.bin'),
     'title': ((400, 240), None, 'title-forest.bin'),
     'fileselect': ((400, 240), None, 'fileselect-cave.bin'),
 }

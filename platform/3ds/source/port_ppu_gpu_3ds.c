@@ -101,6 +101,10 @@ static uint8_t* sPictureSwizzled;
 static unsigned sPictureFirstPalette, sPictureTileRows, sPictureTileCols;
 static uint16_t sPicturePalettes[64];
 static bool sPicturePalettesValid;
+/* Side strips per BG (PortPpuGpu3DS_SetScrollPicture): a texture each, made when one is set, freed when cleared. */
+static C3D_Tex sScrollTex[MODE1_GBA_BG_COUNT];
+static const uint16_t* sScrollPixels[MODE1_GBA_BG_COUNT];
+static bool sScrollCorrected[MODE1_GBA_BG_COUNT];
 static unsigned sBoundTexture;
 static C3D_Tex sOutputTexture;
 static C3D_RenderTarget* sOutputTarget;
@@ -220,6 +224,11 @@ void PortPpuGpu3DS_Shutdown(void) {
     if (sPictureTex.data) C3D_TexDelete(&sPictureTex);
     memset(&sPictureTex, 0, sizeof(sPictureTex));
     sPicturePixels = NULL;
+    for (unsigned bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {
+        if (sScrollTex[bg].data) C3D_TexDelete(&sScrollTex[bg]);
+        memset(&sScrollTex[bg], 0, sizeof(sScrollTex[bg]));
+        sScrollPixels[bg] = NULL;
+    }
     free(sPictureSwizzled);
     sPictureSwizzled = NULL;
     sPictureIndices = NULL;
@@ -371,6 +380,36 @@ void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsi
     C3D_TexFlush(&sPictureTex);
     sPicturePixels = gbaPixels;
     sPictureCorrected = corrected;
+}
+
+void PortPpuGpu3DS_SetScrollPicture(unsigned bg, const uint16_t* gbaPixels, unsigned width, unsigned height) {
+    if (bg >= MODE1_GBA_BG_COUNT) return;
+    const bool corrected = Port_Config_GetColorCorrection();
+    if (gbaPixels == sScrollPixels[bg] && (gbaPixels == NULL || corrected == sScrollCorrected[bg])) return;
+    C3D_Tex* const tex = &sScrollTex[bg];
+    if (tex->data) C3D_TexDelete(tex);
+    memset(tex, 0, sizeof(*tex));
+    sScrollPixels[bg] = NULL;
+    sBoundTexture = UINT8_MAX; /* rebind */
+    const unsigned texHeight = PpuGpu3DS_ScrollPictureTexHeight(height);
+    if (gbaPixels == NULL || width > PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH || height > texHeight) return;
+    if (!C3D_TexInit(tex, PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH, texHeight, GPU_RGBA5551)) {
+        memset(tex, 0, sizeof(*tex));
+        return;
+    }
+    memset(tex->data, 0, tex->size);
+    C3D_TexSetFilter(tex, GPU_NEAREST, GPU_NEAREST);
+    C3D_TexSetWrap(tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+    /* 8x8 Morton tiles, tile rows from the top (v = 1), as the other picture. */
+    uint16_t* texels = (uint16_t*)tex->data;
+    for (unsigned y = 0; y < height; ++y)
+        for (unsigned x = 0; x < width; ++x)
+            texels[((y >> 3) * (PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH >> 3) + (x >> 3)) * 64u +
+                   PpuGpu3DS_MortonIndex(x & 7u, y & 7u)] =
+                PpuGpu3DS_PackRgba5551(gbaPixels[y * width + x], gbaPixels[y * width + x] != 0);
+    C3D_TexFlush(tex);
+    sScrollPixels[bg] = gbaPixels;
+    sScrollCorrected[bg] = corrected;
 }
 
 bool PortPpuGpu3DS_Init(void) {
@@ -1042,9 +1081,11 @@ static void DrawBatch(const PpuGpu3DSBatch* batch) {
     }
     if (batch->texture != sBoundTexture) {
         sBoundTexture = batch->texture;
-        C3D_TexBind(0, batch->texture == 0                            ? &sAtlas
-                       : batch->texture == PPU_GPU3DS_PICTURE_TEXTURE ? &sPictureTex
-                                                                      : &sRingTex[batch->texture - 1u]);
+        C3D_TexBind(0, batch->texture == 0                                   ? &sAtlas
+                       : batch->texture == PPU_GPU3DS_PICTURE_TEXTURE        ? &sPictureTex
+                       : batch->texture >= PPU_GPU3DS_SCROLL_PICTURE_TEXTURE
+                           ? &sScrollTex[(batch->texture - PPU_GPU3DS_SCROLL_PICTURE_TEXTURE) & 3u]
+                           : &sRingTex[batch->texture - 1u]);
     }
     SetBatchOffset(batch->offsetX + (sEyeShifting && !sNoShift && batch->layer <= PPU_GPU3DS_OBJ
                                              ? (batch->objWindow && sEyeWindowFollows ? sEyeWindowNdc
@@ -1326,9 +1367,11 @@ static void DrawZoneBatch(const PpuGpu3DSBatch* batch, const ZoneDepth3DSRect* z
         return;
     if (batch->texture != sBoundTexture) {
         sBoundTexture = batch->texture;
-        C3D_TexBind(0, batch->texture == 0                            ? &sAtlas
-                       : batch->texture == PPU_GPU3DS_PICTURE_TEXTURE ? &sPictureTex
-                                                                      : &sRingTex[batch->texture - 1u]);
+        C3D_TexBind(0, batch->texture == 0                                   ? &sAtlas
+                       : batch->texture == PPU_GPU3DS_PICTURE_TEXTURE        ? &sPictureTex
+                       : batch->texture >= PPU_GPU3DS_SCROLL_PICTURE_TEXTURE
+                           ? &sScrollTex[(batch->texture - PPU_GPU3DS_SCROLL_PICTURE_TEXTURE) & 3u]
+                           : &sRingTex[batch->texture - 1u]);
     }
     SetBatchOffset(batch->offsetX + (float)shift * (2.0f / (float)sPreparedWidth), batch->offsetY);
     sTintLayer = (int)toBg;
@@ -1381,7 +1424,7 @@ static bool DrawOutput(C3D_RenderTarget* target, OutputPass pass) {
     const u32 yOffset = sViewportOffset;
     C3D_SetViewport(0, yOffset, sPreparedWidth, sPreparedHeight);
     SetScissorCached(0, yOffset, sPreparedWidth, yOffset + sPreparedHeight);
-    /* Depth is emitted as -(128 - index)/129, so state the mapping instead of
+    /* Depth is emitted as -(512 - order)/513 (obj_order_depth), so state the mapping instead of
      * inheriting whatever the Citro2D presenter last configured. */
     C3D_DepthMap(true, -1.0f, 0.0f);
     C3D_BindProgram(&sProgram);
@@ -1695,8 +1738,18 @@ static int EyesOverBaseRefusal(void) {
             }
         } else if (anyFront && !batch->objWindow) {
             if (batch->layer != PPU_GPU3DS_OBJ || frontObjsFull) {
-                for (unsigned line = first; line < end; ++line)
-                    if (frontLines[line / 32u] & (1u << (line % 32u))) return SPLIT_BASE_OVER_FRONT;
+                bool over = false;
+                for (unsigned line = first; line < end && !over; ++line)
+                    over = (frontLines[line / 32u] & (1u << (line % 32u))) != 0;
+                if (!over) continue;
+                /* A background over what is in front (the Minish Woods' shadow layer, BG3 over the sprites with a
+                 * depth) is drawn with the front passes, unmoved, over what they have drawn. */
+                if (batch->layer > PPU_GPU3DS_BG3 || frontObjsFull) return SPLIT_BASE_OVER_FRONT;
+                sPromoted[i] = true;
+                for (unsigned line = first; line < end; ++line) {
+                    frontLines[line / 32u] |= 1u << (line % 32u);
+                    frontBgLines[line / 32u] |= 1u << (line % 32u);
+                }
             } else {
                 bool over = false;
                 for (unsigned line = first; line < end && !over; ++line)

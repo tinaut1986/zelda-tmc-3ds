@@ -19,7 +19,10 @@ change (what goes where: the table in `CLAUDE.md`).
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.4.4` (renamed from `release/v0.4.3` right after the `v0.4.3` tag). Published:
+**Release line:** `release/v0.4.5` (renamed from `release/v0.4.4` right after the `v0.4.4` tag). Published:
+**`v0.4.4`** (2026-10-24, **stable**, straight to stable at the owner's request: `release/v0.4.4` merged `--no-ff` into `main`,
+`bf4a455`, and tagged there; the Minish Woods' fog at 60 fps in 3D (`perf/stereo-fog`), zone depth fixes, FIXED and WALL
+sprite depths, Link's head on the region map, the kinstone world event in wide, Hyrule Town's zone gaps; `docs/release-notes/v0.4.4.md`),
 **`v0.4.3`** (2026-10-21, **stable**: first a beta, then promoted by merging the release into `main`, `544da18`, and re-running the workflow on the tag; 3D WORLD, from PR #47 by bheppe, with the owner's corrections and a question at the start; the bottom map's cursor, zoom and drag;
 OPTIONS in groups and scrolling lists; `docs/release-notes/v0.4.3.md`),
 **`v0.4.2`** (2026-10-20, **stable**, straight to stable at the owner's request: `release/v0.4.2` merged `--no-ff` into
@@ -44,6 +47,7 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 | Branch | State |
 |---|---|
 | `perf/stereo-fog` (local, not pushed, NOT checked on the console) | Reason 4 (`SPLIT_BASE_OVER_FRONT`) in the Minish Woods fog: Link's lean runs and neighbouring sprites no longer count as drawn over a sprite in front unless their boxes meet; debug log names the batch. See the decisions log 2026-10-24. |
+| `feat/map-region-names` (local, not pushed; checked by the owner on the New 3DS, 2026-10-24, waiting to be merged) | Bottom MAP tab: Link's region named above his marker, a first tap selects a tile (tinted, game cursor, name) and a second tap on it opens it, the detail map shows its name. See the decisions log 2026-10-24. |
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -1448,3 +1452,64 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   value; the workbench does not read or write `FIXED(n)` yet. `docs/investigations/wall-depth-candidates.md` lists the other entities by a wall.
   `sprite_view.json` holds the owner's preview choices only (the game is unchanged by them).
 - **2026-10-24** `perf/stereo-fog` (Minish Woods fog in 3D, 33-38 fps against 60 in 2D, New 3DS): the first guess (reason 4 from Link's lean runs) was only part of it; the cost was the fog itself. Measured on the console with the owner's state 1: (1) `build_bg_ring` refused BG3 because its HOFS differs per band (`gPpuGpu3DSRingWhy[3]` = 4), so the fog was ~100 bands of tile quads; bands with different scrolls now share a ring; (2) `merge_band_runs` makes the adjacent ring bands one draw (a complement/blend pair stays a pair); (3) the ghost copy (`IsGhostBatch`) is no longer drawn for a blended layer: it flipped the blend's stencil mark so the moved fog drew nowhere over anything blendable, i.e. the fog had almost no depth, and doubled its draws. Sprites the game draws over a sprite in front are promoted to the front passes instead of refusing the over-one-base split (the box test of 6c5f862 stays, the lean runs of one sprite never conflict). Result in the fog, 3D on: 33-40 fps and GPU 18-23 ms -> 59.8 fps and GPU 7-9 ms (2D 59.8 fps). Note: the fog now really moves between the eyes, which it hardly did before; the owner judges the look. The debug log line that named the refusing batch was dropped: it pushed the read-only segment past the 0x63A000 pin (3dsx.ld).
+- **2026-10-24** `v0.4.4` (**stable**) tagged on `main` (`bf4a455`), the owner's call, no beta first: everything on the release line
+  had been seen on the New 3DS. The branch was renamed to `release/v0.4.5` right after the tag; deleting the old remote branch
+  `release/v0.4.4` was left to the owner (the session's permissions refused it). The light rays of the Minish Woods can show
+  cut, sideways-shifted segments after loading a save state in the woods (seen with the slider down too, so not the stereo
+  work); leaving and re-entering the room fixes them. The owner chose to leave it as it is.
+- **2026-10-24** Bottom map names and two-tap pick (`feat/map-region-names`, owner's request, then made discreet at his word: no
+  "you are here" or "tap again" text, names only). The names are the game's own: the text of `gOverworldLocations[].textIndex`
+  (`TEXT_WINDCRESTS`, the line the pause map shows under its cursor), read on the game thread by `Port_GameText_ToUtf8`
+  (`src/message.c`; Latin-1 accents to UTF-8, newlines to spaces) once per save language and published in
+  `SecondScreenSnapshot.regionNames[17]` with `linkRegion` (the region of the spot the game's map keeps for Link, indoors too). They
+  are drawn in the bottom UI's 5x7 font (`Compact_MapLabel`: a theme-coloured plate on the map, accents included; the owner prefers it to bare outlined text), not the banner
+  font, to match the other labels; all 17 regions have a name, so there is no fallback. On the 3DS Link's region is named right above
+  his marker; the first tap on a tile only selects it (light gold tint, the game's blinking cursor, its name in gold above the tile,
+  or below it when there is no room), which hides Link's label (one name at a time); the same tile again opens it (the old bracket
+  beat, then the detail map, which shows its name top left); another tile moves the selection and a tap on no tile drops it.
+  PC/Android keep the one-tap zoom. Side fix: `tmc-link.py touch` now sends the finger-up too (the map and the OPTIONS / STATES lists
+  act on release, so a link tap used to do nothing there).
+- **2026-10-24** Each Minish portal's falling scene has its own picture (`src/enterPortalSubtask.c` loads one of 4 by
+  `gArea.portal_type`: tree stump, rock, PT_2 in area 2, else the dungeon's), and the presenter drew the stump's strips on all of
+  them. `Port_Widescreen_CutsceneStrips` now says which one is shown and `sPortalStrips` holds a strips file and the picture's width
+  per portal: the rock's picture is 240x320, not 256, so its strips are 80 + 80 columns (`portal-rock-strips.bin`, the owner's pick of
+  three Antigravity variants, `portal-rock-3.png`; seen on the New 3DS). The other two have no picture yet and get black, assuming the
+  stump's 256 width: dump them (`extract_bg.py` prints the width) when the owner passes one. Antigravity, asked only for the images,
+  also edited code (the owner undid it); give it a brief that restricts it to its folder.
+- **2026-10-24** The Crenel paths (area 0x12, a 240x800 shaft like the Minish Paths corridor, area 0x11) showed the
+  room at view columns 0-240 with its parallax layers (BG1 branches, BG3 shadows) still at 80-320: the camera rested aside
+  for a neighbour room, and `Port_WidescreenParallaxShadows` assumed a centred room. The layers now follow the camera
+  (`origin_x - scroll_x`). The rest itself was off centre only after arriving through the rock's Minish portal; the
+  probable cause, a rest worked out from the previous area's room table, is guarded in `port_neighbour_rooms.c` (the
+  cached rest keeps the `RoomResInfo` it came from). Not reproduced before the guard, so not proven. The giant twig there
+  (`GIANT_TWIG`) is three entities at one spot; each leant from its own feet and the middle one (type 0x41, 8 px higher
+  feet) stood at another depth, a pixel apart in one eye. `JoinSiblingEntities` (`port_draw.c`) gives entities of one
+  object at one position the lean of their joined box, as `sJoinMeasure` already did for the parts of one entity.
+- **2026-10-24** OBJ against OBJ is decided by priority first, then OAM index, as mGBA does
+  (`software-obj.c`: a sprite pixel replaces another only with a lower priority number; equal ones keep the lower index)
+  and as the GBA shows it: the Crenel paths' giant twig, priority 1 and after Link in OAM, covers Link, priority 2 (the
+  owner's video of the GBA game). Both renderers had followed GBATEK's note that OBJ0 is always above OBJ1-127 (upstream's
+  `mode1_draw_order_profile_test`, "NEW-1b"), so Link was drawn over the twig. Changed in `mode1.c` (both write sites) and
+  in the GPU's depth pre-pass (`obj_order_depth`: priority * 128 + index); the test now checks both rules. mGBA's other quirk
+  (a transparent pixel of a sprite with a lower priority number still lowers the priority of the pixel under it) is not
+  modelled. Changes every scene where sprites of different priorities overlap: seen only in the Crenel paths so far.
+- **2026-10-25** The Crenel paths' shaft (area 0x12 room 00) has generated sides in Full View with WIDE + AI, its three
+  layers each a picture of their own as they scroll apart: the ground (Antigravity's first piece and Gemini's bridge,
+  then repeated as the room's ground repeats), the rock ledges (two pieces repeated in the layer, each completed once by
+  Gemini and stamped beside every copy, `tools/scene-extend/stamp_pieces.py`) and their shadows (BG3's map is BG1's with
+  a palette per column band, so the shadows are the ledges' silhouette in the darkest band). Only the 80 columns each
+  side are stored and drawn (`build_bg_scroll_picture`, GPU renderer only; ~1.3 MB of textures). Gemini's JPGs were
+  read back by fitting their scale against the known half (they were neither 5x nor square) and mapping colours to the
+  palette; the owner judged the cleanups: edge trimming ate the rocks' top (Gemini drew no outline there), so the
+  shipped rocks are the plain nearest-colour recovery with one colour swapped (its main orange 192,112,40 to the
+  original's 192,120,48) and the right rock's last column repeated to the edge. The read-only segment outgrew its pin:
+  `.data` moved to 0x640000 and `.bss` to 0x648000 (format 2 states unaffected).
+- **2026-10-25** Procedural border (owner's request): where a room smaller than the Full View has no neighbour to
+  show, its sides are filled from the room's own tiles instead of black (`BorderTile`, `port_neighbour_rooms.c`): the
+  bottom layer with the base, the commonest metatile of the room's outermost columns and rows; the top layer, now and
+  then, with one of the room's loose decorations (top-layer metatiles alone and at most half opaque, over base: the
+  Minish caves' stones), by a hash of the cell, at the room's own rate. A side is filled when a third of its outermost
+  line is grass (85 % of its pixels in the base's colours, read from VRAM). Tried and liked in area 0x35 room 00 only
+  (`kBorderRooms`); first tries scattered the outer column's grass-with-hedge-edge pieces as "decorations" (thin dark
+  marks) and found no stones, as those are on the top layer. Next: every room, with the rule deciding (walls and water
+  borders must stay black).

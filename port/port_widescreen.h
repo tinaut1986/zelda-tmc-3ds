@@ -112,10 +112,11 @@ void Port_Widescreen_NoteWindowCircle(int x, int y, int radius);
 void Port_Widescreen_NoteLightCircle(int x, int y, int radius);
 /* The Minish portal's falling cutscene drawn at 400x240 (port_linked_stubs.c). Wide: the game
  * produces it this tick; ViewLive: the published frame is it; Strips: the picture's top-left
- * on screen, for the presenter's side strips. */
+ * on screen and which picture it is (0 tree stump, 1 rock, 2 and 3 the other two; the index
+ * src/enterPortalSubtask.c loads), for the presenter's side strips. */
 int Port_Widescreen_PortalCutsceneWide(void);
 int Port_Widescreen_CutsceneViewLive(void);
-int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY);
+int Port_Widescreen_CutsceneStrips(int* pictureX, int* pictureY, int* portal);
 /* The title screen's forest is on the shown frame (the presenter extends it). */
 int Port_Widescreen_TitleForestShown(void);
 /* The shown frame is a plain screen around its middle (the Nintendo/Capcom logos, a blank frame of

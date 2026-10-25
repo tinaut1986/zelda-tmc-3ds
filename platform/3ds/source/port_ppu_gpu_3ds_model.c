@@ -664,6 +664,15 @@ static void build_oam_set(const PpuGpu3DSFrameView* frame,
     }
 }
 
+/* Which sprite's pixel wins where sprites overlap, as the GBA decides it (mGBA's model): the lower priority
+ * number, then the lower OAM index. The depth pre-pass keeps the nearest, so that order is the depth: the
+ * Crenel paths' twig (priority 1, after Link in OAM) covers Link (priority 2) as on the GBA. Index alone let
+ * the earlier sprite win over a later one in front of it. */
+static float obj_order_depth(const PpuGpu3DSObj* obj) {
+    const unsigned order = (obj->priority & 3u) * MODE1_GBA_OAM_COUNT + obj->index;
+    return -(float)(4u * MODE1_GBA_OAM_COUNT - order) * (1.0f / (4.0f * MODE1_GBA_OAM_COUNT + 1.0f));
+}
+
 static bool window_vertical_active(uint16_t dispcnt, uint16_t enable,
                                    uint16_t vertical, unsigned line) {
     unsigned top = vertical >> 8u;
@@ -2830,6 +2839,92 @@ static bool build_bg_picture(const PpuGpu3DSFrameView* frame, PpuGpu3DSCommandBu
     return true;
 }
 
+/* BG `bg`'s side strips (PpuGpu3DSFrameView::scrollPictureMask) as part of that BG: over the band's lines, for each
+ * run of lines whose picture rows follow on (rows past the end go back to the loop's start), a quad for the strip left
+ * of the room and one for the strip right of it, after the BG's own batches and as that BG, as build_bg_picture. */
+static bool build_bg_scroll_picture(const PpuGpu3DSFrameView* frame, PpuGpu3DSCommandBuffer* cmd,
+                                    const PpuGpu3DSBand* band, const uint8_t* io, unsigned bg, unsigned priority,
+                                    const PpuGpu3DSRegion* regions, size_t regionCount, bool emit,
+                                    size_t* vertexCursor, size_t* indexCursor, size_t* batchCursor) {
+    const unsigned layer = PPU_GPU3DS_BG0 + bg;
+    const int height = frame->scrollPictureHeight[bg];
+    const int loopStart = frame->scrollPictureLoopStart[bg], loopLength = frame->scrollPictureLoopLength[bg];
+    const int stripW = frame->scrollPictureStripWidth;
+    const float texH = (float)PpuGpu3DS_ScrollPictureTexHeight((unsigned)height);
+    if (height <= 0 || stripW <= 0 || !layer_has_region(regions, regionCount, layer, 0, (uint16_t)frame->width))
+        return true;
+    /* The two strips: on the frame from screenX, in the texture from texX. */
+    const int screenX[2] = { frame->scrollPictureX, frame->scrollPictureX + stripW + frame->scrollPictureGap };
+    const int texX[2] = { 0, stripW };
+    const size_t first = *indexCursor;
+    unsigned quads = 0;
+    int line = band->firstLine;
+    const int end = band->firstLine + band->lineCount;
+    const int top = frame->scrollPictureY[bg];
+    while (line < end) {
+        const int row = line - top;
+        if (row < 0) {
+            line = top < end ? top : end;
+            continue;
+        }
+        int texRow, run;
+        if (row < height) {
+            texRow = row;
+            run = height - row;
+        } else if (loopLength > 0) {
+            texRow = loopStart + (row - height) % loopLength;
+            run = height - texRow;
+        } else {
+            break;
+        }
+        if (run > end - line) run = end - line;
+        for (unsigned strip = 0; strip < 2; ++strip) {
+            int left = screenX[strip], right = screenX[strip] + stripW;
+            if (left < 0) left = 0;
+            if (right > (int)frame->width) right = (int)frame->width;
+            if (right <= left) continue;
+            if (quad_room(cmd, vertexCursor, indexCursor)) {
+                const float x0 = -1.0f + (float)left * 2.0f / (float)frame->width;
+                const float x1 = -1.0f + (float)right * 2.0f / (float)frame->width;
+                const float y0 = 1.0f - (float)line * 2.0f / (float)frame->height;
+                const float y1 = 1.0f - (float)(line + run) * 2.0f / (float)frame->height;
+                const int u = texX[strip] - screenX[strip];
+                const int16_t u0 = PpuGpu3DS_PackUV((float)(left + u) / PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH);
+                const int16_t u1 = PpuGpu3DS_PackUV((float)(right + u) / PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH);
+                const int16_t v0 = PpuGpu3DS_PackUV(1.0f - (float)texRow / texH);
+                const int16_t v1 = PpuGpu3DS_PackUV(1.0f - (float)(texRow + run) / texH);
+                PpuGpu3DSVertex* const vertices = cmd->vertices + *vertexCursor;
+                vertices[0] = (PpuGpu3DSVertex){ x0, y0, 0.0f, u0, v0 };
+                vertices[1] = (PpuGpu3DSVertex){ x1, y0, 0.0f, u1, v0 };
+                vertices[2] = (PpuGpu3DSVertex){ x1, y1, 0.0f, u1, v1 };
+                vertices[3] = (PpuGpu3DSVertex){ x0, y1, 0.0f, u0, v1 };
+            }
+            *vertexCursor += 4;
+            *indexCursor += 6;
+            ++quads;
+        }
+        line += run;
+    }
+    if (quads == 0) return true;
+    const uint16_t bldcnt = read16(io, MODE1_IO_BLDCNT);
+    const PpuGpu3DSBatch base = {
+        .firstIndex = (uint32_t)first,
+        .indexCount = 6u * quads,
+        .firstLine = band->firstLine,
+        .lineCount = band->lineCount,
+        .scissorRight = (uint16_t)frame->width,
+        .layer = (uint8_t)layer,
+        .priority = (uint8_t)priority,
+        .effect = PPU_GPU3DS_EFFECT_NONE,
+        .target2 = (uint8_t)((bldcnt >> (layer + 8u)) & 1u),
+        .objectIndex = UINT8_MAX,
+        .texture = (uint8_t)(PPU_GPU3DS_SCROLL_PICTURE_TEXTURE + bg),
+    };
+    append_layer_batches(cmd, &base, regions, regionCount, bldcnt, read16(io, MODE1_IO_BLDALPHA),
+                         read16(io, MODE1_IO_BLDY), emit, batchCursor);
+    return true;
+}
+
 /* Whether anything under background `bg` (priority `priority`) in this band is not a second blend target. The blend
  * draws the layer blended over the pixels whose top layer so far is a target, and a second batch, the complement, draws
  * it plain over the rest; when the backdrop, the sprites and every enabled layer under it are targets, the complement
@@ -3129,7 +3224,7 @@ static bool build_mosaic_obj_geometry(
             obj->bpp8 ? (uint16_t)(obj->baseTile & ~1u) : obj->baseTile;
     const bool obj1d =
             (frame->dispcntPerLine[band->firstLine] & MODE1_DISP_OBJ_1D) != 0;
-    const float z = -(128.0f - (float)obj->index) * (1.0f / 129.0f);
+    const float z = obj_order_depth(obj);
     for (int y = firstY; y < clipBottom; y += blockHeight) {
         if (y < obj->y) continue;
         for (int x = firstX; x < clipRight; x += blockWidth) {
@@ -3276,7 +3371,7 @@ static bool build_obj(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
      * to run nine times per sprite tile. */
     const float invWidth = 2.0f / (float)frame->width;
     const float invHeight = 2.0f / (float)frame->height;
-    const float objDepth = -(128.0f - (float)obj->index) * (1.0f / 129.0f);
+    const float objDepth = obj_order_depth(obj);
     const size_t firstIndex = *indexCursor;
     const uint8_t* bandIo =
             frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;
@@ -4514,6 +4609,7 @@ static bool build_bg_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCac
     native.bg3Repeat = false;
     native.bgRepeatMask = 0;
     native.pictureMask = 0;
+    native.scrollPictureMask = 0;
     native.bgNativeMask = 0;
     native.bg3NativeBounds = false;
     PpuGpu3DSBand part = *band;
@@ -4785,6 +4881,10 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                 if (((frame->pictureMask >> bg) & 1u) &&
                     !build_bg_picture(frame, cmd, band, io, (unsigned)bg, (unsigned)priority, regions, regionCount,
                                       emit, vertexCursor, indexCursor, batchCursor))
+                    return false;
+                if (((frame->scrollPictureMask >> bg) & 1u) &&
+                    !build_bg_scroll_picture(frame, cmd, band, io, (unsigned)bg, (unsigned)priority, regions,
+                                             regionCount, emit, vertexCursor, indexCursor, batchCursor))
                     return false;
             }
         }

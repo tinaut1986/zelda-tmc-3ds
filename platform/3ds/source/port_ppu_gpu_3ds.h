@@ -44,6 +44,11 @@ void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsi
  * animates it (the file select's cave). NULL frees it. Kept until cleared here: a NULL
  * SetBg1Picture leaves it. */
 void PortPpuGpu3DS_SetIndexedPicture(const uint8_t* indices, unsigned width, unsigned height, unsigned firstPalette);
+/* BG `bg`'s side strips (GBA 15-bit colours, row-major, the left strip's columns then the right one's, up to 256
+ * wide and 1024 tall, 0 transparent) for frames whose view has the BG in scrollPictureMask (the Crenel paths'
+ * shaft); a texture per BG, apart from the one above. NULL frees it. Remade when the pointer or colour correction
+ * changes. */
+void PortPpuGpu3DS_SetScrollPicture(unsigned bg, const uint16_t* gbaPixels, unsigned width, unsigned height);
 /* Debug view (DEBUG -> SWITCHES -> PLANE TINT, not saved): every quad of the frame painted in one flat colour
  * keeping its silhouette. 0 off; 1 LAYERS: a colour per GBA layer (BG0 magenta, BG1 cyan, BG2 orange, BG3 green,
  * sprites white), darker the further back its priority; 2 DEPTH: the depth stereo_3ds.c gives the layer, in blue,

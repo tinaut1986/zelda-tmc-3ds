@@ -55,3 +55,7 @@ PORT_SPRITE_DEPTH(OBJECT, ARCHWAY, PORT_ANY_TYPE, PORT_DEPTH_WALL)
  * they take its height (14 quarters, tuned on the console) instead of the floor's. */
 PORT_SPRITE_DEPTH(NPC, REM, PORT_ANY_TYPE, PORT_DEPTH_FIXED(14))
 
+/* The carpenters' planks (area 0x03 room 0x04): the third part of a carpenter of type 0 and 1 (the palette-1 piece, the
+ * plank standing at his side) lies on the ground, so it stays flat and does not count in the box that body, head and saw
+ * lean from. PORT_PART_FLAT(kind, id, part): part 0-3 of an entity drawn as several parts. */
+PORT_PART_FLAT(NPC, CARPENTER, 2)

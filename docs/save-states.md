@@ -44,7 +44,7 @@ resized one gets the part both have); ROM pointers are moved; the relocations ar
 entity lists are checked and repaired (below); the room music restarts.
 
 Format 1 (a raw copy of `.data`/`.bss` with the game pinned at fixed addresses by
-`3dsx.ld`: data at 0x63A000 since 2026-10-21 (0x634000 since 2026-10-19; format 2 states, which carry their globals by name, are not affected by a move of the pin), `.bss` at 0x640000 (data at 0x630000 before, 0x620000 / .bss 0x630000 before RetroAchievements)) is still read, and loads only into a build
+`3dsx.ld`: data at 0x640000 and `.bss` at 0x648000 since 2026-10-25 (data at 0x63C000 since 2026-10-24, 0x63A000 since 2026-10-21, 0x634000 since 2026-10-19; format 2 states, which carry their globals by name, are not affected by a move of the pins), `.bss` at 0x640000 before 2026-10-25 (data at 0x630000 before, 0x620000 / .bss 0x630000 before RetroAchievements)) is still read, and loads only into a build
 with the same layout fingerprint.
 
 ## What to keep in mind when changing the game's code

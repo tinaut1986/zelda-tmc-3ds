@@ -42,6 +42,28 @@ few tiles. Use `tools/scene-extend/extract_map_room.py` instead, which draws the
 `-map-bottom-special.bin` and `-map-top-special.bin` (fetch them and `-room-controls.bin` too) and writes
 `room-ground.png`, `room-top.png`, `room-picture.png` and `room-template.png`.
 
+**Rooms too tall for one picture** (the Crenel paths' shaft, area 0x12 room 00, 240x800): the AI gets the room in
+pieces, each continuing the one before. `tools/scene-extend/chunked_extend.py make PICTURE DIR N` writes
+`DIR/chunk-N.png` (400x320 by default: the original at x 80, black beside it); from the second piece on, its first 80
+rows beside the original come from the AI's answer for the piece before (`DIR/result-(N-1).png`), so the AI continues
+it. `chunked_extend.py stitch PICTURE DIR` joins the answers into `DIR/extended.png`, each piece giving only its rows
+past the overlap, the original pasted back over the middle. A layer with transparent pixels takes `--key ff00ff`: the
+pieces show transparency and the areas to fill in pure magenta, which the AI keeps as the background, and `stitch` turns
+it back into transparency. The shaft is three layers, each its own picture, as they scroll at different speeds
+(`verticalMinishPathBackgroundManager.c`): the ground (BG2, 240x800), the rock ledges over it (BG1, 1.25 times the
+ground's scroll, so 240x960 are seen) and the wall shadows (BG3, blended, 1.125 times). BG1 and BG3 are read from the
+dump's `-map-top-special.bin` (BG3 from byte 0, BG1 from byte 0x2000; 32 entries a row, character base 2). The owner's
+material is in `~/Imágenes/camino-crenel/` (`suelo/` and `capa-3d/`). The ground repeats every 320 rows after its
+first 32, so only rows 0-351 are generated (a first piece and a bridge back to row 32); the game repeats them. The
+ledges are two pieces repeated (one cut by the GBA screen's left edge, four times, the last 8 px further left; one by
+its right edge, three times), so the AI completes each once and `tools/scene-extend/stamp_pieces.py` puts the
+completed part beside every copy it finds in the layer (matched pixel for pixel, also moved sideways or cut at the
+layer's end). The shadows need no
+picture: BG3's map is BG1's, entry for entry (the same tiles, so the same shapes), with only the palette changed by
+column, palettes 9-13 two tiles each from the wall inwards (mirrored on the right), every one a flat colour. The
+extended shadows are the extended ledges' silhouette in the band colour of their distance from the wall, the darkest
+past the room's edge.
+
 ## 2. The prompt for the AI
 
 Give it `bgN-template.png` to fill, `bgN-picture.png` and `bgN-with-sprites.png` as references, and:
@@ -92,6 +114,8 @@ own picture, scrolled with it, through the game's colour conversion and fades.
 | Scene | File (romfs `wide-scenes/`, or the data folder) | `to_console.py` scene; pictures | Code |
 |---|---|---|---|
 | Minish portal cutscene (P4.3) | `portal-cutscene-strips.bin` (80 + 64 columns x 320) | `portal`; shipped: `portal-cutscene-1.png` (the owner's pick; `-2` the plainer variant) | `Port_Widescreen_CutsceneStrips`, `DrawScenePictures` (`platform_gpu_3ds.c`) |
+| Minish portal cutscene, the rock | `portal-rock-strips.bin` (80 + 80 columns x 320) | `portal-rock`; shipped: `portal-rock-3.png` (the owner's pick, the cave walls; `-1` the plainer, `-2` with big crystals). The rock's picture (BG1) is 240x320, not 256: `extract_bg.py DUMP 1` says so. Each portal type loads its own picture (`src/enterPortalSubtask.c`), so the presenter picks the strips by the type (`Port_Widescreen_CutsceneStrips`, `sPortalStrips`); the other two types have none yet and get black | as the stump's |
+| Crenel paths' shaft (area 0x12 room 00) | `crenel-paths-ground.bin` (160x352), `-ledges.bin`, `-shadows.bin` (160x960): the 80 columns each side of the room | `crenel-ground`, `crenel-ledges`, `crenel-shadows`; shipped: `crenel-paths-{ground,ledges,shadows}.png` (the shadows made from the ledges, below). Drawn by the GPU renderer as their BGs (ground's, BG1, BG3), each at its layer's scroll (`ScenePictures_SetShaftView` from `port_linked_stubs.c`; the ground's rows past 352 repeat from 32); the software renderer leaves the sides black | `build_bg_scroll_picture`, `PortPpuGpu3DS_SetScrollPicture`, `scene_pictures_3ds.c` |
 | Title screen (P4.4) | `title-forest.bin` (400x240) | `title`; shipped: `title-forest-a.png` (`-b` the framed variant). The forest (BG1, 240x160, 22 colours) needs all four sides (`extract_bg.py DUMP 1 --top 40 --bottom 40`). The title is drawn at 400x240 (`Port_Widescreen_TitleWide`, `src/title.c`): the picture *is* BG1 in both renderers (`virtuappu_mode1_bg1_picture`, the GPU's picture texture), so the light rays blend over it and the sword and sprites go over it; the rays are continued by the game itself (below) | `scene_pictures_3ds.c`, `PortPpuGpu3DS_SetBg1Picture` |
 | File select (P4.5) | `fileselect-cave.bin` (400x240 palette indices) | `fileselect --palettes DUMP-palettes.bin`; shipped: `fileselect-cave-1.png` (the owner's pick, "monumental"; `-2`, `-3` the other variants). The cave (BG3, 240x160, 35 colours, BG palettes 11-14) needs all four sides (`extract_bg.py DUMP 3 --width 240 --height 160 --top 40 --bottom 40`); with the GPU renderer the screen is drawn at 400x240 (`Port_Widescreen_FileSelectWide`): BG0-BG3 in the centred 240x160 (`bgNativeMask`), the cave as a picture over BG3 (`PortPpuGpu3DS_SetIndexedPicture`), and the sprites moved into the middle by `port_draw.c`, each drawn thing as one, carried faster across the GBA screen's edge so it leaves the 400 view as it leaves the 240 one (`WideCarry`). With the software renderer the screen stays 240x160 and the presenter draws the cave around it. Its shimmer is the game cycling palettes 11-14, so the file holds indices, not colours (below) | `port_draw.c`, `PortPpuGpu3DS_SetIndexedPicture`; software: `CaveReady`, `DrawScenePictures` (`platform_gpu_3ds.c`) |
 

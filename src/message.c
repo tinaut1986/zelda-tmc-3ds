@@ -197,6 +197,46 @@ void Port_TTS_SpeakTextIndex(u32 textIndex) {
     opts.dedupe = true;
     Port_TTS_Speak(buf, &opts);
 }
+
+/* A text index as one UTF-8 line in the language of the save, for the port's own UI (the bottom screen's
+ * place names). Newlines become spaces, control codes are skipped, the game's Latin-1 accents become UTF-8.
+ * Returns the length written (0 when the text is empty); `out` is always terminated. Game thread only. */
+u32 Port_GameText_ToUtf8(u32 textIndex, char* out, u32 cap) {
+    Token tok;
+    u32 pos = 0;
+    int iter = 0;
+
+    if (cap == 0)
+        return 0;
+    out[0] = '\0';
+    MemClear(&tok, sizeof(tok));
+    sub_0805EEB4(&tok, textIndex);
+    tok._c = (void*)&gUnk_08107BE0;
+
+    while (pos + 3 < cap && iter++ < 256) {
+        u32 chr = GetCharacter(&tok);
+        if (chr == 0)
+            break;
+        if (chr == 1) {
+            if (pos > 0 && out[pos - 1] != ' ')
+                out[pos++] = ' ';
+            continue;
+        }
+        if ((chr >> 8) != 1)
+            continue;
+        u8 c = (u8)(chr & 0xff);
+        if (c >= 0x20 && c < 0x7F) {
+            out[pos++] = (char)c;
+        } else if (c >= 0xA0) {
+            out[pos++] = (char)(0xC0 | (c >> 6));
+            out[pos++] = (char)(0x80 | (c & 0x3F));
+        }
+    }
+    while (pos > 0 && out[pos - 1] == ' ')
+        pos--;
+    out[pos] = '\0';
+    return pos;
+}
 #endif
 
 static void StatusUpdate(u32 status);
