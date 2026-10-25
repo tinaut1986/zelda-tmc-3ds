@@ -1515,3 +1515,9 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   (`kBorderRooms`); first tries scattered the outer column's grass-with-hedge-edge pieces as "decorations" (thin dark
   marks) and found no stones, as those are on the top layer. Next: every room, with the rule deciding (walls and water
   borders must stay black).
+- **2026-10-25** The generated scene pictures ship compressed (owner, who expects many more of them): zlib streams, the
+  seven files from 1.2 MB to 64 KB, the CIA from 5.49 to 4.39 MB; memory in use on the console is unchanged. zlib is the
+  CI image's 3ds-zlib (checked in `devkitpro/devkitarm:20260610`'s layers: 3ds-zlib 1.3.1) and now required by the build;
+  `ScenePictures_ReadFile` also reads the GBA BIOS's LZ77 (`to_console.py --lz77`, 173 KB for the same seven), the way out
+  should zlib ever go, and uncompressed files (by their size). Lowering their resolution was ruled out: they are 1:1 pixel
+  art beside the game's own.

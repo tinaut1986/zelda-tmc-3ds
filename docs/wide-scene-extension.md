@@ -109,7 +109,11 @@ To ship it: keep the generated parts (the original area transparent) in
 `platform/3ds/assets/wide-scenes/` and convert that into the romfs:
 `tools/scene-extend/to_console.py SCENE platform/3ds/assets/wide-scenes/NAME.png
 platform/3ds/romfs/wide-scenes/FILE.bin`. The presenter draws only the parts outside the game's
-own picture, scrolled with it, through the game's colour conversion and fades.
+own picture, scrolled with it, through the game's colour conversion and fades. The files are zlib streams
+(2026-10-25: the seven shipped ones went from 1.2 MB to about 64 KB; zlib is the CI image's 3ds-zlib, required by the
+build); `ScenePictures_ReadFile` reads that, the GBA BIOS's LZ77 (`to_console.py --lz77`, 2.7 times bigger, the way
+out should zlib ever be missing) or the uncompressed picture (`--raw`, or an older player's file), told apart by the
+size and the zlib header.
 
 | Scene | File (romfs `wide-scenes/`, or the data folder) | `to_console.py` scene; pictures | Code |
 |---|---|---|---|

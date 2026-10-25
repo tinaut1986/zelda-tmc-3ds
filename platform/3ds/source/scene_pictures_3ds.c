@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <zlib.h>
 
 extern bool Port_Config_GetColorCorrection(void);
 extern bool Port_Config_GetWideAi(void); /* these pictures are generated art: only WIDE + AI shows them */
@@ -15,6 +16,58 @@ extern bool Port_Config_GetWideAi(void); /* these pictures are generated art: on
 #define TITLE_ROMFS "romfs:/wide-scenes/title-forest.bin"
 #define CAVE_SD TMC3DS_APP_DIR "/fileselect-cave.bin"
 #define CAVE_ROMFS "romfs:/wide-scenes/fileselect-cave.bin"
+
+/* The GBA BIOS's LZ77 (LZ77UnCompWram): a header of 0x10 and the 24-bit size, then groups of a flag byte and eight
+ * items, a literal byte or (bit set) a copy of 3-18 bytes from up to 4096 back. */
+static bool Lz77Decode(const uint8_t* in, size_t inSize, uint8_t* out, size_t outSize) {
+    if (inSize < 4 || in[0] != 0x10 || (size_t)(in[1] | in[2] << 8 | in[3] << 16) != outSize) return false;
+    size_t i = 4, o = 0;
+    while (o < outSize) {
+        if (i >= inSize) return false;
+        const uint8_t flags = in[i++];
+        for (int bit = 0; bit < 8 && o < outSize; ++bit) {
+            if (flags & (0x80 >> bit)) {
+                if (i + 1 >= inSize) return false;
+                const size_t len = (size_t)(in[i] >> 4) + 3, back = (size_t)((in[i] & 15) << 8 | in[i + 1]) + 1;
+                i += 2;
+                if (back > o) return false;
+                for (size_t k = 0; k < len && o < outSize; ++k, ++o) out[o] = out[o - back];
+            } else {
+                if (i >= inSize) return false;
+                out[o++] = in[i++];
+            }
+        }
+    }
+    return true;
+}
+
+bool ScenePictures_ReadFile(const char* sd, const char* romfs, void* out, size_t bytes) {
+    FILE* f = sd ? fopen(sd, "rb") : NULL;
+    if (f == NULL && romfs) f = fopen(romfs, "rb");
+    if (f == NULL) return false;
+    bool ok = false;
+    if (fseek(f, 0, SEEK_END) == 0) {
+        const long size = ftell(f);
+        rewind(f);
+        if (size == (long)bytes) {
+            ok = fread(out, 1, bytes, f) == bytes;
+        } else if (size > 4 && (size_t)size < bytes) {
+            uint8_t* packed = malloc((size_t)size);
+            if (packed != NULL && fread(packed, 1, (size_t)size, f) == (size_t)size) {
+                if ((packed[0] & 0x0f) == 8 && ((packed[0] << 8) | packed[1]) % 31 == 0) {
+                    /* A zlib stream (to_console.py's default). */
+                    uLongf got = (uLongf)bytes;
+                    ok = uncompress(out, &got, packed, (uLong)size) == Z_OK && got == bytes;
+                } else {
+                    ok = Lz77Decode(packed, (size_t)size, out, bytes);
+                }
+            }
+            free(packed);
+        }
+    }
+    fclose(f);
+    return ok;
+}
 
 static int sAvailable = -1; /* -1 not looked, 0 none, 1 a file */
 static uint16_t* sFaded555;  /* scratch for the software renderer's faded copy */
@@ -31,17 +84,13 @@ bool ScenePictures_TitleAvailable(void) {
 
 const uint16_t* ScenePictures_Title555(void) {
     if (sTitle555 != NULL || !ScenePictures_TitleAvailable()) return sTitle555;
-    FILE* f = fopen(TITLE_SD, "rb");
-    if (f == NULL) f = fopen(TITLE_ROMFS, "rb");
     uint16_t* pixels = malloc(SCENE_TITLE_W * SCENE_TITLE_H * sizeof(uint16_t));
-    if (f == NULL || pixels == NULL ||
-        fread(pixels, sizeof(uint16_t), SCENE_TITLE_W * SCENE_TITLE_H, f) != SCENE_TITLE_W * SCENE_TITLE_H) {
-        if (f) fclose(f);
+    if (pixels == NULL ||
+        !ScenePictures_ReadFile(TITLE_SD, TITLE_ROMFS, pixels, SCENE_TITLE_W * SCENE_TITLE_H * sizeof(uint16_t))) {
         free(pixels);
         sAvailable = 0;
         return NULL;
     }
-    fclose(f);
     /* The file is RGB565 (tools/scene-extend/to_console.py); back to the GBA's 15-bit colour. */
     for (unsigned i = 0; i < SCENE_TITLE_W * SCENE_TITLE_H; ++i) {
         const uint16_t c = pixels[i];
@@ -103,16 +152,12 @@ bool ScenePictures_CaveAvailable(void) {
 
 const uint8_t* ScenePictures_CaveIndices(void) {
     if (sCave != NULL || !ScenePictures_CaveAvailable()) return sCave;
-    FILE* f = fopen(CAVE_SD, "rb");
-    if (f == NULL) f = fopen(CAVE_ROMFS, "rb");
     uint8_t* indices = malloc(SCENE_CAVE_W * SCENE_CAVE_H);
-    if (f == NULL || indices == NULL || fread(indices, 1, SCENE_CAVE_W * SCENE_CAVE_H, f) != SCENE_CAVE_W * SCENE_CAVE_H) {
-        if (f) fclose(f);
+    if (indices == NULL || !ScenePictures_ReadFile(CAVE_SD, CAVE_ROMFS, indices, SCENE_CAVE_W * SCENE_CAVE_H)) {
         free(indices);
         sCaveAvailable = 0;
         return NULL;
     }
-    fclose(f);
     sCave = indices;
     return sCave;
 }
@@ -138,17 +183,13 @@ const uint16_t* ScenePictures_Shaft555(SceneShaftLayer layer, unsigned* height) 
     char sd[160], romfs[96];
     snprintf(sd, sizeof(sd), "%s/%s", TMC3DS_APP_DIR, kShaftFiles[layer]);
     snprintf(romfs, sizeof(romfs), "romfs:/wide-scenes/%s", kShaftFiles[layer]);
-    FILE* f = fopen(sd, "rb");
-    if (f == NULL) f = fopen(romfs, "rb");
     const size_t count = (size_t)2 * SCENE_SHAFT_STRIP_W * kShaftHeights[layer];
     uint16_t* pixels = malloc(count * sizeof(uint16_t));
-    if (f == NULL || pixels == NULL || fread(pixels, sizeof(uint16_t), count, f) != count) {
-        if (f) fclose(f);
+    if (pixels == NULL || !ScenePictures_ReadFile(sd, romfs, pixels, count * sizeof(uint16_t))) {
         free(pixels);
         sShaftAvailable[layer] = 0;
         return NULL;
     }
-    fclose(f);
     for (size_t i = 0; i < count; ++i) { /* RGB565 to the GBA's 15-bit colour, as the title's */
         const uint16_t c = pixels[i];
         pixels[i] = (uint16_t)(((c >> 11) & 31u) | ((((c >> 5) & 63u) >> 1) << 5) | ((c & 31u) << 10));
