@@ -261,8 +261,10 @@ target_include_directories(tmc-3ds PRIVATE "${UPDATE_DEPS_ROOT}/include")
 target_link_directories(tmc-3ds PRIVATE "${UPDATE_DEPS_ROOT}/lib")
 # Official devkitPro curl enables gzip/deflate; the pinned minimal build does
 # not. Link its optional static dependency when supplied by the selected SDK.
+# The scene pictures are zlib streams (scene_pictures_3ds.c), so zlib is required (3ds-zlib, in the CI's devkitarm
+# image); tools/scene-extend/to_console.py --lz77 makes files the game reads without it.
 find_library(TMC_UPDATE_ZLIB NAMES z PATHS "${UPDATE_DEPS_ROOT}/lib"
-    "$ENV{DEVKITPRO}/portlibs/3ds/lib" NO_DEFAULT_PATH)
+    "$ENV{DEVKITPRO}/portlibs/3ds/lib" NO_DEFAULT_PATH REQUIRED)
 if(TMC_UPDATE_ZLIB)
     target_link_libraries(tmc-3ds PRIVATE rcheevos citro2d citro3d curl jansson mbedtls mbedx509 mbedcrypto "${TMC_UPDATE_ZLIB}" ctru m ppu_gpu_3ds_shader_bin)
 else()

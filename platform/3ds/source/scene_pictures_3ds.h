@@ -3,6 +3,7 @@
  * The title screen's forest, 400x240: the player's own title-forest.bin in the data folder, else the
  * one shipped in the romfs. Loaded when first asked for, freed by ScenePictures_Release. */
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 enum { SCENE_TITLE_W = 400, SCENE_TITLE_H = 240, SCENE_CAVE_W = 400, SCENE_CAVE_H = 240, SCENE_CAVE_FIRST_PALETTE = 11 };
@@ -41,3 +42,9 @@ void ScenePictures_ReleaseShaft(void);
  * ground, -1 when the shaft is not shown in Full View; x the left strip's left edge on the view, y[layer] its top. */
 void ScenePictures_SetShaftView(int groundBg, int x, int groundY, int ledgesY, int shadowsY);
 int ScenePictures_ShaftView(int* x, int y[SCENE_SHAFT_LAYERS]);
+
+/* Reads a scene file into `out` (exactly `bytes`): the player's own `sd` path, else the shipped `romfs` one. The file
+ * is the picture as it is (`bytes` long, as older to_console.py wrote it), a zlib stream (tools/scene-extend/
+ * to_console.py's default) or the GBA BIOS's LZ77 (0x10 and the size; to_console.py --lz77, the fallback should zlib
+ * ever be missing). False when neither file is there or it is none of those. */
+bool ScenePictures_ReadFile(const char* sd, const char* romfs, void* out, size_t bytes);

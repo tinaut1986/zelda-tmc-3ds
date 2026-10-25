@@ -1105,13 +1105,12 @@ typedef struct ScenePicture {
 static void LoadScenePicture(ScenePicture* picture) {
     picture->state = -1;
     if (picture->path == NULL) return;
-    FILE* f = fopen(picture->path, "rb");
-    if (f == NULL) f = fopen(picture->romfsPath, "rb");
-    if (f == NULL) return;
     const size_t count = (size_t)picture->width * picture->height;
     uint16_t* pixels = malloc(count * sizeof(uint16_t));
-    const size_t got = pixels != NULL ? fread(pixels, sizeof(uint16_t), count, f) : 0;
-    fclose(f);
+    const size_t got =
+        pixels != NULL && ScenePictures_ReadFile(picture->path, picture->romfsPath, pixels, count * sizeof(uint16_t))
+            ? count
+            : 0;
     const size_t texBytes = (size_t)picture->texWidth * picture->texHeight * sizeof(uint32_t);
     uint32_t* linear = got == count ? linearAlloc(texBytes) : NULL;
     if (linear == NULL) {
