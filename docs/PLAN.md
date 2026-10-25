@@ -1507,3 +1507,8 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   generative AI, so art made by code from the game's own shows in plain WIDE too (`ScenePicture.procedural`; the rule
   in CLAUDE.md and `docs/wide-scene-extension.md`, "Patterns"). Checked on the New 3DS: the three pages, a page change
   and closing the menu.
+- **2026-10-25** History of `release/v0.4.6` (and `feat/pause-wide-view`) rewritten and force-pushed, owner's go-ahead:
+  `pause-background.png/.bin` taken out of every commit since `e0d3f5b` (the `.bin` carried the pause menu's original
+  240x160 background, the PNG the game's caps rearranged). Commit hashes after `e0d3f5b` changed; the commits between
+  the first one that added the files and `fix/cmake-no-pause-bin` do not build (CMake copies a file they no longer
+  have). Pictures made by code from the game's art are made by the game at run time, never shipped.
