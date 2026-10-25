@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <zlib.h>
 
@@ -139,6 +140,180 @@ void ScenePictures_Release(void) {
     sTitleAbgr = NULL;
     sFaded555 = NULL;
     sFadedAbgr = NULL;
+}
+
+/* The pause menu's background extended by the game itself, from its own BG3 in VRAM: nothing of it is shipped. It is a
+ * lattice of Ezlo caps, so the extension is worked out on the tile map (30x20 entries, cheap): the two shortest shifts
+ * that repeat the map, then every entry outside the screen the one most of its lattice copies inside have, then the
+ * caps the screen's edge cuts off the lattice completed from a whole copy (tools/scene-extend/extend_lattice.py is the
+ * same in pixels, for trying a picture on the PC). */
+enum { PAUSE_MAP_W = 30, PAUSE_MAP_H = 20, PAUSE_OUT_W = SCENE_PAUSE_W / 8, PAUSE_OUT_H = SCENE_PAUSE_H / 8,
+       PAUSE_LEFT = 10, PAUSE_TOP = 5, PAUSE_REACH = 12, PAUSE_EDGE = 3 };
+extern uint8_t gVram[0x18000];
+static uint16_t sPauseMap[PAUSE_MAP_H][PAUSE_MAP_W]; /* the map the picture was made from */
+static uint8_t* sPauseIndices;
+static uint16_t* sPause555;
+static unsigned sPauseFirstPalette;
+static int sPauseLattice[2][2];
+
+static uint16_t PauseVote(int px, int py, bool skipSelf) {
+    /* The entry most of the lattice copies of (px, py) inside the map have (few distinct ones: a small list). */
+    uint16_t entries[16];
+    unsigned counts[16], used = 0;
+    for (int i = -PAUSE_REACH; i <= PAUSE_REACH; ++i)
+        for (int j = -PAUSE_REACH; j <= PAUSE_REACH; ++j) {
+            const int qx = px + i * sPauseLattice[0][0] + j * sPauseLattice[1][0];
+            const int qy = py + i * sPauseLattice[0][1] + j * sPauseLattice[1][1];
+            if ((skipSelf && i == 0 && j == 0) || qx < 0 || qx >= PAUSE_MAP_W || qy < 0 || qy >= PAUSE_MAP_H) continue;
+            const uint16_t e = sPauseMap[qy][qx];
+            unsigned k = 0;
+            while (k < used && entries[k] != e) ++k;
+            if (k == used) {
+                if (used == 16) continue;
+                entries[used] = e;
+                counts[used++] = 0;
+            }
+            counts[k]++;
+        }
+    unsigned best = 0;
+    for (unsigned k = 1; k < used; ++k)
+        if (counts[k] > counts[best]) best = k;
+    return used ? entries[best] : 0;
+}
+
+static bool PauseFindLattice(void) {
+    int found = 0;
+    for (int len = 1; len <= PAUSE_MAP_W * PAUSE_MAP_W && found < 2; ++len) /* shortest first */
+        for (int dy = 0; dy <= PAUSE_MAP_H / 2 && found < 2; ++dy)
+            for (int dx = -PAUSE_MAP_W / 2; dx <= PAUSE_MAP_W / 2 && found < 2; ++dx) {
+                if ((dy == 0 && dx <= 0) || dx * dx + dy * dy != len) continue;
+                if (found == 1 && sPauseLattice[0][0] * dy - sPauseLattice[0][1] * dx == 0) continue;
+                unsigned n = 0, same = 0;
+                for (int y = 0; y + dy < PAUSE_MAP_H; ++y)
+                    for (int x = dx < 0 ? -dx : 0; x < PAUSE_MAP_W && x + dx < PAUSE_MAP_W; ++x) {
+                        ++n;
+                        same += sPauseMap[y][x] == sPauseMap[y + dy][x + dx];
+                    }
+                if (n >= 150 && same * 100 >= n * 95) {
+                    sPauseLattice[found][0] = dx;
+                    sPauseLattice[found][1] = dy;
+                    ++found;
+                }
+            }
+    return found == 2;
+}
+
+static void PauseMake(void) {
+    static uint16_t out[PAUSE_OUT_H][PAUSE_OUT_W];
+    /* The commonest entry is the plain background. */
+    uint16_t background = sPauseMap[0][0];
+    {
+        unsigned bestCount = 0;
+        for (int i = 0; i < PAUSE_MAP_W * PAUSE_MAP_H; ++i) {
+            const uint16_t e = sPauseMap[i / PAUSE_MAP_W][i % PAUSE_MAP_W];
+            unsigned c = 0;
+            for (int k = 0; k < PAUSE_MAP_W * PAUSE_MAP_H; ++k) c += sPauseMap[k / PAUSE_MAP_W][k % PAUSE_MAP_W] == e;
+            if (c > bestCount) bestCount = c, background = e;
+        }
+    }
+    for (int y = 0; y < PAUSE_OUT_H; ++y)
+        for (int x = 0; x < PAUSE_OUT_W; ++x) {
+            const int px = x - PAUSE_LEFT, py = y - PAUSE_TOP;
+            out[y][x] = px >= 0 && px < PAUSE_MAP_W && py >= 0 && py < PAUSE_MAP_H ? 0 : PauseVote(px, py, false);
+        }
+    /* Caps the edge cuts off the lattice: runs of edge entries their lattice copies disagree with. */
+    for (int side = 0; side < 2; ++side) {
+        const int ex = side ? PAUSE_MAP_W - 1 : 0, c0 = side ? PAUSE_MAP_W - PAUSE_EDGE : 0;
+        const int past0 = side ? PAUSE_MAP_W : -PAUSE_EDGE;
+        for (int y0 = 0; y0 < PAUSE_MAP_H;) {
+            int y1 = y0;
+            while (y1 < PAUSE_MAP_H && sPauseMap[y1][ex] != background && sPauseMap[y1][ex] != PauseVote(ex, y1, true)) ++y1;
+            if (y1 == y0) {
+                ++y0;
+                continue;
+            }
+            bool done = false;
+            for (int sy = -y0; sy < PAUSE_MAP_H - y1 + 1 && !done; ++sy)
+                for (int sx = -PAUSE_MAP_W; sx < PAUSE_MAP_W && !done; ++sx) {
+                    if ((sx == 0 && sy == 0) || past0 + sx < 0 || past0 + PAUSE_EDGE + sx > PAUSE_MAP_W) continue;
+                    bool match = true;
+                    for (int y = y0; y < y1 && match; ++y)
+                        for (int x = c0; x < c0 + PAUSE_EDGE && match; ++x)
+                            if (sPauseMap[y][x] != background)
+                                match = x + sx >= 0 && x + sx < PAUSE_MAP_W && sPauseMap[y + sy][x + sx] == sPauseMap[y][x];
+                    if (!match) continue;
+                    for (int y = y0; y < y1; ++y)
+                        for (int x = past0; x < past0 + PAUSE_EDGE; ++x)
+                            if (sPauseMap[y + sy][x + sx] != background)
+                                out[y + PAUSE_TOP][x + PAUSE_LEFT] = sPauseMap[y + sy][x + sx];
+                    done = true;
+                }
+            y0 = y1;
+        }
+    }
+    /* Into pixels: palette indices of the 4bpp tiles (character base 2), relative to the first of four palettes. */
+    unsigned lowest = 15, highest = 0;
+    for (int y = 0; y < PAUSE_OUT_H; ++y)
+        for (int x = 0; x < PAUSE_OUT_W; ++x)
+            if (out[y][x]) {
+                const unsigned bank = out[y][x] >> 12;
+                if (bank < lowest) lowest = bank;
+                if (bank > highest) highest = bank;
+            }
+    sPauseFirstPalette = lowest > 12 ? 12 : lowest;
+    if (highest >= sPauseFirstPalette + 4) return; /* more palettes than the picture can hold */
+    for (int y = 0; y < SCENE_PAUSE_H; ++y)
+        for (int x = 0; x < SCENE_PAUSE_W; ++x) {
+            const uint16_t e = out[y >> 3][x >> 3];
+            uint8_t index = 0;
+            if (e) {
+                const unsigned r = (e & 0x800) ? 7u - (y & 7u) : (y & 7u), c = (e & 0x400) ? 7u - (x & 7u) : (x & 7u);
+                const uint8_t b = gVram[0x8000u + (e & 0x3FFu) * 32u + r * 4u + c / 2u];
+                const unsigned i = (c & 1u) ? b >> 4 : b & 15u;
+                if (i) index = (uint8_t)(((e >> 12) - sPauseFirstPalette) * 16u + i);
+            }
+            sPauseIndices[y * SCENE_PAUSE_W + x] = index;
+        }
+}
+
+const uint8_t* ScenePictures_PauseIndices(unsigned* firstPalette, bool* remade) {
+    /* BG3's map (screen base 30) as the screen shows it; made again only when it changed. */
+    bool same = sPauseIndices != NULL;
+    for (int y = 0; y < PAUSE_MAP_H; ++y)
+        for (int x = 0; x < PAUSE_MAP_W; ++x) {
+            const uint16_t e = (uint16_t)(gVram[0xF000 + (y * 32 + x) * 2] | gVram[0xF000 + (y * 32 + x) * 2 + 1] << 8);
+            if (e != sPauseMap[y][x]) same = false;
+            sPauseMap[y][x] = e;
+        }
+    if (remade) *remade = !same;
+    if (!same) {
+        free(sPause555);
+        sPause555 = NULL;
+        if (sPauseIndices == NULL) sPauseIndices = malloc(SCENE_PAUSE_W * SCENE_PAUSE_H);
+        if (sPauseIndices == NULL) return NULL;
+        memset(sPauseIndices, 0, SCENE_PAUSE_W * SCENE_PAUSE_H);
+        if (PauseFindLattice()) PauseMake();
+    }
+    *firstPalette = sPauseFirstPalette;
+    return sPauseIndices;
+}
+
+const uint16_t* ScenePictures_Pause555(void) {
+    unsigned first;
+    const uint8_t* indices = ScenePictures_PauseIndices(&first, NULL);
+    if (indices == NULL) return NULL;
+    if (sPause555 == NULL && (sPause555 = malloc(SCENE_PAUSE_W * SCENE_PAUSE_H * sizeof(uint16_t))) != NULL) {
+        const uint16_t* palettes = FadeGpu3DS_ShownPalettes() + first * 16u;
+        for (int i = 0; i < SCENE_PAUSE_W * SCENE_PAUSE_H; ++i) sPause555[i] = indices[i] ? palettes[indices[i]] : 0;
+    }
+    return sPause555;
+}
+
+void ScenePictures_ReleasePause(void) {
+    free(sPauseIndices);
+    free(sPause555);
+    sPauseIndices = NULL;
+    sPause555 = NULL;
 }
 
 static int sCaveAvailable = -1; /* as sAvailable */

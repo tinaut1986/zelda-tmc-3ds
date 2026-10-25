@@ -141,25 +141,26 @@ generative AI. An extension made by code from the game's own art (no generative 
 too: its `ScenePicture` has `.procedural = true` (`platform_gpu_3ds.c`). Anything a generative AI drew, even in part,
 stays behind WIDE + AI.
 
-A background that repeats one motif on a lattice needs no AI. The pause menu's (BG3: Ezlo caps on yellow, the same on
-every page, never scrolled) is one:
+A background that repeats one motif on a lattice needs no AI and no file: the game extends it itself, from its own
+VRAM, while it is shown, so nothing of the game's art is shipped (owner, 2026-10-25: code-made pictures are not kept
+in git, nor written to the SD). The pause menu's (BG3: Ezlo caps on yellow, the same on every page, never scrolled)
+is the first: `ScenePictures_PauseIndices` (`platform/3ds/source/scene_pictures_3ds.c`) reads BG3's 30x20 tile map,
+finds the two shortest shifts that repeat it (3,6 and 13,10 tiles; the map is off the pattern in a few places), gives
+every entry outside the screen the one most of its lattice copies inside have, and completes the caps the screen's
+edge cuts off the lattice (one at the left edge, tile rows 13-18) from a whole copy found elsewhere in the map. It
+takes a few milliseconds when the menu opens (again only if BG3's map changes), and the picture is palette indices,
+so fades and colour correction apply as to the game's own tiles.
 
-```sh
-tools/scene-extend/extract_bg.py tmc-dump-0053 3 ~/Imágenes/menu-pausa/bg3
-tools/scene-extend/extend_lattice.py ~/Imágenes/menu-pausa/bg3/bg3-picture.png \
-    platform/3ds/assets/wide-scenes/pause-background.png --complete 0,100,24,150 --transparent
-tools/scene-extend/to_console.py pause platform/3ds/assets/wide-scenes/pause-background.png \
-    platform/3ds/romfs/wide-scenes/pause-background.bin
-```
+`tools/scene-extend/extend_lattice.py` does the same in pixels on a dump's picture (`extract_bg.py`), for trying a
+pattern on the PC before writing it into the game; its result is for looking at, not for git.
 
-Convert the transparent version: a `.bin` made from the whole picture would carry the game's own art into git.
-
-`extend_lattice.py` finds the two shortest shifts that repeat the picture (here 24,48 and 104,80; the game's map is off
-the pattern in a few places) and gives every pixel outside the original the colour most of its copies inside it have.
-`--complete` names a motif the original cuts at its edge off the lattice (the pause background has one at its left
-edge, x 0-23, y 100-149): it is completed from a whole copy found elsewhere. `--transparent` leaves the original's
-area transparent, as everything in `platform/3ds/assets/wide-scenes/`. The game draws it around the 240x160 screen while the pause
-menu runs with its BG3 unscrolled (`Port_Widescreen_PauseBackgroundShown`).
+With the GPU renderer the pause menu is drawn at 400x240 while it shows that background unscrolled
+(`Port_Widescreen_PauseWide`, as the file select): its BGs in the middle, the picture as BG3 around them, and every
+sprite moved 80,40 as it is, so what the game slides past the GBA's screen (the L and R buttons when pressed) shows
+whole; a sprite wholly off it stays hidden. The title banner (INVENTORY, COLLECTION, MAP: two 64x32 sprites at the
+screen's top-left, cut flat by the GBA's left edge) is closed by `Port_Draw_PauseBannerCap` (`port/port_draw.c`):
+four 8x8 (or 16x8) sprites showing its right end's tile column flipped, after it in OAM. With the software renderer
+the screen stays 240x160 and the presenter draws the picture around it (`Port_Widescreen_PauseBackgroundShown`).
 
 ## Layers animated by palette: continue them, do not paint them
 

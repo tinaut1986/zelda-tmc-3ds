@@ -24,6 +24,7 @@
 #ifdef PC_PORT
 #include "port_gba_mem.h"
 #include "port_softslots.h"
+#include "port_widescreen.h"
 #endif
 
 extern void sub_080A4DB8(u32);
@@ -58,6 +59,9 @@ void Subtask_PauseMenu(void) {
         if (gPauseMenuOptions.unk11 != 4) {
             gUnk_08128A38[gPauseMenuOptions.screen].func();
         }
+#ifdef PC_PORT
+        Port_Draw_PauseBannerCap(); /* the title banner closed on the left in the 400x240 view */
+#endif
         CopyOAM();
         {
             u32 t = gPauseMenuOptions.unk16;

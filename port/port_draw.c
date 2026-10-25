@@ -823,8 +823,14 @@ static s32 WideCarry(s32 lo, s32 hi, s32 native, s32 margin) {
     return margin;
 }
 
+/* The pause menu's sprites (Port_Widescreen_PauseWide) move into the middle as they are: what the game slides
+ * past the GBA's screen (the L and R buttons when pressed) stays whole; what is wholly off it stays hidden. */
+static int sWidePause;
+
 static int WideSpritesBegin(void) {
-    if (sWideCollect || !Port_Widescreen_FileSelectWide()) return -1;
+    if (sWideCollect) return -1;
+    sWidePause = !Port_Widescreen_FileSelectWide() && Port_Widescreen_PauseWide();
+    if (!sWidePause && !Port_Widescreen_FileSelectWide()) return -1;
     sWideCollect = 1;
     return gOAMControls.updated;
 }
@@ -846,8 +852,12 @@ static void WideSpritesEnd(int first) {
         if (sWidePieceY[i] < top) top = sWidePieceY[i];
         if (sWidePieceY[i] + sWidePieceH[i] > bottom) bottom = sWidePieceY[i] + sWidePieceH[i];
     }
-    const s32 dx = WideCarry(left, right, 240, 80);
-    const s32 dy = WideCarry(top, bottom, 160, 40);
+    if (sWidePause && (right <= 0 || left >= 240 || bottom <= 0 || top >= 160)) {
+        gOAMControls.updated = (u8)first;
+        return;
+    }
+    const s32 dx = sWidePause ? 80 : WideCarry(left, right, 240, 80);
+    const s32 dy = sWidePause ? 40 : WideCarry(top, bottom, 160, 40);
     u8* oam = (u8*)&gOAMControls.oam[0];
     int out = first;
     for (int i = first; i < end; i++) {
@@ -871,6 +881,89 @@ static void WideSpritesEnd(int first) {
 
 void Port_Draw_WideGroupEnd(int first) {
     WideSpritesEnd(first);
+}
+
+/* The pause menu's title banner (INVENTORY, MAP...) at 400x240: two 64x32 sprites at the GBA screen's top-left whose
+ * graphic is cut flat on the left (the GBA's edge hid it) and rounded on the right. Its left end is closed with the
+ * right end mirrored: four sprites, one per tile row, showing the tile column(s) of the right end flipped, put after
+ * the banner in OAM so the banner stays over the body pixels they share. Called before CopyOAM. */
+static int BannerPixel(const struct OamData* sprite, int x, int y) {
+    extern u8 gVram[0x18000];
+    const u16* attr = (const u16*)sprite;
+    const unsigned tile = (attr[2] & 0x3FFu) + (unsigned)(y >> 3) * 8u + (unsigned)(x >> 3); /* 1D, 64 wide */
+    const u8 b = gVram[0x10000u + tile * 32u + (unsigned)(y & 7) * 4u + (unsigned)(x & 7) / 2u];
+    return (x & 1) ? b >> 4 : b & 15;
+}
+
+void Port_Draw_PauseBannerCap(void) {
+    if (!Port_Widescreen_PauseWide()) return; /* the game maps sprites 1D throughout */
+    const int count = gOAMControls.updated < 0x80 ? gOAMControls.updated : 0x80;
+    int left = -1, right = -1;
+    for (int i = 0; i < count; i++) { /* 64x32 (shape 1, size 3), not affine, at the GBA screen's top-left */
+        const u16* attr = (const u16*)&gOAMControls.oam[i];
+        if ((attr[0] & 0xC300u) != 0x4000u || (attr[1] & 0xC000u) != 0xC000u || (attr[0] & 0xFFu) != 40) continue;
+        const int x = attr[1] & 0x1FF;
+        if (x == 80) left = i;
+        else if (x == 144) right = i;
+    }
+    if (left < 0 || count + 4 > 0x80) return;
+    const u16* banner = (const u16*)&gOAMControls.oam[left];
+    const int width = right >= 0 && (((const u16*)&gOAMControls.oam[right])[2] & 0xF000u) == (banner[2] & 0xF000u) ? 128 : 64;
+    /* The banner's columns as patterns of colour indices, 32 rows each. */
+    #define BANNER_PX(x, y) ((x) < 64 ? BannerPixel(&gOAMControls.oam[left], (x), (y)) : BannerPixel(&gOAMControls.oam[right], (x) - 64, (y)))
+    /* The banner: the first run of columns with something in them (the second sprite may be another graphic, as on
+     * the map page). */
+    int first = -1, last = -1;
+    for (int x = 0; x < width; x++) {
+        int any = 0;
+        for (int y = 0; y < 32 && !any; y++) any = BANNER_PX(x, y) != 0;
+        if (any && first < 0) first = x;
+        if (!any && first >= 0) break;
+        if (any) last = x;
+    }
+    if (first < 0 || last - first < 24) return;
+    /* Open on the left: its first column is the body's (the same as the next). */
+    for (int y = 0; y < 32; y++)
+        if (BANNER_PX(first, y) != BANNER_PX(first + 1, y)) return;
+    /* The right end: the columns after the last one that still is the body's, compared on its outline only (the rows
+     * not of the fill colour of its middle row: the text may run up to the end). */
+    const int fill = BANNER_PX(first, 16);
+    int end = last;
+    while (end > first) {
+        int body = 1;
+        for (int y = 0; y < 32 && body; y++)
+            if (BANNER_PX(first, y) != fill) body = BANNER_PX(end, y) == BANNER_PX(first, y);
+        if (body) break;
+        end--;
+    }
+    end++;
+    if (last - end + 1 < 2 || last - end + 1 > 8) return;
+    /* The tile column(s) holding it: one if it fits in the last, else two (16 wide). */
+    const int tileW = (end >> 3) == (last >> 3) ? 8 : 16;
+    const int c0 = (last >> 3) * 8 + 8 - tileW;
+    const int capW = last - end + 1;
+    /* Flipped, column c0 + i shows at sx + tileW - 1 - i; the outermost (last) lands capW left of the first. */
+    const int sx = (banner[1] & 0x1FF) + first - capW - tileW + 1 + last - c0;
+    const int owner = c0 < 64 ? left : right;
+    const u16* src = (const u16*)&gOAMControls.oam[owner];
+    const unsigned baseTile = (src[2] & 0x3FFu) + (unsigned)((c0 & 63) >> 3);
+    #undef BANNER_PX
+    u8* oam = (u8*)&gOAMControls.oam[0];
+    int out = count;
+    for (int row = 0; row < 4; row++) {
+        u16 attr[3];
+        attr[0] = (u16)((banner[0] & ~0xC0FFu) | (tileW == 16 ? 0x4000u : 0u) | (u16)((40 + row * 8) & 0xFF));
+        attr[1] = (u16)(((banner[1] & ~0xF1FFu) | 0x1000u | ((u32)sx & 0x1FFu))); /* size 0: 8x8 or 16x8; h-flip */
+        attr[2] = (u16)((src[2] & ~0x3FFu) | ((baseTile + (unsigned)row * 8u) & 0x3FFu));
+        memcpy(oam + out * 8, attr, sizeof(attr));
+        virtuappu_mode1_obj_y_negative_staged[out] = 0;
+        virtuappu_mode1_obj_clip_mark_staged[out] = virtuappu_mode1_obj_clip_mark_staged[left];
+        virtuappu_mode1_obj_depth_staged[out] = virtuappu_mode1_obj_depth_staged[left];
+        virtuappu_mode1_obj_depth_top_staged[out] = virtuappu_mode1_obj_depth_top_staged[left];
+        virtuappu_mode1_obj_group_staged[out] = virtuappu_mode1_obj_group_staged[left];
+        out++;
+    }
+    gOAMControls.updated = (u8)out;
 }
 
 /* ---- ram_DrawDirect (port of arm_DrawDirect @ 0x080B280C) ----

@@ -129,6 +129,11 @@ int Port_Widescreen_FileSelectCaveShown(void);
 /* The pause menu's background (BG3, unscrolled) is on the shown frame, 240x160 in Full View: the presenter
  * draws the extension around it from pause-background.bin (port_linked_stubs.c). */
 int Port_Widescreen_PauseBackgroundShown(void);
+/* The pause menu drawn at 400x240 by the GPU renderer (port_linked_stubs.c): its BGs in the middle, the background
+ * extended around them as BG3, every sprite moved into the middle as it is, so what the game moves past the GBA's
+ * screen (the L and R buttons) shows whole. Wide: the game produces it this tick; ViewLive: the published frame is it. */
+int Port_Widescreen_PauseWide(void);
+int Port_Widescreen_PauseViewLive(void);
 /* The file select drawn at 400x240 by the GPU renderer (port_linked_stubs.c): its windows and text
  * (BG0-BG2) and its cave (BG3) in the middle, the cave extended around them as BG3, the sprites
  * moved into the middle by port_draw.c. Wide: the game produces it this tick; ViewLive: the
@@ -139,6 +144,8 @@ int Port_Widescreen_FileSelectViewLive(void);
  * DrawDirect is one by itself), e.g. a button and its label. Begin returns what End takes. */
 int Port_Draw_WideGroupBegin(void);
 void Port_Draw_WideGroupEnd(int group);
+/* The pause menu's title banner closed on the left at 400x240 (port_draw.c); before CopyOAM. */
+void Port_Draw_PauseBannerCap(void);
 /* The title drawn at 400x240 (port_linked_stubs.c): Wide, the game produces it this tick;
  * ViewLive, the published frame is it. */
 int Port_Widescreen_TitleWide(void);
