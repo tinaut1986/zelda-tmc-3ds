@@ -135,6 +135,67 @@ when `gUI.lastState` already names the next screen).
 A new scene needs its view at 400x240 first (the scene's own layout: how the picture and the
 sprites are centred, which BG repeats), then a strips file and its converter as for the portal.
 
+## The vertical Minish paths: what each corridor needs (survey of 2026-10-25)
+
+Every room drawn by `verticalMinishPathBackgroundManager.c` is 240x800 with the same three layers (the ground on the
+room's own BG; BG1 = leaves or rock ledges, at 1.25 times the scroll; BG3 = their shadows, blended, at 1.125), so they
+all go through the same code: one row each in `kShafts` (`platform/3ds/source/scene_pictures_3ds.c`), found by area and
+room, BG1's strips guarded by the FNV-1a hash of BG1's map (bytes 0x2000-0x3FFF of `gMapDataTopSpecial`). The owner
+decides each one in turn (2026-10-25): not every ground should be the same dark gradient.
+
+| Room | What it is | BG1 hash | BG1 layer | Ground sides | State |
+|---|---|---|---|---|---|
+| 0x11/00 | grass corridor, cobbles and moss (the first one, after the Minish Woods) | `a9524361` | leaves, no repeat (1024 rows) | ground repeats every 160 rows; outer columns 100% (56,32,32), BG pal 14 colour 1 | done: Gemini leaves, derived shadows, edge brown darkening outwards |
+| 0x11/01 | water: lily pads, giant flowers, vines; bottom exit to area 0x04 room 00 (swamp) | `46df39a1` | leaves and vines, repeat every 512 rows | reed stalks repeating every 64 rows (rows 64-736); ends are rocks and light water | done: Gemini stalks (64-row loop) and leaves (512-row loop); ends not continued |
+| 0x11/02 | flowers, a salamander, an Ezlo-sign block | `e0e89302` | leaves, the same as 03/04 but rows 512-513 | outer columns 100% (56,32,32), BG pal 14 colour 1 (or 6/1) | to do |
+| 0x11/03 | cobbles, a big shell | `84b4d4e4` | leaves (shared with 04), no repeat (best 42% at 896) | outer columns 64% (192,160,88), BG pal 14 colour 5 | to do |
+| 0x11/04 | water and cattails | `84b4d4e4` | as 03 | outer columns 66% (24,48,40), BG pal 8 colour 1 | to do |
+| 0x12/00 | Crenel paths' shaft | (by room) | rock ledges, two pieces repeated | Gemini, rows 32-351 repeating | done |
+| 0x12/01 | Crenel paths' second vertical one | `a6dbee71` | rocks at rows 120-963, 62% alike at 512: repeated pieces (`stamp_pieces.py`) | outer columns 57% (112,64,48), BG pal 8 colour 5 | to do |
+| 0x12/02 | Crenel, horizontal (800x192, BG1 0x1e09, `horizontalMinishPathBackgroundManager.c`) | - | - | - | not handled by this code |
+
+Area 0x11 has rooms 0-4 (room 5 loads with size 0). The shadows checked so far (00, 01) are BG1's silhouette with a
+flat colour per band, the darkest at the walls, so the extension is the extended leaves' silhouette in that colour
+(01: exactly the same pixels; 00: 92% of them). Leaves 02/03/04 are not room 00's: their edge columns match it only in
+stray rows, so they need their own pieces (one set for the three).
+
+**Material** (the game's art: on the owner's PC only, never in git): `~/Imágenes/minish-paths/survey/<area>-<room>/`
+(0x11-0 to 0x11-4, 0x12-1, 0x12-2) holds each corridor's dump (`tmc-dump-*`: map layers, VRAM, palettes, registers, the top screen), `room-ground.png`
+(`extract_map_room.py`) and `bg1-leaves-full.png` / `bg3-shadows-full.png` (`extract_minish_path.py`).
+`~/Imágenes/minish-paths/gemini-hojas/`, `gemini-hojas-agua/` and `gemini-tallos-agua/` hold the templates, the
+prompts, Gemini's answers and the fitted results of the corridors done; their `PROMPT*.txt` are the texts to reuse.
+The dumps were taken in Azahar with `tmc-link.py warp` (`docs/debug-tools.md`) on a test file.
+
+## AI pieces: the workflow
+
+`tools/scene-extend/ai_pieces.py` does every step done by hand for the corridors above:
+
+```sh
+L=~/Imágenes/minish-paths/survey/0x11-2/bg1-leaves-full.png          # the layer (only its first 240 columns are used)
+tools/scene-extend/ai_pieces.py make $L 1 trozo-1.png                 # 400x320, the sides black: give it to the AI
+tools/scene-extend/ai_pieces.py fit trozo-1.png answer-1.jpg result-1.png --palette $L
+tools/scene-extend/ai_pieces.py make $L 2 trozo-2.png --prev result-1.png   # its first 80 rows of sides already painted
+tools/scene-extend/ai_pieces.py fit trozo-2.png answer-2.jpg result-2.png --palette $L --keep 80
+```
+
+Pieces of 320 rows start every 240 (the last one moved up to end at the layer's end, so it keeps more rows: `make`
+says how many; pass that to `fit --keep`). Stitch the results by **replacing** rows (a piece's rows from its start),
+never by compositing them over each other, then paste the original's 240 columns back and check that it is unchanged
+and no colour is outside the original's.
+
+- **A layer that repeats** (the water corridor's leaves every 512 rows, its stalks every 64): give the AI one period
+  and a bit, take one period, then make a picture of the period's end followed by its start (the join in the middle),
+  the sides painted except a band around the join, and have the AI repaint the band; `fit --band Y0 Y1` keeps only
+  the band between two seams. Mark the band in **magenta** on a layer with transparency (black there means "no leaf")
+  and say so in the prompt. Ship one period; the game repeats a ground with `groundLoopStart`/`groundLoopLength`, and
+  a repeating BG1 is written twice into its 1024 rows.
+- **Fitting**: Gemini answers 5.8-7.4 times the size, often not the same in x and y; `fit` searches both and the
+  offset and prints the mean difference on the original part (under 30 is good). The answer may change what it was
+  told to keep (78% kept once): the seams take only where it agrees with the template.
+- **Prompts**: say what the layer is (leaves over water, stalks under leaves...), the exact columns to paint, "pure
+  black = nothing" on a transparent layer or "paint every black pixel" on a ground, how many colours, that it must
+  repeat every N rows when it does, and what not to draw (water, flowers, characters).
+
 ## Patterns: extend them by code, no AI
 
 **WIDE or WIDE + AI** (owner, 2026-10-25): WIDE + AI exists only because some players want nothing made by a

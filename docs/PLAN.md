@@ -72,8 +72,17 @@ pause menu; GOD MODE in debug builds (a heart beside the rupees); the map screen
 the decisions log of 2026-10-20 (the last six). Release notes: `docs/release-notes/v0.4.3.md`. Open: #46 (a state saved in the pause menu
 leaves pots unliftable).
 
-**Start here (2026-10-25):** `v0.4.5` is the latest stable; `release/v0.4.6` holds, beyond it, only the zlib-compressed scene
-pictures (23151d1, seen loading on the New 3DS through the title screen). No branch is open. Next, in this order:
+**Start here (2026-10-25, end of day):** `v0.4.5` is the latest stable; `release/v0.4.6` holds, beyond it, the zlib-compressed
+scene pictures (seen on the New 3DS), the pause menu at 400x240 with its background made by the game (L/R whole, the title
+banner closed), and the generated sides of two Minish Paths corridors (the grass one, 0x11/00, and the water one, 0x11/01);
+all of it seen only in Azahar, none yet on the console (branch table above). No branch is open. Next, in this order:
+00. **The other vertical Minish paths, one at a time, the owner deciding each** (2026-10-25): 0x11/02, 0x11/03 and 0x11/04
+   (one set of leaves for the three), then Crenel's 0x12/01 (rocks). What each needs, their BG1 hashes, ground colours and
+   repeats, and where their dumps already are: `docs/wide-scene-extension.md`, "The vertical Minish paths" (nothing to
+   dump again). The workflow: same doc, "AI pieces" (`tools/scene-extend/ai_pieces.py`); add each as a `kShafts` row. Show
+   the owner the corridor (`tmc-link.py warp`, Azahar) before proposing its ground. The water corridor's two ends (rocks and
+   light water at rows 0-63 and 736-799) were left with stalks beside them; the horizontal Crenel path (0x12/02) is not
+   handled by the shaft code.
 0. **Procedural border for every room** (owner's question, 2026-10-25: "esto habría que hacerlo con cada sala"; not decided
    yet). The code (`BorderTile`, `port/port_neighbour_rooms.c`, decisions log 2026-10-25) decides by itself; it is limited to
    area 0x35 room 00 by `kBorderRooms`. Proposed: drop the list, let the rule decide, log its choice per room (the
@@ -100,8 +109,9 @@ Closed by the owner (2026-10-17), do not re-propose: RetroAchievements (the achi
 work; he will report any that should fire and does not), the save states across builds, issue #5
 (the dissolve works), the sibling updaters' hardening (done), #25, #4, #23, #26 and #20 (all closed on
 GitHub).
-Scene pictures (portals, title, file select, Crenel shaft, shrine yard): procedure in `docs/wide-scene-extension.md`; the
+Scene pictures (portals, title, file select, Crenel shaft, Minish paths, shrine yard): procedure in `docs/wide-scene-extension.md`; the
 owner's material in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/minish-portal-roca/`, `~/Imágenes/camino-crenel/`,
+`~/Imágenes/minish-paths/` (`survey/` holds every corridor's dump), `~/Imágenes/menu-pausa/`,
 `~/Imágenes/intro-titulo/`, `~/Imágenes/elige-archivo/` and `~/Imágenes/outpaint-area-4A/` (never in the repository). The owner
 generates with Antigravity or Gemini; Gemini answers JPGs at an odd scale (`~/Imágenes/camino-crenel/capa-3d/limpiar-rocas-gemini.py`
 shows how they were read back; the decisions log of 2026-10-25 what the owner judged).
@@ -1513,3 +1523,9 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   240x160 background, the PNG the game's caps rearranged). Commit hashes after `e0d3f5b` changed; the commits between
   the first one that added the files and `fix/cmake-no-pause-bin` do not build (CMake copies a file they no longer
   have). Pictures made by code from the game's art are made by the game at run time, never shipped.
+- **2026-10-25** Minish paths, one by one (owner): after a first pass that filled every corridor's ground with its edge
+  colour darkening outwards, the owner asked to decide each corridor in turn ("no quiero que en todas las escenas el suelo
+  sea un degradado"); only the grass corridor keeps that fill. The water corridor got Gemini's stalks and leaves instead,
+  each a loop made seamless by giving the join back to Gemini to repaint (the owner's idea: "otra moviendo el patrón con
+  un hueco en medio"). Its two ends were left as they are, hidden by the leaves (owner). The survey of every corridor, the
+  warp command used for it and the fitting tool are in `docs/wide-scene-extension.md` and `docs/debug-tools.md`.
