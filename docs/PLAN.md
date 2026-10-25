@@ -50,7 +50,7 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 
 | Branch | State |
 |---|---|
-| `feat/pause-wide-view` (pushed, 2026-10-25) | The pause menu at 400x240 with the GPU renderer: the L and R buttons whole when pressed, the title banner closed on the left (`docs/wide-scene-extension.md`, "Patterns"). Built, not yet installed: the console was off. To check on the New 3DS: the three pages, L/R presses, opening and closing the menu, the save prompt, 3D; then the owner's go-ahead to merge. Loading a state saved before it may fail (new port statics, #31): save a fresh one. |
+| `feat/pause-wide-view` (pushed, 2026-10-25) | The pause menu at 400x240 with the GPU renderer: the L and R buttons whole when pressed, the title banner closed on the left, the background extension made by the game from its own BG3 (no file; `pause-background.png/.bin` are removed there) (`docs/wide-scene-extension.md`, "Patterns"). Built, not yet installed: the console was off. It also raises the linker pins to 0x644000/0x64C000. To check on the New 3DS: the three pages, L/R presses, opening and closing the menu, the save prompt, 3D; then the owner's go-ahead to merge. Loading a state saved before it may fail (new port statics, #31): save a fresh one. |
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
