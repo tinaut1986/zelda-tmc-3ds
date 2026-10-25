@@ -1729,6 +1729,25 @@ int Port_Widescreen_FileSelectCaveShown(void) {
 #endif
 }
 
+/* The pause menu (src/menu/pauseMenu.c): its background of Ezlo caps is BG3 at screen base 30, character
+ * base 2, priority 3 (0x1e0b), unscrolled; read from the registers the shown frame was drawn from, while the
+ * menu runs (Subtask_PauseMenu tells the soft slots each tick). */
+int Port_Widescreen_PauseBackgroundShown(void) {
+#ifdef TMC_3DS
+    extern bool Port_SoftSlots_IsPauseActive(void);
+    if (!Port_Config_3DSFullViewComboEnabled() || gMain.task != TASK_GAME || !Port_SoftSlots_IsPauseActive())
+        return 0;
+    const unsigned dispcnt = gIoMem[REG_OFFSET_DISPCNT] | (gIoMem[REG_OFFSET_DISPCNT + 1] << 8);
+    const unsigned bg3cnt = gIoMem[REG_OFFSET_BG3CNT] | (gIoMem[REG_OFFSET_BG3CNT + 1] << 8);
+    const unsigned hofs = (gIoMem[REG_OFFSET_BG3HOFS] | (gIoMem[REG_OFFSET_BG3HOFS + 1] << 8)) & 0x1ff;
+    const unsigned vofs = (gIoMem[REG_OFFSET_BG3VOFS] | (gIoMem[REG_OFFSET_BG3VOFS + 1] << 8)) & 0x1ff;
+    return !(dispcnt & DISPCNT_FORCED_BLANK) && (dispcnt & DISPCNT_BG3_ON) && hofs == 0 && vofs == 0 &&
+           bg3cnt == (BGCNT_SCREENBASE(30) | BGCNT_CHARBASE(2) | BGCNT_PRIORITY(3));
+#else
+    return 0;
+#endif
+}
+
 /* The file select at 400x240 (Port_Widescreen_FileSelectWide in port_widescreen.h): with the GPU
  * renderer only (the software one would repeat BG0-BG2 across the view) and a cave picture to draw
  * around the middle; while the game shows the cave (HandleFileScreenEnter's BG3), so the blank
@@ -3109,6 +3128,9 @@ int Port_Widescreen_StretchEdges(void) {
     return 0;
 }
 int Port_Widescreen_FileSelectCaveShown(void) {
+    return 0;
+}
+int Port_Widescreen_PauseBackgroundShown(void) {
     return 0;
 }
 int Port_Widescreen_TitleWide(void) {
