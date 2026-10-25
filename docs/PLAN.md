@@ -1504,3 +1504,12 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   shipped rocks are the plain nearest-colour recovery with one colour swapped (its main orange 192,112,40 to the
   original's 192,120,48) and the right rock's last column repeated to the edge. The read-only segment outgrew its pin:
   `.data` moved to 0x640000 and `.bss` to 0x648000 (format 2 states unaffected).
+- **2026-10-25** Procedural border (owner's request): where a room smaller than the Full View has no neighbour to
+  show, its sides are filled from the room's own tiles instead of black (`BorderTile`, `port_neighbour_rooms.c`): the
+  bottom layer with the base, the commonest metatile of the room's outermost columns and rows; the top layer, now and
+  then, with one of the room's loose decorations (top-layer metatiles alone and at most half opaque, over base: the
+  Minish caves' stones), by a hash of the cell, at the room's own rate. A side is filled when a third of its outermost
+  line is grass (85 % of its pixels in the base's colours, read from VRAM). Tried and liked in area 0x35 room 00 only
+  (`kBorderRooms`); first tries scattered the outer column's grass-with-hedge-edge pieces as "decorations" (thin dark
+  marks) and found no stones, as those are on the top layer. Next: every room, with the rule deciding (walls and water
+  borders must stay black).
