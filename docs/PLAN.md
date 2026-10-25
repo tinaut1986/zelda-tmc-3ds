@@ -70,64 +70,53 @@ pause menu; GOD MODE in debug builds (a heart beside the rupees); the map screen
 the decisions log of 2026-10-20 (the last six). Release notes: `docs/release-notes/v0.4.3.md`. Open: #46 (a state saved in the pause menu
 leaves pots unliftable).
 
-**Start here (2026-10-20):** `v0.4.1` (beta, tagged on what `release/v0.4.2` starts from) holds, on top of `v0.4.0`, the neighbour-list fix, the GPU split
-flush, the Zz bubble fix, the NEIGHBOURS setting (ON / OFF) and the drop of WIDE + BLUR (decisions log of 2026-10-19 and
-2026-10-20); pushed to origin on 2026-10-20. Open branches: the local backup
-`backup/blur-neighbours-all`; `origin/feat/frame-blur` is merged and left on origin. Next, in this order:
-0. **Review of the neighbour rooms.** The blur is gone from WIDE (decisions log 2026-10-20, third entry): VIEW is WIDE,
-   WIDE + AI, ORIGINAL and NEIGHBOURS is ON / OFF. What is open, with where to look:
-   - **P4.9 itself** (towns, outdoors, zone-swapped rooms, special tiles, the neighbours' objects #38) as before in item 1.
-   - The code is split in `port/port_neighbour_rooms.c` (tiles, archway copies, `Port_NeighbourRooms_DrawnRects`,
-     `RoomJustChanged`), `port/port_linked_stubs.c` (`Port_Widescreen_ContentRects`: the rectangles in view pixels from the
-     frame's background offsets, unused since the wide blur was dropped).
-1. **v0.4.0 beta** is published: AUTO UPDATE (seen on the New 3DS) and P4.9's neighbour rooms (seen in the Deepwood
-   Shrine on the New 3DS and in Link's house and the intro's festival town on the Old 2DS). P4.9 is still open: the
-   towns, the outdoors and the zone-swapped rooms, the special tiles, the Old 3DS cost; the owner checks towns and
-   outdoors next. Not seen: the updater on the Old 3DS/2DS. **Waiting for the owner's word to close:** #44 (the
-   lit dark room's black line, d342f7d), #37 and #39-#42 (the bottom dungeon map; the owner said on 2026-10-18 the
-   chests and the item icons are right, the rest not confirmed). #38 (the neighbours' other objects) is parked.
-   #45 (Zelda vanishing in the intro, two fixes) is closed: if another scripted walk looks wrong in Full View, the
-   rule in `src/script.c` `Port_ScriptMoveOutOfWideView` is the first suspect.
-2. **Old 3DS/2DS check** of what only the New 3DS has seen: the grid on HIGH (frame rate), WIDE + AI,
-   the file select and title without 3D, TOP HUD AUTO, and the cost of P4.9's neighbour rooms there. The 2DS is
-   `192.168.1.139` and answers the debug FTP again (2026-10-19; see the consoles below).
-3. **Side strips for narrow map rooms (P4.6).** The owner is generating, with Antigravity, the 80 px on each
-   side of the shrine yard (area 0x4A room 00; material in `~/Imágenes/outpaint-area-4A/`: template with black
-   bands, mask, reference and `prompt.txt`, made with `tools/scene-extend/extract_map_room.py`). When the
-   picture comes: check it (`check_extension.py`), then the game needs a way to draw a picture beside a map
-   room (the Minish Paths corridor has one; map rooms have only black there). Same for every other small
-   interior the owner wants to fill.
-4. **#30** the right edge of the top screen breaks on room changes and while rolling (2DS only: the owner
-   sees nothing on the New 3DS). Not a regression. The CPU/GPU race on the retained map slices (hypothesis 1) is
-   out: the old order waited before every write and the build-ahead order keeps that rule by construction (decisions
-   log, 2026-10-18). What is left is hypothesis 2 of the issue (the display transfer or swap landing mid-scanout,
-   invisible to the scene recorder, which reads the framebuffer) and the CPU speed of the Old 3DS itself; look
-   with `gpucheck` loops during scrolls on the 2DS and FRAME SYNC / VBLANK LOCK combinations.
-   **#33** (opened by someone else, not the owner): "Wide+AI in Pixel Perfect" works in many areas but in some the
-   view shrinks back with black borders on all sides, like the area before the Mt. Crenel dungeon. That is the
-   Full View policy falling back (`Port_Widescreen_3DSFallbackReason`: the Mt. Crenel room 2 `unsupportedScene`,
-   fixed canvases, rooms without content bounds); find out which areas and why before answering. Not looked at yet.
-5. Smaller: the bottom screen's UI theme (hearts, buttons, sidebar chrome) is not corrected by COLOURS (only
-   the game art is; `port_second_screen_color.h`); sm-3ds's DRAW ORDER tint view could join PLANE TINT; the
-   light rays of the room 0x20/09 hang over its black border on the right (left as the game's rays);
-   the shoe house's door and other scripted entrances may pop in Full View like the village intro's Minish did
-   (look when the owner reports one); P3.4's old claim that dialogues go per pixel was not borne out (the C
-   line of the numbers box read C0 through a dialogue), recheck before rebuilding anything; the generated
-   side strips of the Minish Paths corridor (P4.6); the README's before/after GIF of the portal shrink (P1.6).
+**Start here (2026-10-25):** `v0.4.5` is the latest stable; `release/v0.4.6` holds, beyond it, only the zlib-compressed scene
+pictures (23151d1, seen loading on the New 3DS through the title screen). No branch is open. Next, in this order:
+0. **Procedural border for every room** (owner's question, 2026-10-25: "esto habría que hacerlo con cada sala"; not decided
+   yet). The code (`BorderTile`, `port/port_neighbour_rooms.c`, decisions log 2026-10-25) decides by itself; it is limited to
+   area 0x35 room 00 by `kBorderRooms`. Proposed: drop the list, let the rule decide, log its choice per room (the
+   `border:` line in the SD log already does) and review screenshots while the owner plays; walls, water and pits must stay
+   black, and repeated dungeon floors may need a list of rooms left out.
+1. **Crenel Minish paths after the rock portal** (#48): the camera came up off centre again on 2026-10-25 (a rooms-connected
+   mask worked out from the previous area's table); 1bb527b keys both neighbour caches on the whole room table. Seen
+   centred after loading a save there, **not yet arriving through the rock portal in Full View**.
+2. **Sprite order** (#49, 9f47617): changed for the whole game; only the Crenel twig was checked. Look at overlaps elsewhere
+   (tree tops, doors, enemies passing in front of things).
+3. **The other two portal falls** (Hyrule Town's portal type 2 and the dungeon picture) have no strips: black, at the stump's
+   256 width (`sPortalStrips`, decisions log 2026-10-24). Dump them when the owner passes one (`extract_bg.py` prints the
+   width) and make their pieces as for the rock (`~/Imágenes/minish-portal-roca/`).
+4. **Side strips for narrow map rooms (P4.6).** The shaft's code (`build_bg_scroll_picture`, a picture per BG at its layer's
+   scroll, `ScenePictures_SetShaftView`) is the way to draw any map room's generated sides; it is written for the Crenel
+   shaft only. The shrine yard (area 0x4A room 00) material is in `~/Imágenes/outpaint-area-4A/`.
+5. **Old 3DS/2DS check** of what only the New 3DS has seen: the shaft's three strip textures (about 1.3 MB of linear memory),
+   the grid on HIGH, WIDE + AI, the file select and title without 3D, TOP HUD AUTO, the neighbour rooms' cost.
+6. **#30** (2DS: the top screen's right edge breaks on room changes and while rolling; hypothesis 2 of the issue left) and
+   **#33** (WIDE + AI falls back to a bordered view in some areas, e.g. before Mt. Crenel's dungeon; not looked at).
+   Waiting for the owner's word to close: #44, #37, #39-#42. Parked: #38.
+7. Smaller: the bottom screen's UI theme is not corrected by COLOURS (`port_second_screen_color.h`); sm-3ds's DRAW ORDER
+   tint view could join PLANE TINT; scripted entrances may pop in Full View (look when reported); P3.4's dialogues per pixel
+   (recheck the C line first); the README's before/after GIF of the portal shrink (P1.6).
 Dropped (owner, 2026-10-22): `feat/village-3d` was deleted; the Minish Village's 3D is taken by hand, case by case, from the release line (decisions log).
 Closed by the owner (2026-10-17), do not re-propose: RetroAchievements (the achievements he looked at
 work; he will report any that should fire and does not), the save states across builds, issue #5
 (the dissolve works), the sibling updaters' hardening (done), #25, #4, #23, #26 and #20 (all closed on
 GitHub).
-Scene pictures (portal, title, file select, shrine yard): procedure in `docs/wide-scene-extension.md`; the owner's
-material in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/intro-titulo/`, `~/Imágenes/elige-archivo/` and
-`~/Imágenes/outpaint-area-4A/` (never in the repository).
+Scene pictures (portals, title, file select, Crenel shaft, shrine yard): procedure in `docs/wide-scene-extension.md`; the
+owner's material in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/minish-portal-roca/`, `~/Imágenes/camino-crenel/`,
+`~/Imágenes/intro-titulo/`, `~/Imágenes/elige-archivo/` and `~/Imágenes/outpaint-area-4A/` (never in the repository). The owner
+generates with Antigravity or Gemini; Gemini answers JPGs at an odd scale (`~/Imágenes/camino-crenel/capa-3d/limpiar-rocas-gemini.py`
+shows how they were read back; the decisions log of 2026-10-25 what the owner judged).
 **Checking 3D without a 3D screen:** DEBUG -> SWITCHES -> FORCE 3D (slider fully up, not saved), then
 `tmc-link.py shot` also writes `top-right.png`; PLANE TINT (LAYERS / DEPTH) paints each layer flat. `docs/debug-tools.md`.
 To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
-**On the owner's consoles now (2026-10-20):** ping first, the addresses change with the router (memory).
-- **Old 2DS, `192.168.1.139`** (pass `--ip`; the owner's test console): the debug build of `release/v0.4.1` plus
+**On the owner's consoles now (2026-10-25):** ping first, the addresses change with the router (memory).
+- **New 3DS, `192.168.1.133`** (it was `.132` for a while on 2026-10-25; `.3ds_ftp_ip` may hold either): the debug build
+  `0.4.6-dev.2+f4af164`, which is the code of 23151d1 (zlib scene pictures) built before its commit, installed by Claude on
+  2026-10-25. Settings: VIEW WIDE + AI, pixel perfect, NEIGHBOURS ON, 3D WORLD on. The owner plays a game in the Minish caves
+  (area 0x35) and Mt. Crenel. `debug/` holds Claude's dumps 0047-0051 (the rock portal's fall, the Crenel shaft, the
+  Minish cave); delete them when they are no longer useful. The owner's states are theirs.
+- **Old 2DS, `192.168.1.139`** (pass `--ip`; the owner's test console; not touched since 2026-10-20, as described here): the debug build of `release/v0.4.1` plus
   `fix/zz-colour-redraw` at `e5417bd` (it has NOT the blur-all branch; `tmc3ds.ini` keeps `neighbour_rooms=0` from
   testing, which that build ignores). Settings: VIEW WIDE + BLUR, pixel perfect, FRAME SYNC OFF (default; Claude
   toggled it for tests and put it back). The owner's game is a new one near the throne room of Hyrule Castle (area 0x80). Save
@@ -136,12 +125,6 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
   **do not `loadstate` while the owner plays** (it replaced their place twice on 2026-10-20) and **check `state` shows
   the scene (`ingame=1 area=80 room=04`) before measuring** (six recordings of the title screen were taken as results once).
   `debug/` still holds the owner's old files and `tmc-check-*`; Claude's `tmc-dump-006x` sets were deleted.
-- **New 3DS, `192.168.1.133`**: the debug build `0.4.3-dev.11+dbe9c18` (the code of `release/v0.4.3` at `9078959`, built
-  before that commit), installed by Claude on 2026-10-20; FORCE 3D off. Settings as on 2026-10-17 (WIDE + AI YES,
-  pixel-perfect, TOP HUD AUTO, SHOW FPS, stereo on, NEIGHBOURS ON). The owner's states are theirs (they deleted and
-  re-made several on 2026-10-20); the newest ones are the Deepwood boss room (49/00, one of them made by Claude in the
-  pause menu: #46, do not use it) and the Minish Woods before the shrine door cutscene (00/00). Left in the pause
-  menu's world map of the Gentari house state.
 - The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP). How to read one:
   `docs/debug-tools.md`, "Reading a Luma crash dump". The 2DS crash dumps 1 and 2 (588 bytes, kernel mode, `pc` 0xfff1c1d8) and 19 are explained in the decisions log of 2026-10-20. RetroAchievements on the 2DS was logged in as the test
   account `tinaut1986test` on 2026-10-15 (check before the owner plays for real).
