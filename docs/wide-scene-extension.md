@@ -145,16 +145,19 @@ every page, never scrolled) is one:
 
 ```sh
 tools/scene-extend/extract_bg.py tmc-dump-0053 3 ~/Imágenes/menu-pausa/bg3
-tools/scene-extend/extend_lattice.py ~/Imágenes/menu-pausa/bg3/bg3-picture.png ~/Imágenes/menu-pausa/pause-extended.png \
-    --complete 0,100,24,150
-tools/scene-extend/to_console.py pause ~/Imágenes/menu-pausa/pause-extended.png platform/3ds/romfs/wide-scenes/pause-background.bin
+tools/scene-extend/extend_lattice.py ~/Imágenes/menu-pausa/bg3/bg3-picture.png \
+    platform/3ds/assets/wide-scenes/pause-background.png --complete 0,100,24,150 --transparent
+tools/scene-extend/to_console.py pause platform/3ds/assets/wide-scenes/pause-background.png \
+    platform/3ds/romfs/wide-scenes/pause-background.bin
 ```
+
+Convert the transparent version: a `.bin` made from the whole picture would carry the game's own art into git.
 
 `extend_lattice.py` finds the two shortest shifts that repeat the picture (here 24,48 and 104,80; the game's map is off
 the pattern in a few places) and gives every pixel outside the original the colour most of its copies inside it have.
 `--complete` names a motif the original cuts at its edge off the lattice (the pause background has one at its left
-edge, x 0-23, y 100-149): it is completed from a whole copy found elsewhere. `--transparent` writes the version kept
-in `platform/3ds/assets/wide-scenes/pause-background.png`. The game draws it around the 240x160 screen while the pause
+edge, x 0-23, y 100-149): it is completed from a whole copy found elsewhere. `--transparent` leaves the original's
+area transparent, as everything in `platform/3ds/assets/wide-scenes/`. The game draws it around the 240x160 screen while the pause
 menu runs with its BG3 unscrolled (`Port_Widescreen_PauseBackgroundShown`).
 
 ## Layers animated by palette: continue them, do not paint them
