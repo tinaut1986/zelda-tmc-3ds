@@ -14,8 +14,6 @@ SCENE      portal: the Minish portal cutscene, PICTURE 400x320, the original at 
                    0 where empty
            title:  the title screen's forest, PICTURE 400x240, the original at 80,40 (240x160);
                    writes title-forest.bin (the whole 400x240; the centre is not drawn)
-           pause:  the pause menu's background (BG3), PICTURE 400x240, the original at 80,40;
-                   writes pause-background.bin (as title)
            fileselect: the file select screen's cave (BG3), PICTURE 400x240, the original at
                    80,40; needs --palettes. Writes fileselect-cave.bin: palette indices, not
                    colours, so the game's palette cycling (BG palettes 11-14) makes it shimmer
@@ -53,7 +51,6 @@ SCENES = {
     'crenel-shadows': ((400, 960), list(range(0, 80)) + list(range(320, 400)), 'crenel-paths-shadows.bin'),
     'title': ((400, 240), None, 'title-forest.bin'),
     'fileselect': ((400, 240), None, 'fileselect-cave.bin'),
-    'pause': ((400, 240), None, 'pause-background.bin'),
 }
 FILESELECT_BANKS = range(11, 15)  # the BG palettes sub_0805066C cycles (src/fileselect.c)
 ORIGINAL = (80, 40, 240, 160)       # the game's own picture in the 400x240 view

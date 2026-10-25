@@ -1101,17 +1101,27 @@ typedef struct ScenePicture {
     int state;      /* 0 not tried, 1 loaded, -1 no file */
     bool corrected; /* the colour correction the texture was made with */
     bool procedural; /* made by code from the game's own art, no generative AI: WIDE is enough */
+    const uint16_t* (*make)(void); /* made by the game instead of read from a file: GBA colours, 0 where nothing */
 } ScenePicture;
 
 static void LoadScenePicture(ScenePicture* picture) {
     picture->state = -1;
-    if (picture->path == NULL) return;
+    if (picture->path == NULL && picture->make == NULL) return;
     const size_t count = (size_t)picture->width * picture->height;
+    const uint16_t* made = picture->make ? picture->make() : NULL;
     uint16_t* pixels = malloc(count * sizeof(uint16_t));
-    const size_t got =
-        pixels != NULL && ScenePictures_ReadFile(picture->path, picture->romfsPath, pixels, count * sizeof(uint16_t))
-            ? count
-            : 0;
+    size_t got = 0;
+    if (pixels != NULL && made != NULL) {
+        /* As a file has it (RGB565), for the loop below. */
+        for (size_t i = 0; i < count; ++i) {
+            const uint16_t c = made[i];
+            pixels[i] = (uint16_t)(((c & 31u) << 11) | (((c >> 5) & 31u) << 6) | ((c >> 10) & 31u));
+        }
+        got = count;
+    } else if (pixels != NULL && picture->path != NULL &&
+               ScenePictures_ReadFile(picture->path, picture->romfsPath, pixels, count * sizeof(uint16_t))) {
+        got = count;
+    }
     const size_t texBytes = (size_t)picture->texWidth * picture->texHeight * sizeof(uint32_t);
     uint32_t* linear = got == count ? linearAlloc(texBytes) : NULL;
     if (linear == NULL) {
@@ -1217,13 +1227,11 @@ static ScenePicture sTitleForest = { .path = TMC3DS_APP_DIR "/title-forest.bin",
                                      .romfsPath = "romfs:/wide-scenes/title-forest.bin", .width = 400, .height = 240,
                                      .texWidth = 512, .texHeight = 256 };
 
-/* The pause menu at 1x in Full View (Port_Widescreen_PauseBackgroundShown): its background of Ezlo caps
- * (BG3) goes on around the 240x160 screen from pause-background.bin, the same 400x240 layout as the
- * title's. Made by code from the game's own pattern (tools/scene-extend/extend_lattice.py), so it is
- * drawn in plain WIDE too. */
-static ScenePicture sPauseBackground = { .path = TMC3DS_APP_DIR "/pause-background.bin",
-                                         .romfsPath = "romfs:/wide-scenes/pause-background.bin", .width = 400,
-                                         .height = 240, .texWidth = 512, .texHeight = 256, .procedural = true };
+/* The pause menu at 1x in Full View with the software renderer (Port_Widescreen_PauseBackgroundShown; the GPU one
+ * draws it at 400x240 itself): its background of Ezlo caps (BG3) goes on around the 240x160 screen, the same 400x240
+ * layout as the title's, made by the game from its own (ScenePictures_Pause555), so drawn in plain WIDE too. */
+static ScenePicture sPauseBackground = { .width = 400, .height = 240, .texWidth = 512, .texHeight = 256,
+                                         .procedural = true, .make = ScenePictures_Pause555 };
 
 /* The file select screen at 1x in Full View (Port_Widescreen_FileSelectCaveShown): its cave goes on
  * around the 240x160 screen from fileselect-cave.bin (tools/scene-extend/to_console.py fileselect):

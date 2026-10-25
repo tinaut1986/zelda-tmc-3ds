@@ -253,7 +253,7 @@ static TopFrameState SelectTopFrame(void) {
  * BGs in the middle, the cave's extension (PortPpuGpu3DS_SetIndexedPicture) as BG3 around them. */
 static bool sFileSelectFrame;
 /* Or the pause menu at 400x240 (Port_Widescreen_PauseViewLive): its BGs in the middle, its background's extension
- * (pause-background.bin, PortPpuGpu3DS_SetBg1Picture) as BG3 around them. */
+ * (made from the game's own, ScenePictures_PauseIndices) as BG3 around them. */
 static bool sPauseFrame;
 /* The frame being built shows the Crenel paths' shaft with its strips (ScenePictures_ShaftView): the BGs they are
  * drawn as (bits), the left strip's left edge on the frame and each layer's top, rows and loop. */
@@ -1333,14 +1333,21 @@ static void PresentFrame(void) {
         const bool title = wideFrame && Port_Widescreen_TitleViewLive();
         virtuappu_mode1_bg_repeat_mask = wideFrame && Port_Widescreen_CutsceneViewLive() ? 0x2u : title ? 0x3u : 0u;
         virtuappu_mode1_bg1_picture = title ? ScenePictures_TitleAbgr() : NULL; /* faded below if the CPU draws */
-        sPauseFrame = wideFrame && !title && Port_Widescreen_PauseViewLive();
-        PortPpuGpu3DS_SetBg1Picture(title ? ScenePictures_Title555() : sPauseFrame ? ScenePictures_Pause555() : NULL,
-                                    SCENE_TITLE_W, SCENE_TITLE_H);
+        PortPpuGpu3DS_SetBg1Picture(title ? ScenePictures_Title555() : NULL, SCENE_TITLE_W, SCENE_TITLE_H);
         if (!title && !Port_Widescreen_TitleWide()) ScenePictures_Release();
-        if (!sPauseFrame && !Port_Widescreen_PauseWide()) ScenePictures_ReleasePause();
         sFileSelectFrame = wideFrame && Port_Widescreen_FileSelectViewLive();
-        PortPpuGpu3DS_SetIndexedPicture(sFileSelectFrame ? ScenePictures_CaveIndices() : NULL, SCENE_CAVE_W,
-                                        SCENE_CAVE_H, SCENE_CAVE_FIRST_PALETTE);
+        sPauseFrame = wideFrame && !title && !sFileSelectFrame && Port_Widescreen_PauseViewLive();
+        unsigned pauseFirstPalette = 0;
+        bool pauseRemade = false;
+        const uint8_t* pauseIndices = sPauseFrame ? ScenePictures_PauseIndices(&pauseFirstPalette, &pauseRemade) : NULL;
+        if (pauseRemade) PortPpuGpu3DS_SetIndexedPicture(NULL, 0, 0, 0); /* same buffer, new content */
+        if (sFileSelectFrame)
+            PortPpuGpu3DS_SetIndexedPicture(ScenePictures_CaveIndices(), SCENE_CAVE_W, SCENE_CAVE_H,
+                                            SCENE_CAVE_FIRST_PALETTE);
+        else
+            PortPpuGpu3DS_SetIndexedPicture(pauseIndices, SCENE_PAUSE_W, SCENE_PAUSE_H, pauseFirstPalette);
+        if (!sPauseFrame && !Port_Widescreen_PauseWide() && !Port_Widescreen_PauseBackgroundShown())
+            ScenePictures_ReleasePause();
         if (gMain.task != TASK_FILE_SELECT) ScenePictures_ReleaseCave();
         /* The Crenel paths' shaft: its three layers' strips as their BGs (the ground's, BG1's ledges, BG3's shadows),
          * at the room's place. */

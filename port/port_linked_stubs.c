@@ -1749,15 +1749,14 @@ int Port_Widescreen_PauseBackgroundShown(void) {
 #endif
 }
 
-/* The pause menu at 400x240 (Port_Widescreen_PauseWide in port_widescreen.h): with the GPU renderer only and a
- * picture to draw its background from, while the game shows that background (gScreen, a tick ahead of the
+/* The pause menu at 400x240 (Port_Widescreen_PauseWide in port_widescreen.h): with the GPU renderer only, while the
+ * game shows its background (gScreen, a tick ahead of the
  * registers Port_Widescreen_PauseBackgroundShown reads). */
 int Port_Widescreen_PauseWide(void) {
 #ifdef TMC_3DS
     extern bool Port_SoftSlots_IsPauseActive(void);
-    extern bool ScenePictures_PauseAvailable(void);
     if (gMain.task != TASK_GAME || !Port_Config_3DSFullViewComboEnabled() || !Port_Config_GpuRenderer() ||
-        !Port_SoftSlots_IsPauseActive() || !ScenePictures_PauseAvailable())
+        !Port_SoftSlots_IsPauseActive())
         return 0;
     const unsigned dispcnt = gScreen.lcd.displayControl;
     return !(dispcnt & DISPCNT_FORCED_BLANK) && (dispcnt & DISPCNT_BG3_ON) && gScreen.bg3.xOffset == 0 &&

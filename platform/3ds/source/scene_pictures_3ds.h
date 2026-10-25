@@ -25,11 +25,14 @@ const uint32_t* ScenePictures_TitleAbgr(void);
 const uint32_t* ScenePictures_TitleAbgrFaded(void);
 void ScenePictures_Release(void);
 
-/* The pause menu's background, 400x240 (pause-background.bin, tools/scene-extend/to_console.py pause): made by code
- * from the game's own pattern, so shown in plain WIDE too. GBA 15-bit colours, 0 where the game's own picture is;
- * NULL when there is none. Freed by ScenePictures_ReleasePause. */
+/* The pause menu's background, 400x240, made by the game from its own BG3 (no file: nothing of the game's art is
+ * shipped) while the pause menu shows it: palette indices, (palette - *firstPalette) * 16 + index into four BG palettes
+ * from *firstPalette, 0 where the game's own screen is or nothing could be made. Made again, in the same buffer, when
+ * BG3's map changes (*remade, when not NULL, says so).
+ * ScenePictures_Pause555 is the same in GBA colours (the shown frame's unfaded palettes), for the presenter. Freed by
+ * ScenePictures_ReleasePause. */
 enum { SCENE_PAUSE_W = 400, SCENE_PAUSE_H = 240 };
-bool ScenePictures_PauseAvailable(void);
+const uint8_t* ScenePictures_PauseIndices(unsigned* firstPalette, bool* remade);
 const uint16_t* ScenePictures_Pause555(void);
 void ScenePictures_ReleasePause(void);
 

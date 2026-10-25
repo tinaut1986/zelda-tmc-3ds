@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """A background that repeats one motif on a lattice, extended by code, no generative AI (docs/wide-scene-extension.md).
 
+A prototype: the game makes such pictures itself from its VRAM (the pause menu's: ScenePictures_PauseIndices); the
+output is for looking at, never for git (it is the game's own art rearranged).
+
     extend_lattice.py PICTURE.png OUT.png [--left 80] [--top 40] [--width 400] [--height 240] [--vectors DX,DY DX,DY]
                       [--margin 4] [--complete X0,Y0,X1,Y1 ...] [--transparent]
 
