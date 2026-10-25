@@ -60,22 +60,32 @@ def make(args):
 
 
 def search(g, tmpl):
+    """Coarse on every third pixel over a wide range (answers come squeezed, e.g. 5.64 x 5.60 with a 72-pixel margin),
+    then fine around the best. The original part's transparent pixels are compared as the black the AI paints there."""
     H, W, _ = g.shape
     h, w, _ = tmpl.shape
-    m = tmpl[:, 80:320, 3] > 0
-    best = None
-    for sx in np.arange(W / w - 0.15, W / w + 0.151, 0.01):
-        for sy in np.arange(H / h - 0.15, H / h + 0.151, 0.01):
-            for ox in range(-30, 31, 3):
-                for oy in range(-30, 31, 3):
-                    xs = (np.arange(w) * sx + sx / 2 + ox).astype(int)
-                    ys = (np.arange(h) * sy + sy / 2 + oy).astype(int)
-                    if xs.max() >= W or ys.max() >= H or xs.min() < 0 or ys.min() < 0:
-                        continue
-                    d = np.abs(g[ys][:, xs][:, 80:320] - tmpl[:, 80:320, :3]).sum(2)[m].mean()
-                    if best is None or d < best[0]:
-                        best = (d, sx, sy, ox, oy)
-    return best
+    ref = tmpl[:, 80:320, :3].copy()
+    ref[tmpl[:, 80:320, 3] == 0] = 0
+
+    def scan(sxs, sys_, oxs, oys, sub):
+        best = None
+        for sx in sxs:
+            for sy in sys_:
+                for ox in oxs:
+                    for oy in oys:
+                        xs = (np.arange(w) * sx + sx / 2 + ox).astype(int)
+                        ys = (np.arange(h) * sy + sy / 2 + oy).astype(int)
+                        if xs.max() >= W or ys.max() >= H or xs.min() < 0 or ys.min() < 0:
+                            continue
+                        d = np.abs(g[ys[::sub]][:, xs[80:320:sub]] - ref[::sub, ::sub]).sum(2).mean()
+                        if best is None or d < best[0]:
+                            best = (d, sx, sy, ox, oy)
+        return best
+
+    _, sx, sy, ox, oy = scan(np.arange(W / w - 0.45, W / w + 0.451, 0.03), np.arange(H / h - 0.45, H / h + 0.451, 0.03),
+                             range(-96, 97, 8), range(-96, 97, 8), 3)
+    return scan(np.arange(sx - 0.03, sx + 0.031, 0.01), np.arange(sy - 0.03, sy + 0.031, 0.01),
+                range(ox - 8, ox + 9, 2), range(oy - 8, oy + 9, 2), 1)
 
 
 def seam(a, b, lo, hi, cols):
