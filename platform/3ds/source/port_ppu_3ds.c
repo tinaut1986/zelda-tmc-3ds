@@ -289,6 +289,18 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
             view->fadeLevel = level;
         }
     }
+    /* A room narrower than the view whose sides take the colour of the room's rim: the backdrop is that palette
+     * entry (a copy of the palettes with colour 0 replaced, as the sides are all the backdrop shows). */
+    if (sTopPresentMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X) {
+        extern int Port_Widescreen_BackdropFill(void);
+        static uint16_t sBackdropPalette[256];
+        const int fill = Port_Widescreen_BackdropFill();
+        if (fill >= 0 && fill < 256 && view->memory.bg_palette != NULL) {
+            memcpy(sBackdropPalette, view->memory.bg_palette, sizeof(sBackdropPalette));
+            sBackdropPalette[0] = sBackdropPalette[fill];
+            view->memory.bg_palette = sBackdropPalette;
+        }
+    }
     view->ioPerLine = &sGpuIoPerLine[0][0];
     view->dispcntPerLine = sGpuDispcntPerLine;
     view->affineRefX = sGpuAffRefX;
