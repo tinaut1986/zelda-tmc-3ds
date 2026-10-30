@@ -381,12 +381,21 @@ static const struct {
                                    { 8, 1024, 1024 }, 0, 8, 14 * 16 + 5 },
     [SCENE_SHAFT_MINISH_CABIN] = { 0x11, 0x04, 0x84B4D4E4u, { "minish-water-ground.bin", "minish-cabin-leaves.bin", "minish-cabin-shadows.bin" },
                                    { 64, 1024, 1024 }, 0, 64, -1 },
+    /* Crenel's second vertical path (rocks): BG1 is the first path's ledges row for row (the seams at the room's edges
+     * match at no offset), so it takes that shaft's ledge and shadow strips. Its ground: the meadow (rows 0-114, with
+     * a giant seed and its stem) and the wall's 64-row period, which the game repeats from row 115 (the original's
+     * outer columns repeat exactly every 64 rows); Gemini's, 2026-10-30,
+     * ~/Imágenes/minish-paths/gemini-suelo-crenel2/. */
+    [SCENE_SHAFT_CRENEL_ROCKS] = { 0x12, 0x01, 0xA6DBEE71u,
+                                   { "crenel-rocks-ground.bin", "crenel-paths-ledges.bin", "crenel-paths-shadows.bin" },
+                                   { 179, 960, 960 }, 115, 64, -1 },
 };
 
 int ScenePictures_ShaftScene(int area, int room, const uint8_t* leavesMap) {
     for (int i = 0; i < SCENE_SHAFT_SCENES; ++i) {
         if (kShafts[i].area != area || kShafts[i].room != room) continue;
         if (kShafts[i].leavesHash == 0) return i;
+        if (leavesMap == NULL) return -1;
         uint32_t hash = 0x811C9DC5u;
         for (int k = 0; k < 0x2000; ++k) hash = (hash ^ leavesMap[k]) * 0x01000193u;
         return hash == kShafts[i].leavesHash ? i : -1;

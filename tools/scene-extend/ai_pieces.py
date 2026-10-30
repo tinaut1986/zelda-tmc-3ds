@@ -116,15 +116,31 @@ def fit(args):
     full = load(args.palette)
     pal = np.array(sorted(set(map(tuple, full[full[..., 3] > 0][:, :3]))))
     out = np.zeros((h, w, 4), int)
-    for y in range(h):
-        for x in list(range(80)) + list(range(320, w)):
-            cx = min(W - 2, max(1, int(x * sx + sx / 2 + ox)))
-            cy = min(H - 2, max(1, int(y * sy + sy / 2 + oy)))
-            c = np.median(g[cy - 1:cy + 2, cx - 1:cx + 2].reshape(-1, 3), 0)
-            if not args.opaque and c.sum() < 60:
-                continue
-            out[y, x, :3] = pal[((pal - c) ** 2).sum(1).argmin()]
-            out[y, x, 3] = 255
+    cols = [(y, x) for y in range(h) for x in list(range(80)) + list(range(320, w))]
+    samples = []
+    for y, x in cols:
+        cx = min(W - 2, max(1, int(x * sx + sx / 2 + ox)))
+        cy = min(H - 2, max(1, int(y * sy + sy / 2 + oy)))
+        samples.append(np.median(g[cy - 1:cy + 2, cx - 1:cx + 2].reshape(-1, 3), 0))
+    samples = np.array(samples)
+    if args.extra:
+        # The layer's own palette has no shade for what the AI painted far from the room (the darkest stones turn
+        # into one flat colour): add the colours it painted that are far from every palette colour, k-means to
+        # --extra of them (the sides are textures, any colour works).
+        dist = np.sqrt(((samples[:, None, :] - pal[None]) ** 2).sum(2)).min(1)
+        far = samples[dist > 14]
+        if len(far) >= args.extra:
+            cen = far[np.random.RandomState(1).choice(len(far), args.extra, replace=False)]
+            for _ in range(20):
+                lab = ((far[:, None, :] - cen[None]) ** 2).sum(2).argmin(1)
+                cen = np.array([far[lab == k].mean(0) if (lab == k).any() else cen[k] for k in range(args.extra)])
+            pal = np.vstack([pal, np.round(cen).astype(int)])
+            print('palette: %d colours added for %d far pixels' % (args.extra, len(far)))
+    for (y, x), c in zip(cols, samples):
+        if not args.opaque and c.sum() < 60:
+            continue
+        out[y, x, :3] = pal[((pal - c) ** 2).sum(1).argmin()]
+        out[y, x, 3] = 255
     # How well the original part came back (the answer's own pixels there are never used).
     xs = (np.arange(w) * sx + sx / 2 + ox).astype(int)
     ys = (np.arange(h) * sy + sy / 2 + oy).astype(int)
@@ -172,6 +188,7 @@ def main():
     f.add_argument('answer')
     f.add_argument('out')
     f.add_argument('--palette', required=True)
+    f.add_argument('--extra', type=int, default=0, help='add this many colours the AI used far from the palette')
     f.add_argument('--keep', type=int, default=0)
     f.add_argument('--band', type=int, nargs=2)
     f.add_argument('--opaque', action='store_true')

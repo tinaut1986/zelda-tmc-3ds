@@ -3045,11 +3045,14 @@ void Port_Widescreen_UpdateShadows(void) {
     {
         extern void ScenePictures_SetShaftView(int scene, int groundBg, int x, int groundY, int ledgesY, int shadowsY);
         extern int ScenePictures_ShaftScene(int area, int room, const u8* leavesMap);
-        const int scene = fullViewOutdoor && gMapBottom.bgSettings != NULL && gRoomControls.width == 240 &&
-                                  gScreen.bg1.control ==
-                                      (BGCNT_SCREENBASE(30) | BGCNT_PRIORITY(1) | BGCNT_CHARBASE(2) | BGCNT_MOSAIC)
+        /* BG1's map (its part of gMapDataTopSpecial) only while the manager's BG1 is set up: a scene told by that map
+         * needs it, the Crenel shaft (found by its room; its BG1 is set up otherwise) does not. */
+        const bool leavesBg = gRoomControls.width == 240 &&
+                              gScreen.bg1.control ==
+                                  (BGCNT_SCREENBASE(30) | BGCNT_PRIORITY(1) | BGCNT_CHARBASE(2) | BGCNT_MOSAIC);
+        const int scene = fullViewOutdoor && gMapBottom.bgSettings != NULL
                               ? ScenePictures_ShaftScene(gRoomControls.area, gRoomControls.room,
-                                                         (const u8*)gMapDataTopSpecial + 0x2000 /* BG1's part */)
+                                                         leavesBg ? (const u8*)gMapDataTopSpecial + 0x2000 : NULL)
                               : -1;
         const int bg = scene >= 0 ? Port_WidescreenPpuBgForControl(gMapBottom.bgSettings->control) : -1;
         const s32 dy = gRoomControls.scroll_y - gRoomControls.origin_y;

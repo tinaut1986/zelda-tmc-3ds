@@ -46,6 +46,10 @@ PORT_SPRITE_DEPTH(OBJECT, MINISH_SIZED_ARCHWAY, 3, PORT_DEPTH_LEFT)
 PORT_SPRITE_DEPTH(OBJECT, MINISH_SIZED_ARCHWAY, PORT_ANY_TYPE, PORT_DEPTH_WALL)
 PORT_SPRITE_DEPTH(OBJECT, MINISH_LIGHT, 1, PORT_DEPTH_DOWN)
 PORT_SPRITE_DEPTH(ENEMY, DUST, 0, PORT_DEPTH_FLAT)
+/* The leaves lying on the Crenel Minish paths' floor (area 0x12, GIANT_TWIG types 2 and 3: a tall multi-piece sprite
+ * that leant out of the ground with the world's body rule, owner on the New 3DS 2026-10-30): flat on the ground. */
+PORT_SPRITE_DEPTH(OBJECT, GIANT_TWIG, 2, PORT_DEPTH_FLAT)
+PORT_SPRITE_DEPTH(OBJECT, GIANT_TWIG, 3, PORT_DEPTH_FLAT)
 /* Things hung on a wall, drawn as standing sprites: the weapon racks of the Swiftblade dojos (FURNITURE type 7: three on
  * each of the top, left and right walls) and the archways of every room (the door frames on all four walls). The wall
  * they stand in decides (PORT_DEPTH_WALL): left wall LEFT, right wall RIGHT, bottom wall DOWN, top wall the normal rule. */
