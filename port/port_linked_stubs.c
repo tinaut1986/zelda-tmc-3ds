@@ -2847,6 +2847,18 @@ static void Port_WidescreenLightRayShadow(int width) {
 }
 
 /* Called per-VBlank from src/interrupts.c::UpdateDisplayControls. */
+/* Rooms narrower than the view whose black sides take the colour of the room's rim (owner, 2026-10-30; the backdrop,
+ * which nothing but the sides shows): the BG palette entry (palette * 16 + index) that has it, or -1. */
+int Port_Widescreen_BackdropFill(void) {
+    static const struct { u8 area, room; s8 palette, index; } kRooms[] = {
+        { 0x26, 0x0C, 7, 15 }, /* the cave with the ladder: its rim's light orange */
+    };
+    for (unsigned i = 0; i < sizeof(kRooms) / sizeof(kRooms[0]); ++i)
+        if (kRooms[i].area == gRoomControls.area && kRooms[i].room == gRoomControls.room)
+            return kRooms[i].palette * 16 + kRooms[i].index;
+    return -1;
+}
+
 void Port_Widescreen_UpdateShadows(void) {
     if (gMain.task != TASK_GAME || (gRoomControls.scrollAction != 2 && gRoomControls.scrollAction != 0))
         sWsScroll.valid = 0;
