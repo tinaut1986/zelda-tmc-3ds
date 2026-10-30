@@ -53,6 +53,7 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 | `feat/pause-wide-view` _(merged into release/v0.4.6 2026-10-25, at the owner's request; seen in Azahar, not on the console)_ | The pause menu at 400x240 (GPU renderer): L and R whole when pressed, the title banner closed on the left, the background made by the game from its own BG3. Still to see on the New 3DS: the three pages, the map page, the save prompt, 3D, the Old 3DS. It raised the linker pins to 0x644000/0x64C000. |
 | `feat/minish-path-leaves` _(merged into release/v0.4.6 2026-10-25, at the owner's request before a console check)_ | Gemini's leaves and the derived shadows beside the Minish Paths' grass corridor (area 0x11), WIDE + AI. Still to see on the New 3DS: the corridor centred, the strips moving with their layers, nothing in the other 0x11 rooms. Its ground's sides are the corridor's edge brown (`feat/minish-path-ground-fill`, merged the same day, seen in Azahar). |
 | `feat/minish-paths-town-ranch-cabin` _(merged into release/v0.4.6 2026-10-25, at the owner's request; seen in Azahar, not on the console)_ | The sides of Minish Paths rooms 0x11/02, 03 and 04: one set of Gemini leaves for the three (04's recoloured), derived shadows, 02's and 03's grounds their edge colour darkening outwards (03's on trial), 04's the water corridor's stalks. WIDE + AI for the leaves and 04's ground. Still to see on the New 3DS. The cut giant sprites beside them are #50-#52. |
+| `fix/crenel-shaft-sides` _(handed to the owner 2026-10-30; seen in Azahar, installed on the New 3DS)_ | Crenel's second vertical path (area 0x12 room 01, the rocks): its BG1 ledges and shadows are the first path's (same art, row for row), its ground is Gemini's (the meadow with the giant seed and its stem, and the wall's 64-row period, which the game repeats), WIDE + AI; the Crenel shaft is found by its room alone again when BG1 is not the manager's (`leavesMap` NULL guard); the leaves lying on the floor (OBJECT GIANT_TWIG types 2 and 3) are flat in 3D. Still to see on the New 3DS: the leaves glued to the floor, the seed's stem. |
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -77,8 +78,8 @@ leaves pots unliftable).
 scene pictures (seen on the New 3DS), the pause menu at 400x240 with its background made by the game (L/R whole, the title
 banner closed), and the generated sides of five Minish Paths corridors (0x11/00 grass, 0x11/01 water, 0x11/02-04);
 all of it seen only in Azahar, none yet on the console (branch table above). No branch is open. Next, in this order:
-00. **The last vertical Minish path, Crenel's 0x12/01 (rocks), the owner deciding its ground** (2026-10-25; 0x11/00-04 are
-   done; 0x11/03's ochre gradient is on trial, Gemini rocks in a 64-row loop the alternative). Then the cut giant sprites
+00. **The vertical Minish paths are all done** (2026-10-30: Crenel's 0x12/01 in `fix/crenel-shaft-sides`, waiting for the owner's
+   check; 0x11/03's ochre gradient is on trial, Gemini rocks in a 64-row loop the alternative). Then the cut giant sprites
    beside 0x11/02-04 (#50 flowers and bellflowers, #51 white spirals, #52 cattails). What each needs, their BG1 hashes, ground colours and
    repeats, and where their dumps already are: `docs/wide-scene-extension.md`, "The vertical Minish paths" (nothing to
    dump again). The workflow: same doc, "AI pieces" (`tools/scene-extend/ai_pieces.py`); add each as a `kShafts` row. Show
@@ -1537,3 +1538,13 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   it takes that loop instead (owner: "La del agua no encaja con los tallos de agua que hay en otra ya montada?"). The giant
   flowers, bellflowers, white spirals and cattails beside them are sprites whose art ends at the GBA screen's edge, not
   clipped by the port: completing them is #50-#52 (owner).
+- **2026-10-30** Crenel's second vertical path (0x12/01) closed, by reuse: its BG1 rocks are the first path's ledges row for row
+  (the seams at the room's edges match at no offset), so it takes `crenel-paths-ledges.bin` and `-shadows.bin`; only the ground was new.
+  The owner turned the edge-colour gradient down ("no acaba de quedar bien"). The ground's outer columns repeat exactly every 64
+  rows from row 115 (diff 1.1), so Gemini painted one 400x320 piece, the meadow's right strip was redone twice (the giant seed
+  needs its stem and two-leaf sprout, as the seeds of area 0x06; the owner picked the second answer) and the game repeats one
+  64-row period of the wall (`crenel-rocks-ground.bin`, 400x179, `groundLoopStart` 115): pieces 2 and 3 were never needed.
+  `ai_pieces.py fit --extra N` adds N colours the AI used far from the layer's palette: the palette snap had flattened the
+  darkest stones at the edges into one colour (owner spotted it). The room's leaves are `GIANT_TWIG` types 2 and 3, tall sprites
+  that leant out of the floor with the 3D world's body rule: `PORT_DEPTH_FLAT` in `port_sprite_depth.inc`. Azahar shows no 3D
+  (owner), so only the New 3DS can check it.

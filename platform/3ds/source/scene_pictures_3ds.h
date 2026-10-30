@@ -18,9 +18,10 @@ enum { SCENE_SHAFT_STRIP_W = 80, SCENE_SHAFT_ROOM_W = 240 };
 typedef enum { SCENE_SHAFT_GROUND, SCENE_SHAFT_LEDGES, SCENE_SHAFT_SHADOWS, SCENE_SHAFT_LAYERS } SceneShaftLayer;
 typedef enum {
     SCENE_SHAFT_CRENEL, SCENE_SHAFT_MINISH, SCENE_SHAFT_MINISH_WATER, SCENE_SHAFT_MINISH_TOWN, SCENE_SHAFT_MINISH_RANCH,
-    SCENE_SHAFT_MINISH_CABIN, SCENE_SHAFT_SCENES
+    SCENE_SHAFT_MINISH_CABIN, SCENE_SHAFT_CRENEL_ROCKS, SCENE_SHAFT_SCENES
 } SceneShaft;
-/* The shaft of a vertical Minish path room, -1 for none (or BG1's map, 0x2000 bytes, not the one its strips are of). */
+/* The shaft of a vertical Minish path room, -1 for none (or BG1's map, 0x2000 bytes, not the one its strips are of; NULL
+ * when BG1 is not the manager's, which only the scenes found by their room alone take). */
 int ScenePictures_ShaftScene(int area, int room, const uint8_t* leavesMap);
 
 bool ScenePictures_TitleAvailable(void);

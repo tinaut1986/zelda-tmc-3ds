@@ -12,6 +12,8 @@ SCENE      portal: the Minish portal cutscene, PICTURE 400x320, the original at 
                    repeat), its rock ledges (BG1, 400x960) and their shadows (BG3, 400x960); writes
                    crenel-paths-{ground,ledges,shadows}.bin, only the 80 columns each side of the room (160 wide),
                    0 where empty
+           crenel-rocks-ground: the ground beside Crenel's second vertical path (area 0x12 room 01), 400x179: room rows
+                   0-114 (the meadow) and one 64-row turn of the wall, which the game repeats; writes crenel-rocks-ground.bin
            minish-leaves, minish-shadows: the Minish Paths' grass corridor (area 0x11, the vertical one), the 240-wide
                    layer at x 80 of a 400x1024 PICTURE: its leaves (BG1) and their shadows (BG3); writes
                    minish-paths-{leaves,shadows}.bin, the 80 columns each side (160 wide), 0 where empty
@@ -57,6 +59,7 @@ SCENES = {
     'crenel-ground': ((400, 352), list(range(0, 80)) + list(range(320, 400)), 'crenel-paths-ground.bin'),
     'crenel-ledges': ((400, 960), list(range(0, 80)) + list(range(320, 400)), 'crenel-paths-ledges.bin'),
     'crenel-shadows': ((400, 960), list(range(0, 80)) + list(range(320, 400)), 'crenel-paths-shadows.bin'),
+    'crenel-rocks-ground': ((400, 179), list(range(0, 80)) + list(range(320, 400)), 'crenel-rocks-ground.bin'),
     'minish-leaves': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-paths-leaves.bin'),
     'minish-shadows': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-paths-shadows.bin'),
     'minish-water-leaves': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-water-leaves.bin'),

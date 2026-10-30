@@ -152,7 +152,7 @@ decides each one in turn (2026-10-25): not every ground should be the same dark 
 | 0x11/03 | to Lon Lon Ranch: cobbles, rocks at the sides repeating every 64 rows, white spirals (sprites, #51) | `84b4d4e4` | 02's leaves, no repeat | outer columns 64% (192,160,88), BG pal 14 colour 5 | done: 02's leaves, derived shadows, ochre darkening outwards (on trial; Gemini rocks in a 64-row loop the alternative) |
 | 0x11/04 | to the mayor's cabin: water, cattails (sprites, #52) | `84b4d4e4` | 03's leaves pixel for pixel in bluer greens (one colour for each) | the water corridor's reed stalks, row for row in the same phase (rows 64-736) | done: 02's leaves recoloured, derived shadows, the water corridor's stalk loop |
 | 0x12/00 | Crenel paths' shaft | (by room) | rock ledges, two pieces repeated | Gemini, rows 32-351 repeating | done |
-| 0x12/01 | Crenel paths' second vertical one | `a6dbee71` | rocks at rows 120-963, 62% alike at 512: repeated pieces (`stamp_pieces.py`) | outer columns 57% (112,64,48), BG pal 8 colour 5 | to do |
+| 0x12/01 | Crenel paths' second vertical one | `a6dbee71` | the first path's ledges row for row (`crenel-paths-ledges.bin`, `-shadows.bin`) | outer columns repeat every 64 rows from row 115; meadow rows 0-114 (giant seed with its stem) | done: Gemini ground (`crenel-rocks-ground.bin`, 400x179), ledges reused |
 | 0x12/02 | Crenel, horizontal (800x192, BG1 0x1e09, `horizontalMinishPathBackgroundManager.c`) | - | - | - | not handled by this code |
 
 Area 0x11 has rooms 0-4 (room 5 loads with size 0). The shadows checked so far (00, 01) are BG1's silhouette with a
@@ -194,6 +194,7 @@ and no colour is outside the original's.
   the band between two seams. Mark the band in **magenta** on a layer with transparency (black there means "no leaf")
   and say so in the prompt. Ship one period; the game repeats a ground with `groundLoopStart`/`groundLoopLength`, and
   a repeating BG1 is written twice into its 1024 rows.
+- **Palette**: `fit` snaps each colour to the layer's own palette, which has no shade for what the AI paints far from the room (the darkest stones turned into one flat colour): `--extra N` adds N colours (k-means of the pixels far from the palette).
 - **Fitting**: Gemini answers 5.6-7.4 times the size, often not the same in x and y, sometimes squeezed inside a margin
   (5.64 wide with 72 pixels each side, 2026-10-25); `fit` searches scales within 0.45 and offsets within 96, coarse
   then fine, and prints the mean difference on the original part (under 30 is good). The answer may change what it was
