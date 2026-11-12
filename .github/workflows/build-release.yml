@@ -173,3 +173,41 @@ jobs:
             QR-${{ steps.vars.outputs.tag }}.png
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Announce the release on Discord (Tinaut's 3DS Ports server). A stable goes to
+      # #announcements and pings the project's role; a beta goes to #beta-testing
+      # without a ping. The webhook URLs live in the repo secrets DISCORD_WEBHOOK_RELEASE
+      # and DISCORD_WEBHOOK_BETA: without them this step does nothing, and a Discord
+      # error never fails the release. Re-running the workflow posts again.
+      - name: Announce on Discord
+        continue-on-error: true
+        env:
+          WEBHOOK_RELEASE: ${{ secrets.DISCORD_WEBHOOK_RELEASE }}
+          WEBHOOK_BETA: ${{ secrets.DISCORD_WEBHOOK_BETA }}
+          PROJECT: "The Minish Cap"
+          ROLE_ID: "1570479910932451418"
+          TAG: ${{ steps.vars.outputs.tag }}
+          CHANNEL: ${{ steps.vars.outputs.channel }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$CHANNEL" = "Release" ]; then HOOK="$WEBHOOK_RELEASE"; else HOOK="$WEBHOOK_BETA"; fi
+          if [ -z "$HOOK" ]; then echo "No Discord webhook secret for the $CHANNEL channel: not announcing"; exit 0; fi
+          URL="https://github.com/$REPO/releases/tag/$TAG"
+          NOTES="docs/release-notes/${TAG}.md"
+          DESC="Download it from the release page."
+          if [ -f "$NOTES" ]; then
+            DESC=$(head -c 3500 "$NOTES")
+            [ "$(wc -c < "$NOTES")" -gt 3500 ] && DESC="$DESC"$'\n\n'"... (full notes on the release page)"
+          fi
+          if [ "$CHANNEL" = "Release" ]; then
+            CONTENT="<@&$ROLE_ID> **$PROJECT $TAG** is out!"; ROLES="[\"$ROLE_ID\"]"
+            TITLE="$PROJECT $TAG"; COLOR=5763719
+          else
+            CONTENT="**$PROJECT $TAG** beta is ready for testing."; ROLES="[]"
+            TITLE="$PROJECT $TAG (beta)"; COLOR=16705372
+          fi
+          jq -n --arg content "$CONTENT" --arg title "$TITLE" --arg url "$URL" --arg desc "$DESC" \
+                --argjson color "$COLOR" --argjson roles "$ROLES" \
+            '{content: $content, allowed_mentions: {parse: [], roles: $roles},
+              embeds: [{title: $title, url: $url, description: $desc, color: $color}]}' > discord.json
+          curl -fsS -H "Content-Type: application/json" -d @discord.json "$HOOK"
