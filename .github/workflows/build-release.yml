@@ -192,6 +192,8 @@ jobs:
         run: |
           if [ "$CHANNEL" = "Release" ]; then HOOK="$WEBHOOK_RELEASE"; else HOOK="$WEBHOOK_BETA"; fi
           if [ -z "$HOOK" ]; then echo "No Discord webhook secret for the $CHANNEL channel: not announcing"; exit 0; fi
+          # The devkitARM image has no jq (the first announcement died on it, hidden by continue-on-error).
+          command -v jq > /dev/null || (apt-get update -qq && apt-get install -y -qq jq > /dev/null)
           URL="https://github.com/$REPO/releases/tag/$TAG"
           NOTES="docs/release-notes/${TAG}.md"
           DESC="Download it from the release page."
