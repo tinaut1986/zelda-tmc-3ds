@@ -259,6 +259,11 @@ static bool sPauseFrame;
  * (ScenePictures_ShaftView): the BGs they are
  * drawn as (bits), the left strip's left edge on the frame and each layer's top, rows and loop. */
 static uint8_t sShaftMask;
+/* Crenel's horizontal Minish path: per BG its bands' picture width, the view column of its column 0, and each band's top
+ * row on the view and rows (ScenePictures_RowView). */
+static uint8_t sRowMask;
+static int16_t sRowX[4], sRowBandY[4][2];
+static uint16_t sRowWidth[4], sRowBandRows[4][2];
 static int16_t sShaftX, sShaftY[4];
 static uint16_t sShaftHeight[4], sShaftLoopStart[4], sShaftLoopLength[4];
 
@@ -328,6 +333,15 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
         view->scrollPictureHeight[bg] = sShaftHeight[bg];
         view->scrollPictureLoopStart[bg] = sShaftLoopStart[bg];
         view->scrollPictureLoopLength[bg] = sShaftLoopLength[bg];
+    }
+    view->rowPictureMask = sRowMask;
+    for (unsigned bg = 0; bg < 4; ++bg) {
+        view->rowPictureX[bg] = sRowX[bg];
+        view->rowPictureWidth[bg] = sRowWidth[bg];
+        for (unsigned band = 0; band < 2; ++band) {
+            view->rowPictureBandY[bg][band] = sRowBandY[bg][band];
+            view->rowPictureBandRows[bg][band] = sRowBandRows[bg][band];
+        }
     }
     view->wsFullView = virtuappu_mode1_ws_full_view != 0;
     /* The software PPU's rule (mode1_bg3_native_bounds_active). */
@@ -1379,7 +1393,7 @@ static void PresentFrame(void) {
             if (used[bg]) continue; /* the ground is never BG1 or BG3 here; if it were, it wins */
             unsigned height = 0, loopStart = 0, loopLength = 0;
             const uint16_t* pixels = ScenePictures_Shaft555((SceneShaftLayer)layer, &height, &loopStart, &loopLength);
-            PortPpuGpu3DS_SetScrollPicture(bg, pixels, 2 * SCENE_SHAFT_STRIP_W, height);
+            PortPpuGpu3DS_SetScrollPicture(bg, pixels, 2 * SCENE_SHAFT_STRIP_W, height, false);
             if (pixels == NULL) continue;
             used[bg] = true;
             sShaftMask |= (uint8_t)(1u << bg);
@@ -1388,10 +1402,32 @@ static void PresentFrame(void) {
             sShaftLoopStart[bg] = (uint16_t)loopStart;
             sShaftLoopLength[bg] = (uint16_t)loopLength;
         }
+        /* Crenel's horizontal Minish path: its layers' bands above and below the room, as their BGs. */
+        int rowX[SCENE_ROW_LAYERS], rowY[SCENE_ROW_LAYERS][2];
+        const int rowGroundBg = wideFrame && groundBg < 0 ? ScenePictures_RowView(rowX, rowY) : -1;
+        const int rowLayerBg[SCENE_ROW_LAYERS] = { rowGroundBg, 1, 3 };
+        sRowMask = 0;
+        for (unsigned layer = 0; layer < SCENE_ROW_LAYERS && rowGroundBg >= 0; ++layer) {
+            const unsigned bg = (unsigned)rowLayerBg[layer] & 3u;
+            if (used[bg]) continue;
+            unsigned width = 0, rows[2] = { 0, 0 };
+            const uint16_t* pixels = ScenePictures_Row555((SceneRowLayer)layer, &width, rows);
+            PortPpuGpu3DS_SetScrollPicture(bg, pixels, width, rows[0] + rows[1], true);
+            if (pixels == NULL) continue;
+            used[bg] = true;
+            sRowMask |= (uint8_t)(1u << bg);
+            sRowX[bg] = (int16_t)rowX[layer];
+            sRowWidth[bg] = (uint16_t)width;
+            for (unsigned band = 0; band < 2; ++band) {
+                sRowBandY[bg][band] = (int16_t)rowY[layer][band];
+                sRowBandRows[bg][band] = (uint16_t)rows[band];
+            }
+        }
         for (unsigned bg = 0; bg < 4; ++bg)
-            if (!used[bg]) PortPpuGpu3DS_SetScrollPicture(bg, NULL, 0, 0);
+            if (!used[bg]) PortPpuGpu3DS_SetScrollPicture(bg, NULL, 0, 0, false);
         if (sShaftMask == 0 && (gMain.task != TASK_GAME || (gRoomControls.area != 0x12 && gRoomControls.area != 0x11)))
             ScenePictures_ReleaseShaft();
+        if (sRowMask == 0 && (gMain.task != TASK_GAME || gRoomControls.area != 0x12)) ScenePictures_ReleaseRows();
     }
     /* Only Vaati's appearing effect is placed on the native screen (BG3 drawn at an
      * entity's screen position); the other BG3 HBlank effects (Minish Woods light

@@ -382,7 +382,7 @@ void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsi
     sPictureCorrected = corrected;
 }
 
-void PortPpuGpu3DS_SetScrollPicture(unsigned bg, const uint16_t* gbaPixels, unsigned width, unsigned height) {
+void PortPpuGpu3DS_SetScrollPicture(unsigned bg, const uint16_t* gbaPixels, unsigned width, unsigned height, bool repeat) {
     if (bg >= MODE1_GBA_BG_COUNT) return;
     const bool corrected = Port_Config_GetColorCorrection();
     if (gbaPixels == sScrollPixels[bg] && (gbaPixels == NULL || corrected == sScrollCorrected[bg])) return;
@@ -392,19 +392,22 @@ void PortPpuGpu3DS_SetScrollPicture(unsigned bg, const uint16_t* gbaPixels, unsi
     sScrollPixels[bg] = NULL;
     sBoundTexture = UINT8_MAX; /* rebind */
     const unsigned texHeight = PpuGpu3DS_ScrollPictureTexHeight(height);
-    if (gbaPixels == NULL || width > PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH || height > texHeight) return;
-    if (!C3D_TexInit(tex, PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH, texHeight, GPU_RGBA5551)) {
+    const unsigned texWidth = repeat ? width : PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH;
+    if (gbaPixels == NULL || width > texWidth || height > texHeight) return;
+    /* A repeated picture is exactly its texture's width, which the GPU wants a power of two from 8 to 1024. */
+    if (repeat && (texWidth < 8u || texWidth > 1024u || (texWidth & (texWidth - 1u)) != 0)) return;
+    if (!C3D_TexInit(tex, texWidth, texHeight, GPU_RGBA5551)) {
         memset(tex, 0, sizeof(*tex));
         return;
     }
     memset(tex->data, 0, tex->size);
     C3D_TexSetFilter(tex, GPU_NEAREST, GPU_NEAREST);
-    C3D_TexSetWrap(tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+    C3D_TexSetWrap(tex, repeat ? GPU_REPEAT : GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     /* 8x8 Morton tiles, tile rows from the top (v = 1), as the other picture. */
     uint16_t* texels = (uint16_t*)tex->data;
     for (unsigned y = 0; y < height; ++y)
         for (unsigned x = 0; x < width; ++x)
-            texels[((y >> 3) * (PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH >> 3) + (x >> 3)) * 64u +
+            texels[((y >> 3) * (texWidth >> 3) + (x >> 3)) * 64u +
                    PpuGpu3DS_MortonIndex(x & 7u, y & 7u)] =
                 PpuGpu3DS_PackRgba5551(gbaPixels[y * width + x], gbaPixels[y * width + x] != 0);
     C3D_TexFlush(tex);

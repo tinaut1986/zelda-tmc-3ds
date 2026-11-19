@@ -14,6 +14,11 @@ SCENE      portal: the Minish portal cutscene, PICTURE 400x320, the original at 
                    0 where empty
            crenel-rocks-ground: the ground beside Crenel's second vertical path (area 0x12 room 01), 400x179: room rows
                    0-114 (the meadow) and one 64-row turn of the wall, which the game repeats; writes crenel-rocks-ground.bin
+           crenel-hpath-ground, -rocks, -shadows: Crenel's horizontal Minish path (area 0x12 room 02, 800x192), drawn
+                   above and below the room: the ground 64x96 (48 rows above the room, then 48 below; one turn of the
+                   wall's 64-column repeat), the rocks (BG1) and their shadows (BG3) 1024x96 (the layer's rows
+                   -32..15, the small stalactites' continuation above their cut, then rows 208-255, the stalagmites'
+                   below theirs), 0 where empty
            minish-leaves, minish-shadows: the Minish Paths' grass corridor (area 0x11, the vertical one), the 240-wide
                    layer at x 80 of a 400x1024 PICTURE: its leaves (BG1) and their shadows (BG3); writes
                    minish-paths-{leaves,shadows}.bin, the 80 columns each side (160 wide), 0 where empty
@@ -60,6 +65,9 @@ SCENES = {
     'crenel-ledges': ((400, 960), list(range(0, 80)) + list(range(320, 400)), 'crenel-paths-ledges.bin'),
     'crenel-shadows': ((400, 960), list(range(0, 80)) + list(range(320, 400)), 'crenel-paths-shadows.bin'),
     'crenel-rocks-ground': ((400, 179), list(range(0, 80)) + list(range(320, 400)), 'crenel-rocks-ground.bin'),
+    'crenel-hpath-ground': ((64, 96), None, 'crenel-hpath-ground.bin'),
+    'crenel-hpath-rocks': ((1024, 96), None, 'crenel-hpath-rocks.bin'),
+    'crenel-hpath-shadows': ((1024, 96), None, 'crenel-hpath-shadows.bin'),
     'minish-leaves': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-paths-leaves.bin'),
     'minish-shadows': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-paths-shadows.bin'),
     'minish-water-leaves': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-water-leaves.bin'),

@@ -2890,6 +2890,10 @@ static void Port_WidescreenRainShadow(int width) {
 int Port_Widescreen_BackdropFill(void) {
     static const struct { u8 area, room; s8 palette, index; } kRooms[] = {
         { 0x26, 0x0C, 7, 15 }, /* the cave with the ladder: its rim's light orange */
+        /* Crenel's horizontal Minish path (800x192, shorter than the view): above and below it its wall's purple
+         * stones, the bottom rows' colour, a step darker than the top rows' (BG pal 6 colour 3); the rocks (BG1) and
+         * their blended shadows (BG3) still go over it. */
+        { 0x12, 0x02, 6, 2 },
     };
     for (unsigned i = 0; i < sizeof(kRooms) / sizeof(kRooms[0]); ++i)
         if (kRooms[i].area == gRoomControls.area && kRooms[i].room == gRoomControls.room)
@@ -3109,6 +3113,34 @@ void Port_Widescreen_UpdateShadows(void) {
         const s32 dy = gRoomControls.scroll_y - gRoomControls.origin_y;
         ScenePictures_SetShaftView(scene, bg, (int)gRoomControls.origin_x - gRoomControls.scroll_x - 80, (int)-dy,
                                    (int)-(dy + (dy >> 2)), (int)-(dy + (dy >> 3)));
+    }
+    /* Crenel's horizontal Minish path in Full View (area 0x12 room 02, 800x192, horizontalMinishPathBackgroundManager.c):
+     * bands above and below the room (scene_pictures_3ds.h, SCENE_ROW_*). The ground's picture column 0 sits on the
+     * room's column 0 and its bands just above and below the room; the rocks (BG1) and their shadows (BG3) are their
+     * whole 1024-column layer, whose column X the view shows at X minus the layer's scroll (the manager's, at 1.25 and
+     * 1.125 times the room's), and row Y at Y minus the BG's vertical offset (their bands start at the layer's rows -32
+     * and 208). */
+    {
+        extern void ScenePictures_SetRowView(int groundBg, const int x[3], const int y[3][2]);
+        int x[3] = { 0, 0, 0 }, y[3][2] = { { 0, 0 }, { 0, 0 }, { 0, 0 } };
+        int groundBg = -1;
+        if (fullViewOutdoor && gRoomControls.area == 0x12 && gRoomControls.room == 0x02 && gMapBottom.bgSettings != NULL &&
+            (gScreen.bg1.control & ~0x43) == 0x1e08 && (gScreen.bg3.control & ~0x43) == 0x1d08) {
+            groundBg = Port_WidescreenPpuBgForControl(gMapBottom.bgSettings->control);
+            const int sx = gRoomControls.scroll_x - gRoomControls.origin_x;
+            const int top = (int)gRoomControls.origin_y - gRoomControls.scroll_y;
+            const int viewWidth = Port_Widescreen_GameplayViewWidth();
+            x[0] = -sx;
+            y[0][0] = top - 48;
+            y[0][1] = top + (int)gRoomControls.height;
+            x[1] = -Port_HorizontalMinishPathScroll(sx, gRoomControls.width, 2, viewWidth);
+            y[1][0] = -32 - (gScreen.bg1.yOffset & 0xff);
+            y[1][1] = 208 - (gScreen.bg1.yOffset & 0xff);
+            x[2] = -Port_HorizontalMinishPathScroll(sx, gRoomControls.width, 3, viewWidth);
+            y[2][0] = -32 - (gScreen.bg3.yOffset & 0xff);
+            y[2][1] = 208 - (gScreen.bg3.yOffset & 0xff);
+        }
+        ScenePictures_SetRowView(groundBg, x, y);
     }
 #endif
 

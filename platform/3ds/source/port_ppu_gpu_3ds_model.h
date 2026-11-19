@@ -257,6 +257,14 @@ typedef struct PpuGpu3DSFrameView {
     uint16_t scrollPictureStripWidth, scrollPictureGap;
     int16_t scrollPictureY[4];
     uint16_t scrollPictureHeight[4], scrollPictureLoopStart[4], scrollPictureLoopLength[4];
+    /* Bands above and below a room shorter than the view (Crenel's horizontal Minish path, PortPpuGpu3DS_SetScrollPicture
+     * with `repeat`), one picture per BG in rowPictureMask, drawn over that BG's tiles where opaque: rowPictureWidth[bg]
+     * columns (a power of two, repeated across the frame), the view column of its column 0 at rowPictureX[bg]; two
+     * bands, the first rowPictureBandRows[bg][0] picture rows from the top, the second the rows after them, each band's
+     * top row at rowPictureBandY[bg][band] on the view. A BG has either side strips or bands, never both. */
+    uint8_t rowPictureMask;
+    int16_t rowPictureX[4], rowPictureBandY[4][2];
+    uint16_t rowPictureWidth[4], rowPictureBandRows[4][2];
     /* BGs (bit n = BGn) drawn only in the GBA's 240x160 screen centred in a
      * bigger view, at their own scroll (the file select's windows and text,
      * whose 256-wide maps would repeat across it). */
