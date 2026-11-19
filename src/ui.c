@@ -188,12 +188,22 @@ void UpdateUIElements(void) {
      * 400x240 or 200x120 frame cannot show a 10-40 frame horizontal slide. */
     Port_UI_PrepareGameplayGeometry();
 #endif
+#ifdef PC_PORT
+    /* The buttons first, then what follows them: a page of the pause menu creates its TEXT_A/B and ITEM_A/B in
+     * lower slots than their buttons, so on its first tick they copied a button not placed yet, (0,0). The GBA
+     * clips that frame off its left edge; the 400x240 pause keeps the whole group and showed the label at the
+     * view's top left for a frame. */
+    for (u32 pass = 0; pass < 2; pass++)
+#endif
     for (index = 0; index < MAX_UI_ELEMENTS; index++) {
         element = &gHUD.elements[index];
         if (element->used != 0) {
 #ifdef PC_PORT
             if (element->type > UI_ELEMENT_TEXT_B) {
                 element->used = 0;
+                continue;
+            }
+            if ((element->type <= UI_ELEMENT_BUTTON_R) != (pass == 0)) {
                 continue;
             }
 #endif
