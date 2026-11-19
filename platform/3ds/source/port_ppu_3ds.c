@@ -262,6 +262,8 @@ static uint8_t sShaftMask;
 /* Crenel's horizontal Minish path: per BG its bands' picture width, the view column of its column 0, and each band's top
  * row on the view and rows (ScenePictures_RowView). */
 static uint8_t sRowMask;
+/* The BGs whose blend multiplies while those rooms are shown in Full View (with or without the bands): their shadows. */
+static uint8_t sRowMultiplyMask;
 static int16_t sRowX[4], sRowBandY[4][2];
 static uint16_t sRowWidth[4], sRowBandRows[4][2];
 static int16_t sShaftX, sShaftY[4];
@@ -335,6 +337,7 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
         view->scrollPictureLoopLength[bg] = sShaftLoopLength[bg];
     }
     view->rowPictureMask = sRowMask;
+    view->bgMultiplyMask = sRowMultiplyMask;
     for (unsigned bg = 0; bg < 4; ++bg) {
         view->rowPictureX[bg] = sRowX[bg];
         view->rowPictureWidth[bg] = sRowWidth[bg];
@@ -1405,6 +1408,7 @@ static void PresentFrame(void) {
         /* Crenel's horizontal Minish path: its layers' bands above and below the room, as their BGs. */
         int rowX[SCENE_ROW_LAYERS], rowY[SCENE_ROW_LAYERS][2];
         const int rowGroundBg = wideFrame && groundBg < 0 ? ScenePictures_RowView(rowX, rowY) : -1;
+        sRowMultiplyMask = rowGroundBg >= 0 ? (uint8_t)(1u << 3) : 0;
         const int rowLayerBg[SCENE_ROW_LAYERS] = { rowGroundBg, 1, 3 };
         sRowMask = 0;
         for (unsigned layer = 0; layer < SCENE_ROW_LAYERS && rowGroundBg >= 0; ++layer) {

@@ -4673,6 +4673,7 @@ static bool build_bg_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCac
     native.pictureMask = 0;
     native.scrollPictureMask = 0;
     native.rowPictureMask = 0;
+    native.bgMultiplyMask = 0;
     native.bgNativeMask = 0;
     native.bg3NativeBounds = false;
     PpuGpu3DSBand part = *band;
@@ -5157,6 +5158,14 @@ bool PpuGpu3DS_BuildCommands(const PpuGpu3DSFrameView* frame,
         cmd->failReason = PPU_GPU3DS_BUILD_CAPACITY;
         return false;
     }
+    /* The layers whose blend multiplies (bgMultiplyMask): their alpha-blended batches, whichever path made them. */
+    if (frame->bgMultiplyMask != 0)
+        for (size_t i = startBatch; i < batchCursor && i < cmd->batchCapacity; ++i) {
+            PpuGpu3DSBatch* const batch = &cmd->batches[i];
+            if (batch->effect == PPU_GPU3DS_EFFECT_ALPHA && batch->layer <= PPU_GPU3DS_BG3 &&
+                ((frame->bgMultiplyMask >> batch->layer) & 1u))
+                batch->multiply = true;
+        }
 
     cmd->vertexCount = vertexCursor;
     cmd->indexCount = indexCursor;
