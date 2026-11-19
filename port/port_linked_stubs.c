@@ -2010,10 +2010,11 @@ static Port3DSFullViewInputs Port_WidescreenFullViewInputs(void) {
      * (GameMain_MinishPortal), the room still drawn behind it. */
     inputs.playerValid = (gPlayerEntity.base.kind == PLAYER || gMain.substate == GAMEMAIN_MINISHPORTAL) &&
                          (gRoomControls.camera_target != NULL || Port_WidescreenFrozenCameraKeepsFullView());
-    /* Mt. Crenel room 2 uses a non-tileable 32x32 static BG3 landscape.
-     * Repeating it across 400 pixels creates a visible seam; keep the entire
-     * scene on E2 until that overlay has a semantic 64-column map. */
-    inputs.unsupportedScene = gRoomControls.area == AREA_MT_CRENEL && gRoomControls.room == 2;
+    /* No scene is excluded: Mt. Crenel's Cave of Flames entrance (06/02) was, for its static BG3
+     * landscape (32x32 tiles, parallax), and fell back to E2 mid-transition and stayed there.
+     * A scenario shows what is there (owner, 2026-11-19): BG3 wraps across 400 as the GBA's own
+     * map wraps, like the Mountain Top's (06/00), which never was excluded. */
+    inputs.unsupportedScene = 0;
     if (gRoomControls.area <= AREA_98) {
         inputs.areaIsExterior = Port3DSFullViewPolicy_AreaIsExterior(
             gRoomControls.area, gRoomControls.room, gAreaMetadata[gRoomControls.area].flags);
