@@ -31,7 +31,10 @@ static const signed char kDepth[5][4] = {
  * and the stone panel behind them. */
 enum { GAME_OVER_TEXT_DEPTH = 10, GAME_OVER_CHOICES_DEPTH = 6, GAME_OVER_PANEL_DEPTH = 3 };
 enum { MAP_HINT_BACK_DEPTH = 0, MAP_HINT_MAP_DEPTH = 2, MAP_HINT_MARKER_DEPTH = 5 };
-enum { RAYS_DEPTH = 4, LEAVES_DEPTH = 4, TITLE_FRONT_DEPTH = 8, FILE_SELECT_OBJ_DEPTH = 4, FILE_SELECT_PANEL_DEPTH = 2 };
+/* The layers over the world (fog, sun rays, the paths' leaves, the rain) at the HUD's 6: the world's sprites reach 5
+ * (a tall one, the Crenel's mushrooms), and at 4 they stood level with them (owner, 2026-11-19). The HUD is the layer
+ * of highest priority, so it stays drawn over them. */
+enum { RAYS_DEPTH = 6, LEAVES_DEPTH = 6, TITLE_FRONT_DEPTH = 8, FILE_SELECT_OBJ_DEPTH = 4, FILE_SELECT_PANEL_DEPTH = 2 };
 
 static bool sActive;
 static bool sHasDepth;
