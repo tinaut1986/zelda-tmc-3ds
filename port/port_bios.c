@@ -719,6 +719,11 @@ void VBlankIntrWait(void) {
         extern void Port_QuickSave_AutoTick(void);
         Port_QuickSave_AutoTick();
     }
+    {
+        /* The debug tab's infinite supplies (port_optional_stubs_3ds.c). */
+        extern void Port_Debug_InfiniteTick(void);
+        Port_Debug_InfiniteTick();
+    }
     VBlankIntr();
     {
         /* One game frame done: RetroAchievements reads the game's memory. */
