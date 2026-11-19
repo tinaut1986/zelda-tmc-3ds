@@ -795,6 +795,82 @@ static int32_t DrawHudNumber(const SSurf* s, int32_t xRight, int32_t y, int32_t 
     return x;
 }
 
+#ifdef TMC_3DS
+/* A counter's maximum as the top screen's HUD shows it in Full View (src/ui.c, RenderRupeeMax): "/300" in the
+ * HUD's 8x16 digits packed at their inked width, outlines shared, the slash drawn in their fill and outline
+ * colours. Starts at x; returns the right edge reached, or x when the digits are not loaded (the caller falls back). */
+static int32_t DrawHudMax(const SSurf* s, int32_t x, int32_t y, uint32_t value, int yellow) {
+    const SecondScreenThemeSprite* d[10];
+    for (int i = 0; i < 10; i++) {
+        d[i] = Port_SecondScreenTheme_Get((yellow ? SST_DIGIT_YELLOW_0 : SST_DIGIT_WHITE_0) + i);
+        if (d[i] == NULL || d[i]->px == NULL || d[i]->w != 8 || d[i]->h != 16) return x;
+    }
+    /* The digits' fill and outline: the commonest colour of inner pixels, and of pixels beside a clear one. */
+    uint32_t colours[16], inner[16], edge[16];
+    int used = 0, top = 16, bottom = -1;
+    for (int i = 0; i < 10; i++)
+        for (int py = 0; py < 16; py++)
+            for (int px = 0; px < 8; px++) {
+                const uint32_t c = d[i]->px[py * 8 + px];
+                if (c == 0) continue;
+                if (py < top) top = py;
+                if (py > bottom) bottom = py;
+                const int clear = px == 0 || px == 7 || py == 0 || py == 15 || !d[i]->px[py * 8 + px - 1] ||
+                                  !d[i]->px[py * 8 + px + 1] || !d[i]->px[(py - 1) * 8 + px] || !d[i]->px[(py + 1) * 8 + px];
+                int k = 0;
+                while (k < used && colours[k] != c) k++;
+                if (k == used) {
+                    if (used == 16) continue;
+                    colours[used] = c, inner[used] = 0, edge[used] = 0, used++;
+                }
+                (clear ? edge : inner)[k]++;
+            }
+    if (used == 0 || bottom - top < 4) return x;
+    int fi = 0, oi = 0;
+    for (int k = 1; k < used; k++) {
+        if (inner[k] > inner[fi]) fi = k;
+        if (edge[k] > edge[oi]) oi = k;
+    }
+    uint32_t slash[16][8];
+    memset(slash, 0, sizeof(slash));
+    for (int py = top + 1; py < bottom; py++)
+        slash[py][1 + (bottom - 1 - py) * 3 / (bottom - top - 2 > 0 ? bottom - top - 2 : 1)] = colours[fi];
+    for (int py = top; py <= bottom; py++)
+        for (int px = 0; px < 8; px++) {
+            if (slash[py][px] == colours[fi]) continue;
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dx = -1; dx <= 1; dx++) {
+                    const int ny = py + dy, nx = px + dx;
+                    if (ny >= 0 && ny < 16 && nx >= 0 && nx < 8 && slash[ny][nx] == colours[fi]) slash[py][px] = colours[oi];
+                }
+        }
+    char digits[12];
+    const int n = snprintf(digits, sizeof(digits), "%u", (unsigned)value);
+    int32_t cursor = x;
+    for (int g = 0; g <= n; g++) {
+        const uint32_t* px = g ? d[digits[g - 1] - '0']->px : NULL;
+        int left = 8, right = -1;
+        for (int cx = 0; cx < 8; cx++)
+            for (int cy = 0; cy < 16; cy++)
+                if (g ? px[cy * 8 + cx] : slash[cy][cx]) {
+                    if (cx < left) left = cx;
+                    if (cx > right) right = cx;
+                }
+        if (right < 0) continue;
+        if (g) cursor--; /* the shared outline column */
+        for (int cx = left; cx <= right; cx++, cursor++)
+            for (int cy = 0; cy < 16; cy++) {
+                const uint32_t c = g ? px[cy * 8 + cx] : slash[cy][cx];
+                const int32_t dy = y + cy;
+                if (c == 0 || cursor < 0 || cursor >= s->w || dy < 0 || dy >= s->h) continue;
+                uint32_t* dst = s->px + (size_t)dy * (size_t)s->stride + cursor;
+                if (c == colours[fi] || *dst != colours[fi]) *dst = c;
+            }
+    }
+    return cursor;
+}
+#endif
+
 /* Two-glyph ammo count in the HUD's small 8x8 font (tens glyph is
  * right-aligned in its tile, ones left-aligned — sub_0801C2F0's pair). */
 static void DrawAmmoCount(const SSurf* s, int32_t x, int32_t y, int32_t scale, uint32_t value) {

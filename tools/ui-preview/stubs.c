@@ -289,3 +289,11 @@ void RetroAch_SetEnabled(bool on) { (void)on; }
 void RetroAch_PromptLogin(void) {}
 void RetroAch_Logout(void) {}
 void RetroAch_ShowPreview(void) {}
+
+/* God mode and the infinite supplies (debug builds; port_optional_stubs_3ds.c on the console). */
+static int sGodMode;
+void Port_DebugAction_SetGodMode(int on) { sGodMode = on != 0; }
+int Port_Debug_GodModeEnabled(void) { return sGodMode; }
+static int sInfinite;
+void Port_DebugAction_SetInfinite(int on) { sInfinite = on != 0; }
+int Port_Debug_InfiniteEnabled(void) { return sInfinite; }

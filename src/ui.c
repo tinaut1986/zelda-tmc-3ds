@@ -538,6 +538,111 @@ void RecoverUI(u32 bottomPt, u32 topPt) {
     gHUD.unk_a = 0;
 }
 
+#if defined(TMC_3DS) && defined(MODE1_GBA_HEIGHT) && (MODE1_GBA_HEIGHT > 160)
+/* Full View's rupees as "287/300": the wallet's size after the count. The widget moves three columns left, 21..28,
+ * ending where it always did (the right eye's 3D shift cut column 29 off), and the 400 view's right band starts a
+ * column earlier for it (virtuappu_mode1_ws_hud_right_native_x, 168..239). The HUD's own 8x16 digits are
+ * packed at their inked width, outlines shared, and the slash is drawn in their colours; tiles 0x17a..0x17f, which
+ * nothing in the game uses (message lines end at 0xe9, cutscene text is BG1). */
+#define RUPEE_MAX_TILE 0x17a
+
+static bool RupeeMaxShown(void) {
+    return Port_Widescreen_HudTargetViewWidth() == 400 && Port_Widescreen_HudTargetViewHeight() == 240;
+}
+
+static u8 GlyphPixel(const u8* glyph, int x, int y) {
+    if (x < 0 || x > 7 || y < 0 || y > 15) {
+        return 0;
+    }
+    const u8 b = glyph[(y >> 3) * 0x20 + (y & 7) * 4 + (x >> 1)];
+    return (x & 1) ? b >> 4 : b & 15;
+}
+
+/* Writes the max into the three cells' six tiles; false if it does not fit in 24 pixels. */
+static bool RenderRupeeMax(u32 max, bool yellow) {
+    const u8* font = (const u8*)gUnk_085C4620 + (yellow ? 0x500 : 0x280);
+    static u8 canvas[16][24];
+    static u32 tiles[6 * 8];
+    u8 slash[16][8];
+    u32 counts[16] = { 0 }, edges[16] = { 0 };
+    int x, y, top = 16, bottom = -1;
+    /* The digits' fill and outline: the commonest colour of inner pixels, and of pixels beside a clear one. */
+    for (u32 d = 0; d < 10; d++) {
+        const u8* g = font + d * 0x40;
+        for (y = 0; y < 16; y++) {
+            for (x = 0; x < 8; x++) {
+                const u8 c = GlyphPixel(g, x, y);
+                if (c == 0) {
+                    continue;
+                }
+                if (y < top) top = y;
+                if (y > bottom) bottom = y;
+                const bool edge = !GlyphPixel(g, x - 1, y) || !GlyphPixel(g, x + 1, y) || !GlyphPixel(g, x, y - 1) ||
+                                  !GlyphPixel(g, x, y + 1);
+                (edge ? edges : counts)[c]++;
+            }
+        }
+    }
+    u32 fill = 1, outline = 1;
+    for (u32 c = 1; c < 16; c++) {
+        if (counts[c] > counts[fill]) fill = c;
+        if (edges[c] > edges[outline]) outline = c;
+    }
+    if (bottom - top < 4) {
+        return false;
+    }
+    /* The slash: one pixel of fill from the digits' bottom left to their top right, outlined. */
+    memset(slash, 0, sizeof(slash));
+    for (y = top + 1; y < bottom; y++) {
+        slash[y][1 + (bottom - 1 - y) * 3 / (bottom - top - 2 > 0 ? bottom - top - 2 : 1)] = (u8)fill;
+    }
+    for (y = top; y <= bottom; y++) {
+        for (x = 0; x < 8; x++) {
+            if (slash[y][x] == fill) continue;
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dx = -1; dx <= 1; dx++) {
+                    const int ny = y + dy, nx = x + dx;
+                    if (ny >= 0 && ny < 16 && nx >= 0 && nx < 8 && slash[ny][nx] == fill) slash[y][x] = (u8)outline;
+                }
+        }
+    }
+    /* Packed left to right, each glyph's first inked column over the last one of the glyph before. */
+    const u32 digits[3] = { max / 100 % 10, max / 10 % 10, max % 10 };
+    memset(canvas, 0, sizeof(canvas));
+    int cursor = 0;
+    for (int i = 0; i < 4; i++) {
+        const u8* g = i ? font + digits[i - 1] * 0x40 : NULL;
+        int left = 8, right = -1;
+        for (x = 0; x < 8; x++)
+            for (y = 0; y < 16; y++)
+                if (i ? GlyphPixel(g, x, y) : slash[y][x]) {
+                    if (x < left) left = x;
+                    if (x > right) right = x;
+                }
+        if (right < 0) continue;
+        if (cursor > 0) cursor--; /* the shared outline column */
+        if (cursor + (right - left) >= 24) return false;
+        for (x = left; x <= right; x++, cursor++)
+            for (y = 0; y < 16; y++) {
+                const u8 c = i ? GlyphPixel(g, x, y) : slash[y][x];
+                if (c != 0 && (canvas[y][cursor] == 0 || c == fill)) canvas[y][cursor] = c;
+            }
+    }
+    /* Into 4bpp tiles in RenderDigits' order: each cell's top tile, then its bottom one. */
+    u8* out = (u8*)tiles;
+    memset(tiles, 0, sizeof(tiles));
+    for (int cell = 0; cell < 3; cell++)
+        for (int half = 0; half < 2; half++)
+            for (y = 0; y < 8; y++)
+                for (x = 0; x < 8; x++) {
+                    const u8 c = canvas[half * 8 + y][cell * 8 + x];
+                    out[(cell * 2 + half) * 0x20 + y * 4 + (x >> 1)] |= (x & 1) ? (u8)(c << 4) : c;
+                }
+    DmaCopy32(3, tiles, 0x600c000 + RUPEE_MAX_TILE * 0x20, sizeof(tiles));
+    return true;
+}
+#endif
+
 void DrawRupees(void) {
     u32 cVar1;
     u32 temp;
@@ -546,10 +651,32 @@ void DrawRupees(void) {
     u16* row2;
     static s32 sTilemapOffset;
     s32 tilemapOffset = HudBottomTilemapOffset();
+#if defined(TMC_3DS) && defined(MODE1_GBA_HEIGHT) && (MODE1_GBA_HEIGHT > 160)
+    /* With the max the widget starts three columns left (RenderRupeeMax); a change of layout or wallet repaints. */
+    static s32 sLayout = 0;
+    const s32 layout = RupeeMaxShown() ? 4 + (gSave.stats.walletType & 3) : 0;
+    if (layout != 0) {
+        tilemapOffset -= 3;
+    }
+    if (layout != sLayout) {
+        MemClear(&gBG0Buffer[0x258 + sTilemapOffset], (sLayout != 0 ? 8 : 5) * sizeof(u16));
+        MemClear(&gBG0Buffer[0x278 + sTilemapOffset], (sLayout != 0 ? 8 : 5) * sizeof(u16));
+        sLayout = layout;
+        sTilemapOffset = tilemapOffset;
+        gHUD.unk_a = 0;
+        gScreen.bg0.updated = 1;
+    }
+#endif
 
     if (tilemapOffset != sTilemapOffset) {
         MemClear(&gBG0Buffer[0x258 + sTilemapOffset], 5 * sizeof(u16));
         MemClear(&gBG0Buffer[0x278 + sTilemapOffset], 5 * sizeof(u16));
+#if defined(TMC_3DS) && defined(MODE1_GBA_HEIGHT) && (MODE1_GBA_HEIGHT > 160)
+        if (sLayout != 0) {
+            MemClear(&gBG0Buffer[0x258 + 5 + sTilemapOffset], 3 * sizeof(u16));
+            MemClear(&gBG0Buffer[0x278 + 5 + sTilemapOffset], 3 * sizeof(u16));
+        }
+#endif
         sTilemapOffset = tilemapOffset;
         gHUD.unk_a = 0;
         gScreen.bg0.updated = 1;
@@ -570,6 +697,12 @@ void DrawRupees(void) {
             row2[2] = 0;
             row2[3] = 0;
             row2[4] = 0;
+#if defined(TMC_3DS) && defined(MODE1_GBA_HEIGHT) && (MODE1_GBA_HEIGHT > 160)
+            if (layout != 0) {
+                MemClear(&row1[5], 3 * sizeof(u16));
+                MemClear(&row2[5], 3 * sizeof(u16));
+            }
+#endif
             gScreen.bg0.updated = 1;
         }
     } else {
@@ -588,6 +721,15 @@ void DrawRupees(void) {
             row2[3] = temp2 + 3;
             row1[4] = temp2 + 4;
             row2[4] = temp2 + 5;
+#if defined(TMC_3DS) && defined(MODE1_GBA_HEIGHT) && (MODE1_GBA_HEIGHT > 160)
+            if (layout != 0) {
+                const bool fits = RenderRupeeMax(gWalletSizes[gSave.stats.walletType & 3].size, false);
+                for (u32 cell = 0; cell < 3; cell++) {
+                    row1[5 + cell] = fits ? (u16)(0xf000 | (RUPEE_MAX_TILE + cell * 2)) : 0;
+                    row2[5 + cell] = fits ? (u16)(0xf000 | (RUPEE_MAX_TILE + cell * 2 + 1)) : 0;
+                }
+            }
+#endif
             gScreen.bg0.updated = 1;
             cVar1 = 1;
         } else {

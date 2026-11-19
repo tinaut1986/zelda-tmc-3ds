@@ -2924,6 +2924,7 @@ void Port_Widescreen_UpdateShadows(void) {
     }
 #endif
     virtuappu_mode1_ws_hud_right_anchor = 0;
+    virtuappu_mode1_ws_hud_right_native_x = MODE1_WS_HUD_RIGHT_NATIVE_X;
     virtuappu_mode1_ws_msg_shift = 0;
     virtuappu_mode1_ws_full_view = 0;
     Port_WidescreenPublish3DSView(roomKey, PORT_3DS_FULL_VIEW_FALLBACK);
@@ -3158,6 +3159,11 @@ void Port_Widescreen_UpdateShadows(void) {
         virtuappu_mode1_ws_msg_shift = (Port_Widescreen_EffectiveViewWidth() - 240) / 2;
     }
     virtuappu_mode1_ws_hud_right_anchor = Port_Widescreen_HudRightAnchor();
+    /* Full View's rupees with the wallet's size reach a column further left (src/ui.c, DrawRupees). */
+    virtuappu_mode1_ws_hud_right_native_x =
+        Port_Widescreen_HudTargetViewWidth() == 400 && Port_Widescreen_HudTargetViewHeight() == 240
+            ? MODE1_WS_HUD_RIGHT_NATIVE_X - 8
+            : MODE1_WS_HUD_RIGHT_NATIVE_X;
 }
 #else
 void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
