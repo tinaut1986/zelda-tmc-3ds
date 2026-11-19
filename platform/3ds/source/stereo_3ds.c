@@ -14,7 +14,7 @@
 extern bool Port_Config_Stereo3D(void);
 extern int Port_Stereo_Scenes(void); /* PORT_STEREO_SCENE_* of port_widescreen.h */
 extern int Port_Config_StereoWorldDepth(int which); /* 0: the layer over the playfield (BG1), 1: sprites (not the HUD's) */
-enum { SCENE_TITLE_RAYS = 1, SCENE_LIGHT_RAYS = 2, SCENE_PATH_LEAVES = 4, SCENE_FILE_SELECT = 8, SCENE_LOGOS = 16, SCENE_MAP_HINT = 32, SCENE_GAME_OVER = 64, SCENE_WORLD = 128 };
+enum { SCENE_TITLE_RAYS = 1, SCENE_LIGHT_RAYS = 2, SCENE_PATH_LEAVES = 4, SCENE_FILE_SELECT = 8, SCENE_LOGOS = 16, SCENE_MAP_HINT = 32, SCENE_GAME_OVER = 64, SCENE_WORLD = 128, SCENE_RAIN = 256 };
 
 /* Pixels at the full slider, by layer (BG0..BG3, OBJ) and priority (docs/stereo-3d.md). In front of
  * the screen: BG0 at priority 0, the HUD and the text boxes, and the sprites at priority 0, the HUD's
@@ -31,7 +31,10 @@ static const signed char kDepth[5][4] = {
  * and the stone panel behind them. */
 enum { GAME_OVER_TEXT_DEPTH = 10, GAME_OVER_CHOICES_DEPTH = 6, GAME_OVER_PANEL_DEPTH = 3 };
 enum { MAP_HINT_BACK_DEPTH = 0, MAP_HINT_MAP_DEPTH = 2, MAP_HINT_MARKER_DEPTH = 5 };
-enum { RAYS_DEPTH = 4, LEAVES_DEPTH = 4, TITLE_FRONT_DEPTH = 8, FILE_SELECT_OBJ_DEPTH = 4, FILE_SELECT_PANEL_DEPTH = 2 };
+/* The layers over the world (fog, sun rays, the paths' leaves, the rain) at the HUD's 6: the world's sprites reach 5
+ * (a tall one, the Crenel's mushrooms), and at 4 they stood level with them (owner, 2026-11-19). The HUD is the layer
+ * of highest priority, so it stays drawn over them. */
+enum { RAYS_DEPTH = 6, LEAVES_DEPTH = 6, TITLE_FRONT_DEPTH = 8, FILE_SELECT_OBJ_DEPTH = 4, FILE_SELECT_PANEL_DEPTH = 2 };
 
 static bool sActive;
 static bool sHasDepth;
@@ -91,6 +94,8 @@ static int DepthFor(int scenes, unsigned layer, unsigned priority) {
         ((scenes & SCENE_LIGHT_RAYS) && layer == PPU_GPU3DS_BG3 && priority == 0))
         depth = RAYS_DEPTH;
     if ((scenes & SCENE_PATH_LEAVES) && layer == PPU_GPU3DS_BG1 && priority == 1) depth = LEAVES_DEPTH;
+    /* Mount Crenel's rain (BG1 at priority 1) hangs where the fog and the sun rays do, behind the HUD. */
+    if ((scenes & SCENE_RAIN) && layer == PPU_GPU3DS_BG1 && priority == 1) depth = RAYS_DEPTH;
     /* On the title the logo (sprites) and the sword (BG2 at priority 1) are drawn in front of the rays,
      * so they hang in front of them too (owner, 2026-10-17). */
     if ((scenes & SCENE_TITLE_RAYS) && (layer == PPU_GPU3DS_OBJ || (layer == PPU_GPU3DS_BG2 && priority == 1)))
@@ -119,6 +124,10 @@ static int DepthFor(int scenes, unsigned layer, unsigned priority) {
         else if (layer == PPU_GPU3DS_BG1 || layer == PPU_GPU3DS_BG2) depth = GAME_OVER_PANEL_DEPTH;
     }
     return depth;
+}
+
+bool Stereo3DS_LayerSeeThrough(unsigned layer, unsigned priority) {
+    return (sScenes & SCENE_RAIN) && layer == PPU_GPU3DS_BG1 && priority == 1;
 }
 
 int Stereo3DS_LayerDepth(unsigned layer, unsigned priority) {

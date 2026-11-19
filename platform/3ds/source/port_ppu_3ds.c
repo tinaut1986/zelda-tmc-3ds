@@ -350,7 +350,11 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     if (view->objSupport) {
         for (unsigned bg = 1; bg < 4; ++bg)
             for (unsigned priority = 0; priority < 4; ++priority) {
-                const int depth = Stereo3DS_LayerDepth(PPU_GPU3DS_BG0 + bg, priority);
+                /* Nothing rests on a layer that is mostly holes (the rain): a sprite took its depth whenever a
+                 * streak passed behind one of its tiles, and jumped between the ground and the rain every few frames. */
+                const int depth = Stereo3DS_LayerSeeThrough(PPU_GPU3DS_BG0 + bg, priority)
+                                      ? 0
+                                      : Stereo3DS_LayerDepth(PPU_GPU3DS_BG0 + bg, priority);
                 view->bgDepthQ[bg][priority] = (uint8_t)(depth > 0 ? (depth > 30 ? 30 : depth) * 4 : 0);
             }
     }

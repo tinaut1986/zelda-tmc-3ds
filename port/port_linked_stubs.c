@@ -1618,6 +1618,11 @@ int Port_Stereo_Scenes(void) {
     /* The game over screen (src/gameOverTask.c): the stone panel and its choices are BGs, the GAME OVER
      * letters are sprites. */
     if (gMain.task == TASK_GAMEOVER) scenes |= PORT_STEREO_SCENE_GAME_OVER;
+    /* Mount Crenel's storm (WeatherChangeManager): the rain is BG1 at screen base 29, priority 1, in place of the
+     * top map layer. */
+    if (gRoomControls.area == AREA_MT_CRENEL && gMapTop.bgSettings == NULL && (dispcnt & DISPCNT_BG1_ON) &&
+        (gScreen.bg1.control & 0x1f03) == (BGCNT_SCREENBASE(29) | BGCNT_PRIORITY(1)))
+        scenes |= PORT_STEREO_SCENE_RAIN;
     /* Playing: the world itself (stereo_world_* in tmc3ds.ini). The layer over Link and his sprites stand out
      * of the ground, which stays on the screen plane. */
     if (gMain.task == TASK_GAME && gMain.substate == GAMEMAIN_UPDATE) scenes |= PORT_STEREO_SCENE_WORLD;
