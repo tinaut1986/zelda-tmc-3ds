@@ -5,6 +5,8 @@
 #include "port_tts.h"
 #include "main.h"
 #include "save.h"
+#include "item.h"
+#include "player.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -29,6 +31,23 @@ int Port_Debug_NoclipEnabled(void) { return 0; }
 static bool sGodMode;
 void Port_DebugAction_SetGodMode(int on) { sGodMode = on != 0; }
 int Port_Debug_GodModeEnabled(void) { return sGodMode ? 1 : 0; }
+
+/* Infinite supplies (debug builds, the button beside god mode): while on, every game tick puts the rupees, the
+ * shells and the bombs and arrows the player can use at their maximum (the wallet's, the bag's, the quiver's).
+ * In memory, off at boot; called from VBlankIntrWait, the game's thread. */
+static bool sInfinite;
+void Port_DebugAction_SetInfinite(int on) { sInfinite = on != 0; }
+int Port_Debug_InfiniteEnabled(void) { return sInfinite ? 1 : 0; }
+
+void Port_Debug_InfiniteTick(void) {
+    if (!sInfinite || gMain.task != TASK_GAME) return;
+    gSave.stats.rupees = gWalletSizes[gSave.stats.walletType & 3].size;
+    gSave.stats.shells = 999;
+    if (GetInventoryValue(ITEM_BOMBS) || GetInventoryValue(ITEM_REMOTE_BOMBS))
+        gSave.stats.bombCount = gBombBagSizes[gSave.stats.bombBagType & 3];
+    if (GetInventoryValue(ITEM_BOW) || GetInventoryValue(ITEM_LIGHT_ARROW))
+        gSave.stats.arrowCount = gQuiverSizes[gSave.stats.quiverType & 3];
+}
 
 static uint64_t sNextAutosaveMs;
 

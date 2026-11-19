@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A scene's extension picture as the game reads it from the SD card (docs/wide-scene-extension.md).
 
-    to_console.py SCENE PICTURE.png [OUT.bin] [--ip IP]
+    to_console.py SCENE PICTURE.png [OUT.bin] [--ip IP] [--raw | --lz77]
 
 SCENE      portal: the Minish portal cutscene, PICTURE 400x320, the original at x 80..335;
                    writes portal-cutscene-strips.bin (its 80 columns left and 64 right, 144x320)
@@ -12,6 +12,22 @@ SCENE      portal: the Minish portal cutscene, PICTURE 400x320, the original at 
                    repeat), its rock ledges (BG1, 400x960) and their shadows (BG3, 400x960); writes
                    crenel-paths-{ground,ledges,shadows}.bin, only the 80 columns each side of the room (160 wide),
                    0 where empty
+           crenel-rocks-ground: the ground beside Crenel's second vertical path (area 0x12 room 01), 400x179: room rows
+                   0-114 (the meadow) and one 64-row turn of the wall, which the game repeats; writes crenel-rocks-ground.bin
+           crenel-hpath-ground, -rocks, -shadows: Crenel's horizontal Minish path (area 0x12 room 02, 800x192), drawn
+                   above and below the room: the ground 64x96 (48 rows above the room, then 48 below; one turn of the
+                   wall's 64-column repeat), the rocks (BG1) and their shadows (BG3) 1024x96 (the layer's rows
+                   -32..15, the small stalactites' continuation above their cut, then rows 208-255, the stalagmites'
+                   below theirs), 0 where empty. crenel-hpath-03-*: the next room (0x12/03), the same layers in its
+                   palettes (the pictures above with each colour moved to the same palette entry of that room's)
+           minish-leaves, minish-shadows: the Minish Paths' grass corridor (area 0x11, the vertical one), the 240-wide
+                   layer at x 80 of a 400x1024 PICTURE: its leaves (BG1) and their shadows (BG3); writes
+                   minish-paths-{leaves,shadows}.bin, the 80 columns each side (160 wide), 0 where empty
+           minish-water-ground: the stalks beside the Minish Paths' water corridor (area 0x11 room 01), 400x64: room rows
+                   0-63, repeated by the game; writes minish-water-ground.bin (160x64). minish-water-leaves and
+                   -shadows: its BG1 and BG3, as minish-leaves
+           minish-town-leaves, -town-shadows, -ranch-shadows, -cabin-leaves, -cabin-shadows: rooms 02-04's BG1 and
+                   BG3, as minish-leaves (02 and 03 share the leaves); writes the file of the scene's name
            title:  the title screen's forest, PICTURE 400x240, the original at 80,40 (240x160);
                    writes title-forest.bin (the whole 400x240; the centre is not drawn)
            fileselect: the file select screen's cave (BG3), PICTURE 400x240, the original at
@@ -25,8 +41,12 @@ PICTURE    the AI's extension, whole or with the original area transparent (as k
 --palettes DUMP-palettes.bin   (fileselect) the palettes of a screen dump of the file select
            screen, to map the picture's colours to palette indices
 --ip IP    upload it into the data folder over the game's FTP server (port 5000).
+--raw      write the picture as it is; by default it is a zlib stream (level 9). The game reads either
+           (ScenePictures_ReadFile), and the GBA BIOS's LZ77 too:
+--lz77     compress in the GBA BIOS's LZ77 format instead (0x10 and the size, then flag bytes and literals or
+           back-copies; about 2.7 times zlib's size), should the build ever lose zlib.
 
-The portal and title files are RGB565, little endian, row by row. Without one the game shows
+The portal and title pictures are RGB565, little endian, row by row (then compressed with zlib, unless --raw). Without one the game shows
 black there (the file select: the plain bars).
 """
 import argparse
@@ -34,6 +54,7 @@ import ftplib
 import io
 import struct
 import sys
+import zlib
 
 from PIL import Image
 
@@ -44,6 +65,23 @@ SCENES = {
     'crenel-ground': ((400, 352), list(range(0, 80)) + list(range(320, 400)), 'crenel-paths-ground.bin'),
     'crenel-ledges': ((400, 960), list(range(0, 80)) + list(range(320, 400)), 'crenel-paths-ledges.bin'),
     'crenel-shadows': ((400, 960), list(range(0, 80)) + list(range(320, 400)), 'crenel-paths-shadows.bin'),
+    'crenel-rocks-ground': ((400, 179), list(range(0, 80)) + list(range(320, 400)), 'crenel-rocks-ground.bin'),
+    'crenel-hpath-ground': ((64, 96), None, 'crenel-hpath-ground.bin'),
+    'crenel-hpath-rocks': ((1024, 96), None, 'crenel-hpath-rocks.bin'),
+    'crenel-hpath-shadows': ((1024, 96), None, 'crenel-hpath-shadows.bin'),
+    'crenel-hpath-03-ground': ((64, 96), None, 'crenel-hpath-03-ground.bin'),
+    'crenel-hpath-03-rocks': ((1024, 96), None, 'crenel-hpath-03-rocks.bin'),
+    'crenel-hpath-03-shadows': ((1024, 96), None, 'crenel-hpath-03-shadows.bin'),
+    'minish-leaves': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-paths-leaves.bin'),
+    'minish-shadows': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-paths-shadows.bin'),
+    'minish-water-leaves': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-water-leaves.bin'),
+    'minish-water-shadows': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-water-shadows.bin'),
+    'minish-water-ground': ((400, 64), list(range(0, 80)) + list(range(320, 400)), 'minish-water-ground.bin'),
+    'minish-town-leaves': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-town-leaves.bin'),
+    'minish-town-shadows': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-town-shadows.bin'),
+    'minish-ranch-shadows': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-ranch-shadows.bin'),
+    'minish-cabin-leaves': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-cabin-leaves.bin'),
+    'minish-cabin-shadows': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-cabin-shadows.bin'),
     'title': ((400, 240), None, 'title-forest.bin'),
     'fileselect': ((400, 240), None, 'fileselect-cave.bin'),
 }
@@ -89,6 +127,67 @@ def convert_indexed(path, palettes):
     return bytes(out)
 
 
+def lz77(data):
+    """The GBA BIOS's LZ77 (LZ77UnCompWram): copies of 3-18 bytes from up to 4096 back, padded to 4 bytes."""
+    out = bytearray([0x10, len(data) & 255, (len(data) >> 8) & 255, (len(data) >> 16) & 255])
+    last = {}  # the latest positions of each 3-byte sequence, newest first
+    i, n = 0, len(data)
+    while i < n:
+        flag_at = len(out)
+        out.append(0)
+        for bit in range(8):
+            if i >= n:
+                break
+            best_len = best_back = 0
+            for j in last.get(data[i:i + 3], ()):
+                if i - j > 4096:
+                    break
+                length = 0
+                while length < 18 and i + length < n and data[j + length] == data[i + length]:
+                    length += 1
+                if length > best_len:
+                    best_len, best_back = length, i - j
+                    if length == 18:
+                        break
+            step = best_len if best_len >= 3 else 1
+            if best_len >= 3:
+                out[flag_at] |= 0x80 >> bit
+                d = best_back - 1
+                out += bytes([((best_len - 3) << 4) | (d >> 8), d & 255])
+            else:
+                out.append(data[i])
+            for k in range(i, i + step):
+                if k + 3 <= n:
+                    chain = last.setdefault(data[k:k + 3], [])
+                    chain.insert(0, k)
+                    del chain[64:]
+            i += step
+    while len(out) % 4:
+        out.append(0)
+    return bytes(out)
+
+
+def unlz77(data):
+    size = data[1] | data[2] << 8 | data[3] << 16
+    out = bytearray()
+    i = 4
+    while len(out) < size:
+        flags = data[i]
+        i += 1
+        for bit in range(8):
+            if len(out) >= size:
+                break
+            if flags & (0x80 >> bit):
+                length, back = (data[i] >> 4) + 3, ((data[i] & 15) << 8 | data[i + 1]) + 1
+                i += 2
+                for _ in range(length):
+                    out.append(out[-back])
+            else:
+                out.append(data[i])
+                i += 1
+    return bytes(out[:size])
+
+
 def convert(scene, path):
     size, columns, _ = SCENES[scene]
     im = Image.open(path).convert('RGB')
@@ -111,6 +210,8 @@ def main():
     ap.add_argument('out', nargs='?')
     ap.add_argument('--ip')
     ap.add_argument('--palettes')
+    ap.add_argument('--raw', action='store_true')
+    ap.add_argument('--lz77', action='store_true')
     args = ap.parse_args()
     name = SCENES[args.scene][2]
     if args.scene == 'fileselect':
@@ -119,6 +220,13 @@ def main():
         data = convert_indexed(args.picture, args.palettes)
     else:
         data = convert(args.scene, args.picture)
+    if args.lz77:
+        packed = lz77(data)
+        if unlz77(packed) != data:
+            sys.exit('LZ77 round trip failed')
+        data = packed
+    elif not args.raw:
+        data = zlib.compress(data, 9)
     out = args.out or name
     with open(out, 'wb') as f:
         f.write(data)

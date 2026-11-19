@@ -388,7 +388,12 @@ int Port_NeighbourRooms_DrawnRects(PortBlurRect* out, int max, int scrollX, int 
  * The top layer gets now and then one of the room's own loose decorations (the stones on its grass: small top-layer
  * metatiles with nothing beside them), by a hash of the cell, so they stay put while the camera moves and come back
  * the same. For now only in the rooms of kBorderRooms (tried in the Minish caves' first room). */
-static const struct { u8 area, room; } kBorderRooms[] = { { 0x35, 0 } };
+static const struct { u8 area, room, flat; } kBorderRooms[] = {
+    { 0x35, 0, 0 },
+    /* Rooms of a cave drawn on a flat shelf of yellow-orange earth: the fill is that earth (BuildFlatBorder). */
+    { 0x26, 0x0C, 1 },
+    { 0x26, 0x0D, 1 },
+};
 enum { BORDER_LEFT, BORDER_RIGHT, BORDER_TOP, BORDER_BOTTOM, BORDER_DECOR_MAX = 16 };
 static struct {
     u32 key;
@@ -396,6 +401,9 @@ static struct {
     uint16_t base;
     uint8_t side[4]; /* which sides are filled */
     uint16_t decor[BORDER_DECOR_MAX]; /* top-layer metatiles */
+    uint16_t alt[8]; /* bottom metatiles like the base, for variety */
+    unsigned altCount;
+    int flat; /* the fill is on the top layer only (BuildFlatBorder) */
     unsigned decorCount;
     unsigned densityQ; /* chance (of 256) that a cell holds a decoration */
     int metaW, metaH;
@@ -437,17 +445,88 @@ static void MetaColours(const MapLayer* layer, uint16_t meta, uint8_t out[256]) 
     }
 }
 
+/* The flat earth of a cave's shelf (owner, 2026-10-30: the sides of area 0x26's caves are yellow-orange floor with a few
+ * pebbles, not rim). The shelf is on the top layer (BG1): the base is the flat top-layer metatile (92 % of its pixels one
+ * colour) the room has most; the pebbles are the room's other top-layer metatiles that are nearly that colour (88 %), now
+ * and then one of them in place of the base. Every side is filled, on the top layer only. */
+static void BuildFlatBorder(int w, int h) {
+    enum { KINDS = 128 };
+    uint16_t seen[KINDS];
+    unsigned count[KINDS], kinds = 0;
+    uint8_t dom[KINDS];
+    uint8_t flatTile[KINDS];
+    if (gMapTop.bgSettings == NULL) return;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const uint16_t m = BorderMeta(&gMapTop, x, y);
+            if (m == NO_TILE || m == 0) continue;
+            unsigned i = 0;
+            while (i < kinds && seen[i] != m) ++i;
+            if (i == kinds) {
+                if (kinds == KINDS) continue;
+                uint8_t col[256];
+                unsigned hist[256] = { 0 }, opaque = 0, top = 0;
+                MetaColours(&gMapTop, m, col);
+                for (unsigned k = 0; k < 256; ++k)
+                    if (col[k]) {
+                        ++hist[col[k]];
+                        ++opaque;
+                    }
+                for (unsigned c = 1; c < 256; ++c)
+                    if (hist[c] > hist[top]) top = c;
+                seen[kinds] = m;
+                dom[kinds] = (uint8_t)top;
+                flatTile[kinds] = opaque >= 256 && hist[top] * 100 >= 92u * opaque;
+                count[kinds] = 0;
+                ++kinds;
+            }
+            ++count[i];
+        }
+    int best = -1;
+    for (unsigned i = 0; i < kinds; ++i)
+        if (flatTile[i] && (best < 0 || count[i] > count[best])) best = (int)i;
+    if (best < 0) return;
+    sBorder.base = seen[best];
+    sBorder.altCount = 0;
+    sBorder.decorCount = 0;
+    sBorder.densityQ = 0;
+    for (unsigned i = 0; i < kinds && sBorder.altCount < 8; ++i) {
+        if ((int)i == best) continue;
+        uint8_t col[256];
+        unsigned same = 0, opaque = 0;
+        MetaColours(&gMapTop, seen[i], col);
+        for (unsigned k = 0; k < 256; ++k) {
+            opaque += col[k] != 0;
+            same += col[k] && gPaletteBuffer[col[k]] == gPaletteBuffer[dom[best]];
+        }
+        if (opaque >= 256 && same * 100 >= 80u * opaque) sBorder.alt[sBorder.altCount++] = seen[i];
+    }
+    for (int s = 0; s < 4; ++s) sBorder.side[s] = 1;
+    sBorder.flat = 1;
+    sBorder.on = 1;
+    DebugLog_Printf("border: flat on the top layer, area %u room %u base %u, %u pebble tiles", gRoomControls.area,
+                    gRoomControls.room, sBorder.base, sBorder.altCount);
+}
+
 static void BuildBorder(void) {
     sBorder.key = RoomKey();
     sBorder.on = 0;
+    sBorder.flat = 0;
     sBorder.decorCount = 0;
-    int listed = 0;
+    int listed = 0, flat = 0;
     for (unsigned i = 0; i < sizeof(kBorderRooms) / sizeof(kBorderRooms[0]); ++i)
-        if (kBorderRooms[i].area == gRoomControls.area && kBorderRooms[i].room == gRoomControls.room) listed = 1;
+        if (kBorderRooms[i].area == gRoomControls.area && kBorderRooms[i].room == gRoomControls.room) {
+            listed = 1;
+            flat = kBorderRooms[i].flat;
+        }
     const int w = gRoomControls.width / 16, h = gRoomControls.height / 16;
     if (!listed || w < 2 || h < 2 || w > MAP_STRIDE || h > MAP_STRIDE) return;
     sBorder.metaW = w;
     sBorder.metaH = h;
+    if (flat) {
+        BuildFlatBorder(w, h);
+        return;
+    }
     /* The base: the commonest bottom metatile of the outermost columns and rows. */
     uint16_t seen[96];
     unsigned counts[96], kinds = 0;
@@ -468,10 +547,24 @@ static void BuildBorder(void) {
         }
     }
     if (kinds == 0) return;
-    unsigned best = 0;
-    for (unsigned i = 1; i < kinds; ++i)
-        if (counts[i] > counts[best]) best = i;
+    /* The commonest metatile that is not a near-black one (a room's outermost cells can hold blank or dark tiles). */
+    unsigned best = kinds;
+    for (unsigned i = 0; i < kinds; ++i) {
+        uint8_t col[256];
+        MetaColours(&gMapBottom, seen[i], col);
+        unsigned lum = 0, n = 0;
+        for (unsigned k = 0; k < 256; ++k) {
+            if (!col[k]) continue;
+            const uint16_t c = gPaletteBuffer[col[k]];
+            lum += (c & 31u) + (c >> 5 & 31u) + (c >> 10 & 31u);
+            ++n;
+        }
+        if (n < 128 || lum / n < 3u * 9u) continue;
+        if (best == kinds || counts[i] > counts[best]) best = i;
+    }
+    if (best == kinds) return;
     sBorder.base = seen[best];
+    sBorder.altCount = 0;
     /* A side is filled when a third of its outermost line is grass: metatiles with 85 % of their pixels in the base's
      * colours (the base itself, and grass with the edge of a hedge in it). */
     uint8_t colours[256], isBase[256] = { 0 };
@@ -524,8 +617,8 @@ static void BuildBorder(void) {
     if (sBorder.decorCount && q < 16) q = 16;
     sBorder.densityQ = q > 42 ? 42 : q;
     sBorder.on = 1;
-    DebugLog_Printf("border: area %u room %u base %u, sides %u%u%u%u, %u stones of %u kinds on %u base cells, density %u/256",
-                    gRoomControls.area, gRoomControls.room, sBorder.base, sBorder.side[0], sBorder.side[1],
+    DebugLog_Printf("border: %u alt; area %u room %u base %u, sides %u%u%u%u, %u stones of %u kinds on %u base cells, density %u/256",
+                    sBorder.altCount, gRoomControls.area, gRoomControls.room, sBorder.base, sBorder.side[0], sBorder.side[1],
                     sBorder.side[2], sBorder.side[3], decorCells, sBorder.decorCount, baseCells, sBorder.densityQ);
 }
 
@@ -537,6 +630,18 @@ static uint16_t BorderTile(int topLayer, int column, int row, uint16_t blank) {
                        (mx >= 0 && mx < sBorder.metaW &&
                         ((my < 0 && sBorder.side[BORDER_TOP]) || (my >= sBorder.metaH && sBorder.side[BORDER_BOTTOM])));
     if (!filled) return blank;
+    if (sBorder.flat) {
+        if (!topLayer) return blank;
+        uint16_t meta = sBorder.base;
+        if (sBorder.altCount) {
+            u32 h = (u32)mx * 0x7FEB352Du ^ (u32)my * 0x846CA68Bu ^ sBorder.key * 0x9E3779B1u;
+            h ^= h >> 16;
+            h *= 0x45D9F3Bu;
+            h ^= h >> 13;
+            if ((h & 255u) < 20) meta = sBorder.alt[(h >> 8) % sBorder.altCount];
+        }
+        return gMapTop.subTiles[meta * 4 + (row & 1) * 2 + (column & 1)];
+    }
     if (!topLayer) return gMapBottom.subTiles[sBorder.base * 4 + (row & 1) * 2 + (column & 1)];
     if (!sBorder.decorCount || gMapTop.bgSettings == NULL) return blank;
     u32 hsh = (u32)mx * 0x9E3779B1u ^ (u32)my * 0x85EBCA77u ^ sBorder.key * 0xC2B2AE3Du;

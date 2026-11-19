@@ -128,7 +128,11 @@ void Port_SecondScreenState_Publish(void) {
          * stale tap from a previous save can't equip something Link
          * doesn't own. */
         if (equipItem != 0 && GetInventoryValue(equipItem) == 1) {
+#ifdef TMC_3DS
+            Port_EquipButton(equipSlot < 4 ? equipSlot : 0, equipItem); /* A, B, X, Y */
+#else
             ForceEquipItem(equipItem, equipSlot ? EQUIP_SLOT_B : EQUIP_SLOT_A);
+#endif
         }
 
         if (!keepMapContext) {

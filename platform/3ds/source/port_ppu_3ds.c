@@ -216,7 +216,7 @@ static TopFrameState SelectTopFrame(void) {
     if (requested == PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
         MODE1_GBA_WIDTH >= 400 && MODE1_GBA_HEIGHT >= 240 &&
         (Port_Widescreen_ShadowsLive() || Port_Widescreen_CutsceneViewLive() || Port_Widescreen_TitleViewLive() ||
-         Port_Widescreen_FileSelectViewLive())) {
+         Port_Widescreen_FileSelectViewLive() || Port_Widescreen_PauseViewLive())) {
         state.width = 400;
         state.height = 240;
         state.validSourceWidth = 400;
@@ -252,9 +252,20 @@ static TopFrameState SelectTopFrame(void) {
 /* The frame being built is the file select at 400x240 (Port_Widescreen_FileSelectViewLive): its four
  * BGs in the middle, the cave's extension (PortPpuGpu3DS_SetIndexedPicture) as BG3 around them. */
 static bool sFileSelectFrame;
-/* The frame being built shows the Crenel paths' shaft with its strips (ScenePictures_ShaftView): the BGs they are
+/* Or the pause menu at 400x240 (Port_Widescreen_PauseViewLive): its BGs in the middle, its background's extension
+ * (made from the game's own, ScenePictures_PauseIndices) as BG3 around them. */
+static bool sPauseFrame;
+/* The frame being built shows a vertical Minish path (the Crenel paths' shaft, the grass corridor) with its strips
+ * (ScenePictures_ShaftView): the BGs they are
  * drawn as (bits), the left strip's left edge on the frame and each layer's top, rows and loop. */
 static uint8_t sShaftMask;
+/* Crenel's horizontal Minish path: per BG its bands' picture width, the view column of its column 0, and each band's top
+ * row on the view and rows (ScenePictures_RowView). */
+static uint8_t sRowMask;
+/* The BGs whose blend multiplies while those rooms are shown in Full View (with or without the bands): their shadows. */
+static uint8_t sRowMultiplyMask;
+static int16_t sRowX[4], sRowBandY[4][2];
+static uint16_t sRowWidth[4], sRowBandRows[4][2];
 static int16_t sShaftX, sShaftY[4];
 static uint16_t sShaftHeight[4], sShaftLoopStart[4], sShaftLoopLength[4];
 
@@ -285,13 +296,25 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
             view->fadeLevel = level;
         }
     }
+    /* A room narrower than the view whose sides take the colour of the room's rim: the backdrop is that palette
+     * entry (a copy of the palettes with colour 0 replaced, as the sides are all the backdrop shows). */
+    if (sTopPresentMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X) {
+        extern int Port_Widescreen_BackdropFill(void);
+        static uint16_t sBackdropPalette[256];
+        const int fill = Port_Widescreen_BackdropFill();
+        if (fill >= 0 && fill < 256 && view->memory.bg_palette != NULL) {
+            memcpy(sBackdropPalette, view->memory.bg_palette, sizeof(sBackdropPalette));
+            sBackdropPalette[0] = sBackdropPalette[fill];
+            view->memory.bg_palette = sBackdropPalette;
+        }
+    }
     view->ioPerLine = &sGpuIoPerLine[0][0];
     view->dispcntPerLine = sGpuDispcntPerLine;
     view->affineRefX = sGpuAffRefX;
     view->affineRefY = sGpuAffRefY;
     view->wsCols = MODE1_WS_SHADOW_COLS;
     view->wsHudRightAnchor = virtuappu_mode1_ws_hud_right_anchor;
-    view->wsHudRightNativeX = MODE1_WS_HUD_RIGHT_NATIVE_X;
+    view->wsHudRightNativeX = virtuappu_mode1_ws_hud_right_native_x;
     view->wsMsgShift = virtuappu_mode1_ws_msg_shift;
     view->wsMsgX0 = virtuappu_mode1_ws_msg_x0;
     view->wsMsgX1 = virtuappu_mode1_ws_msg_x1;
@@ -301,8 +324,8 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
      * clouds) covers the whole view, not just the native 240 columns. */
     view->bg3Repeat = virtuappu_mode1_bg3_repeat || virtuappu_mode1_ws_full_view != 0;
     view->bgRepeatMask = virtuappu_mode1_bg_repeat_mask;
-    view->pictureMask = virtuappu_mode1_bg1_picture != NULL ? 0x2u : sFileSelectFrame ? 0x8u : 0u;
-    view->bgNativeMask = sFileSelectFrame ? 0xFu : 0u;
+    view->pictureMask = virtuappu_mode1_bg1_picture != NULL ? 0x2u : sFileSelectFrame || sPauseFrame ? 0x8u : 0u;
+    view->bgNativeMask = sFileSelectFrame || sPauseFrame ? 0xFu : 0u;
     view->scrollPictureMask = sShaftMask;
     view->scrollPictureX = sShaftX;
     view->scrollPictureStripWidth = SCENE_SHAFT_STRIP_W;
@@ -312,6 +335,16 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
         view->scrollPictureHeight[bg] = sShaftHeight[bg];
         view->scrollPictureLoopStart[bg] = sShaftLoopStart[bg];
         view->scrollPictureLoopLength[bg] = sShaftLoopLength[bg];
+    }
+    view->rowPictureMask = sRowMask;
+    view->bgMultiplyMask = sRowMultiplyMask;
+    for (unsigned bg = 0; bg < 4; ++bg) {
+        view->rowPictureX[bg] = sRowX[bg];
+        view->rowPictureWidth[bg] = sRowWidth[bg];
+        for (unsigned band = 0; band < 2; ++band) {
+            view->rowPictureBandY[bg][band] = sRowBandY[bg][band];
+            view->rowPictureBandRows[bg][band] = sRowBandRows[bg][band];
+        }
     }
     view->wsFullView = virtuappu_mode1_ws_full_view != 0;
     /* The software PPU's rule (mode1_bg3_native_bounds_active). */
@@ -334,7 +367,11 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     if (view->objSupport) {
         for (unsigned bg = 1; bg < 4; ++bg)
             for (unsigned priority = 0; priority < 4; ++priority) {
-                const int depth = Stereo3DS_LayerDepth(PPU_GPU3DS_BG0 + bg, priority);
+                /* Nothing rests on a layer that is mostly holes (the rain): a sprite took its depth whenever a
+                 * streak passed behind one of its tiles, and jumped between the ground and the rain every few frames. */
+                const int depth = Stereo3DS_LayerSeeThrough(PPU_GPU3DS_BG0 + bg, priority)
+                                      ? 0
+                                      : Stereo3DS_LayerDepth(PPU_GPU3DS_BG0 + bg, priority);
                 view->bgDepthQ[bg][priority] = (uint8_t)(depth > 0 ? (depth > 30 ? 30 : depth) * 4 : 0);
             }
     }
@@ -1333,8 +1370,18 @@ static void PresentFrame(void) {
         PortPpuGpu3DS_SetBg1Picture(title ? ScenePictures_Title555() : NULL, SCENE_TITLE_W, SCENE_TITLE_H);
         if (!title && !Port_Widescreen_TitleWide()) ScenePictures_Release();
         sFileSelectFrame = wideFrame && Port_Widescreen_FileSelectViewLive();
-        PortPpuGpu3DS_SetIndexedPicture(sFileSelectFrame ? ScenePictures_CaveIndices() : NULL, SCENE_CAVE_W,
-                                        SCENE_CAVE_H, SCENE_CAVE_FIRST_PALETTE);
+        sPauseFrame = wideFrame && !title && !sFileSelectFrame && Port_Widescreen_PauseViewLive();
+        unsigned pauseFirstPalette = 0;
+        bool pauseRemade = false;
+        const uint8_t* pauseIndices = sPauseFrame ? ScenePictures_PauseIndices(&pauseFirstPalette, &pauseRemade) : NULL;
+        if (pauseRemade) PortPpuGpu3DS_SetIndexedPicture(NULL, 0, 0, 0); /* same buffer, new content */
+        if (sFileSelectFrame)
+            PortPpuGpu3DS_SetIndexedPicture(ScenePictures_CaveIndices(), SCENE_CAVE_W, SCENE_CAVE_H,
+                                            SCENE_CAVE_FIRST_PALETTE);
+        else
+            PortPpuGpu3DS_SetIndexedPicture(pauseIndices, SCENE_PAUSE_W, SCENE_PAUSE_H, pauseFirstPalette);
+        if (!sPauseFrame && !Port_Widescreen_PauseWide() && !Port_Widescreen_PauseBackgroundShown())
+            ScenePictures_ReleasePause();
         if (gMain.task != TASK_FILE_SELECT) ScenePictures_ReleaseCave();
         /* The Crenel paths' shaft: its three layers' strips as their BGs (the ground's, BG1's ledges, BG3's shadows),
          * at the room's place. */
@@ -1347,20 +1394,44 @@ static void PresentFrame(void) {
         for (unsigned layer = 0; layer < SCENE_SHAFT_LAYERS && groundBg >= 0; ++layer) {
             const unsigned bg = (unsigned)layerBg[layer] & 3u;
             if (used[bg]) continue; /* the ground is never BG1 or BG3 here; if it were, it wins */
-            unsigned height = 0;
-            const uint16_t* pixels = ScenePictures_Shaft555((SceneShaftLayer)layer, &height);
-            PortPpuGpu3DS_SetScrollPicture(bg, pixels, 2 * SCENE_SHAFT_STRIP_W, height);
+            unsigned height = 0, loopStart = 0, loopLength = 0;
+            const uint16_t* pixels = ScenePictures_Shaft555((SceneShaftLayer)layer, &height, &loopStart, &loopLength);
+            PortPpuGpu3DS_SetScrollPicture(bg, pixels, 2 * SCENE_SHAFT_STRIP_W, height, false);
             if (pixels == NULL) continue;
             used[bg] = true;
             sShaftMask |= (uint8_t)(1u << bg);
             sShaftY[bg] = (int16_t)shaftY[layer];
             sShaftHeight[bg] = (uint16_t)height;
-            sShaftLoopStart[bg] = layer == SCENE_SHAFT_GROUND ? SCENE_SHAFT_LOOP_START : 0;
-            sShaftLoopLength[bg] = layer == SCENE_SHAFT_GROUND ? SCENE_SHAFT_LOOP_LENGTH : 0;
+            sShaftLoopStart[bg] = (uint16_t)loopStart;
+            sShaftLoopLength[bg] = (uint16_t)loopLength;
+        }
+        /* Crenel's horizontal Minish path: its layers' bands above and below the room, as their BGs. */
+        int rowX[SCENE_ROW_LAYERS], rowY[SCENE_ROW_LAYERS][2];
+        const int rowGroundBg = wideFrame && groundBg < 0 ? ScenePictures_RowView(rowX, rowY) : -1;
+        sRowMultiplyMask = rowGroundBg >= 0 ? (uint8_t)(1u << 3) : 0;
+        const int rowLayerBg[SCENE_ROW_LAYERS] = { rowGroundBg, 1, 3 };
+        sRowMask = 0;
+        for (unsigned layer = 0; layer < SCENE_ROW_LAYERS && rowGroundBg >= 0; ++layer) {
+            const unsigned bg = (unsigned)rowLayerBg[layer] & 3u;
+            if (used[bg]) continue;
+            unsigned width = 0, rows[2] = { 0, 0 };
+            const uint16_t* pixels = ScenePictures_Row555((SceneRowLayer)layer, &width, rows);
+            PortPpuGpu3DS_SetScrollPicture(bg, pixels, width, rows[0] + rows[1], true);
+            if (pixels == NULL) continue;
+            used[bg] = true;
+            sRowMask |= (uint8_t)(1u << bg);
+            sRowX[bg] = (int16_t)rowX[layer];
+            sRowWidth[bg] = (uint16_t)width;
+            for (unsigned band = 0; band < 2; ++band) {
+                sRowBandY[bg][band] = (int16_t)rowY[layer][band];
+                sRowBandRows[bg][band] = (uint16_t)rows[band];
+            }
         }
         for (unsigned bg = 0; bg < 4; ++bg)
-            if (!used[bg]) PortPpuGpu3DS_SetScrollPicture(bg, NULL, 0, 0);
-        if (sShaftMask == 0 && (gMain.task != TASK_GAME || gRoomControls.area != 0x12)) ScenePictures_ReleaseShaft();
+            if (!used[bg]) PortPpuGpu3DS_SetScrollPicture(bg, NULL, 0, 0, false);
+        if (sShaftMask == 0 && (gMain.task != TASK_GAME || (gRoomControls.area != 0x12 && gRoomControls.area != 0x11)))
+            ScenePictures_ReleaseShaft();
+        if (sRowMask == 0 && (gMain.task != TASK_GAME || gRoomControls.area != 0x12)) ScenePictures_ReleaseRows();
     }
     /* Only Vaati's appearing effect is placed on the native screen (BG3 drawn at an
      * entity's screen position); the other BG3 HBlank effects (Minish Woods light

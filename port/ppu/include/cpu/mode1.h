@@ -139,6 +139,9 @@ void virtuappu_mode1_commit_obj_metadata(void);
  * instead of in the middle of the revealed world. */
 #define MODE1_WS_HUD_RIGHT_NATIVE_X 176
 extern int virtuappu_mode1_ws_hud_right_anchor;
+/* Where the band starts this frame: MODE1_WS_HUD_RIGHT_NATIVE_X, or a column earlier (168) in the 3DS's Full View,
+ * whose rupees show the wallet's size too (src/ui.c, DrawRupees). Both renderers read it. */
+extern int virtuappu_mode1_ws_hud_right_native_x;
 
 /* WIN0 in view pixels for a view wider or taller than the GBA's, one
  * {left, right} pair per output line (left == right: empty), or NULL. WIN0H is

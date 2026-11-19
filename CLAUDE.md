@@ -187,6 +187,8 @@ git push -u origin release/v0.1.1
 git push origin --delete release/v0.1.0
 ```
 
+**Discord**: every run of `.github/workflows/build-release.yml` announces the version on the Discord server (Tinaut's 3DS Ports): a stable in #announcements, pinging the project's role, a beta in #beta-testing, with `docs/release-notes/<tag>.md` as the text (one more reason to write it before the tag). Don't post it by hand. It needs the repo secrets `DISCORD_WEBHOOK_RELEASE` and `DISCORD_WEBHOOK_BETA` (without them the step is skipped); a re-run of the workflow posts again.
+
 ## ROM and legal
 
 - Never commit, package or upload a ROM, extracted assets, a save, or any build that
@@ -196,6 +198,12 @@ git push origin --delete release/v0.1.0
   at runtime from `sdmc:/3ds/Minish Cap 3DS/`, or else from the upstream app's folder.
 - License: GPL-3.0 (see `LICENSE`, `COPYRIGHT.md`, `THIRD-PARTY-LICENSES.md`), agbplay
   LGPLv3. Keep the notices; the build copies them into the romfs.
+
+## Scene extensions: WIDE or WIDE + AI
+
+Art drawn, even in part, by a generative AI is shown only in WIDE + AI; some players want nothing from one.
+Extensions made by code from the game's own art (patterns, the procedural room border) need no AI and show in
+plain WIDE too (owner, 2026-10-25; `docs/wide-scene-extension.md`, "Patterns").
 
 ## Build
 

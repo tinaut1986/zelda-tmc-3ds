@@ -203,7 +203,7 @@ static int sBuilt = 0;
 /* All cached element pixels live in one arena so failure cleanup is just
  * "leave the slot NULL" — no per-element allocation bookkeeping. Sized
  * with headroom for the largest composites (~160 KB static, one-time). */
-static uint32_t sArena[40000];
+static uint32_t sArena[42000];
 static int32_t sArenaUsed = 0;
 
 /* ---- pause-menu layer caches (see MENU_* block above) ---- */
@@ -1294,6 +1294,31 @@ static void BuildAll(const uint16_t* hudPal, u32 hudColors) {
                 sSprites[SST_SMALL_TENS_0 + i].px = out;
                 sSprites[SST_SMALL_TENS_0 + i].w = 8;
                 sSprites[SST_SMALL_TENS_0 + i].h = 8;
+            }
+        }
+    }
+
+    /* The quest page's digits: the pause draws the shells (and the sword's technique count) as sprite 0 frame 1
+     * with the digit for tile, i.e. OBJ tiles 0..9 of the block gfx group 86 loads at 0x06010000 (pauseMenu.c). */
+    for (i = 0; i < 10; i++)
+        BuildSpriteComposite(0, 1, (u32)i, 0, kQuestObjGfxGroups, sizeof(kQuestObjGfxGroups),
+                             &sSprites[SST_QUEST_DIGIT_0 + i]);
+
+    /* The kinstone page's counts: sub_0801C2F0's small pair, drawn by sub_080A42E0 as sprite 0 frame 5 with
+     * command bank 3 (0x3ae0), so in the bank that frame's piece resolves to rather than the ammo digits' 4. */
+    {
+        const u8* frameData = (const u8*)sub_080AD8F0(0, 5);
+        if (frameData != NULL && frameData[0] != 0) {
+            const u8* p = frameData + 1;
+            const uint16_t* pal = ObjPalBank((((p[2] & 1u) ? 0u : 3u) + ((u32)p[4] >> 4)) & 15u);
+            for (i = 0; pal != NULL && i < 20; i++) {
+                uint32_t* out = ArenaAlloc(64);
+                if (out != NULL) {
+                    DecodeTile4bpp(gUnk_085C4620 + (u32)i * 32u, pal, 16, out);
+                    sSprites[SST_KINSTONE_TENS_0 + i].px = out;
+                    sSprites[SST_KINSTONE_TENS_0 + i].w = 8;
+                    sSprites[SST_KINSTONE_TENS_0 + i].h = 8;
+                }
             }
         }
     }

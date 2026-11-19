@@ -18,17 +18,18 @@ slider S, 3D on|2D`).
 ## Scenes with a depth
 
 Besides `kDepth`, `Stereo3DS_BeginFrame` asks `Port_Stereo_Scenes` (`port_linked_stubs.c`) which
-scenes are up, from the layers the game has on; each puts one layer at 4 px (HUD stays at 6, in front).
+scenes are up, from the layers the game has on; each puts one layer in front: the layers over the world (fog, sun rays, leaves, rain) at the HUD's 6 px, which the world's sprites (5 at most) do not reach and the HUD, of higher priority, is still drawn over (owner, 2026-11-19; they were at 4, level with tall sprites such as the Crenel's mushrooms).
 Written to the SD log as `stereo: scenes N` when it changes.
 
 | Bit | Scene | Layer |
 |---|---|---|
-| 1 | the title's light rays; its logo (sprites) and sword (BG2, priority 1) in front of them at 8 px | BG0, priority 2 (4 px) |
+| 1 | the title's light rays; its logo (sprites) and sword (BG2, priority 1) in front of them at 8 px | BG0, priority 2 (6 px) |
 | 2 | sun rays of the Minish Woods and the barrel house (`LightRayManager`) | BG3, priority 0 |
 | 4 | the leaves of the Minish Paths corridors (area 0x11) | BG1, priority 1 |
 | 8 | the file select (cave BG3 at priority 3): its sprites (banner, slots, texts, preview, name entry buttons) and BG1 at priority 1 (hearts, the languages, the name's letters) at 4 px, the preview's panel (BG2, priority 2) at 2 | OBJ, BG1, BG2 |
 | 16 | the Nintendo and Capcom logos (mode 0, BG2 on, no BG1/BG3) | BG2, priority 2, 4 px |
 | 64 | the game over screen (`TASK_GAMEOVER`): the GAME OVER letters (sprites) at 10 px, the choices (BG0, priority 0) at 6, the stone panel (BG1, BG2) at 3 | OBJ, BG0, BG1, BG2 |
+| 256 | Mount Crenel's storm (`WeatherChangeManager`): the rain, in place of the top map layer | BG1, priority 1 (6 px) |
 | 32 | the map hints (`SUBTASK_MAPHINT`, `SUBTASK_LOCALMAPHINT`): the grey that covers what is not unlocked and its frame are BG2 (screen plane, with the backdrop); the unlocked map is BG1 at 2 px, seen through the OBJ-window sprites, which follow BG1 (`Stereo3DS_ObjWindowFollows`); the markers are sprites at 5 px | BG2 0, BG1 2, OBJ 5 |
 
 ## The world while playing

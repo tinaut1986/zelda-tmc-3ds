@@ -382,7 +382,7 @@ void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsi
     sPictureCorrected = corrected;
 }
 
-void PortPpuGpu3DS_SetScrollPicture(unsigned bg, const uint16_t* gbaPixels, unsigned width, unsigned height) {
+void PortPpuGpu3DS_SetScrollPicture(unsigned bg, const uint16_t* gbaPixels, unsigned width, unsigned height, bool repeat) {
     if (bg >= MODE1_GBA_BG_COUNT) return;
     const bool corrected = Port_Config_GetColorCorrection();
     if (gbaPixels == sScrollPixels[bg] && (gbaPixels == NULL || corrected == sScrollCorrected[bg])) return;
@@ -392,19 +392,22 @@ void PortPpuGpu3DS_SetScrollPicture(unsigned bg, const uint16_t* gbaPixels, unsi
     sScrollPixels[bg] = NULL;
     sBoundTexture = UINT8_MAX; /* rebind */
     const unsigned texHeight = PpuGpu3DS_ScrollPictureTexHeight(height);
-    if (gbaPixels == NULL || width > PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH || height > texHeight) return;
-    if (!C3D_TexInit(tex, PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH, texHeight, GPU_RGBA5551)) {
+    const unsigned texWidth = repeat ? width : PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH;
+    if (gbaPixels == NULL || width > texWidth || height > texHeight) return;
+    /* A repeated picture is exactly its texture's width, which the GPU wants a power of two from 8 to 1024. */
+    if (repeat && (texWidth < 8u || texWidth > 1024u || (texWidth & (texWidth - 1u)) != 0)) return;
+    if (!C3D_TexInit(tex, texWidth, texHeight, GPU_RGBA5551)) {
         memset(tex, 0, sizeof(*tex));
         return;
     }
     memset(tex->data, 0, tex->size);
     C3D_TexSetFilter(tex, GPU_NEAREST, GPU_NEAREST);
-    C3D_TexSetWrap(tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+    C3D_TexSetWrap(tex, repeat ? GPU_REPEAT : GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     /* 8x8 Morton tiles, tile rows from the top (v = 1), as the other picture. */
     uint16_t* texels = (uint16_t*)tex->data;
     for (unsigned y = 0; y < height; ++y)
         for (unsigned x = 0; x < width; ++x)
-            texels[((y >> 3) * (PPU_GPU3DS_SCROLL_PICTURE_TEX_WIDTH >> 3) + (x >> 3)) * 64u +
+            texels[((y >> 3) * (texWidth >> 3) + (x >> 3)) * 64u +
                    PpuGpu3DS_MortonIndex(x & 7u, y & 7u)] =
                 PpuGpu3DS_PackRgba5551(gbaPixels[y * width + x], gbaPixels[y * width + x] != 0);
     C3D_TexFlush(tex);
@@ -937,7 +940,7 @@ static uint32_t TevKey(const PpuGpu3DSBatch* batch) {
 
 static uint32_t BlendKey(const PpuGpu3DSBatch* batch) {
     return (uint32_t)batch->effect | ((uint32_t)batch->eva << 8u) |
-           ((uint32_t)batch->evb << 16u);
+           ((uint32_t)batch->evb << 16u) | ((uint32_t)batch->multiply << 24u);
 }
 
 static uint32_t sTintKey;
@@ -984,7 +987,13 @@ static void ResetBlend(const PpuGpu3DSBatch* batch) {
     const uint32_t key = BlendKey(batch) | (TintOf(batch) != 0 ? 0x80000000u : 0u);
     if (key == sBlendKey) return;
     sBlendKey = key;
-    if (batch->effect == PPU_GPU3DS_EFFECT_ALPHA && TintOf(batch) == 0) {
+    if (batch->effect == PPU_GPU3DS_EFFECT_ALPHA && batch->multiply && TintOf(batch) == 0) {
+        /* Multiply: src * dst + dst * 0.25, the pixel under it times (its colour + 0.25); shadows' colours are dark,
+         * so it always darkens, the lighter bands less. 0.25 keeps it near the GBA's blend over a light ground (room
+         * 03's yellow) and clearly darker over the dark mountain, where the blend lightened (0.5 was too faint). */
+        C3D_BlendingColor(0x40404040u);
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_DST_COLOR, GPU_CONSTANT_COLOR, GPU_ONE, GPU_ZERO);
+    } else if (batch->effect == PPU_GPU3DS_EFFECT_ALPHA && TintOf(batch) == 0) {
         const u32 eva = Coefficient8(batch->eva);
         const u32 evb = Coefficient8(batch->evb);
         C3D_BlendingColor(eva | (eva << 8u) | (eva << 16u) | (evb << 24u));
@@ -1288,7 +1297,8 @@ static bool IsGhostBatch(const PpuGpu3DSBatch* batch) {
      * four draws a band in each eye instead of two. */
     return sUnderlay && !batch->objWindow && batch->depth == 0 && batch->layer >= PPU_GPU3DS_BG1 &&
            batch->layer <= PPU_GPU3DS_BG3 && sFrontLayer[batch->layer][batch->priority & 3u] &&
-           batch->effect != PPU_GPU3DS_EFFECT_ALPHA && (batch->color & PPU_GPU3DS_ALPHA_COMPLEMENT) == 0;
+           batch->effect != PPU_GPU3DS_EFFECT_ALPHA && (batch->color & PPU_GPU3DS_ALPHA_COMPLEMENT) == 0 &&
+           !Stereo3DS_LayerSeeThrough(batch->layer, batch->priority & 3u);
 }
 
 /* Zone depth fixes (docs/stereo-3d.md, "Zone depth fixes"; zone_depth_3ds.h): the pixels of one layer inside a rectangle

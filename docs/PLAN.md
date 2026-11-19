@@ -14,12 +14,16 @@ change (what goes where: the table in `CLAUDE.md`).
   audio offload, an updater, a quick memory dump (L+R+A) and an experimental New 3DS
   "Full View" (Wide + Pixel Perfect: 400x240 outdoors, 200x120 at 2x indoors; the 2x indoor zoom is gone, see the decisions log).
 
-## Status (2026-10-21)
+## Status (2026-10-25)
 
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.4.5` (renamed from `release/v0.4.4` right after the `v0.4.4` tag). Published:
+**Release line:** `release/v0.4.6` (renamed from `release/v0.4.5` right after the `v0.4.5` tag). Published:
+**`v0.4.5`** (2026-10-25, **stable**, straight to stable at the owner's request: `release/v0.4.5` merged `--no-ff` into `main`,
+`5daf479`, and tagged there; sprites overlapping by priority as on the GBA, the Crenel Minish paths' generated sides (WIDE + AI)
+and their camera after a portal, the rock portal's own fall strips, the procedural border in the Minish caves' first room, the
+bottom map's region names; `docs/release-notes/v0.4.5.md`. The stale `release/v0.4.4` was deleted here and on origin),
 **`v0.4.4`** (2026-10-24, **stable**, straight to stable at the owner's request: `release/v0.4.4` merged `--no-ff` into `main`,
 `bf4a455`, and tagged there; the Minish Woods' fog at 60 fps in 3D (`perf/stereo-fog`), zone depth fixes, FIXED and WALL
 sprite depths, Link's head on the region map, the kinstone world event in wide, Hyrule Town's zone gaps; `docs/release-notes/v0.4.4.md`),
@@ -46,8 +50,25 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 
 | Branch | State |
 |---|---|
-| `perf/stereo-fog` (local, not pushed, NOT checked on the console) | Reason 4 (`SPLIT_BASE_OVER_FRONT`) in the Minish Woods fog: Link's lean runs and neighbouring sprites no longer count as drawn over a sprite in front unless their boxes meet; debug log names the batch. See the decisions log 2026-10-24. |
-| `feat/map-region-names` (local, not pushed; checked by the owner on the New 3DS, 2026-10-24, waiting to be merged) | Bottom MAP tab: Link's region named above his marker, a first tap selects a tile (tinted, game cursor, name) and a second tap on it opens it, the detail map shows its name. See the decisions log 2026-10-24. |
+| `feat/pause-wide-view` _(merged into release/v0.4.6 2026-10-25, at the owner's request; seen in Azahar, not on the console)_ | The pause menu at 400x240 (GPU renderer): L and R whole when pressed, the title banner closed on the left, the background made by the game from its own BG3. Still to see on the New 3DS: the three pages, the map page, the save prompt, 3D, the Old 3DS. It raised the linker pins to 0x644000/0x64C000. |
+| `feat/minish-path-leaves` _(merged into release/v0.4.6 2026-10-25, at the owner's request before a console check)_ | Gemini's leaves and the derived shadows beside the Minish Paths' grass corridor (area 0x11), WIDE + AI. Still to see on the New 3DS: the corridor centred, the strips moving with their layers, nothing in the other 0x11 rooms. Its ground's sides are the corridor's edge brown (`feat/minish-path-ground-fill`, merged the same day, seen in Azahar). |
+| `feat/minish-paths-town-ranch-cabin` _(merged into release/v0.4.6 2026-10-25, at the owner's request; seen in Azahar, not on the console)_ | The sides of Minish Paths rooms 0x11/02, 03 and 04: one set of Gemini leaves for the three (04's recoloured), derived shadows, 02's and 03's grounds their edge colour darkening outwards (03's on trial), 04's the water corridor's stalks. WIDE + AI for the leaves and 04's ground. Still to see on the New 3DS. The cut giant sprites beside them are #50-#52. |
+| `fix/crenel-shaft-sides` _(merged into release/v0.4.6 2026-10-30, at the owner's request; seen in Azahar, installed on the New 3DS)_ | Crenel's second vertical path (area 0x12 room 01, the rocks): its BG1 ledges and shadows are the first path's (same art, row for row), its ground is Gemini's (the meadow with the giant seed and its stem, and the wall's 64-row period, which the game repeats), WIDE + AI; the Crenel shaft is found by its room alone again when BG1 is not the manager's (`leavesMap` NULL guard); the leaves lying on the floor (OBJECT GIANT_TWIG types 2 and 3) are flat in 3D. Still to see on the New 3DS: the leaves glued to the floor, the seed's stem. |
+| `feat/cave-rim-backdrop` _(merged into release/v0.4.6 2026-10-30, at the owner's request; seen in Azahar, not on the console)_ | The black sides of the cave rooms 0x26/0C and 0x26/0D filled with the yellow/orange shelf floor: 0D by the procedural border's flat mode (`BuildFlatBorder`, top-layer shelf tiles plus pebble variants), 0C by the backdrop colour (`Port_Widescreen_BackdropFill`, plain WIDE). Still to see on the New 3DS (0C is the console's room). |
+| `fix/crenel-cave-entrance-full-view` _(merged into release/v0.4.6 2026-11-19, seen on the New 3DS by the owner)_ | Mt. Crenel's Cave of Flames entrance (area 06 room 02) no longer excluded from Full View (`unsupported-scene`, from upstream v1.2, for its static BG3 landscape): it fell back to 266x160 mid-transition coming up the stairs from 06/03 and stayed there (#33). A scenario shows what is there: BG3 wraps across 400 as on the Mountain Top (06/00). To see on the console: the stairs from 06/03 (save state 1 there), the landscape's seam if any. |
+| `fix/pause-lattice-tolerance` _(merged into release/v0.4.6 2026-11-19, seen on the New 3DS by the owner)_ | The pause menu's background extension when the caps' lattice is not exact: the map has a column of caps a row off, (3,6) repeats 97% of it but (-7,2) only 87%, so no picture was made and Full View's sides showed the backdrop colour (a green margin, seen in Mt. Crenel). The second shift may repeat 85% when no 95% one exists. |
+| `fix/pause-page-text-flash` _(merged into release/v0.4.6 2026-11-19, at the owner's request after a look on the New 3DS)_ | A pause page's labels (Examine, Select...) flashed at the 400 view's top left on L/R: TEXT_A/B and ITEM_A/B sit in lower slots than their buttons and copied (0,0) on the page's first tick. `UpdateUIElements` runs the buttons first. |
+| `feat/pause-xy-buttons` _(merged into release/v0.4.6 2026-11-19, at the owner's request after a look on the New 3DS)_ | The 400x240 pause item page shows A, B, X and Y where the game's HUD has them in Full View (the diamond at the right edge); X or Y on an item assigns it to that soft slot, again on the same item empties it. To see: the X/Y icons (their tiles 0x3E0.. must not clash with the pause's), page changes, closing the menu with X held. |
+| `feat/hud-max-counters` _(merged into release/v0.4.6 2026-11-19, at the owner's request after a look on the New 3DS)_ | Rupees as count/max: Full View's top HUD ("287/300", the max packed from the HUD's digits into tiles 0x17a..0x17f, widget two columns left) and the bottom sidebar ("/300" in the small font). Debug: god mode a row up, an infinite-supplies wallet button beside it. Bombs and arrows /max left out on the top HUD (their counts are inside the item icon's OBJ tiles). To see: the packed max's look, every wallet size, tiles 0x17a.. free in every room. |
+| `fix/bottom-quest-counts` _(merged into release/v0.4.6 2026-11-19, at the owner's request after a look on the New 3DS)_ | The bottom quest page: every grid count (shells to 999, techniques, fused kinstones, figurines) in the pause quest page's own digits (sprite 0 frame 1 over OBJ tiles 0..9, gfx group 86), the kinstone list's counts in the bank that page draws them with, the page's items in bank 14. To see: the digits match the top screen's quest page and kinstone page. |
+| `fix/bottom-items-xy-marks` _(merged into release/v0.4.6 2026-11-19, at the owner's request after a look on the New 3DS)_ | The bottom item grid lights the cells of the items on X and Y, as it does for A and B. |
+| `feat/bottom-ammo-max` _(merged into release/v0.4.6 2026-11-19, at the owner's request after a look on the New 3DS)_ | Bombs and arrows as count/bag size ("18/30", the small font packed, a slash in its colours) in the bottom item grid and on the A/B/X/Y cells; the plain pair where it does not fit. The top HUD keeps the pair. |
+| `fix/crenel-rain-wide` _(merged into release/v0.4.6 2026-11-19, at the owner's request after a look on the New 3DS)_ | Mount Crenel's storm in Full View: the rain (BG1, a 32x32 map repeating every 32 columns and rows) repeated over the whole 400x240 view by a BG1 shadow, as the light rays' BG3 one; it covered 256 columns. |
+| `fix/rupee-max-tile-clash` _(merged into release/v0.4.6 2026-11-19, at the owner's request after a look on the New 3DS)_ | The top HUD's rupee max ("/300", tiles 0x17a..0x17f) is left out while a shown BG keeps its map over those tiles: the storm's rain map (screen base 29) ends there, and its last rows showed as garbage at the bottom of Full View. A save state taken while the clash was on keeps the garbage until the rain map reloads (a scene change). |
+| `feat/crenel-rain-3d` _(merged into release/v0.4.6 2026-11-19, at the owner's request after a look on the New 3DS)_ | In 3D the rain is a scene of its own (bit 256) in front; the layers over the world (fog, sun rays, the paths' leaves, the rain) at the HUD's 6 px instead of 4, where tall sprites reached them. The rain gets no unmoved copy under it (its streaks were doubled in each eye) and no sprite rests on it (sprites jumped to its plane when a streak passed behind them). |
+| `feat/crenel-horizontal-path-fill` _(merged into release/v0.4.6 2026-11-19, at the owner's request after a look on the New 3DS)_ | Crenel's horizontal Minish path (area 0x12 room 02, 800x192) in Full View: bands above and below the room instead of side strips (WIDE + AI): the wall continued by Gemini (one 64-column turn), the two rocks' continuation (the stalactites are the stalagmites flipped) and their shadows; a new GPU path draws them repeated sideways (`build_bg_row_picture`). Without WIDE + AI the backdrop is the wall's purple. The linker pins went up to 0x64C000/0x654000. |
+| `feat/crenel-horizontal-path-03` _(merged into release/v0.4.6 2026-11-19, at the owner's request after a look on the New 3DS)_ | The next horizontal Minish path (0x12/03) has 0x12/02's maps and tiles in other palettes: its bands are 0x12/02's pictures recoloured entry for entry (wall palette 6, rocks 7, shadows 9), its backdrop fill too. 0x12/02's shadows fixed to palette 9's real colour (they were greenish). |
+| `feat/crenel-hpath-shadow-multiply` _(merged into release/v0.4.6 2026-11-19, at the owner's request after a look on the New 3DS)_ | In the horizontal Minish paths 0x12/02-03 in Full View, BG3's shadows blend as a multiply on the GPU (`bgMultiplyMask`, `PpuGpu3DSBatch::multiply`): the pixel under them times (their colour + 0.25), so they always darken; the GBA's blend lightened the dark mountain. +0.25 keeps them near the original over room 03's yellow. |
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -68,64 +89,61 @@ pause menu; GOD MODE in debug builds (a heart beside the rupees); the map screen
 the decisions log of 2026-10-20 (the last six). Release notes: `docs/release-notes/v0.4.3.md`. Open: #46 (a state saved in the pause menu
 leaves pots unliftable).
 
-**Start here (2026-10-20):** `v0.4.1` (beta, tagged on what `release/v0.4.2` starts from) holds, on top of `v0.4.0`, the neighbour-list fix, the GPU split
-flush, the Zz bubble fix, the NEIGHBOURS setting (ON / OFF) and the drop of WIDE + BLUR (decisions log of 2026-10-19 and
-2026-10-20); pushed to origin on 2026-10-20. Open branches: the local backup
-`backup/blur-neighbours-all`; `origin/feat/frame-blur` is merged and left on origin. Next, in this order:
-0. **Review of the neighbour rooms.** The blur is gone from WIDE (decisions log 2026-10-20, third entry): VIEW is WIDE,
-   WIDE + AI, ORIGINAL and NEIGHBOURS is ON / OFF. What is open, with where to look:
-   - **P4.9 itself** (towns, outdoors, zone-swapped rooms, special tiles, the neighbours' objects #38) as before in item 1.
-   - The code is split in `port/port_neighbour_rooms.c` (tiles, archway copies, `Port_NeighbourRooms_DrawnRects`,
-     `RoomJustChanged`), `port/port_linked_stubs.c` (`Port_Widescreen_ContentRects`: the rectangles in view pixels from the
-     frame's background offsets, unused since the wide blur was dropped).
-1. **v0.4.0 beta** is published: AUTO UPDATE (seen on the New 3DS) and P4.9's neighbour rooms (seen in the Deepwood
-   Shrine on the New 3DS and in Link's house and the intro's festival town on the Old 2DS). P4.9 is still open: the
-   towns, the outdoors and the zone-swapped rooms, the special tiles, the Old 3DS cost; the owner checks towns and
-   outdoors next. Not seen: the updater on the Old 3DS/2DS. **Waiting for the owner's word to close:** #44 (the
-   lit dark room's black line, d342f7d), #37 and #39-#42 (the bottom dungeon map; the owner said on 2026-10-18 the
-   chests and the item icons are right, the rest not confirmed). #38 (the neighbours' other objects) is parked.
-   #45 (Zelda vanishing in the intro, two fixes) is closed: if another scripted walk looks wrong in Full View, the
-   rule in `src/script.c` `Port_ScriptMoveOutOfWideView` is the first suspect.
-2. **Old 3DS/2DS check** of what only the New 3DS has seen: the grid on HIGH (frame rate), WIDE + AI,
-   the file select and title without 3D, TOP HUD AUTO, and the cost of P4.9's neighbour rooms there. The 2DS is
-   `192.168.1.139` and answers the debug FTP again (2026-10-19; see the consoles below).
-3. **Side strips for narrow map rooms (P4.6).** The owner is generating, with Antigravity, the 80 px on each
-   side of the shrine yard (area 0x4A room 00; material in `~/Imágenes/outpaint-area-4A/`: template with black
-   bands, mask, reference and `prompt.txt`, made with `tools/scene-extend/extract_map_room.py`). When the
-   picture comes: check it (`check_extension.py`), then the game needs a way to draw a picture beside a map
-   room (the Minish Paths corridor has one; map rooms have only black there). Same for every other small
-   interior the owner wants to fill.
-4. **#30** the right edge of the top screen breaks on room changes and while rolling (2DS only: the owner
-   sees nothing on the New 3DS). Not a regression. The CPU/GPU race on the retained map slices (hypothesis 1) is
-   out: the old order waited before every write and the build-ahead order keeps that rule by construction (decisions
-   log, 2026-10-18). What is left is hypothesis 2 of the issue (the display transfer or swap landing mid-scanout,
-   invisible to the scene recorder, which reads the framebuffer) and the CPU speed of the Old 3DS itself; look
-   with `gpucheck` loops during scrolls on the 2DS and FRAME SYNC / VBLANK LOCK combinations.
-   **#33** (opened by someone else, not the owner): "Wide+AI in Pixel Perfect" works in many areas but in some the
-   view shrinks back with black borders on all sides, like the area before the Mt. Crenel dungeon. That is the
-   Full View policy falling back (`Port_Widescreen_3DSFallbackReason`: the Mt. Crenel room 2 `unsupportedScene`,
-   fixed canvases, rooms without content bounds); find out which areas and why before answering. Not looked at yet.
-5. Smaller: the bottom screen's UI theme (hearts, buttons, sidebar chrome) is not corrected by COLOURS (only
-   the game art is; `port_second_screen_color.h`); sm-3ds's DRAW ORDER tint view could join PLANE TINT; the
-   light rays of the room 0x20/09 hang over its black border on the right (left as the game's rays);
-   the shoe house's door and other scripted entrances may pop in Full View like the village intro's Minish did
-   (look when the owner reports one); P3.4's old claim that dialogues go per pixel was not borne out (the C
-   line of the numbers box read C0 through a dialogue), recheck before rebuilding anything; the generated
-   side strips of the Minish Paths corridor (P4.6); the README's before/after GIF of the portal shrink (P1.6).
+**Start here (2026-10-25, end of day):** `v0.4.5` is the latest stable; `release/v0.4.6` holds, beyond it, the zlib-compressed
+scene pictures (seen on the New 3DS), the pause menu at 400x240 with its background made by the game (L/R whole, the title
+banner closed), and the generated sides of five Minish Paths corridors (0x11/00 grass, 0x11/01 water, 0x11/02-04);
+all of it seen only in Azahar, none yet on the console (branch table above). No branch is open. Next, in this order:
+00. **The vertical Minish paths are all done** (2026-10-30: Crenel's 0x12/01 in `fix/crenel-shaft-sides`, waiting for the owner's
+   check; 0x11/03's ochre gradient is on trial, Gemini rocks in a 64-row loop the alternative). Then the cut giant sprites
+   beside 0x11/02-04 (#50 flowers and bellflowers, #51 white spirals, #52 cattails). What each needs, their BG1 hashes, ground colours and
+   repeats, and where their dumps already are: `docs/wide-scene-extension.md`, "The vertical Minish paths" (nothing to
+   dump again). The workflow: same doc, "AI pieces" (`tools/scene-extend/ai_pieces.py`); add each as a `kShafts` row. Show
+   the owner the corridor (`tmc-link.py warp`, Azahar) before proposing its ground. The water corridor's two ends (rocks and
+   light water at rows 0-63 and 736-799) were left with stalks beside them; the horizontal Crenel path (0x12/02) is not
+   handled by the shaft code.
+0. **Procedural border for every room** (owner's question, 2026-10-25: "esto habría que hacerlo con cada sala"; not decided
+   yet). The code (`BorderTile`, `port/port_neighbour_rooms.c`, decisions log 2026-10-25) decides by itself; it is limited to
+   area 0x35 room 00 by `kBorderRooms`. Proposed: drop the list, let the rule decide, log its choice per room (the
+   `border:` line in the SD log already does) and review screenshots while the owner plays; walls, water and pits must stay
+   black, and repeated dungeon floors may need a list of rooms left out.
+1. **Sprite order** (#49, 9f47617): changed for the whole game; only the Crenel twig was checked. Look at overlaps elsewhere
+   (tree tops, doors, enemies passing in front of things).
+2. **The other two portal falls** (Hyrule Town's portal type 2 and the dungeon picture) have no strips: black, at the stump's
+   256 width (`sPortalStrips`, decisions log 2026-10-24). Dump them when the owner passes one (`extract_bg.py` prints the
+   width) and make their pieces as for the rock (`~/Imágenes/minish-portal-roca/`).
+3. **Side strips for narrow map rooms (P4.6).** The shaft's code (`build_bg_scroll_picture`, a picture per BG at its layer's
+   scroll, `ScenePictures_SetShaftView`) is the way to draw any map room's generated sides; it is written for the Crenel
+   shaft only. The shrine yard (area 0x4A room 00) material is in `~/Imágenes/outpaint-area-4A/`.
+4. **Old 3DS/2DS check** of what only the New 3DS has seen: the shaft's three strip textures (about 1.3 MB of linear memory),
+   the grid on HIGH, WIDE + AI, the file select and title without 3D, TOP HUD AUTO, the neighbour rooms' cost.
+5. **#30** (2DS: the top screen's right edge breaks on room changes and while rolling; hypothesis 2 of the issue left) and
+   **#33** (WIDE + AI falls back to a bordered view in some areas, e.g. before Mt. Crenel's dungeon; not looked at).
+   Waiting for the owner's word to close: #44, #37, #39-#42. Parked: #38.
+6. Smaller: the bottom screen's UI theme is not corrected by COLOURS (`port_second_screen_color.h`); sm-3ds's DRAW ORDER
+   tint view could join PLANE TINT; scripted entrances may pop in Full View (look when reported); P3.4's dialogues per pixel
+   (recheck the C line first); the README's before/after GIF of the portal shrink (P1.6).
 Dropped (owner, 2026-10-22): `feat/village-3d` was deleted; the Minish Village's 3D is taken by hand, case by case, from the release line (decisions log).
 Closed by the owner (2026-10-17), do not re-propose: RetroAchievements (the achievements he looked at
 work; he will report any that should fire and does not), the save states across builds, issue #5
 (the dissolve works), the sibling updaters' hardening (done), #25, #4, #23, #26 and #20 (all closed on
 GitHub).
-Scene pictures (portal, title, file select, shrine yard): procedure in `docs/wide-scene-extension.md`; the owner's
-material in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/intro-titulo/`, `~/Imágenes/elige-archivo/` and
-`~/Imágenes/outpaint-area-4A/` (never in the repository).
+Scene pictures (portals, title, file select, Crenel shaft, Minish paths, shrine yard): procedure in `docs/wide-scene-extension.md`; the
+owner's material in `~/Imágenes/minish-portal-cutscene/`, `~/Imágenes/minish-portal-roca/`, `~/Imágenes/camino-crenel/`,
+`~/Imágenes/minish-paths/` (`survey/` holds every corridor's dump), `~/Imágenes/menu-pausa/`,
+`~/Imágenes/intro-titulo/`, `~/Imágenes/elige-archivo/` and `~/Imágenes/outpaint-area-4A/` (never in the repository). The owner
+generates with Antigravity or Gemini; Gemini answers JPGs at an odd scale (`~/Imágenes/camino-crenel/capa-3d/limpiar-rocas-gemini.py`
+shows how they were read back; the decisions log of 2026-10-25 what the owner judged).
 **Checking 3D without a 3D screen:** DEBUG -> SWITCHES -> FORCE 3D (slider fully up, not saved), then
 `tmc-link.py shot` also writes `top-right.png`; PLANE TINT (LAYERS / DEPTH) paints each layer flat. `docs/debug-tools.md`.
 To start a session's notes, run `/document` before closing it (`.claude/skills/document`).
 
-**On the owner's consoles now (2026-10-20):** ping first, the addresses change with the router (memory).
-- **Old 2DS, `192.168.1.139`** (pass `--ip`; the owner's test console): the debug build of `release/v0.4.1` plus
+**On the owner's consoles now (2026-10-25):** ping first, the addresses change with the router (memory).
+- **New 3DS, `192.168.1.133`** (it was `.132` for a while on 2026-10-25; `.3ds_ftp_ip` may hold either): the debug build
+  `0.4.6-dev.2+f4af164`, which is the code of 23151d1 (zlib scene pictures) built before its commit, installed by Claude on
+  2026-10-25. Settings: VIEW WIDE + AI, pixel perfect, NEIGHBOURS ON, 3D WORLD on. The owner plays a game in the Minish caves
+  (area 0x35) and Mt. Crenel. `debug/` holds Claude's dumps 0047-0051 (the rock portal's fall, the Crenel shaft, the
+  Minish cave); delete them when they are no longer useful. The owner's states are theirs.
+- **Old 2DS, `192.168.1.139`** (pass `--ip`; the owner's test console; not touched since 2026-10-20, as described here): the debug build of `release/v0.4.1` plus
   `fix/zz-colour-redraw` at `e5417bd` (it has NOT the blur-all branch; `tmc3ds.ini` keeps `neighbour_rooms=0` from
   testing, which that build ignores). Settings: VIEW WIDE + BLUR, pixel perfect, FRAME SYNC OFF (default; Claude
   toggled it for tests and put it back). The owner's game is a new one near the throne room of Hyrule Castle (area 0x80). Save
@@ -134,12 +152,6 @@ To start a session's notes, run `/document` before closing it (`.claude/skills/d
   **do not `loadstate` while the owner plays** (it replaced their place twice on 2026-10-20) and **check `state` shows
   the scene (`ingame=1 area=80 room=04`) before measuring** (six recordings of the title screen were taken as results once).
   `debug/` still holds the owner's old files and `tmc-check-*`; Claude's `tmc-dump-006x` sets were deleted.
-- **New 3DS, `192.168.1.133`**: the debug build `0.4.3-dev.11+dbe9c18` (the code of `release/v0.4.3` at `9078959`, built
-  before that commit), installed by Claude on 2026-10-20; FORCE 3D off. Settings as on 2026-10-17 (WIDE + AI YES,
-  pixel-perfect, TOP HUD AUTO, SHOW FPS, stereo on, NEIGHBOURS ON). The owner's states are theirs (they deleted and
-  re-made several on 2026-10-20); the newest ones are the Deepwood boss room (49/00, one of them made by Claude in the
-  pause menu: #46, do not use it) and the Minish Woods before the shrine door cutscene (00/00). Left in the pause
-  menu's world map of the Gentari house state.
 - The owner's Luma dumps are in `sdmc:/luma/dumps/arm11/` (reachable over the game's FTP). How to read one:
   `docs/debug-tools.md`, "Reading a Luma crash dump". The 2DS crash dumps 1 and 2 (588 bytes, kernel mode, `pc` 0xfff1c1d8) and 19 are explained in the decisions log of 2026-10-20. RetroAchievements on the 2DS was logged in as the test
   account `tinaut1986test` on 2026-10-15 (check before the owner plays for real).
@@ -1513,3 +1525,46 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   (`kBorderRooms`); first tries scattered the outer column's grass-with-hedge-edge pieces as "decorations" (thin dark
   marks) and found no stones, as those are on the top layer. Next: every room, with the rule deciding (walls and water
   borders must stay black).
+- **2026-10-25** The generated scene pictures ship compressed (owner, who expects many more of them): zlib streams, the
+  seven files from 1.2 MB to 64 KB, the CIA from 5.49 to 4.39 MB; memory in use on the console is unchanged. zlib is the
+  CI image's 3ds-zlib (checked in `devkitpro/devkitarm:20260610`'s layers: 3ds-zlib 1.3.1) and now required by the build;
+  `ScenePictures_ReadFile` also reads the GBA BIOS's LZ77 (`to_console.py --lz77`, 173 KB for the same seven), the way out
+  should zlib ever go, and uncompressed files (by their size). Lowering their resolution was ruled out: they are 1:1 pixel
+  art beside the game's own.
+- **2026-10-25** The pause menu's background extended in Full View by code (`tools/scene-extend/extend_lattice.py`):
+  it is a lattice of Ezlo caps, so no AI was needed. Owner: WIDE + AI is only for players who want nothing from a
+  generative AI, so art made by code from the game's own shows in plain WIDE too (`ScenePicture.procedural`; the rule
+  in CLAUDE.md and `docs/wide-scene-extension.md`, "Patterns"). Checked on the New 3DS: the three pages, a page change
+  and closing the menu.
+- **2026-10-25** History of `release/v0.4.6` (and `feat/pause-wide-view`) rewritten and force-pushed, owner's go-ahead:
+  `pause-background.png/.bin` taken out of every commit since `e0d3f5b` (the `.bin` carried the pause menu's original
+  240x160 background, the PNG the game's caps rearranged). Commit hashes after `e0d3f5b` changed; the commits between
+  the first one that added the files and `fix/cmake-no-pause-bin` do not build (CMake copies a file they no longer
+  have). Pictures made by code from the game's art are made by the game at run time, never shipped.
+- **2026-10-25** Minish paths, one by one (owner): after a first pass that filled every corridor's ground with its edge
+  colour darkening outwards, the owner asked to decide each corridor in turn ("no quiero que en todas las escenas el suelo
+  sea un degradado"); only the grass corridor keeps that fill. The water corridor got Gemini's stalks and leaves instead,
+  each a loop made seamless by giving the join back to Gemini to repaint (the owner's idea: "otra moviendo el patrón con
+  un hueco en medio"). Its two ends were left as they are, hidden by the leaves (owner). The survey of every corridor, the
+  warp command used for it and the fitting tool are in `docs/wide-scene-extension.md` and `docs/debug-tools.md`.
+- 2026-10-25: Minish Paths rooms 0x11/02-04 share their leaves (03's are 02's but for 15 pixels, 04's are 03's in other
+  greens), so one Gemini set of four pieces served the three, 04's recoloured. The owner chose the gradient for 02 and asked
+  to try it on 03 and 04 "a ver si se nota"; 04's banks then turned out to be the water corridor's stalks row for row, so
+  it takes that loop instead (owner: "La del agua no encaja con los tallos de agua que hay en otra ya montada?"). The giant
+  flowers, bellflowers, white spirals and cattails beside them are sprites whose art ends at the GBA screen's edge, not
+  clipped by the port: completing them is #50-#52 (owner).
+- **2026-10-30** Crenel's second vertical path (0x12/01) closed, by reuse: its BG1 rocks are the first path's ledges row for row
+  (the seams at the room's edges match at no offset), so it takes `crenel-paths-ledges.bin` and `-shadows.bin`; only the ground was new.
+  The owner turned the edge-colour gradient down ("no acaba de quedar bien"). The ground's outer columns repeat exactly every 64
+  rows from row 115 (diff 1.1), so Gemini painted one 400x320 piece, the meadow's right strip was redone twice (the giant seed
+  needs its stem and two-leaf sprout, as the seeds of area 0x06; the owner picked the second answer) and the game repeats one
+  64-row period of the wall (`crenel-rocks-ground.bin`, 400x179, `groundLoopStart` 115): pieces 2 and 3 were never needed.
+  `ai_pieces.py fit --extra N` adds N colours the AI used far from the layer's palette: the palette snap had flattened the
+  darkest stones at the edges into one colour (owner spotted it). The room's leaves are `GIANT_TWIG` types 2 and 3, tall sprites
+  that leant out of the floor with the 3D world's body rule: `PORT_DEPTH_FLAT` in `port_sprite_depth.inc`. Azahar shows no 3D
+  (owner), so only the New 3DS can check it.
+- **2026-10-30** Cave rooms 0x26/0C and 0D (black side border): the yellow/orange shelf is BG1 (top layer, found with PLANE TINT),
+  not wall tiles, so the procedural border has a flat mode (`kBorderRooms[].flat`): `BuildFlatBorder` takes the commonest flat
+  top-layer metatile as the base and the near-identical ones as pebble/patch variants (~20/256 cells). 0C has no such tiles: its
+  sides use the backdrop (`bg_palette[0]` overridden in `FillPreparedFrameView` from `Port_Widescreen_BackdropFill`), flat colour.
+  Both are made by code from the game's art, so they show in plain WIDE.

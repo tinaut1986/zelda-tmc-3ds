@@ -261,8 +261,10 @@ target_include_directories(tmc-3ds PRIVATE "${UPDATE_DEPS_ROOT}/include")
 target_link_directories(tmc-3ds PRIVATE "${UPDATE_DEPS_ROOT}/lib")
 # Official devkitPro curl enables gzip/deflate; the pinned minimal build does
 # not. Link its optional static dependency when supplied by the selected SDK.
+# The scene pictures are zlib streams (scene_pictures_3ds.c), so zlib is required (3ds-zlib, in the CI's devkitarm
+# image); tools/scene-extend/to_console.py --lz77 makes files the game reads without it.
 find_library(TMC_UPDATE_ZLIB NAMES z PATHS "${UPDATE_DEPS_ROOT}/lib"
-    "$ENV{DEVKITPRO}/portlibs/3ds/lib" NO_DEFAULT_PATH)
+    "$ENV{DEVKITPRO}/portlibs/3ds/lib" NO_DEFAULT_PATH REQUIRED)
 if(TMC_UPDATE_ZLIB)
     target_link_libraries(tmc-3ds PRIVATE rcheevos citro2d citro3d curl jansson mbedtls mbedx509 mbedcrypto "${TMC_UPDATE_ZLIB}" ctru m ppu_gpu_3ds_shader_bin)
 else()
@@ -290,7 +292,7 @@ configure_file(
 # Extensions of scenes the GBA drew at 240x160, for Full View (docs/wide-scene-extension.md):
 # made by tools/scene-extend/to_console.py from platform/3ds/assets/wide-scenes/.
 file(MAKE_DIRECTORY "${TMC_ROMFS}/wide-scenes")
-foreach(scene portal-cutscene-strips portal-rock-strips crenel-paths-ground crenel-paths-ledges crenel-paths-shadows title-forest fileselect-cave)
+foreach(scene crenel-rocks-ground crenel-hpath-ground crenel-hpath-rocks crenel-hpath-shadows crenel-hpath-03-ground crenel-hpath-03-rocks crenel-hpath-03-shadows portal-cutscene-strips portal-rock-strips crenel-paths-ground crenel-paths-ledges crenel-paths-shadows minish-paths-leaves minish-paths-shadows minish-water-ground minish-water-leaves minish-water-shadows minish-town-leaves minish-town-shadows minish-ranch-shadows minish-cabin-leaves minish-cabin-shadows title-forest fileselect-cave)
     configure_file("${CMAKE_CURRENT_LIST_DIR}/romfs/wide-scenes/${scene}.bin"
                    "${TMC_ROMFS}/wide-scenes/${scene}.bin" COPYONLY)
 endforeach()

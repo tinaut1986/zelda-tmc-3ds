@@ -188,12 +188,22 @@ void UpdateUIElements(void) {
      * 400x240 or 200x120 frame cannot show a 10-40 frame horizontal slide. */
     Port_UI_PrepareGameplayGeometry();
 #endif
+#ifdef PC_PORT
+    /* The buttons first, then what follows them: a page of the pause menu creates its TEXT_A/B and ITEM_A/B in
+     * lower slots than their buttons, so on its first tick they copied a button not placed yet, (0,0). The GBA
+     * clips that frame off its left edge; the 400x240 pause keeps the whole group and showed the label at the
+     * view's top left for a frame. */
+    for (u32 pass = 0; pass < 2; pass++)
+#endif
     for (index = 0; index < MAX_UI_ELEMENTS; index++) {
         element = &gHUD.elements[index];
         if (element->used != 0) {
 #ifdef PC_PORT
             if (element->type > UI_ELEMENT_TEXT_B) {
                 element->used = 0;
+                continue;
+            }
+            if ((element->type <= UI_ELEMENT_BUTTON_R) != (pass == 0)) {
                 continue;
             }
 #endif
@@ -300,6 +310,59 @@ static void DrawHudXY(void) {
     /* They follow A: its Wide anchor, and its slide off the top for messages. */
     DrawHudXYButton(0, a->x - HUD_XY_STEP, a->y - HUD_XY_STEP);
     DrawHudXYButton(1, a->x - 2 * HUD_XY_STEP, a->y);
+}
+
+/* The pause menu's item page at 400x240 (Port_Widescreen_PauseWide): A, B, X and Y where the game's HUD has them
+ * in Full View, the diamond at the view's right edge. The pause sprites move by (80, 40) into the view
+ * (port_draw.c), so the buttons are placed that much short of it; their items follow A and B. */
+static bool PauseHudBeside(void) {
+    return Port_Widescreen_PauseWide() && FindUIElement(UI_ELEMENT_ITEM_A) != NULL;
+}
+
+void Port_UI_PausePlaceButtons(void) {
+    if (!PauseHudBeside()) {
+        return;
+    }
+    gHUD.buttonX[0] = 0xd0 + 160 - 80;
+    gHUD.buttonY[0] = HUD_XY_DIAMOND_Y - 40;
+    gHUD.buttonX[1] = 0xd0 - HUD_XY_STEP + 160 - 80;
+    gHUD.buttonY[1] = HUD_XY_DIAMOND_Y + HUD_XY_STEP - 40;
+}
+
+/* In place of DrawUIElements on the pause menu: the elements, then X and Y beside A as in the game's diamond. With
+ * TOP HUD hiding the game's HUD (HIDE, or AUTO while the bottom screen shows the buttons) the item page's buttons
+ * and their items are left out as in game; the other pages' prompts stay. */
+void Port_UI_PauseDrawElements(void) {
+    extern bool Port_Config_GetHideTopHud(void);
+    const bool beside = PauseHudBeside();
+    if (beside && Port_Config_GetHideTopHud()) {
+        for (u32 index = 0; index < MAX_UI_ELEMENTS; index++) {
+            UIElement* element = &gHUD.elements[index];
+            if (element->used != 1 || element->unk_0_1 != 1 || element->type > UI_ELEMENT_TEXT_B ||
+                element->type == UI_ELEMENT_BUTTON_A || element->type == UI_ELEMENT_BUTTON_B ||
+                element->type == UI_ELEMENT_ITEM_A || element->type == UI_ELEMENT_ITEM_B) {
+                continue;
+            }
+            const UIElementDefinition* definition = &gUIElementDefinitions[element->type];
+            gOamCmd.x = element->x;
+            gOamCmd.y = element->y;
+            gOamCmd._4 = definition->unk_0;
+            gOamCmd._6 = definition->unk_2;
+            gOamCmd._8 = element->unk_18 << 0xc | element->unk_1a;
+            DrawDirect(definition->spriteIndex, element->frameIndex);
+        }
+        return;
+    }
+    Port_Draw_SetPauseHudBeside(beside);
+    DrawUIElements();
+    if (beside) {
+        const UIElement* a = FindUIElement(UI_ELEMENT_BUTTON_A);
+        if (a != NULL && a->unk_0_1 == 1) {
+            DrawHudXYButton(0, a->x - HUD_XY_STEP, a->y - HUD_XY_STEP);
+            DrawHudXYButton(1, a->x - 2 * HUD_XY_STEP, a->y);
+        }
+    }
+    Port_Draw_SetPauseHudBeside(0);
 }
 #endif
 
@@ -475,6 +538,129 @@ void RecoverUI(u32 bottomPt, u32 topPt) {
     gHUD.unk_a = 0;
 }
 
+#if defined(TMC_3DS) && defined(MODE1_GBA_HEIGHT) && (MODE1_GBA_HEIGHT > 160)
+/* Full View's rupees as "287/300": the wallet's size after the count. The widget moves three columns left, 21..28,
+ * ending where it always did (the right eye's 3D shift cut column 29 off), and the 400 view's right band starts a
+ * column earlier for it (virtuappu_mode1_ws_hud_right_native_x, 168..239). The HUD's own 8x16 digits are
+ * packed at their inked width, outlines shared, and the slash is drawn in their colours; tiles 0x17a..0x17f, which
+ * nothing in the game uses (message lines end at 0xe9, cutscene text is BG1). */
+#define RUPEE_MAX_TILE 0x17a
+
+/* Whether a shown BG keeps its map over those tiles: Mount Crenel's storm puts the rain's (BG1, screen base 29,
+ * 0x600e800..0x600efff) right on them, and writing the max there turned its last rows into garbage. */
+static bool RupeeMaxTilesTaken(void) {
+    static const u8 kBlocks[4] = { 1, 2, 2, 4 };
+    const u32 first = 0xc000 + RUPEE_MAX_TILE * 0x20, last = first + 6 * 0x20;
+    const u16 controls[4] = { gScreen.bg0.control, gScreen.bg1.control, gScreen.bg2.control, gScreen.bg3.control };
+    for (u32 bg = 0; bg < 4; bg++) {
+        if ((gScreen.lcd.displayControl & (DISPCNT_BG0_ON << bg)) == 0)
+            continue;
+        const u32 start = ((controls[bg] >> 8) & 0x1f) * 0x800;
+        const u32 end = start + kBlocks[controls[bg] >> 14] * 0x800;
+        if (start < last && first < end)
+            return true;
+    }
+    return false;
+}
+
+static bool RupeeMaxShown(void) {
+    return Port_Widescreen_HudTargetViewWidth() == 400 && Port_Widescreen_HudTargetViewHeight() == 240 &&
+           !RupeeMaxTilesTaken();
+}
+
+static u8 GlyphPixel(const u8* glyph, int x, int y) {
+    if (x < 0 || x > 7 || y < 0 || y > 15) {
+        return 0;
+    }
+    const u8 b = glyph[(y >> 3) * 0x20 + (y & 7) * 4 + (x >> 1)];
+    return (x & 1) ? b >> 4 : b & 15;
+}
+
+/* Writes the max into the three cells' six tiles; false if it does not fit in 24 pixels. */
+static bool RenderRupeeMax(u32 max, bool yellow) {
+    const u8* font = (const u8*)gUnk_085C4620 + (yellow ? 0x500 : 0x280);
+    static u8 canvas[16][24];
+    static u32 tiles[6 * 8];
+    u8 slash[16][8];
+    u32 counts[16] = { 0 }, edges[16] = { 0 };
+    int x, y, top = 16, bottom = -1;
+    /* The digits' fill and outline: the commonest colour of inner pixels, and of pixels beside a clear one. */
+    for (u32 d = 0; d < 10; d++) {
+        const u8* g = font + d * 0x40;
+        for (y = 0; y < 16; y++) {
+            for (x = 0; x < 8; x++) {
+                const u8 c = GlyphPixel(g, x, y);
+                if (c == 0) {
+                    continue;
+                }
+                if (y < top) top = y;
+                if (y > bottom) bottom = y;
+                const bool edge = !GlyphPixel(g, x - 1, y) || !GlyphPixel(g, x + 1, y) || !GlyphPixel(g, x, y - 1) ||
+                                  !GlyphPixel(g, x, y + 1);
+                (edge ? edges : counts)[c]++;
+            }
+        }
+    }
+    u32 fill = 1, outline = 1;
+    for (u32 c = 1; c < 16; c++) {
+        if (counts[c] > counts[fill]) fill = c;
+        if (edges[c] > edges[outline]) outline = c;
+    }
+    if (bottom - top < 4) {
+        return false;
+    }
+    /* The slash: one pixel of fill from the digits' bottom left to their top right, outlined. */
+    memset(slash, 0, sizeof(slash));
+    for (y = top + 1; y < bottom; y++) {
+        slash[y][1 + (bottom - 1 - y) * 3 / (bottom - top - 2 > 0 ? bottom - top - 2 : 1)] = (u8)fill;
+    }
+    for (y = top; y <= bottom; y++) {
+        for (x = 0; x < 8; x++) {
+            if (slash[y][x] == fill) continue;
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dx = -1; dx <= 1; dx++) {
+                    const int ny = y + dy, nx = x + dx;
+                    if (ny >= 0 && ny < 16 && nx >= 0 && nx < 8 && slash[ny][nx] == fill) slash[y][x] = (u8)outline;
+                }
+        }
+    }
+    /* Packed left to right, each glyph's first inked column over the last one of the glyph before. */
+    const u32 digits[3] = { max / 100 % 10, max / 10 % 10, max % 10 };
+    memset(canvas, 0, sizeof(canvas));
+    int cursor = 0;
+    for (int i = 0; i < 4; i++) {
+        const u8* g = i ? font + digits[i - 1] * 0x40 : NULL;
+        int left = 8, right = -1;
+        for (x = 0; x < 8; x++)
+            for (y = 0; y < 16; y++)
+                if (i ? GlyphPixel(g, x, y) : slash[y][x]) {
+                    if (x < left) left = x;
+                    if (x > right) right = x;
+                }
+        if (right < 0) continue;
+        if (cursor > 0) cursor--; /* the shared outline column */
+        if (cursor + (right - left) >= 24) return false;
+        for (x = left; x <= right; x++, cursor++)
+            for (y = 0; y < 16; y++) {
+                const u8 c = i ? GlyphPixel(g, x, y) : slash[y][x];
+                if (c != 0 && (canvas[y][cursor] == 0 || c == fill)) canvas[y][cursor] = c;
+            }
+    }
+    /* Into 4bpp tiles in RenderDigits' order: each cell's top tile, then its bottom one. */
+    u8* out = (u8*)tiles;
+    memset(tiles, 0, sizeof(tiles));
+    for (int cell = 0; cell < 3; cell++)
+        for (int half = 0; half < 2; half++)
+            for (y = 0; y < 8; y++)
+                for (x = 0; x < 8; x++) {
+                    const u8 c = canvas[half * 8 + y][cell * 8 + x];
+                    out[(cell * 2 + half) * 0x20 + y * 4 + (x >> 1)] |= (x & 1) ? (u8)(c << 4) : c;
+                }
+    DmaCopy32(3, tiles, 0x600c000 + RUPEE_MAX_TILE * 0x20, sizeof(tiles));
+    return true;
+}
+#endif
+
 void DrawRupees(void) {
     u32 cVar1;
     u32 temp;
@@ -483,10 +669,32 @@ void DrawRupees(void) {
     u16* row2;
     static s32 sTilemapOffset;
     s32 tilemapOffset = HudBottomTilemapOffset();
+#if defined(TMC_3DS) && defined(MODE1_GBA_HEIGHT) && (MODE1_GBA_HEIGHT > 160)
+    /* With the max the widget starts three columns left (RenderRupeeMax); a change of layout or wallet repaints. */
+    static s32 sLayout = 0;
+    const s32 layout = RupeeMaxShown() ? 4 + (gSave.stats.walletType & 3) : 0;
+    if (layout != 0) {
+        tilemapOffset -= 3;
+    }
+    if (layout != sLayout) {
+        MemClear(&gBG0Buffer[0x258 + sTilemapOffset], (sLayout != 0 ? 8 : 5) * sizeof(u16));
+        MemClear(&gBG0Buffer[0x278 + sTilemapOffset], (sLayout != 0 ? 8 : 5) * sizeof(u16));
+        sLayout = layout;
+        sTilemapOffset = tilemapOffset;
+        gHUD.unk_a = 0;
+        gScreen.bg0.updated = 1;
+    }
+#endif
 
     if (tilemapOffset != sTilemapOffset) {
         MemClear(&gBG0Buffer[0x258 + sTilemapOffset], 5 * sizeof(u16));
         MemClear(&gBG0Buffer[0x278 + sTilemapOffset], 5 * sizeof(u16));
+#if defined(TMC_3DS) && defined(MODE1_GBA_HEIGHT) && (MODE1_GBA_HEIGHT > 160)
+        if (sLayout != 0) {
+            MemClear(&gBG0Buffer[0x258 + 5 + sTilemapOffset], 3 * sizeof(u16));
+            MemClear(&gBG0Buffer[0x278 + 5 + sTilemapOffset], 3 * sizeof(u16));
+        }
+#endif
         sTilemapOffset = tilemapOffset;
         gHUD.unk_a = 0;
         gScreen.bg0.updated = 1;
@@ -507,6 +715,12 @@ void DrawRupees(void) {
             row2[2] = 0;
             row2[3] = 0;
             row2[4] = 0;
+#if defined(TMC_3DS) && defined(MODE1_GBA_HEIGHT) && (MODE1_GBA_HEIGHT > 160)
+            if (layout != 0) {
+                MemClear(&row1[5], 3 * sizeof(u16));
+                MemClear(&row2[5], 3 * sizeof(u16));
+            }
+#endif
             gScreen.bg0.updated = 1;
         }
     } else {
@@ -525,6 +739,15 @@ void DrawRupees(void) {
             row2[3] = temp2 + 3;
             row1[4] = temp2 + 4;
             row2[4] = temp2 + 5;
+#if defined(TMC_3DS) && defined(MODE1_GBA_HEIGHT) && (MODE1_GBA_HEIGHT > 160)
+            if (layout != 0) {
+                const bool fits = RenderRupeeMax(gWalletSizes[gSave.stats.walletType & 3].size, false);
+                for (u32 cell = 0; cell < 3; cell++) {
+                    row1[5 + cell] = fits ? (u16)(0xf000 | (RUPEE_MAX_TILE + cell * 2)) : 0;
+                    row2[5 + cell] = fits ? (u16)(0xf000 | (RUPEE_MAX_TILE + cell * 2 + 1)) : 0;
+                }
+            }
+#endif
             gScreen.bg0.updated = 1;
             cVar1 = 1;
         } else {

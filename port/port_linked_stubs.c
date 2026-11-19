@@ -20,6 +20,7 @@
 #include "map.h"
 #include "manager/diggingCaveEntranceManager.h"
 #include "manager/lightRayManager.h"
+#include "manager/weatherChangeManager.h"
 #include "manager/horizontalMinishPathBackgroundManager.h"
 #include "manager/verticalMinishPathBackgroundManager.h"
 #include "menu.h"
@@ -1528,6 +1529,7 @@ static int Port_WidescreenRead3DSView(u32* roomKey, Port3DSFullViewMode* mode) {
 #define WS_CUTSCENE_VIEW_KEY 0xC0715CE5u
 #define WS_TITLE_VIEW_KEY 0x717E5CE5u
 #define WS_FILESELECT_VIEW_KEY 0xF11E5CE5u
+#define WS_PAUSE_VIEW_KEY 0xBA05E5CEu
 
 /* The title screen in Full View (Western layout: the forest on BG1): drawn at 400x240 with the
  * GBA's screen centred (src/title.c moves the light rays, sword and sprites), the forest from the
@@ -1616,6 +1618,11 @@ int Port_Stereo_Scenes(void) {
     /* The game over screen (src/gameOverTask.c): the stone panel and its choices are BGs, the GAME OVER
      * letters are sprites. */
     if (gMain.task == TASK_GAMEOVER) scenes |= PORT_STEREO_SCENE_GAME_OVER;
+    /* Mount Crenel's storm (WeatherChangeManager): the rain is BG1 at screen base 29, priority 1, in place of the
+     * top map layer. */
+    if (gRoomControls.area == AREA_MT_CRENEL && gMapTop.bgSettings == NULL && (dispcnt & DISPCNT_BG1_ON) &&
+        (gScreen.bg1.control & 0x1f03) == (BGCNT_SCREENBASE(29) | BGCNT_PRIORITY(1)))
+        scenes |= PORT_STEREO_SCENE_RAIN;
     /* Playing: the world itself (stereo_world_* in tmc3ds.ini). The layer over Link and his sprites stand out
      * of the ground, which stays on the screen plane. */
     if (gMain.task == TASK_GAME && gMain.substate == GAMEMAIN_UPDATE) scenes |= PORT_STEREO_SCENE_WORLD;
@@ -1727,6 +1734,50 @@ int Port_Widescreen_FileSelectCaveShown(void) {
 #else
     return 0;
 #endif
+}
+
+/* The pause menu (src/menu/pauseMenu.c): its background of Ezlo caps is BG3 at screen base 30, character
+ * base 2, priority 3 (0x1e0b), unscrolled; read from the registers the shown frame was drawn from, while the
+ * menu runs (Subtask_PauseMenu tells the soft slots each tick). */
+int Port_Widescreen_PauseBackgroundShown(void) {
+#ifdef TMC_3DS
+    extern bool Port_SoftSlots_IsPauseActive(void);
+    if (!Port_Config_3DSFullViewComboEnabled() || gMain.task != TASK_GAME || !Port_SoftSlots_IsPauseActive())
+        return 0;
+    const unsigned dispcnt = gIoMem[REG_OFFSET_DISPCNT] | (gIoMem[REG_OFFSET_DISPCNT + 1] << 8);
+    const unsigned bg3cnt = gIoMem[REG_OFFSET_BG3CNT] | (gIoMem[REG_OFFSET_BG3CNT + 1] << 8);
+    const unsigned hofs = (gIoMem[REG_OFFSET_BG3HOFS] | (gIoMem[REG_OFFSET_BG3HOFS + 1] << 8)) & 0x1ff;
+    const unsigned vofs = (gIoMem[REG_OFFSET_BG3VOFS] | (gIoMem[REG_OFFSET_BG3VOFS + 1] << 8)) & 0x1ff;
+    return !(dispcnt & DISPCNT_FORCED_BLANK) && (dispcnt & DISPCNT_BG3_ON) && hofs == 0 && vofs == 0 &&
+           bg3cnt == (BGCNT_SCREENBASE(30) | BGCNT_CHARBASE(2) | BGCNT_PRIORITY(3));
+#else
+    return 0;
+#endif
+}
+
+/* The pause menu at 400x240 (Port_Widescreen_PauseWide in port_widescreen.h): with the GPU renderer only, while the
+ * game shows its background (gScreen, a tick ahead of the
+ * registers Port_Widescreen_PauseBackgroundShown reads). */
+int Port_Widescreen_PauseWide(void) {
+#ifdef TMC_3DS
+    extern bool Port_SoftSlots_IsPauseActive(void);
+    if (gMain.task != TASK_GAME || !Port_Config_3DSFullViewComboEnabled() || !Port_Config_GpuRenderer() ||
+        !Port_SoftSlots_IsPauseActive())
+        return 0;
+    const unsigned dispcnt = gScreen.lcd.displayControl;
+    return !(dispcnt & DISPCNT_FORCED_BLANK) && (dispcnt & DISPCNT_BG3_ON) && gScreen.bg3.xOffset == 0 &&
+           gScreen.bg3.yOffset == 0 &&
+           gScreen.bg3.control == (BGCNT_SCREENBASE(30) | BGCNT_CHARBASE(2) | BGCNT_PRIORITY(3));
+#else
+    return 0;
+#endif
+}
+
+int Port_Widescreen_PauseViewLive(void) {
+    u32 key;
+    Port3DSFullViewMode mode;
+    return Port_WidescreenRead3DSView(&key, &mode) && key == WS_PAUSE_VIEW_KEY &&
+           mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
 }
 
 /* The file select at 400x240 (Port_Widescreen_FileSelectWide in port_widescreen.h): with the GPU
@@ -1965,10 +2016,11 @@ static Port3DSFullViewInputs Port_WidescreenFullViewInputs(void) {
      * (GameMain_MinishPortal), the room still drawn behind it. */
     inputs.playerValid = (gPlayerEntity.base.kind == PLAYER || gMain.substate == GAMEMAIN_MINISHPORTAL) &&
                          (gRoomControls.camera_target != NULL || Port_WidescreenFrozenCameraKeepsFullView());
-    /* Mt. Crenel room 2 uses a non-tileable 32x32 static BG3 landscape.
-     * Repeating it across 400 pixels creates a visible seam; keep the entire
-     * scene on E2 until that overlay has a semantic 64-column map. */
-    inputs.unsupportedScene = gRoomControls.area == AREA_MT_CRENEL && gRoomControls.room == 2;
+    /* No scene is excluded: Mt. Crenel's Cave of Flames entrance (06/02) was, for its static BG3
+     * landscape (32x32 tiles, parallax), and fell back to E2 mid-transition and stayed there.
+     * A scenario shows what is there (owner, 2026-11-19): BG3 wraps across 400 as the GBA's own
+     * map wraps, like the Mountain Top's (06/00), which never was excluded. */
+    inputs.unsupportedScene = 0;
     if (gRoomControls.area <= AREA_98) {
         inputs.areaIsExterior = Port3DSFullViewPolicy_AreaIsExterior(
             gRoomControls.area, gRoomControls.room, gAreaMetadata[gRoomControls.area].flags);
@@ -2111,7 +2163,7 @@ Port3DSFullViewMode Port_Widescreen_3DSViewMode(void) {
     u32 publishedKey;
     if (!Port_WidescreenRead3DSView(&publishedKey, &publishedMode)) return PORT_3DS_FULL_VIEW_FALLBACK;
     if (publishedKey == WS_CUTSCENE_VIEW_KEY || publishedKey == WS_TITLE_VIEW_KEY ||
-        publishedKey == WS_FILESELECT_VIEW_KEY)
+        publishedKey == WS_FILESELECT_VIEW_KEY || publishedKey == WS_PAUSE_VIEW_KEY)
         return publishedMode; /* no map shadows there */
     if (!Port_Widescreen_ShadowsLive()) return PORT_3DS_FULL_VIEW_FALLBACK;
     return publishedMode;
@@ -2801,7 +2853,55 @@ static void Port_WidescreenLightRayShadow(int width) {
     virtuappu_mode1_ws_shadow_stride[3] = MODE1_WS_SHADOW_FULL_VIEW_COLS;
 }
 
+/* Mount Crenel's storm (src/manager/weatherChangeManager.c): the rain is BG1 over a 32x32 map (screen base 29,
+ * gfx groups 0x2B..0x2E by strength) that only scrolls sideways within one 32-pixel period, in place of the top map
+ * layer (gMapTop.bgSettings NULL). Its pattern repeats every 32 columns and rows, so Full View repeats it over all of
+ * the view, as the fog and the light rays reach the edges; the map alone covered 256 columns, and the rows past it
+ * showed whatever followed it in VRAM. */
+static u16 sWsRain[MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_FULL_VIEW_COLS];
+static void Port_WidescreenRainShadow(int width) {
+    const WeatherChangeManager* weather =
+        (const WeatherChangeManager*)DeepFindEntityByID(MANAGER, WEATHER_CHANGE_MANAGER);
+    if (weather == NULL || weather->unk_22 > 3 || gMapTop.bgSettings != NULL ||
+        (gScreen.lcd.displayControl & DISPCNT_BG1_ON) == 0 || (gScreen.bg1.control & 0xC080) != 0 || width <= 240 ||
+        ((width - 240) & 7) != 0)
+        return;
+    const u16* map = (const u16*)gba_TryMemPtr(0x06000000u + ((gScreen.bg1.control >> 8) & 0x1fu) * 0x800u);
+    if (map == NULL)
+        return;
+    /* Column c of the shadow covers view x [c*8 - fine, c*8 + 8 - fine), as Port_WidescreenLightRayShadow's. */
+    const int first = ((gScreen.bg1.xOffset & 0x1ff) >> 3) - (width - 240) / 8;
+    const int firstRow = (gScreen.bg1.yOffset & 0x1ff) >> 3;
+    for (int k = 0; k < MODE1_WS_SHADOW_ROWS; ++k) {
+        const int row = (firstRow + k) & 31;
+        u16* dst = &sWsRain[row * MODE1_WS_SHADOW_FULL_VIEW_COLS];
+        for (int col = 0; col < MODE1_WS_SHADOW_FULL_VIEW_COLS; ++col)
+            dst[col] = map[row * 32 + ((first + col) & 31)];
+    }
+    virtuappu_mode1_ws_shadow[1] = sWsRain;
+    virtuappu_mode1_ws_shadow_base_tile[1] = 0;
+    virtuappu_mode1_ws_shadow_cols[1] = MODE1_WS_SHADOW_FULL_VIEW_COLS;
+    virtuappu_mode1_ws_shadow_stride[1] = MODE1_WS_SHADOW_FULL_VIEW_COLS;
+}
+
 /* Called per-VBlank from src/interrupts.c::UpdateDisplayControls. */
+/* Rooms narrower than the view whose black sides take the colour of the room's rim (owner, 2026-10-30; the backdrop,
+ * which nothing but the sides shows): the BG palette entry (palette * 16 + index) that has it, or -1. */
+int Port_Widescreen_BackdropFill(void) {
+    static const struct { u8 area, room; s8 palette, index; } kRooms[] = {
+        { 0x26, 0x0C, 7, 15 }, /* the cave with the ladder: its rim's light orange */
+        /* Crenel's horizontal Minish path (800x192, shorter than the view): above and below it its wall's purple
+         * stones, the bottom rows' colour, a step darker than the top rows' (BG pal 6 colour 3); the rocks (BG1) and
+         * their blended shadows (BG3) still go over it. */
+        { 0x12, 0x02, 6, 2 },
+        { 0x12, 0x03, 6, 2 }, /* the next room: the same maps in its own palettes */
+    };
+    for (unsigned i = 0; i < sizeof(kRooms) / sizeof(kRooms[0]); ++i)
+        if (kRooms[i].area == gRoomControls.area && kRooms[i].room == gRoomControls.room)
+            return kRooms[i].palette * 16 + kRooms[i].index;
+    return -1;
+}
+
 void Port_Widescreen_UpdateShadows(void) {
     if (gMain.task != TASK_GAME || (gRoomControls.scrollAction != 2 && gRoomControls.scrollAction != 0))
         sWsScroll.valid = 0;
@@ -2866,6 +2966,7 @@ void Port_Widescreen_UpdateShadows(void) {
     }
 #endif
     virtuappu_mode1_ws_hud_right_anchor = 0;
+    virtuappu_mode1_ws_hud_right_native_x = MODE1_WS_HUD_RIGHT_NATIVE_X;
     virtuappu_mode1_ws_msg_shift = 0;
     virtuappu_mode1_ws_full_view = 0;
     Port_WidescreenPublish3DSView(roomKey, PORT_3DS_FULL_VIEW_FALLBACK);
@@ -2883,6 +2984,11 @@ void Port_Widescreen_UpdateShadows(void) {
     if (Port_Widescreen_FileSelectWide()) {
         virtuappu_mode1_ws_full_view = 1;
         Port_WidescreenPublish3DSView(WS_FILESELECT_VIEW_KEY, PORT_3DS_FULL_VIEW_OUTDOOR_1X);
+        return;
+    }
+    if (Port_Widescreen_PauseWide()) {
+        virtuappu_mode1_ws_full_view = 1;
+        Port_WidescreenPublish3DSView(WS_PAUSE_VIEW_KEY, PORT_3DS_FULL_VIEW_OUTDOOR_1X);
         return;
     }
 #endif
@@ -2987,19 +3093,57 @@ void Port_Widescreen_UpdateShadows(void) {
 
     Port_WidescreenParallaxShadows(fullViewOutdoor);
 #ifdef TMC_3DS
-    /* The Crenel paths' shaft (area 0x12 room 00) in Full View: its three layers go on beside the room from generated
-     * strips (scene_pictures_3ds.c), each drawn as its BG at the room's place on the view: the ground moving with the
-     * room, the ledges (BG1) and shadows (BG3) with the scroll their manager gives them
-     * (src/manager/verticalMinishPathBackgroundManager.c: 1.25 and 1.125 times the room's). */
+    /* The vertical Minish paths in Full View (rooms of 240x800 whose BG1 is set up by
+     * src/manager/verticalMinishPathBackgroundManager.c; which ones and their strips: kShafts in scene_pictures_3ds.c) go
+     * on beside the room, each layer drawn as its BG at the room's place on the view: the ground moving with the room,
+     * BG1 (ledges, leaves) and BG3 (their shadows) with the scroll their manager gives them (1.25 and 1.125 times the
+     * room's). */
     {
-        extern void ScenePictures_SetShaftView(int groundBg, int x, int groundY, int ledgesY, int shadowsY);
-        const int bg = fullViewOutdoor && gRoomControls.area == 0x12 && gRoomControls.room == 0 &&
-                               gMapBottom.bgSettings != NULL
-                           ? Port_WidescreenPpuBgForControl(gMapBottom.bgSettings->control)
-                           : -1;
+        extern void ScenePictures_SetShaftView(int scene, int groundBg, int x, int groundY, int ledgesY, int shadowsY);
+        extern int ScenePictures_ShaftScene(int area, int room, const u8* leavesMap);
+        /* BG1's map (its part of gMapDataTopSpecial) only while the manager's BG1 is set up: a scene told by that map
+         * needs it, the Crenel shaft (found by its room; its BG1 is set up otherwise) does not. */
+        const bool leavesBg = gRoomControls.width == 240 &&
+                              gScreen.bg1.control ==
+                                  (BGCNT_SCREENBASE(30) | BGCNT_PRIORITY(1) | BGCNT_CHARBASE(2) | BGCNT_MOSAIC);
+        const int scene = fullViewOutdoor && gMapBottom.bgSettings != NULL
+                              ? ScenePictures_ShaftScene(gRoomControls.area, gRoomControls.room,
+                                                         leavesBg ? (const u8*)gMapDataTopSpecial + 0x2000 : NULL)
+                              : -1;
+        const int bg = scene >= 0 ? Port_WidescreenPpuBgForControl(gMapBottom.bgSettings->control) : -1;
         const s32 dy = gRoomControls.scroll_y - gRoomControls.origin_y;
-        ScenePictures_SetShaftView(bg, (int)gRoomControls.origin_x - gRoomControls.scroll_x - 80, (int)-dy,
+        ScenePictures_SetShaftView(scene, bg, (int)gRoomControls.origin_x - gRoomControls.scroll_x - 80, (int)-dy,
                                    (int)-(dy + (dy >> 2)), (int)-(dy + (dy >> 3)));
+    }
+    /* Crenel's horizontal Minish path in Full View (area 0x12 room 02, 800x192, horizontalMinishPathBackgroundManager.c):
+     * bands above and below the room (scene_pictures_3ds.h, SCENE_ROW_*). The ground's picture column 0 sits on the
+     * room's column 0 and its bands just above and below the room; the rocks (BG1) and their shadows (BG3) are their
+     * whole 1024-column layer, whose column X the view shows at X minus the layer's scroll (the manager's, at 1.25 and
+     * 1.125 times the room's), and row Y at Y minus the BG's vertical offset (their bands start at the layer's rows -32
+     * and 208). */
+    {
+        extern void ScenePictures_SetRowView(int scene, int groundBg, const int x[3], const int y[3][2]);
+        int x[3] = { 0, 0, 0 }, y[3][2] = { { 0, 0 }, { 0, 0 }, { 0, 0 } };
+        int groundBg = -1;
+        /* Room 03 is the same in other palettes (SCENE_ROW_CRENEL_03). */
+        const int scene = gRoomControls.room == 0x02 ? 0 : gRoomControls.room == 0x03 ? 1 : -1;
+        if (fullViewOutdoor && gRoomControls.area == 0x12 && scene >= 0 && gMapBottom.bgSettings != NULL &&
+            (gScreen.bg1.control & ~0x43) == 0x1e08 && (gScreen.bg3.control & ~0x43) == 0x1d08) {
+            groundBg = Port_WidescreenPpuBgForControl(gMapBottom.bgSettings->control);
+            const int sx = gRoomControls.scroll_x - gRoomControls.origin_x;
+            const int top = (int)gRoomControls.origin_y - gRoomControls.scroll_y;
+            const int viewWidth = Port_Widescreen_GameplayViewWidth();
+            x[0] = -sx;
+            y[0][0] = top - 48;
+            y[0][1] = top + (int)gRoomControls.height;
+            x[1] = -Port_HorizontalMinishPathScroll(sx, gRoomControls.width, 2, viewWidth);
+            y[1][0] = -32 - (gScreen.bg1.yOffset & 0xff);
+            y[1][1] = 208 - (gScreen.bg1.yOffset & 0xff);
+            x[2] = -Port_HorizontalMinishPathScroll(sx, gRoomControls.width, 3, viewWidth);
+            y[2][0] = -32 - (gScreen.bg3.yOffset & 0xff);
+            y[2][1] = 208 - (gScreen.bg3.yOffset & 0xff);
+        }
+        ScenePictures_SetRowView(scene, groundBg, x, y);
     }
 #endif
 
@@ -3022,6 +3166,7 @@ void Port_Widescreen_UpdateShadows(void) {
     if (latchedMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X) {
         virtuappu_mode1_ws_full_view = 1;
         Port_WidescreenLightRayShadow(400); /* the published view is not 400 wide yet this tick */
+        Port_WidescreenRainShadow(400);
     }
     if (!Port_Widescreen_ShadowsLive()) {
         if (producerMode != PORT_3DS_FULL_VIEW_FALLBACK) {
@@ -3087,6 +3232,11 @@ void Port_Widescreen_UpdateShadows(void) {
         virtuappu_mode1_ws_msg_shift = (Port_Widescreen_EffectiveViewWidth() - 240) / 2;
     }
     virtuappu_mode1_ws_hud_right_anchor = Port_Widescreen_HudRightAnchor();
+    /* Full View's rupees with the wallet's size reach a column further left (src/ui.c, DrawRupees). */
+    virtuappu_mode1_ws_hud_right_native_x =
+        Port_Widescreen_HudTargetViewWidth() == 400 && Port_Widescreen_HudTargetViewHeight() == 240
+            ? MODE1_WS_HUD_RIGHT_NATIVE_X - 8
+            : MODE1_WS_HUD_RIGHT_NATIVE_X;
 }
 #else
 void Port_Widescreen_BeginScroll(unsigned room, unsigned direction) {
@@ -3109,6 +3259,15 @@ int Port_Widescreen_StretchEdges(void) {
     return 0;
 }
 int Port_Widescreen_FileSelectCaveShown(void) {
+    return 0;
+}
+int Port_Widescreen_PauseBackgroundShown(void) {
+    return 0;
+}
+int Port_Widescreen_PauseWide(void) {
+    return 0;
+}
+int Port_Widescreen_PauseViewLive(void) {
     return 0;
 }
 int Port_Widescreen_TitleWide(void) {

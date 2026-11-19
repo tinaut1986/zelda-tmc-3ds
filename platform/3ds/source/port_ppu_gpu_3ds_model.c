@@ -2925,6 +2925,68 @@ static bool build_bg_scroll_picture(const PpuGpu3DSFrameView* frame, PpuGpu3DSCo
     return true;
 }
 
+/* BG `bg`'s bands above and below a room shorter than the view (PpuGpu3DSFrameView::rowPictureMask) as part of that
+ * BG: for each of its two bands, over the lines it shares with this band, one quad across the whole frame, its picture
+ * repeated sideways by the texture's wrap from the view column of its column 0; after the BG's own batches and as that
+ * BG, as build_bg_scroll_picture. */
+static bool build_bg_row_picture(const PpuGpu3DSFrameView* frame, PpuGpu3DSCommandBuffer* cmd,
+                                 const PpuGpu3DSBand* band, const uint8_t* io, unsigned bg, unsigned priority,
+                                 const PpuGpu3DSRegion* regions, size_t regionCount, bool emit,
+                                 size_t* vertexCursor, size_t* indexCursor, size_t* batchCursor) {
+    const unsigned layer = PPU_GPU3DS_BG0 + bg;
+    const int width = frame->rowPictureWidth[bg];
+    const int rows0 = frame->rowPictureBandRows[bg][0], rows1 = frame->rowPictureBandRows[bg][1];
+    if (width <= 0 || rows0 + rows1 <= 0 || !layer_has_region(regions, regionCount, layer, 0, (uint16_t)frame->width))
+        return true;
+    const float texH = (float)PpuGpu3DS_ScrollPictureTexHeight((unsigned)(rows0 + rows1));
+    /* The picture column at the frame's column 0, in 0..width-1; the quad's u runs on from there (the wrap repeats). */
+    const int firstColumn = ((-frame->rowPictureX[bg]) % width + width) % width;
+    const float u0f = (float)firstColumn / (float)width;
+    const float u1f = u0f + (float)frame->width / (float)width;
+    const size_t first = *indexCursor;
+    unsigned quads = 0;
+    const int bandTop = band->firstLine, bandEnd = band->firstLine + band->lineCount;
+    for (unsigned k = 0; k < 2u; ++k) {
+        const int rows = k ? rows1 : rows0, texRow0 = k ? rows0 : 0;
+        const int top = frame->rowPictureBandY[bg][k];
+        const int from = top > bandTop ? top : bandTop, to = top + rows < bandEnd ? top + rows : bandEnd;
+        if (rows <= 0 || from >= to) continue;
+        if (quad_room(cmd, vertexCursor, indexCursor)) {
+            const float y0 = 1.0f - (float)from * 2.0f / (float)frame->height;
+            const float y1 = 1.0f - (float)to * 2.0f / (float)frame->height;
+            const int16_t u0 = PpuGpu3DS_PackUV(u0f), u1 = PpuGpu3DS_PackUV(u1f);
+            const int16_t v0 = PpuGpu3DS_PackUV(1.0f - (float)(texRow0 + from - top) / texH);
+            const int16_t v1 = PpuGpu3DS_PackUV(1.0f - (float)(texRow0 + to - top) / texH);
+            PpuGpu3DSVertex* const vertices = cmd->vertices + *vertexCursor;
+            vertices[0] = (PpuGpu3DSVertex){ -1.0f, y0, 0.0f, u0, v0 };
+            vertices[1] = (PpuGpu3DSVertex){ 1.0f, y0, 0.0f, u1, v0 };
+            vertices[2] = (PpuGpu3DSVertex){ 1.0f, y1, 0.0f, u1, v1 };
+            vertices[3] = (PpuGpu3DSVertex){ -1.0f, y1, 0.0f, u0, v1 };
+        }
+        *vertexCursor += 4;
+        *indexCursor += 6;
+        ++quads;
+    }
+    if (quads == 0) return true;
+    const uint16_t bldcnt = read16(io, MODE1_IO_BLDCNT);
+    const PpuGpu3DSBatch base = {
+        .firstIndex = (uint32_t)first,
+        .indexCount = 6u * quads,
+        .firstLine = band->firstLine,
+        .lineCount = band->lineCount,
+        .scissorRight = (uint16_t)frame->width,
+        .layer = (uint8_t)layer,
+        .priority = (uint8_t)priority,
+        .effect = PPU_GPU3DS_EFFECT_NONE,
+        .target2 = (uint8_t)((bldcnt >> (layer + 8u)) & 1u),
+        .objectIndex = UINT8_MAX,
+        .texture = (uint8_t)(PPU_GPU3DS_SCROLL_PICTURE_TEXTURE + bg),
+    };
+    append_layer_batches(cmd, &base, regions, regionCount, bldcnt, read16(io, MODE1_IO_BLDALPHA),
+                         read16(io, MODE1_IO_BLDY), emit, batchCursor);
+    return true;
+}
+
 /* Whether anything under background `bg` (priority `priority`) in this band is not a second blend target. The blend
  * draws the layer blended over the pixels whose top layer so far is a target, and a second batch, the complement, draws
  * it plain over the rest; when the backdrop, the sprites and every enabled layer under it are targets, the complement
@@ -4610,6 +4672,8 @@ static bool build_bg_native_bounds(const PpuGpu3DSFrameView* frame, PpuGpu3DSCac
     native.bgRepeatMask = 0;
     native.pictureMask = 0;
     native.scrollPictureMask = 0;
+    native.rowPictureMask = 0;
+    native.bgMultiplyMask = 0;
     native.bgNativeMask = 0;
     native.bg3NativeBounds = false;
     PpuGpu3DSBand part = *band;
@@ -4886,6 +4950,10 @@ static bool build_scene(const PpuGpu3DSFrameView* frame, PpuGpu3DSCache* cache,
                     !build_bg_scroll_picture(frame, cmd, band, io, (unsigned)bg, (unsigned)priority, regions,
                                              regionCount, emit, vertexCursor, indexCursor, batchCursor))
                     return false;
+                if (((frame->rowPictureMask >> bg) & 1u) &&
+                    !build_bg_row_picture(frame, cmd, band, io, (unsigned)bg, (unsigned)priority, regions,
+                                          regionCount, emit, vertexCursor, indexCursor, batchCursor))
+                    return false;
             }
         }
         PROFILE_BEGIN(PPU_GPU3DS_PHASE_OBJ);
@@ -5090,6 +5158,14 @@ bool PpuGpu3DS_BuildCommands(const PpuGpu3DSFrameView* frame,
         cmd->failReason = PPU_GPU3DS_BUILD_CAPACITY;
         return false;
     }
+    /* The layers whose blend multiplies (bgMultiplyMask): their alpha-blended batches, whichever path made them. */
+    if (frame->bgMultiplyMask != 0)
+        for (size_t i = startBatch; i < batchCursor && i < cmd->batchCapacity; ++i) {
+            PpuGpu3DSBatch* const batch = &cmd->batches[i];
+            if (batch->effect == PPU_GPU3DS_EFFECT_ALPHA && batch->layer <= PPU_GPU3DS_BG3 &&
+                ((frame->bgMultiplyMask >> batch->layer) & 1u))
+                batch->multiply = true;
+        }
 
     cmd->vertexCount = vertexCursor;
     cmd->indexCount = indexCursor;

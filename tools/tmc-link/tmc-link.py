@@ -30,6 +30,8 @@ SITE commands of platform/3ds/source/debug_link_3ds.h. Standard library only.
     recfetch [DIR]            wait for the recording, write DIR/frames.png (a contact sheet) and list the frames
     peek WHAT LENGTH          hex bytes; WHAT is a hex address or a symbol of the ELF
     poke WHAT HEXBYTES        write bytes there
+    warp AREA ROOM [X Y [L]]  send Link to a room as an exit would (X, Y room-relative, default 120,64; layer 1).
+                              Only on a test file: it changes the game's progress like any exit
     mark                      a numbered marker in the SD log (flushes it)
     gpucheck                  the next frame drawn by both renderers, compared
     log [DIR]                 flush and fetch the newest SD log, default /tmp/tmc-debug
@@ -326,6 +328,20 @@ def run(link, argv):
         print(data)
     elif cmd == 'poke':
         print(link.site('POKE %x %s' % (link.address(args[0]), args[1])))
+    elif cmd == 'warp':
+        # As DoExitTransition (src/scroll.c) does: the next room in gRoomTransition.player_status, then
+        # transitioningOut. Offsets of RoomTransition (include/structures.h): 8 transitioningOut, 9 type,
+        # 12 area_next, 13 room_next, 14 start_anim, 15 spawn_type, 16/18 start_pos_x/y (room-relative), 20 layer.
+        area, room = int(args[0], 0), int(args[1], 0)
+        x = int(args[2], 0) if len(args) > 2 else 0x78
+        y = int(args[3], 0) if len(args) > 3 else 0x40
+        layer = int(args[4], 0) if len(args) > 4 else 1
+        base = link.address('gRoomTransition')
+        link.site('POKE %x %02x%02x0000%02x%02x%02x%02x' % (base + 12, area, room, x & 255, x >> 8, y & 255, y >> 8))
+        link.site('POKE %x %02x' % (base + 20, layer))
+        link.site('POKE %x 00' % (base + 9))
+        link.site('POKE %x 01' % (base + 8))
+        print('warping to area 0x%02x room 0x%02x at %d,%d (layer %d)' % (area, room, x, y, layer))
     elif cmd == 'mark':
         print(link.site('MARK'))
     elif cmd == 'gpucheck':

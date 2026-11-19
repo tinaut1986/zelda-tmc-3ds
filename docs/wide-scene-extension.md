@@ -109,13 +109,21 @@ To ship it: keep the generated parts (the original area transparent) in
 `platform/3ds/assets/wide-scenes/` and convert that into the romfs:
 `tools/scene-extend/to_console.py SCENE platform/3ds/assets/wide-scenes/NAME.png
 platform/3ds/romfs/wide-scenes/FILE.bin`. The presenter draws only the parts outside the game's
-own picture, scrolled with it, through the game's colour conversion and fades.
+own picture, scrolled with it, through the game's colour conversion and fades. The files are zlib streams
+(2026-10-25: the seven shipped ones went from 1.2 MB to about 64 KB; zlib is the CI image's 3ds-zlib, required by the
+build); `ScenePictures_ReadFile` reads that, the GBA BIOS's LZ77 (`to_console.py --lz77`, 2.7 times bigger, the way
+out should zlib ever be missing) or the uncompressed picture (`--raw`, or an older player's file), told apart by the
+size and the zlib header.
 
 | Scene | File (romfs `wide-scenes/`, or the data folder) | `to_console.py` scene; pictures | Code |
 |---|---|---|---|
 | Minish portal cutscene (P4.3) | `portal-cutscene-strips.bin` (80 + 64 columns x 320) | `portal`; shipped: `portal-cutscene-1.png` (the owner's pick; `-2` the plainer variant) | `Port_Widescreen_CutsceneStrips`, `DrawScenePictures` (`platform_gpu_3ds.c`) |
 | Minish portal cutscene, the rock | `portal-rock-strips.bin` (80 + 80 columns x 320) | `portal-rock`; shipped: `portal-rock-3.png` (the owner's pick, the cave walls; `-1` the plainer, `-2` with big crystals). The rock's picture (BG1) is 240x320, not 256: `extract_bg.py DUMP 1` says so. Each portal type loads its own picture (`src/enterPortalSubtask.c`), so the presenter picks the strips by the type (`Port_Widescreen_CutsceneStrips`, `sPortalStrips`); the other two types have none yet and get black | as the stump's |
 | Crenel paths' shaft (area 0x12 room 00) | `crenel-paths-ground.bin` (160x352), `-ledges.bin`, `-shadows.bin` (160x960): the 80 columns each side of the room | `crenel-ground`, `crenel-ledges`, `crenel-shadows`; shipped: `crenel-paths-{ground,ledges,shadows}.png` (the shadows made from the ledges, below). Drawn by the GPU renderer as their BGs (ground's, BG1, BG3), each at its layer's scroll (`ScenePictures_SetShaftView` from `port_linked_stubs.c`; the ground's rows past 352 repeat from 32); the software renderer leaves the sides black | `build_bg_scroll_picture`, `PortPpuGpu3DS_SetScrollPicture`, `scene_pictures_3ds.c` |
+| Minish Paths' grass corridor (area 0x11, the vertical one) | `minish-paths-leaves.bin`, `-shadows.bin` (160x1024): the 80 columns each side | `minish-leaves`, `minish-shadows`; shipped: `minish-paths-{leaves,shadows}.png`. The same manager as the Crenel shaft, so the same three layers and scrolls (`SCENE_SHAFT_MINISH` in `scene_pictures_3ds.h`); told apart by an FNV-1a hash of BG1's map (`gMapDataTopSpecial` bytes 0x2000-0x3FFF, 0xA9524361), as the strips fit only that map. The leaves were made by Gemini in four 320-row pieces (2026-10-25, `~/Imágenes/minish-paths/gemini-hojas/`), each fitted (scale about 5.77, colours mapped to the layer's 14 greens) and joined to the one before along the rows where both agree; the shadows from the extended leaves' silhouette in the darkest band colour, as Crenel's. The ground (240x800, repeating every 160 rows) ends in a band of its darkest brown, mostly under the leaves, so its sides are that colour, darkening in 16-column steps away from the room (16, 13, 10, 8 and 6 sixteenths: more plants, less light), made by the game (BG palette 14 colour 1, `groundFill`) and shown in plain WIDE too (owner, 2026-10-25) | as the Crenel shaft's |
+| Minish Paths' water corridor (area 0x11 room 01) | `minish-water-ground.bin` (160x64, looped), `minish-water-leaves.bin`, `-shadows.bin` (160x1024) | `minish-water-ground`, `minish-water-leaves`, `minish-water-shadows`; shipped: `minish-water-{ground,leaves,shadows}.png`. Its ground's banks are reed stalks repeating every 64 rows (rows 64-736): Gemini continued three periods, the middle one became the tile, then the tile was given back with a join in the middle and a band to repaint, so the loop has no seam (`SCENE_SHAFT_MINISH_WATER`, ground loop 0-64). The leaves repeat every 512 rows: two 320-row pieces, the loop's join repainted the same way (a magenta band, as black means "no leaf" there); the shadows are the leaves' silhouette exactly, in the edge colour (24,24,80). The ends (rows 0-63 and 736-799, rocks and light water) are not continued: stalks beside them, mostly under the leaves (owner, 2026-10-25) | as the Crenel shaft's |
+| Minish Paths' rooms 02-04 (area 0x11: to Hyrule Town, Lon Lon Ranch, the mayor's cabin) | `minish-town-leaves.bin` (02 and 03), `minish-cabin-leaves.bin`, `minish-{town,ranch,cabin}-shadows.bin` (160x1024); 04's ground is `minish-water-ground.bin` | the scenes of those names; shipped: the `.png` of each. One set of leaves for the three (`SCENE_SHAFT_MINISH_TOWN`, `_RANCH`, `_CABIN`): 03's BG1 is 02's but for 15 pixels of the room, 04's is 03's in bluer greens (each colour mapped to one), so Gemini made 02's sides in four pieces and 04's are them recoloured; 03 and 04 share BG1's hash and are told apart by room. The shadows: the leaves' silhouette in each room's edge colour, (64,48,32), (96,64,40), (24,24,80). Grounds: 02's and 03's their edge colour darkening outwards (plain WIDE too); 04's banks are the water corridor's stalks in the same phase, so it takes that loop | as the Crenel shaft's |
+| Crenel's horizontal Minish paths (area 0x12 rooms 02 and 03, 800x192) | `crenel-hpath-ground.bin` (64x96), `-rocks.bin`, `-shadows.bin` (1024x96); room 03's `crenel-hpath-03-*.bin` | `crenel-hpath-ground`, `-rocks`, `-shadows`; shipped: the `.png` of each. The room is shorter than the view, so its layers get bands above and below it (`SCENE_ROW_*`, `ScenePictures_SetRowView` from `port_linked_stubs.c`): the ground's wall continued 48 rows up and down (Gemini on a 192x288 piece with the water for context, 2026-11-19; the top rows were made to tile by cutting at the column whose 64th neighbour matched, 3 pixels off, after Gemini's repaint of the join left a square), one turn of the 64-column repeat; the rocks: Gemini continued the two stalagmites through their flat cut (the stalactites are them flipped, and the view never reaches their cut: BG1 shows its row r at r minus 12), stamped under each copy into the layer's rows 208-255; the shadows: that silhouette in BG3's flat colour (palette 9, the band at the walls). Room 03 has the same maps and tiles in other palettes (BG 2-14; its ground orange), so its pictures are room 02's with each colour moved to the same palette entry of room 03's (the wall's palette 6, the rocks' 7, the shadows' 9; `SCENE_ROW_CRENEL_03`). In both rooms in Full View the GPU renderer blends BG3's shadows as a multiply, the pixel under them times (their colour + 0.25) (`bgMultiplyMask`): the GBA's blend (9/16 shadow, 6/16 under it) lightened whatever was darker than the shadow's colour, the extended wall and room 03's mountain, so the shadows looked like light. The GPU renderer draws each band as one quad across the frame from a texture its picture's width, repeated sideways (`build_bg_row_picture`, `rowPictureMask`); the software renderer leaves them out. Material: `build-3ds/wide-material/crenel-horizontal/` on the owner's PC (`gemini/`: templates, prompts, answers, `fit2.py`) | `build_bg_row_picture`, `PortPpuGpu3DS_SetScrollPicture(..., repeat)`, `scene_pictures_3ds.c` |
 | Title screen (P4.4) | `title-forest.bin` (400x240) | `title`; shipped: `title-forest-a.png` (`-b` the framed variant). The forest (BG1, 240x160, 22 colours) needs all four sides (`extract_bg.py DUMP 1 --top 40 --bottom 40`). The title is drawn at 400x240 (`Port_Widescreen_TitleWide`, `src/title.c`): the picture *is* BG1 in both renderers (`virtuappu_mode1_bg1_picture`, the GPU's picture texture), so the light rays blend over it and the sword and sprites go over it; the rays are continued by the game itself (below) | `scene_pictures_3ds.c`, `PortPpuGpu3DS_SetBg1Picture` |
 | File select (P4.5) | `fileselect-cave.bin` (400x240 palette indices) | `fileselect --palettes DUMP-palettes.bin`; shipped: `fileselect-cave-1.png` (the owner's pick, "monumental"; `-2`, `-3` the other variants). The cave (BG3, 240x160, 35 colours, BG palettes 11-14) needs all four sides (`extract_bg.py DUMP 3 --width 240 --height 160 --top 40 --bottom 40`); with the GPU renderer the screen is drawn at 400x240 (`Port_Widescreen_FileSelectWide`): BG0-BG3 in the centred 240x160 (`bgNativeMask`), the cave as a picture over BG3 (`PortPpuGpu3DS_SetIndexedPicture`), and the sprites moved into the middle by `port_draw.c`, each drawn thing as one, carried faster across the GBA screen's edge so it leaves the 400 view as it leaves the 240 one (`WideCarry`). With the software renderer the screen stays 240x160 and the presenter draws the cave around it. Its shimmer is the game cycling palettes 11-14, so the file holds indices, not colours (below) | `port_draw.c`, `PortPpuGpu3DS_SetIndexedPicture`; software: `CaveReady`, `DrawScenePictures` (`platform_gpu_3ds.c`) |
 
@@ -128,6 +136,101 @@ when `gUI.lastState` already names the next screen).
 
 A new scene needs its view at 400x240 first (the scene's own layout: how the picture and the
 sprites are centred, which BG repeats), then a strips file and its converter as for the portal.
+
+## The vertical Minish paths: what each corridor needs (survey of 2026-10-25)
+
+Every room drawn by `verticalMinishPathBackgroundManager.c` is 240x800 with the same three layers (the ground on the
+room's own BG; BG1 = leaves or rock ledges, at 1.25 times the scroll; BG3 = their shadows, blended, at 1.125), so they
+all go through the same code: one row each in `kShafts` (`platform/3ds/source/scene_pictures_3ds.c`), found by area and
+room, BG1's strips guarded by the FNV-1a hash of BG1's map (bytes 0x2000-0x3FFF of `gMapDataTopSpecial`). The owner
+decides each one in turn (2026-10-25): not every ground should be the same dark gradient.
+
+| Room | What it is | BG1 hash | BG1 layer | Ground sides | State |
+|---|---|---|---|---|---|
+| 0x11/00 | grass corridor, cobbles and moss (the first one, after the Minish Woods) | `a9524361` | leaves, no repeat (1024 rows) | ground repeats every 160 rows; outer columns 100% (56,32,32), BG pal 14 colour 1 | done: Gemini leaves, derived shadows, edge brown darkening outwards |
+| 0x11/01 | water: lily pads, giant flowers, vines; bottom exit to area 0x04 room 00 (swamp) | `46df39a1` | leaves and vines, repeat every 512 rows | reed stalks repeating every 64 rows (rows 64-736); ends are rocks and light water | done: Gemini stalks (64-row loop) and leaves (512-row loop); ends not continued |
+| 0x11/02 | to Hyrule Town: giant flowers and bellflowers (sprites, #50), an Ezlo-sign block | `e0e89302` | leaves, the same as 03's but 15 pixels at rows 512-513 | outer columns 100% (56,32,32), BG pal 14 colour 1 (or 6/1) | done: Gemini leaves (shared with 03/04), derived shadows, edge brown darkening outwards |
+| 0x11/03 | to Lon Lon Ranch: cobbles, rocks at the sides repeating every 64 rows, white spirals (sprites, #51) | `84b4d4e4` | 02's leaves, no repeat | outer columns 64% (192,160,88), BG pal 14 colour 5 | done: 02's leaves, derived shadows, ochre darkening outwards (on trial; Gemini rocks in a 64-row loop the alternative) |
+| 0x11/04 | to the mayor's cabin: water, cattails (sprites, #52) | `84b4d4e4` | 03's leaves pixel for pixel in bluer greens (one colour for each) | the water corridor's reed stalks, row for row in the same phase (rows 64-736) | done: 02's leaves recoloured, derived shadows, the water corridor's stalk loop |
+| 0x12/00 | Crenel paths' shaft | (by room) | rock ledges, two pieces repeated | Gemini, rows 32-351 repeating | done |
+| 0x12/01 | Crenel paths' second vertical one | `a6dbee71` | the first path's ledges row for row (`crenel-paths-ledges.bin`, `-shadows.bin`) | outer columns repeat every 64 rows from row 115; meadow rows 0-114 (giant seed with its stem) | done: Gemini ground (`crenel-rocks-ground.bin`, 400x179), ledges reused |
+| 0x12/02 | Crenel, horizontal (800x192, BG1 0x1e09, `horizontalMinishPathBackgroundManager.c`) | - | stalactites and stalagmites, two rocks (the stalactites are them flipped, one mirrored too; the map cuts some at its rows 0 and 8) | the wall repeats every 64 columns (the water every 192) | bands above and below the room instead of strips (table above, "Crenel's horizontal Minish path"); without WIDE + AI the backdrop is its wall's purple, BG pal 6 colour 2 (`Port_Widescreen_BackdropFill`; the top rows are colour 3, a step lighter) |
+
+Area 0x11 has rooms 0-4 (room 5 loads with size 0). The shadows checked so far (00, 01) are BG1's silhouette with a
+flat colour per band, the darkest at the walls, so the extension is the extended leaves' silhouette in that colour
+(01: exactly the same pixels; 00: 92% of them). Leaves 02/03/04 are not room 00's: their edge columns match it only in
+stray rows, so they need their own pieces: one set for the three (2026-10-25, `~/Imágenes/minish-paths/gemini-hojas-02-04/`).
+The giant flowers, bellflowers, white spirals and cattails beside rooms 02-04 are sprites (`HUGE_DECORATION`, object
+0x78, `src/object/macroDecorations.c`) moving at 1.5 (or 1.125) times the scroll; their art stops at their sprite's
+edge, the GBA screen's, so it shows cut in Full View (#50-#52; every frame drawn from the ROM by
+`tools/layer-workbench/sprites.py`).
+
+**Material** (the game's art: on the owner's PC only, never in git): `~/Imágenes/minish-paths/survey/<area>-<room>/`
+(0x11-0 to 0x11-4, 0x12-1, 0x12-2) holds each corridor's dump (`tmc-dump-*`: map layers, VRAM, palettes, registers, the top screen), `room-ground.png`
+(`extract_map_room.py`) and `bg1-leaves-full.png` / `bg3-shadows-full.png` (`extract_minish_path.py`).
+`~/Imágenes/minish-paths/gemini-hojas/`, `gemini-hojas-agua/` and `gemini-tallos-agua/` hold the templates, the
+prompts, Gemini's answers and the fitted results of the corridors done; their `PROMPT*.txt` are the texts to reuse.
+The dumps were taken in Azahar with `tmc-link.py warp` (`docs/debug-tools.md`) on a test file.
+
+## AI pieces: the workflow
+
+`tools/scene-extend/ai_pieces.py` does every step done by hand for the corridors above:
+
+```sh
+L=~/Imágenes/minish-paths/survey/0x11-2/bg1-leaves-full.png          # the layer (only its first 240 columns are used)
+tools/scene-extend/ai_pieces.py make $L 1 trozo-1.png                 # 400x320, the sides black: give it to the AI
+tools/scene-extend/ai_pieces.py fit trozo-1.png answer-1.jpg result-1.png --palette $L
+tools/scene-extend/ai_pieces.py make $L 2 trozo-2.png --prev result-1.png   # its first 80 rows of sides already painted
+tools/scene-extend/ai_pieces.py fit trozo-2.png answer-2.jpg result-2.png --palette $L --keep 80
+```
+
+Pieces of 320 rows start every 240 (the last one moved up to end at the layer's end, so it keeps more rows: `make`
+says how many; pass that to `fit --keep`). Stitch the results by **replacing** rows (a piece's rows from its start),
+never by compositing them over each other, then paste the original's 240 columns back and check that it is unchanged
+and no colour is outside the original's.
+
+- **A layer that repeats** (the water corridor's leaves every 512 rows, its stalks every 64): give the AI one period
+  and a bit, take one period, then make a picture of the period's end followed by its start (the join in the middle),
+  the sides painted except a band around the join, and have the AI repaint the band; `fit --band Y0 Y1` keeps only
+  the band between two seams. Mark the band in **magenta** on a layer with transparency (black there means "no leaf")
+  and say so in the prompt. Ship one period; the game repeats a ground with `groundLoopStart`/`groundLoopLength`, and
+  a repeating BG1 is written twice into its 1024 rows.
+- **Palette**: `fit` snaps each colour to the layer's own palette, which has no shade for what the AI paints far from the room (the darkest stones turned into one flat colour): `--extra N` adds N colours (k-means of the pixels far from the palette).
+- **Fitting**: Gemini answers 5.6-7.4 times the size, often not the same in x and y, sometimes squeezed inside a margin
+  (5.64 wide with 72 pixels each side, 2026-10-25); `fit` searches scales within 0.45 and offsets within 96, coarse
+  then fine, and prints the mean difference on the original part (under 30 is good). The answer may change what it was
+  told to keep (78% kept once): the seams take only where it agrees with the template.
+- **Prompts**: say what the layer is (leaves over water, stalks under leaves...), the exact columns to paint, "pure
+  black = nothing" on a transparent layer or "paint every black pixel" on a ground, how many colours, that it must
+  repeat every N rows when it does, and what not to draw (water, flowers, characters).
+
+## Patterns: extend them by code, no AI
+
+**WIDE or WIDE + AI** (owner, 2026-10-25): WIDE + AI exists only because some players want nothing made by a
+generative AI. An extension made by code from the game's own art (no generative AI anywhere) is shown in plain WIDE
+too: its `ScenePicture` has `.procedural = true` (`platform_gpu_3ds.c`). Anything a generative AI drew, even in part,
+stays behind WIDE + AI.
+
+A background that repeats one motif on a lattice needs no AI and no file: the game extends it itself, from its own
+VRAM, while it is shown, so nothing of the game's art is shipped (owner, 2026-10-25: code-made pictures are not kept
+in git, nor written to the SD). The pause menu's (BG3: Ezlo caps on yellow, the same on every page, never scrolled)
+is the first: `ScenePictures_PauseIndices` (`platform/3ds/source/scene_pictures_3ds.c`) reads BG3's 30x20 tile map,
+finds the two shortest shifts that repeat it (3,6 and 13,10 tiles; the map is off the pattern in a few places), gives
+every entry outside the screen the one most of its lattice copies inside have, and completes the caps the screen's
+edge cuts off the lattice (one at the left edge, tile rows 13-18) from a whole copy found elsewhere in the map. It
+takes a few milliseconds when the menu opens (again only if BG3's map changes), and the picture is palette indices,
+so fades and colour correction apply as to the game's own tiles.
+
+`tools/scene-extend/extend_lattice.py` does the same in pixels on a dump's picture (`extract_bg.py`), for trying a
+pattern on the PC before writing it into the game; its result is for looking at, not for git.
+
+With the GPU renderer the pause menu is drawn at 400x240 while it shows that background unscrolled
+(`Port_Widescreen_PauseWide`, as the file select): its BGs in the middle, the picture as BG3 around them, and every
+sprite moved 80,40 as it is, so what the game slides past the GBA's screen (the L and R buttons when pressed) shows
+whole; a sprite wholly off it stays hidden. The title banner (INVENTORY, COLLECTION, MAP: two 64x32 sprites at the
+screen's top-left, cut flat by the GBA's left edge) is closed by `Port_Draw_PauseBannerCap` (`port/port_draw.c`):
+four 8x8 (or 16x8) sprites showing its right end's tile column flipped, after it in OAM. With the software renderer
+the screen stays 240x160 and the presenter draws the picture around it (`Port_Widescreen_PauseBackgroundShown`).
 
 ## Layers animated by palette: continue them, do not paint them
 

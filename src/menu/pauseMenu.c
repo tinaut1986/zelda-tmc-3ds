@@ -24,6 +24,7 @@
 #ifdef PC_PORT
 #include "port_gba_mem.h"
 #include "port_softslots.h"
+#include "port_widescreen.h"
 #endif
 
 extern void sub_080A4DB8(u32);
@@ -53,11 +54,20 @@ void Subtask_PauseMenu(void) {
         FlushSprites();
         pauseMenu_Variants[gPauseMenuOptions.unk11]();
         sub_080A5128();
+#ifdef TMC_3DS
+        Port_UI_PausePlaceButtons();
+        UpdateUIElements();
+        Port_UI_PauseDrawElements();
+#else
         UpdateUIElements();
         DrawUIElements();
+#endif
         if (gPauseMenuOptions.unk11 != 4) {
             gUnk_08128A38[gPauseMenuOptions.screen].func();
         }
+#ifdef PC_PORT
+        Port_Draw_PauseBannerCap(); /* the title banner closed on the left in the 400x240 view */
+#endif
         CopyOAM();
         {
             u32 t = gPauseMenuOptions.unk16;
@@ -406,6 +416,23 @@ void PauseMenu_ItemMenu_Update(void) {
         menuSlot = gMenu.field_0x3;
 
         entry = &gItemMenuTable[menuSlot];
+#ifdef TMC_3DS
+        {
+            /* X and Y put the item under the cursor on their soft slot (port_softslots.c) as A and B equip it
+             * (Port_EquipButton: moved from the button it was on, never emptied by pressing it again). */
+            extern bool Port_Config_SoftSlotPressed(int slot);
+            static bool sWasHeld[2] = { true, true };
+            for (int soft = 0; soft < 2; soft++) {
+                const bool held = Port_Config_SoftSlotPressed(soft);
+                if (held && !sWasHeld[soft] && menuSlot != MENU_SLOT_SAVE_BUTTON &&
+                    menuSlot != MENU_SLOT_SAVE_BUTTON_JP && gPauseMenu.items[menuSlot] != 0) {
+                    Port_EquipButton(2 + soft, gPauseMenu.items[menuSlot]);
+                    SoundReq(SFX_TEXTBOX_SELECT);
+                }
+                sWasHeld[soft] = held;
+            }
+        }
+#endif
         switch (gInput.newKeys) {
             case A_BUTTON:
                 if (menuSlot == MENU_SLOT_SAVE_BUTTON) {
@@ -599,6 +626,26 @@ void PauseMenu_ItemMenu_Draw(void) {
         gOamCmd.y = entry->y;
         DrawDirect(sub_080A5384_draw_constant0, 3);
     }
+#ifdef TMC_3DS
+    /* The items on X and Y (the soft slots) filled as A's and B's are; the lantern is kept unlit on a slot and
+     * listed lit while it burns. */
+    {
+        extern unsigned char Port_SoftSlots_GetAssignment(int s);
+        for (int soft = 0; soft < 2; soft++) {
+            const u32 item = Port_SoftSlots_GetAssignment(soft);
+            i = GetMenuSlotForItem(item);
+            if (i >= MENU_SLOT_COUNT && item == ITEM_LANTERN_OFF) {
+                i = GetMenuSlotForItem(ITEM_LANTERN_ON);
+            }
+            if (i < MENU_SLOT_COUNT) {
+                entry = &gItemMenuTable[i];
+                gOamCmd.x = entry->x;
+                gOamCmd.y = entry->y;
+                DrawDirect(sub_080A5384_draw_constant0, 3);
+            }
+        }
+    }
+#endif
 }
 
 u32 GetMenuSlotForItem(u32 item) {

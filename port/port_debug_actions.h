@@ -44,6 +44,9 @@ int  Port_Debug_NoclipEnabled(void);
 /* God mode: no damage to Link (ModHealth ignores negative deltas). */
 void Port_DebugAction_SetGodMode(int on);
 int  Port_Debug_GodModeEnabled(void);
+/* Infinite supplies (3DS debug builds, port_optional_stubs_3ds.c): rupees, shells, bombs and arrows kept full. */
+void Port_DebugAction_SetInfinite(int on);
+int  Port_Debug_InfiniteEnabled(void);
 
 /* Minish transformation debug toggles. */
 void Port_DebugAction_ToggleMinish(void);

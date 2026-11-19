@@ -795,6 +795,82 @@ static int32_t DrawHudNumber(const SSurf* s, int32_t xRight, int32_t y, int32_t 
     return x;
 }
 
+#ifdef TMC_3DS
+/* A counter's maximum as the top screen's HUD shows it in Full View (src/ui.c, RenderRupeeMax): "/300" in the
+ * HUD's 8x16 digits packed at their inked width, outlines shared, the slash drawn in their fill and outline
+ * colours. Starts at x; returns the right edge reached, or x when the digits are not loaded (the caller falls back). */
+static int32_t DrawHudMax(const SSurf* s, int32_t x, int32_t y, uint32_t value, int yellow) {
+    const SecondScreenThemeSprite* d[10];
+    for (int i = 0; i < 10; i++) {
+        d[i] = Port_SecondScreenTheme_Get((yellow ? SST_DIGIT_YELLOW_0 : SST_DIGIT_WHITE_0) + i);
+        if (d[i] == NULL || d[i]->px == NULL || d[i]->w != 8 || d[i]->h != 16) return x;
+    }
+    /* The digits' fill and outline: the commonest colour of inner pixels, and of pixels beside a clear one. */
+    uint32_t colours[16], inner[16], edge[16];
+    int used = 0, top = 16, bottom = -1;
+    for (int i = 0; i < 10; i++)
+        for (int py = 0; py < 16; py++)
+            for (int px = 0; px < 8; px++) {
+                const uint32_t c = d[i]->px[py * 8 + px];
+                if (c == 0) continue;
+                if (py < top) top = py;
+                if (py > bottom) bottom = py;
+                const int clear = px == 0 || px == 7 || py == 0 || py == 15 || !d[i]->px[py * 8 + px - 1] ||
+                                  !d[i]->px[py * 8 + px + 1] || !d[i]->px[(py - 1) * 8 + px] || !d[i]->px[(py + 1) * 8 + px];
+                int k = 0;
+                while (k < used && colours[k] != c) k++;
+                if (k == used) {
+                    if (used == 16) continue;
+                    colours[used] = c, inner[used] = 0, edge[used] = 0, used++;
+                }
+                (clear ? edge : inner)[k]++;
+            }
+    if (used == 0 || bottom - top < 4) return x;
+    int fi = 0, oi = 0;
+    for (int k = 1; k < used; k++) {
+        if (inner[k] > inner[fi]) fi = k;
+        if (edge[k] > edge[oi]) oi = k;
+    }
+    uint32_t slash[16][8];
+    memset(slash, 0, sizeof(slash));
+    for (int py = top + 1; py < bottom; py++)
+        slash[py][1 + (bottom - 1 - py) * 3 / (bottom - top - 2 > 0 ? bottom - top - 2 : 1)] = colours[fi];
+    for (int py = top; py <= bottom; py++)
+        for (int px = 0; px < 8; px++) {
+            if (slash[py][px] == colours[fi]) continue;
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dx = -1; dx <= 1; dx++) {
+                    const int ny = py + dy, nx = px + dx;
+                    if (ny >= 0 && ny < 16 && nx >= 0 && nx < 8 && slash[ny][nx] == colours[fi]) slash[py][px] = colours[oi];
+                }
+        }
+    char digits[12];
+    const int n = snprintf(digits, sizeof(digits), "%u", (unsigned)value);
+    int32_t cursor = x;
+    for (int g = 0; g <= n; g++) {
+        const uint32_t* px = g ? d[digits[g - 1] - '0']->px : NULL;
+        int left = 8, right = -1;
+        for (int cx = 0; cx < 8; cx++)
+            for (int cy = 0; cy < 16; cy++)
+                if (g ? px[cy * 8 + cx] : slash[cy][cx]) {
+                    if (cx < left) left = cx;
+                    if (cx > right) right = cx;
+                }
+        if (right < 0) continue;
+        if (g) cursor--; /* the shared outline column */
+        for (int cx = left; cx <= right; cx++, cursor++)
+            for (int cy = 0; cy < 16; cy++) {
+                const uint32_t c = g ? px[cy * 8 + cx] : slash[cy][cx];
+                const int32_t dy = y + cy;
+                if (c == 0 || cursor < 0 || cursor >= s->w || dy < 0 || dy >= s->h) continue;
+                uint32_t* dst = s->px + (size_t)dy * (size_t)s->stride + cursor;
+                if (c == colours[fi] || *dst != colours[fi]) *dst = c;
+            }
+    }
+    return cursor;
+}
+#endif
+
 /* Two-glyph ammo count in the HUD's small 8x8 font (tens glyph is
  * right-aligned in its tile, ones left-aligned — sub_0801C2F0's pair). */
 static void DrawAmmoCount(const SSurf* s, int32_t x, int32_t y, int32_t scale, uint32_t value) {
@@ -810,6 +886,25 @@ static void DrawAmmoCount(const SSurf* s, int32_t x, int32_t y, int32_t scale, u
     BlitSprite(s, ones, x + 8 * scale, y, scale);
 }
 
+/* A count as the pause's quest page draws the shells (src/menu/pauseMenu.c): one of its digits (OBJ tiles 0..9)
+ * per 8 pixels, right to left from xRight, padded to minDigits; the HUD's small font without them. */
+static void DrawGameDigits(const SSurf* s, int32_t xRight, int32_t y, int32_t scale, uint32_t value, int minDigits) {
+    int drawn = 0;
+    const SecondScreenThemeSprite* q = Port_SecondScreenTheme_Get(SST_QUEST_DIGIT_0);
+    const int quest = q != NULL && q->px != NULL;
+    do {
+        const SecondScreenThemeSprite* d =
+            Port_SecondScreenTheme_Get((quest ? SST_QUEST_DIGIT_0 : SST_SMALL_ONES_0) + (int)(value % 10));
+        if (d == NULL) {
+            return;
+        }
+        xRight -= 8 * scale;
+        BlitSprite(s, d, xRight, y, scale);
+        value /= 10;
+        drawn++;
+    } while (value != 0 || drawn < minDigits);
+}
+
 /* One production path for both item-grid and equipped-ring counters.  The
  * return value is intentionally observable by the host compositor test so
  * a genuine zero-ammo badge cannot be confused with an unsupported item. */
@@ -822,6 +917,109 @@ static int DrawItemAmmoCount(const SSurf* s, const SecondScreenSnapshot* snap, u
     DrawAmmoCount(s, x, y, scale, (uint32_t)ammo);
     return 1;
 }
+
+#ifdef TMC_3DS
+/* "18/30": an ammo count and its bag's size in the HUD's small 8x8 font (the ones glyphs, which the pair shares
+ * with the tens ones but for their alignment), packed at their inked width with outlines shared, and a slash drawn
+ * in the glyphs' fill and outline. Returns the right edge reached, or x when the glyphs are not loaded. */
+static int32_t DrawSmallFraction(const SSurf* s, int32_t x, int32_t y, uint32_t value, uint32_t max) {
+    const SecondScreenThemeSprite* d[10];
+    for (int i = 0; i < 10; i++) {
+        d[i] = Port_SecondScreenTheme_Get(SST_SMALL_ONES_0 + i);
+        if (d[i] == NULL || d[i]->px == NULL || d[i]->w != 8 || d[i]->h != 8) return x;
+    }
+    /* The glyphs' fill and outline: the commonest colour of inner pixels, and of pixels beside a clear one. */
+    uint32_t colours[16], inner[16], edge[16];
+    int used = 0, top = 8, bottom = -1;
+    for (int i = 0; i < 10; i++)
+        for (int py = 0; py < 8; py++)
+            for (int px = 0; px < 8; px++) {
+                const uint32_t c = d[i]->px[py * 8 + px];
+                if (c == 0) continue;
+                if (py < top) top = py;
+                if (py > bottom) bottom = py;
+                const int clear = px == 0 || px == 7 || py == 0 || py == 7 || !d[i]->px[py * 8 + px - 1] ||
+                                  !d[i]->px[py * 8 + px + 1] || !d[i]->px[(py - 1) * 8 + px] || !d[i]->px[(py + 1) * 8 + px];
+                int k = 0;
+                while (k < used && colours[k] != c) k++;
+                if (k == used) {
+                    if (used == 16) continue;
+                    colours[used] = c, inner[used] = 0, edge[used] = 0, used++;
+                }
+                (clear ? edge : inner)[k]++;
+            }
+    if (used == 0 || bottom - top < 3) return x;
+    int fi = 0, oi = 0;
+    for (int k = 1; k < used; k++) {
+        if (inner[k] > inner[fi]) fi = k;
+        if (edge[k] > edge[oi]) oi = k;
+    }
+    /* The slash: one pixel of fill from the digits' bottom left to their top right, two columns wide, outlined. */
+    uint32_t slash[8][8];
+    memset(slash, 0, sizeof(slash));
+    for (int py = top + 1; py < bottom; py++)
+        slash[py][1 + (bottom - 1 - py) * 2 / (bottom - top - 2 > 0 ? bottom - top - 2 : 1)] = colours[fi];
+    for (int py = top; py <= bottom; py++)
+        for (int px = 0; px < 8; px++) {
+            if (slash[py][px] == colours[fi]) continue;
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dx = -1; dx <= 1; dx++) {
+                    const int ny = py + dy, nx = px + dx;
+                    if (ny >= 0 && ny < 8 && nx >= 0 && nx < 8 && slash[ny][nx] == colours[fi]) slash[py][px] = colours[oi];
+                }
+        }
+    char text[16];
+    snprintf(text, sizeof(text), "%u/%u", (unsigned)(value > 999 ? 999 : value), (unsigned)(max > 999 ? 999 : max));
+    int32_t cursor = x;
+    for (const char* t = text; *t; t++) {
+        const uint32_t* px = *t == '/' ? NULL : d[*t - '0']->px;
+        int left = 8, right = -1;
+        for (int cx = 0; cx < 8; cx++)
+            for (int cy = 0; cy < 8; cy++)
+                if (px ? px[cy * 8 + cx] : slash[cy][cx]) {
+                    if (cx < left) left = cx;
+                    if (cx > right) right = cx;
+                }
+        if (right < 0) continue;
+        if (t != text) cursor--; /* the shared outline column */
+        for (int cx = left; cx <= right; cx++, cursor++)
+            for (int cy = 0; cy < 8; cy++) {
+                const uint32_t c = px ? px[cy * 8 + cx] : slash[cy][cx];
+                const int32_t dy = y + cy;
+                if (c == 0 || cursor < 0 || cursor >= s->w || dy < 0 || dy >= s->h) continue;
+                uint32_t* dst = s->px + (size_t)dy * (size_t)s->stride + cursor;
+                if (c == colours[fi] || *dst != colours[fi]) *dst = c;
+            }
+    }
+    return cursor;
+}
+
+/* The bag's size for an item with an ammo count (bombs, the bows' quiver), 0 for any other. */
+static uint32_t ItemAmmoMax(const SecondScreenSnapshot* snap, uint8_t itemId) {
+    if (itemId == 0x07 || itemId == 0x08) return snap->bombMax;
+    if (itemId == 0x09 || itemId == 0x0A) return snap->arrowMax;
+    return 0;
+}
+
+/* The ammo count as "18/30" when its bag's size is known and the result fits in maxW pixels, else the HUD's pair. */
+static int DrawItemAmmoFraction(const SSurf* s, const SecondScreenSnapshot* snap, uint8_t itemId, int32_t x,
+                                int32_t y, int32_t maxW) {
+    const int16_t ammo = Port_SecondScreenItemAmmo(snap, itemId);
+    const uint32_t max = ammo < 0 ? 0 : ItemAmmoMax(snap, itemId);
+    if (max != 0) {
+        /* Measured on a scratch strip first, so a fraction that does not fit leaves nothing behind. */
+        static uint32_t scratch[8 * 64];
+        SSurf m = { scratch, 64, 8, 64 };
+        memset(scratch, 0, sizeof(scratch));
+        const int32_t right = DrawSmallFraction(&m, 0, 0, (uint32_t)ammo, max);
+        if (right > 0 && right <= maxW) {
+            DrawSmallFraction(s, x, y, (uint32_t)ammo, max);
+            return 1;
+        }
+    }
+    return DrawItemAmmoCount(s, snap, itemId, x, y, 1);
+}
+#endif
 
 #ifdef PORT_SECOND_SCREEN_TEST
 int Port_SecondScreen_TestPaintEquippedAmmo(uint32_t* pixels, int32_t width, int32_t height,
@@ -3920,12 +4118,11 @@ static void DispatchTap(int x, int y, int longPress) {
 #endif
             UI_UNLOCK();
 #ifdef TMC_3DS
-            /* X and Y (armed 3 and 4) are the port's soft slots: kept outside
-             * the save, see port_softslots.h. A second tap on the item that
-             * is already there clears the button. */
+            /* X and Y (armed 3 and 4) are the port's soft slots, kept outside the save (port_softslots.h); they
+             * go through the same request as A and B (slots 2 and 3), Port_EquipButton's rule on the game's
+             * thread: an item moves from the button it was on, a second tap on it changes nothing. */
             if (armed >= 3) {
-                const int soft = armed - 3;
-                Port_SoftSlots_SetAssignment(soft, Port_SoftSlots_GetAssignment(soft) == hit.arg ? 0 : hit.arg);
+                Port_SecondScreenState_RequestEquip(hit.arg, (uint8_t)(armed - 1));
                 break;
             }
 #endif

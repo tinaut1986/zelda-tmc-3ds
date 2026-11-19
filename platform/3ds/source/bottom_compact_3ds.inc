@@ -1138,6 +1138,7 @@ enum {
     DBG_CMD_GPU_CHECK,
     DBG_CMD_FTP_RUN,
     DBG_CMD_GOD_MODE, /* the sidebar's heart button (Compact_PaintSidebar) */
+    DBG_CMD_INFINITE, /* the sidebar's wallet button beside it */
     DBG_CMD_SWITCH0 = 32, /* + DEBUG_SW_* */
 };
 
@@ -1370,6 +1371,11 @@ static void Compact_DebugCommand(int cmd) {
             DebugLog_Printf("god mode %s", Port_Debug_GodModeEnabled() ? "on" : "off");
             Compact_Toast(Port_Debug_GodModeEnabled() ? "GOD MODE ON" : "GOD MODE OFF");
             break;
+        case DBG_CMD_INFINITE:
+            Port_DebugAction_SetInfinite(!Port_Debug_InfiniteEnabled());
+            DebugLog_Printf("infinite supplies %s", Port_Debug_InfiniteEnabled() ? "on" : "off");
+            Compact_Toast(Port_Debug_InfiniteEnabled() ? "SUPPLIES FULL ON" : "SUPPLIES FULL OFF");
+            break;
         case DBG_CMD_GPU_CHECK:
             Port_PPU_3DS_RequestGpuCheck();
             DebugLog_Printf("gpu check requested");
@@ -1473,7 +1479,8 @@ static void Compact_EquipCell(const SSurf* s, const SecondScreenSnapshot* snap, 
     if (itemId != 0) {
         const int32_t ix = x + w - 4 - 16, iy = y + (h - 16) / 2;
         Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, 1, itemId);
-        DrawItemAmmoCount(s, snap, itemId, x + 3, y + h - 11, 1);
+        /* "18/30" when it fits left of the icon, else the HUD's pair. */
+        DrawItemAmmoFraction(s, snap, itemId, x + 3, y + h - 11, w - 3 - 4 - 16 - 2);
     }
     AddTarget(tl, (float)x, (float)y, (float)(x + w), (float)(y + h), SS_ACT_RING, (uint8_t)(button + 1));
 }
@@ -1569,21 +1576,36 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
     /* Rupees, and keys in a dungeon, along the bottom. */
     const int dungeon = (snap->areaFlags & SECOND_SCREEN_AR_HAS_KEYS) != 0;
     /* In the HUD's own counter font, three digits as the HUD pads them,
-     * yellow when the wallet is full. */
+     * yellow when the wallet is full; then the wallet's size, "/300", packed as the top screen shows it. */
     int32_t by = y + h - (dungeon ? 34 : 17);
     const SecondScreenThemeSprite* wallet = Port_SecondScreenTheme_Get(SST_RUPEE_WALLET0 + (snap->walletType & 3));
     if (wallet) BlitSprite(s, wallet, ix, by, 1);
     DrawHudNumber(s, ix + 18 + 3 * 8, by, 1, snap->rupees, 3, snap->walletMax != 0 && snap->rupees >= snap->walletMax);
+    if (snap->walletMax != 0) {
+        char max[8];
+        snprintf(max, sizeof(max), "/%u", (unsigned)snap->walletMax);
+        if (DrawHudMax(s, ix + 18 + 3 * 8, by, snap->walletMax, 0) == ix + 18 + 3 * 8)
+            CText(s, ix + 18 + 3 * 8 + 1, by + 16 - kUiGlyphH, CC_TEXT, max); /* no HUD digits (no ROM) */
+    }
     if (dungeon) {
         const SecondScreenThemeSprite* key = Port_SecondScreenTheme_Get(SST_KEY);
         if (key) BlitSprite(s, key, ix, by + 17, 1);
         DrawHudNumber(s, ix + 18 + 8, by + 17, 1, snap->dungeonKeys, 1, 0);
     }
 #if TMC3DS_DEBUG_TOOLS
-    /* God mode (debug builds): a heart button at the rupees' right, its edge lit while Link takes no damage. */
+    /* God mode (debug builds): a heart button above the rupees' right end, its edge lit while Link takes no damage;
+     * left of it the infinite supplies, the wallet, lit while the rupees, shells, bombs and arrows are kept full. */
+    {
+        const int on = Port_Debug_InfiniteEnabled();
+        const int32_t gw = 18, gh = 16, gx = ix + iw - 2 * gw - 3, gy = by - gh - 4;
+        CBox(s, gx, gy, gw, gh, on ? CC_GOOD : CC_BTN, on ? CC_GOOD : CC_BTN_EDGE);
+        if (wallet) BlitSprite(s, wallet, gx + (gw - 16) / 2, gy, 1);
+        else CTextCentered(s, gx + gw / 2, gy + (gh - kUiGlyphH) / 2, CC_TEXT, "$");
+        AddTarget(tl, (float)gx, (float)gy, (float)(gx + gw), (float)(gy + gh), SS_ACT_DEBUG, DBG_CMD_INFINITE);
+    }
     {
         const int on = Port_Debug_GodModeEnabled();
-        const int32_t gw = 18, gh = 16, gx = ix + iw - gw, gy = by - 1;
+        const int32_t gw = 18, gh = 16, gx = ix + iw - gw, gy = by - gh - 4;
         CBox(s, gx, gy, gw, gh, on ? CC_GOOD : CC_BTN, on ? CC_GOOD : CC_BTN_EDGE);
         const SecondScreenThemeSprite* heart = Port_SecondScreenTheme_Get(on ? SST_HEART_FULL : SST_HEART_EMPTY);
         if (heart) {
@@ -1626,10 +1648,12 @@ static void Compact_PaintItems(const SSurf* s, const SecondScreenSnapshot* snap,
     for (int slot = 0; slot < SECOND_SCREEN_ITEM_SLOTS; slot++) {
         const int32_t x = gx + (slot % 4) * (cell + CC_GAP), y = gy + (slot / 4) * (cell + CC_GAP);
         const bool equippedA = slot == snap->equippedSlotA, equippedB = slot == snap->equippedSlotB;
-        uint32_t edge = CC_TAB;
-        if (equippedA || equippedB) edge = CC_ACCENT;
-        if (slot == pulseSlot) edge = (tick / 12u) & 1u ? CC_WARN : CC_ACCENT;
         const uint8_t itemId = snap->menuItems[slot];
+        /* Lit for any of its buttons: A and B, and X and Y (soft slots) too. */
+        const bool onX = itemId != 0 && itemId == softX, onY = itemId != 0 && itemId == softY;
+        uint32_t edge = CC_TAB;
+        if (equippedA || equippedB || onX || onY) edge = CC_ACCENT;
+        if (slot == pulseSlot) edge = (tick / 12u) & 1u ? CC_WARN : CC_ACCENT;
         Compact_ItemCell(s, x, y, cell, cell, itemId ? (edge == CC_TAB ? CC_CELL_EDGE : edge) : edge);
         if (itemId == 0) continue;
         uint8_t iconId = itemId;
@@ -1642,14 +1666,14 @@ static void Compact_PaintItems(const SSurf* s, const SecondScreenSnapshot* snap,
         if (scale > 3) scale = 3;
         const int32_t ix = x + (cell - 16 * scale) / 2, iy = y + (cell - 16 * scale) / 2 - 2;
         Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, scale, iconId);
-        DrawItemAmmoCount(s, snap, itemId, x + 2, y + cell - 10, 1);
+        DrawItemAmmoFraction(s, snap, itemId, x + 2, y + cell - 10, cell - 4); /* "18/30", the bag's size too */
         /* Its buttons, A B X Y in that order, along the top. */
         char letters[5];
         int nl = 0;
         if (equippedA) letters[nl++] = 'A';
         if (equippedB) letters[nl++] = 'B';
-        if (itemId == softX) letters[nl++] = 'X';
-        if (itemId == softY) letters[nl++] = 'Y';
+        if (onX) letters[nl++] = 'X';
+        if (onY) letters[nl++] = 'Y';
         letters[nl] = 0;
         if (nl) CText(s, x + 4, y + 4, CC_ACCENT, letters);
         AddTarget(tl, (float)x, (float)y, (float)(x + cell), (float)(y + cell), SS_ACT_ITEM, itemId);
@@ -1744,11 +1768,17 @@ static void Compact_PaintQuest(const SSurf* s, const SecondScreenSnapshot* snap,
             CTextCentered(s, x + cell / 2, y + cell - 11, CC_TEXT, frac);
             continue;
         }
+        /* The quest page's own items in its palette bank (14, as the pause draws them: the earth element is lilac). */
         if (slot == 2 && hasCount[2])
             Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, scale, ITEMID_SMITH_SWORD);
         else if (icon[slot] != 0)
-            Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, scale, icon[slot]);
-        if (hasCount[slot]) DrawAmmoCount(s, x + 2, y + cell - 10, 1, count[slot]);
+            Port_SecondScreenRender_DrawItemIconBank(s->px, s->w, s->h, s->stride, ix, iy, scale, icon[slot], 0xEu);
+        /* Counts in the quest page's own digits, as the pause draws the shells (three digits, up to 999) and the
+         * technique count; the fused kinstones and the figurines the same way. */
+        if (hasCount[slot]) {
+            const int digits = count[slot] > 99 || slot == 3 ? 3 : count[slot] > 9 ? 2 : 1;
+            DrawGameDigits(s, x + 2 + 8 * (digits < 2 ? 2 : digits), y + cell - 10, 1, count[slot], slot == 3 ? 3 : 1);
+        }
         if (tappable)
             AddTarget(tl, (float)x, (float)y, (float)(x + cell), (float)(y + cell), SS_ACT_QUESTVIEW,
                       (uint8_t)(slot == 0 ? SS_QUEST_KINSTONES : SS_QUEST_TECHNIQUES));

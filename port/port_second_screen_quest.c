@@ -1117,6 +1117,38 @@ static void KinstoneListCell(uint32_t* pixels, int32_t bufW, int32_t bufH, int32
     StampCell(pixels, bufW, bufH, stride, ink, cx + 2 * scale, cy + 2 * scale, artW - 4 * scale,
               side - 4 * scale);
 
+    /* The count as sub_080A42E0 draws it: the HUD's small 8x8 pair (tens right-aligned, ones left-aligned in their
+     * tiles), sized to the space right of the piece; the theme's text only without the game's digits. */
+    {
+        const u32 amount = snap->kinstoneAmounts[idx] > 99 ? 99 : snap->kinstoneAmounts[idx];
+        /* In the bank the kinstone page draws them with; the ammo digits' without it. */
+        const SecondScreenThemeSprite* k = Port_SecondScreenTheme_Get(SST_KINSTONE_TENS_0);
+        const int own = k != NULL && k->px != NULL;
+        const SecondScreenThemeSprite* tens =
+            Port_SecondScreenTheme_Get((own ? SST_KINSTONE_TENS_0 : SST_SMALL_TENS_0) + (int)(amount / 10));
+        const SecondScreenThemeSprite* ones =
+            Port_SecondScreenTheme_Get((own ? SST_KINSTONE_ONES_0 : SST_SMALL_ONES_0) + (int)(amount % 10));
+        int32_t ds = (side - artW) / 16;
+        if (ds < 1) ds = 1;
+        if (ds > scale * 2) ds = scale * 2;
+        if (tens != NULL && ones != NULL && tens->px != NULL && ones->px != NULL) {
+            const int32_t gx = cx + artW + (side - artW - 16 * ds) / 2, gy = cy + (side - 8 * ds) / 2;
+            for (int g = 0; g < 2; g++) {
+                const SecondScreenThemeSprite* d = g ? ones : tens;
+                for (int32_t py = 0; py < d->h; py++)
+                    for (int32_t px = 0; px < d->w; px++) {
+                        const uint32_t c = d->px[py * d->w + px];
+                        if (c == 0) continue;
+                        for (int32_t ey = 0; ey < ds; ey++)
+                            for (int32_t ex = 0; ex < ds; ex++) {
+                                const int32_t dx = gx + (g * 8 + px) * ds + ex, dy = gy + py * ds + ey;
+                                if (dx >= 0 && dx < bufW && dy >= 0 && dy < bufH) pixels[dy * stride + dx] = c;
+                            }
+                    }
+            }
+            return;
+        }
+    }
     FormatCount(buf, sizeof(buf), (int32_t)snap->kinstoneAmounts[idx]);
     tw = Port_SecondScreenTheme_TextWidth(buf, scale);
     Port_SecondScreenTheme_DrawText(pixels, bufW, bufH, stride, cx + artW + (side - artW - tw) / 2,

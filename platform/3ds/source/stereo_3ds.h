@@ -31,6 +31,10 @@ bool Stereo3DS_ObjWindowFollows(unsigned* layer, unsigned* priority);
 /* The depth (pixels at the full slider, positive: out of the screen) a layer and priority have in the
  * scene up now, whether or not the slider is up; for the debug tint views (PortPpuGpu3DS_SetTintMode). */
 int Stereo3DS_LayerDepth(unsigned layer, unsigned priority);
+
+/* A layer in front that is mostly holes (Mount Crenel's rain): an unmoved copy under it would show through them, every
+ * streak doubled, so it gets none (port_ppu_gpu_3ds.c, IsGhostBatch). */
+bool Stereo3DS_LayerSeeThrough(unsigned layer, unsigned priority);
 /* Debug (DEBUG -> SWITCHES -> FORCE 3D, not saved): the slider reads fully up whatever it is, so the two eyes can
  * be captured (tmc-link.py shot) and a 2DS shows the depth in its debug views. */
 void Stereo3DS_SetForce(bool on);

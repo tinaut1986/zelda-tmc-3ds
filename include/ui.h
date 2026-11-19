@@ -120,6 +120,11 @@ extern void DrawUI(void);
 /* Re-anchor the already-updated HUD after a manager changes the target
  * viewport late in the gameplay tick. Does not advance UI animations. */
 extern void Port_UI_PrepareGameplayGeometry(void);
+#ifdef TMC_3DS
+/* The pause item page's A, B, X and Y at the HUD's place in the 400x240 view (ui.c). */
+extern void Port_UI_PausePlaceButtons(void);
+extern void Port_UI_PauseDrawElements(void);
+#endif
 #endif
 extern void InitUI(bool32);
 extern void RefreshUI(void);

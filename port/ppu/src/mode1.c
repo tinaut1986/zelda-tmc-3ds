@@ -49,6 +49,7 @@ bool virtuappu_mode1_bg3_repeat = false;
 uint8_t virtuappu_mode1_bg_repeat_mask = 0;
 const uint32_t* virtuappu_mode1_bg1_picture = NULL;
 int virtuappu_mode1_ws_hud_right_anchor = 0;
+int virtuappu_mode1_ws_hud_right_native_x = MODE1_WS_HUD_RIGHT_NATIVE_X;
 const uint16_t* virtuappu_mode1_ws_win0_lines = NULL;
 /* Widescreen message-box centering (see mode1.h). All zero = inactive. */
 int virtuappu_mode1_ws_msg_shift = 0;
@@ -1105,7 +1106,7 @@ static void mode1_render_text_bg_compact_tokens(int bg_index, int line, uint16_t
     const int local_row = tile_row & 31;
     const int blocks_per_row = map_width_tiles >> 5;
     const int map_pixel_mask = map_width_tiles * 8 - 1;
-    const int hud_right_destination = frame_width - (MODE1_GBA_BG_CLIP_X - MODE1_WS_HUD_RIGHT_NATIVE_X);
+    const int hud_right_destination = frame_width - (MODE1_GBA_BG_CLIP_X - virtuappu_mode1_ws_hud_right_native_x);
 
     for (int x = 0; x < render_width; ++x) {
         int sample_x = x;
@@ -1117,7 +1118,7 @@ static void mode1_render_text_bg_compact_tokens(int bg_index, int line, uint16_t
         } else if (hud_right_anchor && !message_line) {
             if (x >= hud_right_destination) {
                 sample_x = x - (frame_width - MODE1_GBA_BG_CLIP_X);
-            } else if (x >= MODE1_WS_HUD_RIGHT_NATIVE_X) {
+            } else if (x >= virtuappu_mode1_ws_hud_right_native_x) {
                 continue;
             }
         } else if (message_line && x >= MODE1_GBA_BG_CLIP_X) {
@@ -1235,7 +1236,7 @@ void virtuappu_mode1_render_text_bg_line(int bg_index, int line, uint32_t* line_
     uint16_t* const ws_shadow = virtuappu_mode1_ws_shadow[bg_index];
     const bool ws_hud_right_anchor =
         (bg_index == 0) && (virtuappu_mode1_ws_hud_right_anchor != 0) && (frame_width > MODE1_GBA_BG_CLIP_X);
-    const int ws_hud_right_dst_x = frame_width - (MODE1_GBA_BG_CLIP_X - MODE1_WS_HUD_RIGHT_NATIVE_X);
+    const int ws_hud_right_dst_x = frame_width - (MODE1_GBA_BG_CLIP_X - virtuappu_mode1_ws_hud_right_native_x);
     /* Message-box centering: on BG0 lines inside the published box band,
      * draw the box's native columns shifted right by ws_msg_shift and skip
      * them at their native position (see mode1.h). */
@@ -1362,7 +1363,7 @@ void virtuappu_mode1_render_text_bg_line(int bg_index, int line, uint32_t* line_
                  * second copy of the box fragment at the far right. */
                 if (x >= ws_hud_right_dst_x) {
                     sample_x = x - (frame_width - MODE1_GBA_BG_CLIP_X);
-                } else if (x >= MODE1_WS_HUD_RIGHT_NATIVE_X) {
+                } else if (x >= virtuappu_mode1_ws_hud_right_native_x) {
                     continue;
                 }
             } else if (ws_msg_line && x >= MODE1_GBA_BG_CLIP_X) {
