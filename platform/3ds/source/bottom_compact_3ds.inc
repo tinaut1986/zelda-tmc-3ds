@@ -1744,11 +1744,19 @@ static void Compact_PaintQuest(const SSurf* s, const SecondScreenSnapshot* snap,
             CTextCentered(s, x + cell / 2, y + cell - 11, CC_TEXT, frac);
             continue;
         }
+        /* The quest page's own items in its palette bank (14, as the pause draws them: the earth element is lilac). */
         if (slot == 2 && hasCount[2])
             Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, scale, ITEMID_SMITH_SWORD);
         else if (icon[slot] != 0)
-            Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, scale, icon[slot]);
-        if (hasCount[slot]) DrawAmmoCount(s, x + 2, y + cell - 10, 1, count[slot]);
+            Port_SecondScreenRender_DrawItemIconBank(s->px, s->w, s->h, s->stride, ix, iy, scale, icon[slot], 0xEu);
+        /* Counts in the game's small font: the shells as the pause shows them, three digits up to 999; a count
+         * above 99 (fused kinstones, figurines) the same way, others as the HUD's pair. */
+        if (hasCount[slot]) {
+            if (slot == 3 || count[slot] > 99)
+                DrawGameDigits(s, x + 2 + 24, y + cell - 10, 1, count[slot], slot == 3 ? 3 : 1);
+            else
+                DrawAmmoCount(s, x + 2, y + cell - 10, 1, count[slot]);
+        }
         if (tappable)
             AddTarget(tl, (float)x, (float)y, (float)(x + cell), (float)(y + cell), SS_ACT_QUESTVIEW,
                       (uint8_t)(slot == 0 ? SS_QUEST_KINSTONES : SS_QUEST_TECHNIQUES));
