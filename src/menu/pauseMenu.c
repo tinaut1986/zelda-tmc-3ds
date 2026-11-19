@@ -633,6 +633,26 @@ void PauseMenu_ItemMenu_Draw(void) {
         gOamCmd.y = entry->y;
         DrawDirect(sub_080A5384_draw_constant0, 3);
     }
+#ifdef TMC_3DS
+    /* The items on X and Y (the soft slots) filled as A's and B's are; the lantern is kept unlit on a slot and
+     * listed lit while it burns. */
+    {
+        extern unsigned char Port_SoftSlots_GetAssignment(int s);
+        for (int soft = 0; soft < 2; soft++) {
+            const u32 item = Port_SoftSlots_GetAssignment(soft);
+            i = GetMenuSlotForItem(item);
+            if (i >= MENU_SLOT_COUNT && item == ITEM_LANTERN_OFF) {
+                i = GetMenuSlotForItem(ITEM_LANTERN_ON);
+            }
+            if (i < MENU_SLOT_COUNT) {
+                entry = &gItemMenuTable[i];
+                gOamCmd.x = entry->x;
+                gOamCmd.y = entry->y;
+                DrawDirect(sub_080A5384_draw_constant0, 3);
+            }
+        }
+    }
+#endif
 }
 
 u32 GetMenuSlotForItem(u32 item) {

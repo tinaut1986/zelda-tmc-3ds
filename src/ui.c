@@ -319,9 +319,30 @@ void Port_UI_PausePlaceButtons(void) {
     gHUD.buttonY[1] = HUD_XY_DIAMOND_Y + HUD_XY_STEP - 40;
 }
 
-/* In place of DrawUIElements on the pause menu: the elements, then X and Y beside A as in the game's diamond. */
+/* In place of DrawUIElements on the pause menu: the elements, then X and Y beside A as in the game's diamond. With
+ * TOP HUD hiding the game's HUD (HIDE, or AUTO while the bottom screen shows the buttons) the item page's buttons
+ * and their items are left out as in game; the other pages' prompts stay. */
 void Port_UI_PauseDrawElements(void) {
+    extern bool Port_Config_GetHideTopHud(void);
     const bool beside = PauseHudBeside();
+    if (beside && Port_Config_GetHideTopHud()) {
+        for (u32 index = 0; index < MAX_UI_ELEMENTS; index++) {
+            UIElement* element = &gHUD.elements[index];
+            if (element->used != 1 || element->unk_0_1 != 1 || element->type > UI_ELEMENT_TEXT_B ||
+                element->type == UI_ELEMENT_BUTTON_A || element->type == UI_ELEMENT_BUTTON_B ||
+                element->type == UI_ELEMENT_ITEM_A || element->type == UI_ELEMENT_ITEM_B) {
+                continue;
+            }
+            const UIElementDefinition* definition = &gUIElementDefinitions[element->type];
+            gOamCmd.x = element->x;
+            gOamCmd.y = element->y;
+            gOamCmd._4 = definition->unk_0;
+            gOamCmd._6 = definition->unk_2;
+            gOamCmd._8 = element->unk_18 << 0xc | element->unk_1a;
+            DrawDirect(definition->spriteIndex, element->frameIndex);
+        }
+        return;
+    }
     Port_Draw_SetPauseHudBeside(beside);
     DrawUIElements();
     if (beside) {
