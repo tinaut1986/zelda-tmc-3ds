@@ -898,13 +898,19 @@ static int BannerPixel(const struct OamData* sprite, int x, int y) {
 void Port_Draw_PauseBannerCap(void) {
     if (!Port_Widescreen_PauseWide()) return; /* the game maps sprites 1D throughout */
     const int count = gOAMControls.updated < 0x80 ? gOAMControls.updated : 0x80;
-    int left = -1, right = -1;
-    for (int i = 0; i < count; i++) { /* 64x32 (shape 1, size 3), not affine, at the GBA screen's top-left */
+    /* 64x32 (shape 1, size 3), not affine, on the GBA screen's top row: the leftmost is the banner's left half,
+     * wherever a page change slides it, and the one 64 to its right its other half. */
+    int left = -1, right = -1, leftX = 0;
+    for (int i = 0; i < count; i++) {
         const u16* attr = (const u16*)&gOAMControls.oam[i];
         if ((attr[0] & 0xC300u) != 0x4000u || (attr[1] & 0xC000u) != 0xC000u || (attr[0] & 0xFFu) != 40) continue;
-        const int x = attr[1] & 0x1FF;
-        if (x == 80) left = i;
-        else if (x == 144) right = i;
+        const int x = (int)(attr[1] & 0x1FFu) >= 400 ? (int)(attr[1] & 0x1FFu) - 512 : (int)(attr[1] & 0x1FFu);
+        if (left < 0 || x < leftX) left = i, leftX = x;
+    }
+    for (int i = 0; i < count && left >= 0; i++) {
+        const u16* attr = (const u16*)&gOAMControls.oam[i];
+        if ((attr[0] & 0xC300u) != 0x4000u || (attr[1] & 0xC000u) != 0xC000u || (attr[0] & 0xFFu) != 40) continue;
+        if ((int)(attr[1] & 0x1FFu) == ((leftX + 64) & 0x1FF)) right = i;
     }
     if (left < 0 || count + 4 > 0x80) return;
     const u16* banner = (const u16*)&gOAMControls.oam[left];
