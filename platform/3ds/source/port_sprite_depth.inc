@@ -50,10 +50,19 @@ PORT_SPRITE_DEPTH(ENEMY, DUST, 0, PORT_DEPTH_FLAT)
  * that leant out of the ground with the world's body rule, owner on the New 3DS 2026-10-30): flat on the ground. */
 PORT_SPRITE_DEPTH(OBJECT, GIANT_TWIG, 2, PORT_DEPTH_FLAT)
 PORT_SPRITE_DEPTH(OBJECT, GIANT_TWIG, 3, PORT_DEPTH_FLAT)
+/* The stone Minish portal (a 3x3-tile slab in the floor, Cave of Flames area 0x50 room 07): with the body rule its top
+ * edge stood out over Link standing on it (owner on the New 3DS, 2026-11-19). Flat on the ground. */
+PORT_SPRITE_DEPTH(OBJECT, MINISH_PORTAL_STONE, PORT_ANY_TYPE, PORT_DEPTH_FLAT)
+/* The minecart rails that turn (RAILTRACK, Cave of Flames 0x50/04): a piece of track in the floor, which stood a pixel
+ * behind the floor around it when lying across (owner on the New 3DS, 2026-11-19). Flat on the ground. */
+PORT_SPRITE_DEPTH(OBJECT, RAILTRACK, PORT_ANY_TYPE, PORT_DEPTH_FLAT)
 /* Things hung on a wall, drawn as standing sprites: the weapon racks of the Swiftblade dojos (FURNITURE type 7: three on
  * each of the top, left and right walls) and the archways of every room (the door frames on all four walls). The wall
  * they stand in decides (PORT_DEPTH_WALL): left wall LEFT, right wall RIGHT, bottom wall DOWN, top wall the normal rule. */
 PORT_SPRITE_DEPTH(OBJECT, FURNITURE, 7, PORT_DEPTH_WALL)
+/* The Cave of Flames' archways (type 13): only the wooden joints where a door meets the wall, which stood out of the
+ * flat wall around them (owner on the New 3DS, 2026-11-19). Flat with the wall. */
+PORT_SPRITE_DEPTH(OBJECT, ARCHWAY, 13, PORT_DEPTH_FLAT)
 PORT_SPRITE_DEPTH(OBJECT, ARCHWAY, PORT_ANY_TYPE, PORT_DEPTH_WALL)
 /* Rem, the shoemaker (area 0x23 room 02): his hands and the boots he works on are drawn over his counter, which stands out;
  * they take its height (14 quarters, tuned on the console) instead of the floor's. */
