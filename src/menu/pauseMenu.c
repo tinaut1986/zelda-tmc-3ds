@@ -418,22 +418,15 @@ void PauseMenu_ItemMenu_Update(void) {
         entry = &gItemMenuTable[menuSlot];
 #ifdef TMC_3DS
         {
-            /* X and Y put the item under the cursor on their soft slot (port_softslots.c), as A and B equip it;
-             * pressed again on the same item they empty it, as a tap on the bottom screen does. The lantern is
-             * listed lit while it burns: the slot keeps the unlit one, the item the player owns. */
+            /* X and Y put the item under the cursor on their soft slot (port_softslots.c) as A and B equip it
+             * (Port_EquipButton: moved from the button it was on, never emptied by pressing it again). */
             extern bool Port_Config_SoftSlotPressed(int slot);
-            extern unsigned char Port_SoftSlots_GetAssignment(int s);
-            extern void Port_SoftSlots_SetAssignment(int s, unsigned char id);
             static bool sWasHeld[2] = { true, true };
             for (int soft = 0; soft < 2; soft++) {
                 const bool held = Port_Config_SoftSlotPressed(soft);
                 if (held && !sWasHeld[soft] && menuSlot != MENU_SLOT_SAVE_BUTTON &&
                     menuSlot != MENU_SLOT_SAVE_BUTTON_JP && gPauseMenu.items[menuSlot] != 0) {
-                    u32 item = gPauseMenu.items[menuSlot];
-                    if (item == ITEM_LANTERN_ON) {
-                        item = ITEM_LANTERN_OFF;
-                    }
-                    Port_SoftSlots_SetAssignment(soft, Port_SoftSlots_GetAssignment(soft) == item ? 0 : (u8)item);
+                    Port_EquipButton(2 + soft, gPauseMenu.items[menuSlot]);
                     SoundReq(SFX_TEXTBOX_SELECT);
                 }
                 sWasHeld[soft] = held;

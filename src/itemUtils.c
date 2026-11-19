@@ -352,11 +352,62 @@ void PutItemOnSlot(u32 itemId) {
     }
 }
 
+#ifdef TMC_3DS
+/* A, B, X and Y (0-3; X and Y are the port's soft slots, port_softslots.c) follow A and B's rule: an item is on one
+ * button only, so putting it on a button moves it there, the button it left taking what this one had; putting it
+ * again on its own button changes nothing (nothing is unequipped that way). The same item is the same menu slot,
+ * as ForceEquipItem compares them (the lantern lit or not, each bottle). A soft slot keeps the lantern unlit. */
+void Port_EquipButton(u32 button, u32 itemId) {
+    extern unsigned char Port_SoftSlots_GetAssignment(int s);
+    extern void Port_SoftSlots_SetAssignment(int s, unsigned char id);
+    u32 items[4], before[4];
+    u32 i;
+
+    if (itemId - 1 >= 0x1f || button > 3) {
+        return;
+    }
+    items[0] = gSave.stats.equipped[EQUIP_SLOT_A];
+    items[1] = gSave.stats.equipped[EQUIP_SLOT_B];
+    items[2] = Port_SoftSlots_GetAssignment(0);
+    items[3] = Port_SoftSlots_GetAssignment(1);
+    for (i = 0; i < 4; i++) {
+        before[i] = items[i];
+    }
+    for (i = 0; i < 4; i++) {
+        if (i != button && items[i] != 0 && items[i] < 0x80 &&
+            gItemMetaData[items[i]].menuSlot == gItemMetaData[itemId].menuSlot) {
+            items[i] = items[button];
+        }
+    }
+    items[button] = itemId;
+    for (i = 2; i < 4; i++) {
+        if (items[i] == ITEM_LANTERN_ON) {
+            items[i] = ITEM_LANTERN_OFF;
+        }
+    }
+    gSave.stats.equipped[EQUIP_SLOT_A] = items[0];
+    gSave.stats.equipped[EQUIP_SLOT_B] = items[1];
+    for (i = 2; i < 4; i++) {
+        if (items[i] != before[i]) {
+            Port_SoftSlots_SetAssignment((int)i - 2, (unsigned char)items[i]);
+        }
+    }
+    gHUD.unk_13 = 0x7f;
+    gHUD.unk_14 = 0x7f;
+}
+#endif
+
 void ForceEquipItem(u32 itemId, u32 equipSlot) {
     u32 otherItem;
     u32 otherItemSlot;
     u32 replacedItem;
 
+#ifdef TMC_3DS
+    if ((itemId - 1 < 0x1f) && (equipSlot < EQUIP_SLOT_NONE)) {
+        Port_EquipButton(equipSlot, itemId);
+    }
+    return;
+#endif
     if ((itemId - 1 < 0x1f) && (equipSlot < EQUIP_SLOT_NONE)) {
         otherItemSlot = equipSlot == EQUIP_SLOT_A;
         replacedItem = gSave.stats.equipped[equipSlot];
