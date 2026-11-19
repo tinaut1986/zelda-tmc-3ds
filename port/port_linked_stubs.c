@@ -2894,6 +2894,7 @@ int Port_Widescreen_BackdropFill(void) {
          * stones, the bottom rows' colour, a step darker than the top rows' (BG pal 6 colour 3); the rocks (BG1) and
          * their blended shadows (BG3) still go over it. */
         { 0x12, 0x02, 6, 2 },
+        { 0x12, 0x03, 6, 2 }, /* the next room: the same maps in its own palettes */
     };
     for (unsigned i = 0; i < sizeof(kRooms) / sizeof(kRooms[0]); ++i)
         if (kRooms[i].area == gRoomControls.area && kRooms[i].room == gRoomControls.room)
@@ -3121,10 +3122,12 @@ void Port_Widescreen_UpdateShadows(void) {
      * 1.125 times the room's), and row Y at Y minus the BG's vertical offset (their bands start at the layer's rows -32
      * and 208). */
     {
-        extern void ScenePictures_SetRowView(int groundBg, const int x[3], const int y[3][2]);
+        extern void ScenePictures_SetRowView(int scene, int groundBg, const int x[3], const int y[3][2]);
         int x[3] = { 0, 0, 0 }, y[3][2] = { { 0, 0 }, { 0, 0 }, { 0, 0 } };
         int groundBg = -1;
-        if (fullViewOutdoor && gRoomControls.area == 0x12 && gRoomControls.room == 0x02 && gMapBottom.bgSettings != NULL &&
+        /* Room 03 is the same in other palettes (SCENE_ROW_CRENEL_03). */
+        const int scene = gRoomControls.room == 0x02 ? 0 : gRoomControls.room == 0x03 ? 1 : -1;
+        if (fullViewOutdoor && gRoomControls.area == 0x12 && scene >= 0 && gMapBottom.bgSettings != NULL &&
             (gScreen.bg1.control & ~0x43) == 0x1e08 && (gScreen.bg3.control & ~0x43) == 0x1d08) {
             groundBg = Port_WidescreenPpuBgForControl(gMapBottom.bgSettings->control);
             const int sx = gRoomControls.scroll_x - gRoomControls.origin_x;
@@ -3140,7 +3143,7 @@ void Port_Widescreen_UpdateShadows(void) {
             y[2][0] = -32 - (gScreen.bg3.yOffset & 0xff);
             y[2][1] = 208 - (gScreen.bg3.yOffset & 0xff);
         }
-        ScenePictures_SetRowView(groundBg, x, y);
+        ScenePictures_SetRowView(scene, groundBg, x, y);
     }
 #endif
 
