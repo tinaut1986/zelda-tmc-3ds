@@ -749,13 +749,15 @@ static void RepairEntityLists(void) {
     /* A subtask (the pause menu, a map hint, the kinstone menu) moves the room's lists into gEntityListsBackup
      * and runs on empty ones (Subtask_FadeIn .. Subtask_FadeOut, src/subtask.c): in a state saved there, the
      * room's entities are reached only through the backup, and freeing them as strays took the NPC whose script
-     * would give Link his controls back. */
+     * would give Link his controls back. They count in gEntCount and gManagerCount as on the GBA, where the
+     * subtask leaves both as they were: counted out, the room's own deletions after the subtask wrapped gEntCount
+     * (0 - n = 254) and no entity could be created any more (bombs, the Gust Jar, pots; #53, #46). */
     const bool backupLive = gMain.substate == GAMEMAIN_SUBTASK && gUI.nextToLoad >= 1;
     for (int i = 0; i < ENTITY_LISTS; ++i)
         WalkEntityList(&gEntityLists[i], (Entity*)&gEntityLists[i], reached, &closed, &entities, &managers);
     if (backupLive)
         for (int i = 0; i < ENTITY_LISTS; ++i)
-            WalkEntityList(&gEntityListsBackup[i], (Entity*)&gEntityLists[i], reached, &closed, NULL, NULL);
+            WalkEntityList(&gEntityListsBackup[i], (Entity*)&gEntityLists[i], reached, &closed, &entities, &managers);
     for (int slot = 0; slot < PC_MAX_ENTITY_SLOTS + MANAGER_SLOTS; ++slot) {
         Entity* const e = PoolEntity(slot);
         if (slot == 0 || e == NULL || reached[slot] || e->next == NULL) continue; /* never the player */
