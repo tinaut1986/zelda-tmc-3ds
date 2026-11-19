@@ -19,7 +19,10 @@ change (what goes where: the table in `CLAUDE.md`).
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.4.7` (renamed from `release/v0.4.6` right after the `v0.4.6` tag; the old remote branch deleted). Published:
+**Release line:** `release/v0.4.8` (renamed from `release/v0.4.7` right after the `v0.4.7` tag; the old remote branch deleted). Published:
+**`v0.4.7`** (2026-11-19, **stable**, straight to stable at the owner's request: `release/v0.4.7` merged `--no-ff` into `main`,
+`5292792`, and tagged there; the entity count after a state saved in the pause menu (#53, #46), the neighbours' archway copies,
+the overlays in front in 3D and the sprites' support under them, flat portal, joints and rails; `docs/release-notes/v0.4.7.md`),
 **`v0.4.6`** (2026-11-19, **stable**, straight to stable at the owner's request: `release/v0.4.6` merged `--no-ff` into `main`,
 `03b0526`, and tagged there; everything in the branch table below, from the zlib scene pictures to the Crenel horizontal paths'
 multiplied shadows; `docs/release-notes/v0.4.6.md`; #33 answered),
