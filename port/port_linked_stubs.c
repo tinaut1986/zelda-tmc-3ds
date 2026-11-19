@@ -3118,7 +3118,8 @@ void Port_Widescreen_UpdateShadows(void) {
      * bands above and below the room (scene_pictures_3ds.h, SCENE_ROW_*). The ground's picture column 0 sits on the
      * room's column 0 and its bands just above and below the room; the rocks (BG1) and their shadows (BG3) are their
      * whole 1024-column layer, whose column X the view shows at X minus the layer's scroll (the manager's, at 1.25 and
-     * 1.125 times the room's), and row Y at Y minus the BG's vertical offset (the second band is the layer's row 208). */
+     * 1.125 times the room's), and row Y at Y minus the BG's vertical offset (their bands start at the layer's rows -32
+     * and 208). */
     {
         extern void ScenePictures_SetRowView(int groundBg, const int x[3], const int y[3][2]);
         int x[3] = { 0, 0, 0 }, y[3][2] = { { 0, 0 }, { 0, 0 }, { 0, 0 } };
@@ -3133,10 +3134,10 @@ void Port_Widescreen_UpdateShadows(void) {
             y[0][0] = top - 48;
             y[0][1] = top + (int)gRoomControls.height;
             x[1] = -Port_HorizontalMinishPathScroll(sx, gRoomControls.width, 2, viewWidth);
-            y[1][0] = -48 - (gScreen.bg1.yOffset & 0xff);
+            y[1][0] = -32 - (gScreen.bg1.yOffset & 0xff);
             y[1][1] = 208 - (gScreen.bg1.yOffset & 0xff);
             x[2] = -Port_HorizontalMinishPathScroll(sx, gRoomControls.width, 3, viewWidth);
-            y[2][0] = -48 - (gScreen.bg3.yOffset & 0xff);
+            y[2][0] = -32 - (gScreen.bg3.yOffset & 0xff);
             y[2][1] = 208 - (gScreen.bg3.yOffset & 0xff);
         }
         ScenePictures_SetRowView(groundBg, x, y);

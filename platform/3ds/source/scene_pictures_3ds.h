@@ -72,8 +72,9 @@ int ScenePictures_ShaftView(int* x, int y[SCENE_SHAFT_LAYERS]);
  * (crenel-hpath-{ground,rocks,shadows}.bin, tools/scene-extend/to_console.py crenel-hpath-*). Each layer's picture is
  * `width` columns (a power of two, repeated sideways by the renderer) and rows[0] + rows[1] tall: the first band
  * (rows[0] rows), then the second. The ground (64 wide: one turn of its wall's 64-column repeat) has 48 rows above the
- * room and 48 below; the rocks (BG1) and their shadows (BG3), 1024 wide (the whole layer), only the second band: the
- * layer's rows 208-255, the stalagmites' continuation (the first band would be above the view). GBA 15-bit colours, 0
+ * room and 48 below; the rocks (BG1) and their shadows (BG3), 1024 wide (the whole layer): the layer's rows -32..15
+ * (the small stalactites' continuation above their cut: one copy starts at row 16, which the view shows at row 4)
+ * and rows 208-255 (the stalagmites' continuation below theirs). GBA 15-bit colours, 0
  * where empty; NULL without the file, or without WIDE + AI (generated art). Freed by ScenePictures_ReleaseRows. */
 typedef enum { SCENE_ROW_GROUND, SCENE_ROW_ROCKS, SCENE_ROW_SHADOWS, SCENE_ROW_LAYERS } SceneRowLayer;
 const uint16_t* ScenePictures_Row555(SceneRowLayer layer, unsigned* width, unsigned rows[2]);

@@ -498,8 +498,8 @@ static const struct {
     unsigned width, rows[2];
 } kRows[SCENE_ROW_LAYERS] = {
     [SCENE_ROW_GROUND] = { "crenel-hpath-ground.bin", 64, { 48, 48 } },
-    [SCENE_ROW_ROCKS] = { "crenel-hpath-rocks.bin", 1024, { 0, 48 } },
-    [SCENE_ROW_SHADOWS] = { "crenel-hpath-shadows.bin", 1024, { 0, 48 } },
+    [SCENE_ROW_ROCKS] = { "crenel-hpath-rocks.bin", 1024, { 48, 48 } },
+    [SCENE_ROW_SHADOWS] = { "crenel-hpath-shadows.bin", 1024, { 48, 48 } },
 };
 static uint16_t* sRow555[SCENE_ROW_LAYERS];
 static int8_t sRowAvailable[SCENE_ROW_LAYERS] = { -1, -1, -1 };
