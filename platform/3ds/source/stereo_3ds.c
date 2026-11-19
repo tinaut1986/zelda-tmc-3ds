@@ -126,6 +126,10 @@ static int DepthFor(int scenes, unsigned layer, unsigned priority) {
     return depth;
 }
 
+bool Stereo3DS_LayerSeeThrough(unsigned layer, unsigned priority) {
+    return (sScenes & SCENE_RAIN) && layer == PPU_GPU3DS_BG1 && priority == 1;
+}
+
 int Stereo3DS_LayerDepth(unsigned layer, unsigned priority) {
     return DepthFor(sScenesAny, layer, priority);
 }
