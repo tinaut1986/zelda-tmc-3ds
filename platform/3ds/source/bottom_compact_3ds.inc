@@ -1647,10 +1647,12 @@ static void Compact_PaintItems(const SSurf* s, const SecondScreenSnapshot* snap,
     for (int slot = 0; slot < SECOND_SCREEN_ITEM_SLOTS; slot++) {
         const int32_t x = gx + (slot % 4) * (cell + CC_GAP), y = gy + (slot / 4) * (cell + CC_GAP);
         const bool equippedA = slot == snap->equippedSlotA, equippedB = slot == snap->equippedSlotB;
-        uint32_t edge = CC_TAB;
-        if (equippedA || equippedB) edge = CC_ACCENT;
-        if (slot == pulseSlot) edge = (tick / 12u) & 1u ? CC_WARN : CC_ACCENT;
         const uint8_t itemId = snap->menuItems[slot];
+        /* Lit for any of its buttons: A and B, and X and Y (soft slots) too. */
+        const bool onX = itemId != 0 && itemId == softX, onY = itemId != 0 && itemId == softY;
+        uint32_t edge = CC_TAB;
+        if (equippedA || equippedB || onX || onY) edge = CC_ACCENT;
+        if (slot == pulseSlot) edge = (tick / 12u) & 1u ? CC_WARN : CC_ACCENT;
         Compact_ItemCell(s, x, y, cell, cell, itemId ? (edge == CC_TAB ? CC_CELL_EDGE : edge) : edge);
         if (itemId == 0) continue;
         uint8_t iconId = itemId;
@@ -1669,8 +1671,8 @@ static void Compact_PaintItems(const SSurf* s, const SecondScreenSnapshot* snap,
         int nl = 0;
         if (equippedA) letters[nl++] = 'A';
         if (equippedB) letters[nl++] = 'B';
-        if (itemId == softX) letters[nl++] = 'X';
-        if (itemId == softY) letters[nl++] = 'Y';
+        if (onX) letters[nl++] = 'X';
+        if (onY) letters[nl++] = 'Y';
         letters[nl] = 0;
         if (nl) CText(s, x + 4, y + 4, CC_ACCENT, letters);
         AddTarget(tl, (float)x, (float)y, (float)(x + cell), (float)(y + cell), SS_ACT_ITEM, itemId);
