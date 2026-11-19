@@ -19,7 +19,10 @@ change (what goes where: the table in `CLAUDE.md`).
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.4.6` (renamed from `release/v0.4.5` right after the `v0.4.5` tag). Published:
+**Release line:** `release/v0.4.7` (renamed from `release/v0.4.6` right after the `v0.4.6` tag; the old remote branch deleted). Published:
+**`v0.4.6`** (2026-11-19, **stable**, straight to stable at the owner's request: `release/v0.4.6` merged `--no-ff` into `main`,
+`03b0526`, and tagged there; everything in the branch table below, from the zlib scene pictures to the Crenel horizontal paths'
+multiplied shadows; `docs/release-notes/v0.4.6.md`; #33 answered),
 **`v0.4.5`** (2026-10-25, **stable**, straight to stable at the owner's request: `release/v0.4.5` merged `--no-ff` into `main`,
 `5daf479`, and tagged there; sprites overlapping by priority as on the GBA, the Crenel Minish paths' generated sides (WIDE + AI)
 and their camera after a portal, the rock portal's own fall strips, the procedural border in the Minish caves' first room, the
@@ -69,6 +72,8 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 | `feat/crenel-horizontal-path-fill` _(merged into release/v0.4.6 2026-11-19, at the owner's request after a look on the New 3DS)_ | Crenel's horizontal Minish path (area 0x12 room 02, 800x192) in Full View: bands above and below the room instead of side strips (WIDE + AI): the wall continued by Gemini (one 64-column turn), the two rocks' continuation (the stalactites are the stalagmites flipped) and their shadows; a new GPU path draws them repeated sideways (`build_bg_row_picture`). Without WIDE + AI the backdrop is the wall's purple. The linker pins went up to 0x64C000/0x654000. |
 | `feat/crenel-horizontal-path-03` _(merged into release/v0.4.6 2026-11-19, at the owner's request after a look on the New 3DS)_ | The next horizontal Minish path (0x12/03) has 0x12/02's maps and tiles in other palettes: its bands are 0x12/02's pictures recoloured entry for entry (wall palette 6, rocks 7, shadows 9), its backdrop fill too. 0x12/02's shadows fixed to palette 9's real colour (they were greenish). |
 | `feat/crenel-hpath-shadow-multiply` _(merged into release/v0.4.6 2026-11-19, at the owner's request after a look on the New 3DS)_ | In the horizontal Minish paths 0x12/02-03 in Full View, BG3's shadows blend as a multiply on the GPU (`bgMultiplyMask`, `PpuGpu3DSBatch::multiply`): the pixel under them times (their colour + 0.25), so they always darken; the GBA's blend lightened the dark mountain. +0.25 keeps them near the original over room 03's yellow. |
+| `fix/state-subtask-entity-count` _(merged into release/v0.4.7 2026-11-19, seen on the New 3DS by the owner)_ | A state saved in a subtask (the pause menu) counts the room's set-aside entities in gEntCount: counted out, the count wrapped after the subtask and nothing could be created (bombs, the Gust Jar, pots; the Cave of Flames' Helmasaurs could not be beaten, #53, #46). The neighbours' archway copies only within half a view of the room (the 16 places went to far ones; a black box at the door of 0x50/07). Flat in 3D: the stone Minish portal, the Cave of Flames' archway joints (ARCHWAY type 13), the turning rails (RAILTRACK). To see: other dungeons' archway types, #46's pots. |
+| `fix/stereo-ambient-overlays` _(merged into release/v0.4.7 2026-11-19, seen on the New 3DS by the owner)_ | In 3D every BG3 overlay at priority 0 alpha-blended over the world (the Cave of Flames' heat haze, the steam; BLDCNT 0x3e48 besides the rays' 0x3648) stands with the HUD (scene bit 2), and a blended layer in front of a sprite no longer hides it from its support (Minish Link stood behind the floor under the haze, 0x50/09). Left: each eye's outer edge shows 3 px without the overlay (the layer moved for the eye leaves them uncovered). |
 | `backup/blur-neighbours-all` (local only, not pushed) | The unshrunk history of `feat/blur-neighbours-all` (2026-10-20: NEIGHBOURS = BLUR, the border under the HUD, the scroll fixes, the attempts to make the border slide), kept only in case the wide blur comes back (decisions log 2026-10-20, third entry). Delete it when nobody needs it. |
 
 **What `v0.3.2` holds beyond `v0.3.1` (2026-10-17, all seen working on the New 3DS):** the garbage beside a narrow room whose BG3 has no blank
@@ -89,7 +94,7 @@ pause menu; GOD MODE in debug builds (a heart beside the rupees); the map screen
 the decisions log of 2026-10-20 (the last six). Release notes: `docs/release-notes/v0.4.3.md`. Open: #46 (a state saved in the pause menu
 leaves pots unliftable).
 
-**Start here (2026-10-25, end of day):** `v0.4.5` is the latest stable; `release/v0.4.6` holds, beyond it, the zlib-compressed
+**Start here (2026-10-25, end of day; since 2026-11-19 all of it is in the stable `v0.4.6`):** `v0.4.5` was the latest stable; `release/v0.4.6` held, beyond it, the zlib-compressed
 scene pictures (seen on the New 3DS), the pause menu at 400x240 with its background made by the game (L/R whole, the title
 banner closed), and the generated sides of five Minish Paths corridors (0x11/00 grass, 0x11/01 water, 0x11/02-04);
 all of it seen only in Azahar, none yet on the console (branch table above). No branch is open. Next, in this order:
