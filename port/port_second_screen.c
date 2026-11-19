@@ -886,6 +886,25 @@ static void DrawAmmoCount(const SSurf* s, int32_t x, int32_t y, int32_t scale, u
     BlitSprite(s, ones, x + 8 * scale, y, scale);
 }
 
+/* A count as the pause's quest page draws the shells (src/menu/pauseMenu.c): one of its digits (OBJ tiles 0..9)
+ * per 8 pixels, right to left from xRight, padded to minDigits; the HUD's small font without them. */
+static void DrawGameDigits(const SSurf* s, int32_t xRight, int32_t y, int32_t scale, uint32_t value, int minDigits) {
+    int drawn = 0;
+    const SecondScreenThemeSprite* q = Port_SecondScreenTheme_Get(SST_QUEST_DIGIT_0);
+    const int quest = q != NULL && q->px != NULL;
+    do {
+        const SecondScreenThemeSprite* d =
+            Port_SecondScreenTheme_Get((quest ? SST_QUEST_DIGIT_0 : SST_SMALL_ONES_0) + (int)(value % 10));
+        if (d == NULL) {
+            return;
+        }
+        xRight -= 8 * scale;
+        BlitSprite(s, d, xRight, y, scale);
+        value /= 10;
+        drawn++;
+    } while (value != 0 || drawn < minDigits);
+}
+
 /* One production path for both item-grid and equipped-ring counters.  The
  * return value is intentionally observable by the host compositor test so
  * a genuine zero-ammo badge cannot be confused with an unsupported item. */
