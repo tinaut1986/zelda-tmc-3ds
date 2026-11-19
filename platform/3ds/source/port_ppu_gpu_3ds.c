@@ -940,7 +940,7 @@ static uint32_t TevKey(const PpuGpu3DSBatch* batch) {
 
 static uint32_t BlendKey(const PpuGpu3DSBatch* batch) {
     return (uint32_t)batch->effect | ((uint32_t)batch->eva << 8u) |
-           ((uint32_t)batch->evb << 16u);
+           ((uint32_t)batch->evb << 16u) | ((uint32_t)batch->multiply << 24u);
 }
 
 static uint32_t sTintKey;
@@ -987,7 +987,12 @@ static void ResetBlend(const PpuGpu3DSBatch* batch) {
     const uint32_t key = BlendKey(batch) | (TintOf(batch) != 0 ? 0x80000000u : 0u);
     if (key == sBlendKey) return;
     sBlendKey = key;
-    if (batch->effect == PPU_GPU3DS_EFFECT_ALPHA && TintOf(batch) == 0) {
+    if (batch->effect == PPU_GPU3DS_EFFECT_ALPHA && batch->multiply && TintOf(batch) == 0) {
+        /* Multiply: src * dst + dst * 0.5, the pixel under it times (its colour + 0.5); shadows' colours are dark,
+         * so it always darkens, the lighter bands less. */
+        C3D_BlendingColor(0x80808080u);
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_DST_COLOR, GPU_CONSTANT_COLOR, GPU_ONE, GPU_ZERO);
+    } else if (batch->effect == PPU_GPU3DS_EFFECT_ALPHA && TintOf(batch) == 0) {
         const u32 eva = Coefficient8(batch->eva);
         const u32 evb = Coefficient8(batch->evb);
         C3D_BlendingColor(eva | (eva << 8u) | (eva << 16u) | (evb << 24u));

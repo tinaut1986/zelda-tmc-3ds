@@ -263,6 +263,9 @@ typedef struct PpuGpu3DSFrameView {
      * bands, the first rowPictureBandRows[bg][0] picture rows from the top, the second the rows after them, each band's
      * top row at rowPictureBandY[bg][band] on the view. A BG has either side strips or bands, never both. */
     uint8_t rowPictureMask;
+    /* BGs (bit n = BGn) whose alpha blend multiplies (PpuGpu3DSBatch::multiply): the shadows of Crenel's horizontal
+     * Minish paths (BG3), which the GBA's blend lightened over the walls darker than their colour. */
+    uint8_t bgMultiplyMask;
     int16_t rowPictureX[4], rowPictureBandY[4][2];
     uint16_t rowPictureWidth[4], rowPictureBandRows[4][2];
     /* BGs (bit n = BGn) drawn only in the GBA's 240x160 screen centred in a
@@ -386,6 +389,9 @@ typedef struct PpuGpu3DSBatch {
     /* Input of append_layer_batches, not read by the renderer: nothing under this layer is not a blend target, so the
      * blend's complement (the layer drawn plain where the pixel under it is not a target) would draw nowhere. */
     bool noComplement;
+    /* An alpha-blended batch whose blend multiplies instead (PpuGpu3DSFrameView::bgMultiplyMask): the pixel under it
+     * times (its colour + 0.5), so it always darkens what it covers, in its own tint. */
+    bool multiply;
     /* Added to every vertex position by the shader. Zero except for
      * background batches that share one map-space copy of the tiles. */
     float offsetX, offsetY;
