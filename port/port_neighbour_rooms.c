@@ -233,6 +233,8 @@ static void Build(void) {
  * leaves gEntCount at 0 with the restored room's entities alive (the GBA's own bookkeeping), each deletion
  * subtracts one more, and at 253 the game finds no free slot for anything. */
 enum { ARCHWAY_MARK = 0x80000000u, MAX_ARCHWAYS = 16 };
+/* Signed, apart from ARCHWAY_MARK's unsigned enum: negated in the comparisons. */
+enum { ARCHWAY_REACH_X = 200 + 32, ARCHWAY_REACH_Y = 120 + 32 };
 extern const void* Port_ResolveRegionData(const void* data);
 
 typedef struct {
@@ -277,6 +279,13 @@ static unsigned WantedCopies(EntityData* out) {
                 (const EntityData*)Port_ResolveRegionData(GetRoomProperty(gRoomControls.area, j, prop));
             for (; dat != NULL && dat->kind != 0xFF && n < MAX_ARCHWAYS; ++dat) {
                 if ((dat->kind & 0xF) != OBJECT || dat->id != ARCHWAY || (dat->flags & 0xF0) != 0) continue;
+                /* Only what the view can reach: half a 400x240 view (and a sprite) past the room's edges. A room's
+                 * whole set of neighbours has more archways than MAX_ARCHWAYS (Cave of Flames 0x50/07: 7 rooms, room
+                 * 06 alone 13), and the far ones used the places up before the door next to the room. */
+                const int wx = nb->map_x + dat->xPos - ox, wy = nb->map_y + dat->yPos - oy;
+                if (wx < -ARCHWAY_REACH_X || wx > (int)gRoomControls.width + ARCHWAY_REACH_X || wy < -ARCHWAY_REACH_Y ||
+                    wy > (int)gRoomControls.height + ARCHWAY_REACH_Y)
+                    continue;
                 out[n] = *dat;
                 out[n].type2 |= ARCHWAY_MARK;
                 out[n].xPos = (u16)(nb->map_x + dat->xPos - ox);
