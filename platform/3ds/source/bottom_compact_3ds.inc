@@ -1479,7 +1479,8 @@ static void Compact_EquipCell(const SSurf* s, const SecondScreenSnapshot* snap, 
     if (itemId != 0) {
         const int32_t ix = x + w - 4 - 16, iy = y + (h - 16) / 2;
         Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, 1, itemId);
-        DrawItemAmmoCount(s, snap, itemId, x + 3, y + h - 11, 1);
+        /* "18/30" when it fits left of the icon, else the HUD's pair. */
+        DrawItemAmmoFraction(s, snap, itemId, x + 3, y + h - 11, w - 3 - 4 - 16 - 2);
     }
     AddTarget(tl, (float)x, (float)y, (float)(x + w), (float)(y + h), SS_ACT_RING, (uint8_t)(button + 1));
 }
@@ -1665,7 +1666,7 @@ static void Compact_PaintItems(const SSurf* s, const SecondScreenSnapshot* snap,
         if (scale > 3) scale = 3;
         const int32_t ix = x + (cell - 16 * scale) / 2, iy = y + (cell - 16 * scale) / 2 - 2;
         Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, scale, iconId);
-        DrawItemAmmoCount(s, snap, itemId, x + 2, y + cell - 10, 1);
+        DrawItemAmmoFraction(s, snap, itemId, x + 2, y + cell - 10, cell - 4); /* "18/30", the bag's size too */
         /* Its buttons, A B X Y in that order, along the top. */
         char letters[5];
         int nl = 0;
