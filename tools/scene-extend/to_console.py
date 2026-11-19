@@ -18,7 +18,8 @@ SCENE      portal: the Minish portal cutscene, PICTURE 400x320, the original at 
                    above and below the room: the ground 64x96 (48 rows above the room, then 48 below; one turn of the
                    wall's 64-column repeat), the rocks (BG1) and their shadows (BG3) 1024x96 (the layer's rows
                    -32..15, the small stalactites' continuation above their cut, then rows 208-255, the stalagmites'
-                   below theirs), 0 where empty
+                   below theirs), 0 where empty. crenel-hpath-03-*: the next room (0x12/03), the same layers in its
+                   palettes (the pictures above with each colour moved to the same palette entry of that room's)
            minish-leaves, minish-shadows: the Minish Paths' grass corridor (area 0x11, the vertical one), the 240-wide
                    layer at x 80 of a 400x1024 PICTURE: its leaves (BG1) and their shadows (BG3); writes
                    minish-paths-{leaves,shadows}.bin, the 80 columns each side (160 wide), 0 where empty
@@ -68,6 +69,9 @@ SCENES = {
     'crenel-hpath-ground': ((64, 96), None, 'crenel-hpath-ground.bin'),
     'crenel-hpath-rocks': ((1024, 96), None, 'crenel-hpath-rocks.bin'),
     'crenel-hpath-shadows': ((1024, 96), None, 'crenel-hpath-shadows.bin'),
+    'crenel-hpath-03-ground': ((64, 96), None, 'crenel-hpath-03-ground.bin'),
+    'crenel-hpath-03-rocks': ((1024, 96), None, 'crenel-hpath-03-rocks.bin'),
+    'crenel-hpath-03-shadows': ((1024, 96), None, 'crenel-hpath-03-shadows.bin'),
     'minish-leaves': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-paths-leaves.bin'),
     'minish-shadows': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-paths-shadows.bin'),
     'minish-water-leaves': ((400, 1024), list(range(0, 80)) + list(range(320, 400)), 'minish-water-leaves.bin'),

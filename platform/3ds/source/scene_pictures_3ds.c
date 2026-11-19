@@ -496,25 +496,41 @@ int ScenePictures_ShaftView(int* x, int y[SCENE_SHAFT_LAYERS]) {
 static const struct {
     const char* file;
     unsigned width, rows[2];
-} kRows[SCENE_ROW_LAYERS] = {
-    [SCENE_ROW_GROUND] = { "crenel-hpath-ground.bin", 64, { 48, 48 } },
-    [SCENE_ROW_ROCKS] = { "crenel-hpath-rocks.bin", 1024, { 48, 48 } },
-    [SCENE_ROW_SHADOWS] = { "crenel-hpath-shadows.bin", 1024, { 48, 48 } },
+} kRows[SCENE_ROW_SCENES][SCENE_ROW_LAYERS] = {
+    [SCENE_ROW_CRENEL_02] = {
+        [SCENE_ROW_GROUND] = { "crenel-hpath-ground.bin", 64, { 48, 48 } },
+        [SCENE_ROW_ROCKS] = { "crenel-hpath-rocks.bin", 1024, { 48, 48 } },
+        [SCENE_ROW_SHADOWS] = { "crenel-hpath-shadows.bin", 1024, { 48, 48 } },
+    },
+    [SCENE_ROW_CRENEL_03] = {
+        [SCENE_ROW_GROUND] = { "crenel-hpath-03-ground.bin", 64, { 48, 48 } },
+        [SCENE_ROW_ROCKS] = { "crenel-hpath-03-rocks.bin", 1024, { 48, 48 } },
+        [SCENE_ROW_SHADOWS] = { "crenel-hpath-03-shadows.bin", 1024, { 48, 48 } },
+    },
 };
 static uint16_t* sRow555[SCENE_ROW_LAYERS];
 static int8_t sRowAvailable[SCENE_ROW_LAYERS] = { -1, -1, -1 };
+static int sRowScene, sRowLoaded = -1; /* the room shown, the one the pictures are of */
 static int sRowBg = -1, sRowX[SCENE_ROW_LAYERS], sRowY[SCENE_ROW_LAYERS][2];
 
 const uint16_t* ScenePictures_Row555(SceneRowLayer layer, unsigned* width, unsigned rows[2]) {
     if (layer >= SCENE_ROW_LAYERS) return NULL;
-    if (width) *width = kRows[layer].width;
-    if (rows) rows[0] = kRows[layer].rows[0], rows[1] = kRows[layer].rows[1];
+    if (sRowLoaded != sRowScene) { /* another room: its own pictures */
+        ScenePictures_ReleaseRows();
+        for (unsigned i = 0; i < SCENE_ROW_LAYERS; ++i) sRowAvailable[i] = -1;
+        sRowLoaded = sRowScene;
+    }
+    const unsigned width0 = kRows[sRowScene][layer].width;
+    const unsigned* rows0 = kRows[sRowScene][layer].rows;
+    const char* file = kRows[sRowScene][layer].file;
+    if (width) *width = width0;
+    if (rows) rows[0] = rows0[0], rows[1] = rows0[1];
     if (!Port_Config_GetWideAi()) return NULL; /* generated art: only WIDE + AI, checked every frame */
     if (sRow555[layer] != NULL || sRowAvailable[layer] == 0) return sRow555[layer];
     char sd[160], romfs[96];
-    snprintf(sd, sizeof(sd), "%s/%s", TMC3DS_APP_DIR, kRows[layer].file);
-    snprintf(romfs, sizeof(romfs), "romfs:/wide-scenes/%s", kRows[layer].file);
-    const size_t count = (size_t)kRows[layer].width * (kRows[layer].rows[0] + kRows[layer].rows[1]);
+    snprintf(sd, sizeof(sd), "%s/%s", TMC3DS_APP_DIR, file);
+    snprintf(romfs, sizeof(romfs), "romfs:/wide-scenes/%s", file);
+    const size_t count = (size_t)width0 * (rows0[0] + rows0[1]);
     uint16_t* pixels = malloc(count * sizeof(uint16_t));
     if (pixels == NULL || !ScenePictures_ReadFile(sd, romfs, pixels, count * sizeof(uint16_t))) {
         free(pixels);
@@ -537,7 +553,8 @@ void ScenePictures_ReleaseRows(void) {
     }
 }
 
-void ScenePictures_SetRowView(int groundBg, const int x[SCENE_ROW_LAYERS], const int y[SCENE_ROW_LAYERS][2]) {
+void ScenePictures_SetRowView(int scene, int groundBg, const int x[SCENE_ROW_LAYERS], const int y[SCENE_ROW_LAYERS][2]) {
+    if (scene >= 0 && scene < SCENE_ROW_SCENES) sRowScene = scene;
     sRowBg = groundBg;
     for (unsigned i = 0; i < SCENE_ROW_LAYERS && groundBg >= 0; ++i) {
         sRowX[i] = x[i];

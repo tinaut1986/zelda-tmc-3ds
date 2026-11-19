@@ -77,12 +77,15 @@ int ScenePictures_ShaftView(int* x, int y[SCENE_SHAFT_LAYERS]);
  * and rows 208-255 (the stalagmites' continuation below theirs). GBA 15-bit colours, 0
  * where empty; NULL without the file, or without WIDE + AI (generated art). Freed by ScenePictures_ReleaseRows. */
 typedef enum { SCENE_ROW_GROUND, SCENE_ROW_ROCKS, SCENE_ROW_SHADOWS, SCENE_ROW_LAYERS } SceneRowLayer;
+/* The rooms that have them: 0x12/02 and the next one, 0x12/03 (the same maps and tiles in other palettes, so the same
+ * pictures with each colour moved to the same palette entry: crenel-hpath-03-*.bin). */
+typedef enum { SCENE_ROW_CRENEL_02, SCENE_ROW_CRENEL_03, SCENE_ROW_SCENES } SceneRowScene;
 const uint16_t* ScenePictures_Row555(SceneRowLayer layer, unsigned* width, unsigned rows[2]);
 void ScenePictures_ReleaseRows(void);
-/* Where the layers' bands lie on the view, set by the game each frame (port_linked_stubs.c): `groundBg` the BG that
- * draws the ground, -1 when the room is not shown in Full View; x[layer] the view column of the picture's column 0
+/* Which room is shown and where the layers' bands lie on the view, set by the game each frame (port_linked_stubs.c):
+ * `scene` a SceneRowScene, `groundBg` the BG that draws the ground, -1 when no such room is shown in Full View; x[layer] the view column of the picture's column 0
  * (the layer's own scroll), y[layer][band] the band's top row on the view. */
-void ScenePictures_SetRowView(int groundBg, const int x[SCENE_ROW_LAYERS], const int y[SCENE_ROW_LAYERS][2]);
+void ScenePictures_SetRowView(int scene, int groundBg, const int x[SCENE_ROW_LAYERS], const int y[SCENE_ROW_LAYERS][2]);
 int ScenePictures_RowView(int x[SCENE_ROW_LAYERS], int y[SCENE_ROW_LAYERS][2]);
 
 /* Reads a scene file into `out` (exactly `bytes`): the player's own `sd` path, else the shipped `romfs` one. The file
