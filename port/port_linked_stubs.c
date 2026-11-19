@@ -2890,6 +2890,10 @@ static void Port_WidescreenRainShadow(int width) {
 int Port_Widescreen_BackdropFill(void) {
     static const struct { u8 area, room; s8 palette, index; } kRooms[] = {
         { 0x26, 0x0C, 7, 15 }, /* the cave with the ladder: its rim's light orange */
+        /* Crenel's horizontal Minish path (800x192, shorter than the view): above and below it its wall's purple
+         * stones, the bottom rows' colour, a step darker than the top rows' (BG pal 6 colour 3); the rocks (BG1) and
+         * their blended shadows (BG3) still go over it. */
+        { 0x12, 0x02, 6, 2 },
     };
     for (unsigned i = 0; i < sizeof(kRooms) / sizeof(kRooms[0]); ++i)
         if (kRooms[i].area == gRoomControls.area && kRooms[i].room == gRoomControls.room)

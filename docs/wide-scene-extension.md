@@ -153,7 +153,7 @@ decides each one in turn (2026-10-25): not every ground should be the same dark 
 | 0x11/04 | to the mayor's cabin: water, cattails (sprites, #52) | `84b4d4e4` | 03's leaves pixel for pixel in bluer greens (one colour for each) | the water corridor's reed stalks, row for row in the same phase (rows 64-736) | done: 02's leaves recoloured, derived shadows, the water corridor's stalk loop |
 | 0x12/00 | Crenel paths' shaft | (by room) | rock ledges, two pieces repeated | Gemini, rows 32-351 repeating | done |
 | 0x12/01 | Crenel paths' second vertical one | `a6dbee71` | the first path's ledges row for row (`crenel-paths-ledges.bin`, `-shadows.bin`) | outer columns repeat every 64 rows from row 115; meadow rows 0-114 (giant seed with its stem) | done: Gemini ground (`crenel-rocks-ground.bin`, 400x179), ledges reused |
-| 0x12/02 | Crenel, horizontal (800x192, BG1 0x1e09, `horizontalMinishPathBackgroundManager.c`) | - | - | - | not handled by this code |
+| 0x12/02 | Crenel, horizontal (800x192, BG1 0x1e09, `horizontalMinishPathBackgroundManager.c`) | - | - | - | not handled by this code; above and below the room (Full View) the backdrop is its wall's purple, BG pal 6 colour 2 (`Port_Widescreen_BackdropFill`; the top rows are colour 3, a step lighter), in plain WIDE too |
 
 Area 0x11 has rooms 0-4 (room 5 loads with size 0). The shadows checked so far (00, 01) are BG1's silhouette with a
 flat colour per band, the darkest at the walls, so the extension is the extended leaves' silhouette in that colour
