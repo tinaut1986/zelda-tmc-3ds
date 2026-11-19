@@ -3373,10 +3373,12 @@ typedef struct SupportSample {
     const PpuGpu3DSFrameView* frame;
     const PpuGpu3DSBand* band;
     int x, y;
+    unsigned seeThrough; /* layers in front of the sprite blended over it: they never hide it */
 } SupportSample;
 
 static bool support_opaque(void* context, unsigned bg) {
     const SupportSample* sample = (const SupportSample*)context;
+    if (sample->seeThrough & (1u << bg)) return false;
     return bg_opaque_at(sample->frame, sample->band, bg, sample->x, sample->y);
 }
 
@@ -3389,7 +3391,16 @@ static unsigned obj_support_depth(const PpuGpu3DSFrameView* frame, const PpuGpu3
     const uint8_t* io = frame->ioPerLine + (size_t)band->ioRow * MODE1_IO_MEM_SIZE;
     unsigned priorities[4] = { 0 };
     for (unsigned bg = 1; bg < 4u; ++bg) priorities[bg] = read16(io, MODE1_IO_BG0CNT + bg * 2u) & 3u;
-    SupportSample sample = { frame, band, x, y };
+    /* A layer in front alpha-blended as the first target (the fog, the sun rays, the steam, the Cave of Flames' heat
+     * haze: a whole-screen overlay) shows the sprite through it: it neither hides it nor holds it up. Counted as
+     * covering, every sprite under the heat haze took no support and stood at 0, behind the raised floor it walks on
+     * (Minish Link in 0x50/09, owner 2026-11-19). */
+    const unsigned bldcnt = read16(io, MODE1_IO_BLDCNT);
+    unsigned seeThrough = 0;
+    if (((bldcnt >> 6) & 3u) == 1u)
+        for (unsigned bg = 1; bg < 4u; ++bg)
+            if ((bldcnt & (1u << bg)) && priorities[bg] < objPriority) seeThrough |= 1u << bg;
+    SupportSample sample = { frame, band, x, y, seeThrough };
     unsigned layer, priority;
     if (!ZoneDepth3DS_SupportPlane(objPriority, priorities, support_opaque, &sample, frame->depthZones,
                                    frame->depthZoneCount, x, y, &layer, &priority))
