@@ -146,6 +146,8 @@ int Port_Draw_WideGroupBegin(void);
 void Port_Draw_WideGroupEnd(int group);
 /* The pause menu's title banner closed on the left at 400x240 (port_draw.c); before CopyOAM. */
 void Port_Draw_PauseBannerCap(void);
+/* The pause sprites drawn while on may sit right of the GBA's screen (the item page's A, B, X, Y). */
+void Port_Draw_SetPauseHudBeside(int on);
 /* The title drawn at 400x240 (port_linked_stubs.c): Wide, the game produces it this tick;
  * ViewLive, the published frame is it. */
 int Port_Widescreen_TitleWide(void);

@@ -3920,12 +3920,11 @@ static void DispatchTap(int x, int y, int longPress) {
 #endif
             UI_UNLOCK();
 #ifdef TMC_3DS
-            /* X and Y (armed 3 and 4) are the port's soft slots: kept outside
-             * the save, see port_softslots.h. A second tap on the item that
-             * is already there clears the button. */
+            /* X and Y (armed 3 and 4) are the port's soft slots, kept outside the save (port_softslots.h); they
+             * go through the same request as A and B (slots 2 and 3), Port_EquipButton's rule on the game's
+             * thread: an item moves from the button it was on, a second tap on it changes nothing. */
             if (armed >= 3) {
-                const int soft = armed - 3;
-                Port_SoftSlots_SetAssignment(soft, Port_SoftSlots_GetAssignment(soft) == hit.arg ? 0 : hit.arg);
+                Port_SecondScreenState_RequestEquip(hit.arg, (uint8_t)(armed - 1));
                 break;
             }
 #endif

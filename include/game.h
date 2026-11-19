@@ -152,6 +152,10 @@ void PutItemOnSlot(u32 item);
  * @param slot The slot to equip the item in.
  */
 void ForceEquipItem(u32 item, /*EquipSlot*/ u32 slot);
+#ifdef TMC_3DS
+/* A, B, X, Y (0-3): put an item on a button, moving it from another (itemUtils.c). */
+void Port_EquipButton(u32 button, u32 itemId);
+#endif
 
 /**
  * Get item price.

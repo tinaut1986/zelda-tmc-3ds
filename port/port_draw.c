@@ -826,6 +826,13 @@ static s32 WideCarry(s32 lo, s32 hi, s32 native, s32 margin) {
 /* The pause menu's sprites (Port_Widescreen_PauseWide) move into the middle as they are: what the game slides
  * past the GBA's screen (the L and R buttons when pressed) stays whole; what is wholly off it stays hidden. */
 static int sWidePause;
+/* Port_Draw_SetPauseHudBeside: the pause item page's A, B, X and Y are put where the game's HUD has them in the 400
+ * view, right of the GBA's screen and X above its top, so their pieces are kept wherever they fall in the view. */
+static int sPauseHudBeside;
+
+void Port_Draw_SetPauseHudBeside(int on) {
+    sPauseHudBeside = on != 0;
+}
 
 static int WideSpritesBegin(void) {
     if (sWideCollect) return -1;
@@ -852,7 +859,7 @@ static void WideSpritesEnd(int first) {
         if (sWidePieceY[i] < top) top = sWidePieceY[i];
         if (sWidePieceY[i] + sWidePieceH[i] > bottom) bottom = sWidePieceY[i] + sWidePieceH[i];
     }
-    if (sWidePause && (right <= 0 || left >= 240 || bottom <= 0 || top >= 160)) {
+    if (sWidePause && !sPauseHudBeside && (right <= 0 || left >= 240 || bottom <= 0 || top >= 160)) {
         gOAMControls.updated = (u8)first;
         return;
     }
