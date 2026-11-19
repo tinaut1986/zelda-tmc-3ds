@@ -546,8 +546,26 @@ void RecoverUI(u32 bottomPt, u32 topPt) {
  * nothing in the game uses (message lines end at 0xe9, cutscene text is BG1). */
 #define RUPEE_MAX_TILE 0x17a
 
+/* Whether a shown BG keeps its map over those tiles: Mount Crenel's storm puts the rain's (BG1, screen base 29,
+ * 0x600e800..0x600efff) right on them, and writing the max there turned its last rows into garbage. */
+static bool RupeeMaxTilesTaken(void) {
+    static const u8 kBlocks[4] = { 1, 2, 2, 4 };
+    const u32 first = 0xc000 + RUPEE_MAX_TILE * 0x20, last = first + 6 * 0x20;
+    const u16 controls[4] = { gScreen.bg0.control, gScreen.bg1.control, gScreen.bg2.control, gScreen.bg3.control };
+    for (u32 bg = 0; bg < 4; bg++) {
+        if ((gScreen.lcd.displayControl & (DISPCNT_BG0_ON << bg)) == 0)
+            continue;
+        const u32 start = ((controls[bg] >> 8) & 0x1f) * 0x800;
+        const u32 end = start + kBlocks[controls[bg] >> 14] * 0x800;
+        if (start < last && first < end)
+            return true;
+    }
+    return false;
+}
+
 static bool RupeeMaxShown(void) {
-    return Port_Widescreen_HudTargetViewWidth() == 400 && Port_Widescreen_HudTargetViewHeight() == 240;
+    return Port_Widescreen_HudTargetViewWidth() == 400 && Port_Widescreen_HudTargetViewHeight() == 240 &&
+           !RupeeMaxTilesTaken();
 }
 
 static u8 GlyphPixel(const u8* glyph, int x, int y) {
