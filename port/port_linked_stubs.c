@@ -1593,9 +1593,11 @@ int Port_Stereo_Scenes(void) {
         else if ((io & 7) == 0 && (io & DISPCNT_BG2_ON) && !(io & (DISPCNT_BG1_ON | DISPCNT_BG3_ON)))
             scenes |= PORT_STEREO_SCENE_LOGOS;
     }
-    /* The sun rays of the Minish Woods and the barrel house (LightRayManager): BG3 at priority 0,
-     * alpha-blended (the steam overlay shares the control word but not the blend's). */
-    if ((dispcnt & DISPCNT_BG3_ON) && gScreen.bg3.control == 0x1e04 && gScreen.controls.layerFXControl == 0x3648)
+    /* The overlays over the world on BG3 at priority 0, alpha-blended as the first target: the fog and the sun rays
+     * of the Minish Woods and the barrel house (LightRayManager, BLDCNT 0x3648), the steam and the Cave of Flames'
+     * heat haze (0x3e48, the second targets BG3 too). All of them are weather, in front with the HUD (owner,
+     * 2026-11-19: "niebla, lluvia y todo lo ambiental"). */
+    if ((dispcnt & DISPCNT_BG3_ON) && gScreen.bg3.control == 0x1e04 && (gScreen.controls.layerFXControl & 0xff) == 0x48)
         scenes |= PORT_STEREO_SCENE_LIGHT_RAYS;
     /* The leaves of the Minish Paths corridors (area 0x11, BG1 at priority 1 over the shadows of
      * BG3 and the ground of BG2), vertical (0x1e49) and horizontal (0x1e09). */
