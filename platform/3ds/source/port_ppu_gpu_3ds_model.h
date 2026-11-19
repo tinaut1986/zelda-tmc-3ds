@@ -390,7 +390,7 @@ typedef struct PpuGpu3DSBatch {
      * blend's complement (the layer drawn plain where the pixel under it is not a target) would draw nowhere. */
     bool noComplement;
     /* An alpha-blended batch whose blend multiplies instead (PpuGpu3DSFrameView::bgMultiplyMask): the pixel under it
-     * times (its colour + 0.5), so it always darkens what it covers, in its own tint. */
+     * times (its colour + 0.25), so it always darkens what it covers, in its own tint. */
     bool multiply;
     /* Added to every vertex position by the shader. Zero except for
      * background batches that share one map-space copy of the tiles. */

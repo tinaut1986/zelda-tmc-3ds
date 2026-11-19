@@ -988,9 +988,10 @@ static void ResetBlend(const PpuGpu3DSBatch* batch) {
     if (key == sBlendKey) return;
     sBlendKey = key;
     if (batch->effect == PPU_GPU3DS_EFFECT_ALPHA && batch->multiply && TintOf(batch) == 0) {
-        /* Multiply: src * dst + dst * 0.5, the pixel under it times (its colour + 0.5); shadows' colours are dark,
-         * so it always darkens, the lighter bands less. */
-        C3D_BlendingColor(0x80808080u);
+        /* Multiply: src * dst + dst * 0.25, the pixel under it times (its colour + 0.25); shadows' colours are dark,
+         * so it always darkens, the lighter bands less. 0.25 keeps it near the GBA's blend over a light ground (room
+         * 03's yellow) and clearly darker over the dark mountain, where the blend lightened (0.5 was too faint). */
+        C3D_BlendingColor(0x40404040u);
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_DST_COLOR, GPU_CONSTANT_COLOR, GPU_ONE, GPU_ZERO);
     } else if (batch->effect == PPU_GPU3DS_EFFECT_ALPHA && TintOf(batch) == 0) {
         const u32 eva = Coefficient8(batch->eva);
