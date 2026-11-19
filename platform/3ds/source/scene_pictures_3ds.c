@@ -492,3 +492,64 @@ int ScenePictures_ShaftView(int* x, int y[SCENE_SHAFT_LAYERS]) {
         for (unsigned i = 0; i < SCENE_SHAFT_LAYERS; ++i) y[i] = sShaftY[i];
     return sShaftBg;
 }
+
+static const struct {
+    const char* file;
+    unsigned width, rows[2];
+} kRows[SCENE_ROW_LAYERS] = {
+    [SCENE_ROW_GROUND] = { "crenel-hpath-ground.bin", 64, { 48, 48 } },
+    [SCENE_ROW_ROCKS] = { "crenel-hpath-rocks.bin", 1024, { 0, 48 } },
+    [SCENE_ROW_SHADOWS] = { "crenel-hpath-shadows.bin", 1024, { 0, 48 } },
+};
+static uint16_t* sRow555[SCENE_ROW_LAYERS];
+static int8_t sRowAvailable[SCENE_ROW_LAYERS] = { -1, -1, -1 };
+static int sRowBg = -1, sRowX[SCENE_ROW_LAYERS], sRowY[SCENE_ROW_LAYERS][2];
+
+const uint16_t* ScenePictures_Row555(SceneRowLayer layer, unsigned* width, unsigned rows[2]) {
+    if (layer >= SCENE_ROW_LAYERS) return NULL;
+    if (width) *width = kRows[layer].width;
+    if (rows) rows[0] = kRows[layer].rows[0], rows[1] = kRows[layer].rows[1];
+    if (!Port_Config_GetWideAi()) return NULL; /* generated art: only WIDE + AI, checked every frame */
+    if (sRow555[layer] != NULL || sRowAvailable[layer] == 0) return sRow555[layer];
+    char sd[160], romfs[96];
+    snprintf(sd, sizeof(sd), "%s/%s", TMC3DS_APP_DIR, kRows[layer].file);
+    snprintf(romfs, sizeof(romfs), "romfs:/wide-scenes/%s", kRows[layer].file);
+    const size_t count = (size_t)kRows[layer].width * (kRows[layer].rows[0] + kRows[layer].rows[1]);
+    uint16_t* pixels = malloc(count * sizeof(uint16_t));
+    if (pixels == NULL || !ScenePictures_ReadFile(sd, romfs, pixels, count * sizeof(uint16_t))) {
+        free(pixels);
+        sRowAvailable[layer] = 0;
+        return NULL;
+    }
+    for (size_t i = 0; i < count; ++i) { /* RGB565 to the GBA's 15-bit colour, as the shafts' */
+        const uint16_t c = pixels[i];
+        pixels[i] = (uint16_t)(((c >> 11) & 31u) | ((((c >> 5) & 63u) >> 1) << 5) | ((c & 31u) << 10));
+    }
+    sRowAvailable[layer] = 1;
+    sRow555[layer] = pixels;
+    return pixels;
+}
+
+void ScenePictures_ReleaseRows(void) {
+    for (unsigned i = 0; i < SCENE_ROW_LAYERS; ++i) {
+        free(sRow555[i]);
+        sRow555[i] = NULL;
+    }
+}
+
+void ScenePictures_SetRowView(int groundBg, const int x[SCENE_ROW_LAYERS], const int y[SCENE_ROW_LAYERS][2]) {
+    sRowBg = groundBg;
+    for (unsigned i = 0; i < SCENE_ROW_LAYERS && groundBg >= 0; ++i) {
+        sRowX[i] = x[i];
+        sRowY[i][0] = y[i][0];
+        sRowY[i][1] = y[i][1];
+    }
+}
+
+int ScenePictures_RowView(int x[SCENE_ROW_LAYERS], int y[SCENE_ROW_LAYERS][2]) {
+    for (unsigned i = 0; i < SCENE_ROW_LAYERS; ++i) {
+        if (x) x[i] = sRowX[i];
+        if (y) y[i][0] = sRowY[i][0], y[i][1] = sRowY[i][1];
+    }
+    return sRowBg;
+}

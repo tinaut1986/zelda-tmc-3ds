@@ -67,6 +67,23 @@ void ScenePictures_ReleaseShaft(void);
 void ScenePictures_SetShaftView(int scene, int groundBg, int x, int groundY, int ledgesY, int shadowsY);
 int ScenePictures_ShaftView(int* x, int y[SCENE_SHAFT_LAYERS]);
 
+/* Crenel's horizontal Minish path (area 0x12 room 02, 800x192, horizontalMinishPathBackgroundManager.c) in Full View:
+ * the room is shorter than the view, so its layers get bands above and below it instead of strips beside it
+ * (crenel-hpath-{ground,rocks,shadows}.bin, tools/scene-extend/to_console.py crenel-hpath-*). Each layer's picture is
+ * `width` columns (a power of two, repeated sideways by the renderer) and rows[0] + rows[1] tall: the first band
+ * (rows[0] rows), then the second. The ground (64 wide: one turn of its wall's 64-column repeat) has 48 rows above the
+ * room and 48 below; the rocks (BG1) and their shadows (BG3), 1024 wide (the whole layer), only the second band: the
+ * layer's rows 208-255, the stalagmites' continuation (the first band would be above the view). GBA 15-bit colours, 0
+ * where empty; NULL without the file, or without WIDE + AI (generated art). Freed by ScenePictures_ReleaseRows. */
+typedef enum { SCENE_ROW_GROUND, SCENE_ROW_ROCKS, SCENE_ROW_SHADOWS, SCENE_ROW_LAYERS } SceneRowLayer;
+const uint16_t* ScenePictures_Row555(SceneRowLayer layer, unsigned* width, unsigned rows[2]);
+void ScenePictures_ReleaseRows(void);
+/* Where the layers' bands lie on the view, set by the game each frame (port_linked_stubs.c): `groundBg` the BG that
+ * draws the ground, -1 when the room is not shown in Full View; x[layer] the view column of the picture's column 0
+ * (the layer's own scroll), y[layer][band] the band's top row on the view. */
+void ScenePictures_SetRowView(int groundBg, const int x[SCENE_ROW_LAYERS], const int y[SCENE_ROW_LAYERS][2]);
+int ScenePictures_RowView(int x[SCENE_ROW_LAYERS], int y[SCENE_ROW_LAYERS][2]);
+
 /* Reads a scene file into `out` (exactly `bytes`): the player's own `sd` path, else the shipped `romfs` one. The file
  * is the picture as it is (`bytes` long, as older to_console.py wrote it), a zlib stream (tools/scene-extend/
  * to_console.py's default) or the GBA BIOS's LZ77 (0x10 and the size; to_console.py --lz77, the fallback should zlib
