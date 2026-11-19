@@ -182,7 +182,11 @@ static uint16_t PauseVote(int px, int py, bool skipSelf) {
 }
 
 static bool PauseFindLattice(void) {
+    /* The first shift must repeat 95% of the map. The second too, or else 85%: the menu's map has a column of caps
+     * a row off the lattice (read on the New 3DS in Mt. Crenel, 2026-11-19: (3,6) at 97%, (-7,2) only at 87%), and the vote
+     * below takes the copies most of them agree on. */
     int found = 0;
+    for (int pass = 0; pass < 2 && found < 2; ++pass)
     for (int len = 1; len <= PAUSE_MAP_W * PAUSE_MAP_W && found < 2; ++len) /* shortest first */
         for (int dy = 0; dy <= PAUSE_MAP_H / 2 && found < 2; ++dy)
             for (int dx = -PAUSE_MAP_W / 2; dx <= PAUSE_MAP_W / 2 && found < 2; ++dx) {
@@ -194,7 +198,7 @@ static bool PauseFindLattice(void) {
                         ++n;
                         same += sPauseMap[y][x] == sPauseMap[y + dy][x + dx];
                     }
-                if (n >= 150 && same * 100 >= n * 95) {
+                if (n >= 150 && same * 100 >= n * (pass && found == 1 ? 85u : 95u)) {
                     sPauseLattice[found][0] = dx;
                     sPauseLattice[found][1] = dy;
                     ++found;
