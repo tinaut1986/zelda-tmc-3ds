@@ -19,7 +19,10 @@ change (what goes where: the table in `CLAUDE.md`).
 Only what no other place records. Bugs: the open GitHub issues. Tasks: the unticked
 boxes below. History: `git log` and the decisions log.
 
-**Release line:** `release/v0.4.6` (renamed from `release/v0.4.5` right after the `v0.4.5` tag). Published:
+**Release line:** `release/v0.4.7` (renamed from `release/v0.4.6` right after the `v0.4.6` tag; the old remote branch deleted). Published:
+**`v0.4.6`** (2026-11-19, **stable**, straight to stable at the owner's request: `release/v0.4.6` merged `--no-ff` into `main`,
+`03b0526`, and tagged there; everything in the branch table below, from the zlib scene pictures to the Crenel horizontal paths'
+multiplied shadows; `docs/release-notes/v0.4.6.md`; #33 answered),
 **`v0.4.5`** (2026-10-25, **stable**, straight to stable at the owner's request: `release/v0.4.5` merged `--no-ff` into `main`,
 `5daf479`, and tagged there; sprites overlapping by priority as on the GBA, the Crenel Minish paths' generated sides (WIDE + AI)
 and their camera after a portal, the rock portal's own fall strips, the procedural border in the Minish caves' first room, the
@@ -89,7 +92,7 @@ pause menu; GOD MODE in debug builds (a heart beside the rupees); the map screen
 the decisions log of 2026-10-20 (the last six). Release notes: `docs/release-notes/v0.4.3.md`. Open: #46 (a state saved in the pause menu
 leaves pots unliftable).
 
-**Start here (2026-10-25, end of day):** `v0.4.5` is the latest stable; `release/v0.4.6` holds, beyond it, the zlib-compressed
+**Start here (2026-10-25, end of day; since 2026-11-19 all of it is in the stable `v0.4.6`):** `v0.4.5` was the latest stable; `release/v0.4.6` held, beyond it, the zlib-compressed
 scene pictures (seen on the New 3DS), the pause menu at 400x240 with its background made by the game (L/R whole, the title
 banner closed), and the generated sides of five Minish Paths corridors (0x11/00 grass, 0x11/01 water, 0x11/02-04);
 all of it seen only in Azahar, none yet on the console (branch table above). No branch is open. Next, in this order:
