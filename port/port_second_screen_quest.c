@@ -1121,8 +1121,13 @@ static void KinstoneListCell(uint32_t* pixels, int32_t bufW, int32_t bufH, int32
      * tiles), sized to the space right of the piece; the theme's text only without the game's digits. */
     {
         const u32 amount = snap->kinstoneAmounts[idx] > 99 ? 99 : snap->kinstoneAmounts[idx];
-        const SecondScreenThemeSprite* tens = Port_SecondScreenTheme_Get(SST_SMALL_TENS_0 + (int)(amount / 10));
-        const SecondScreenThemeSprite* ones = Port_SecondScreenTheme_Get(SST_SMALL_ONES_0 + (int)(amount % 10));
+        /* In the bank the kinstone page draws them with; the ammo digits' without it. */
+        const SecondScreenThemeSprite* k = Port_SecondScreenTheme_Get(SST_KINSTONE_TENS_0);
+        const int own = k != NULL && k->px != NULL;
+        const SecondScreenThemeSprite* tens =
+            Port_SecondScreenTheme_Get((own ? SST_KINSTONE_TENS_0 : SST_SMALL_TENS_0) + (int)(amount / 10));
+        const SecondScreenThemeSprite* ones =
+            Port_SecondScreenTheme_Get((own ? SST_KINSTONE_ONES_0 : SST_SMALL_ONES_0) + (int)(amount % 10));
         int32_t ds = (side - artW) / 16;
         if (ds < 1) ds = 1;
         if (ds > scale * 2) ds = scale * 2;

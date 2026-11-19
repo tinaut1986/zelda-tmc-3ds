@@ -1749,13 +1749,11 @@ static void Compact_PaintQuest(const SSurf* s, const SecondScreenSnapshot* snap,
             Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, scale, ITEMID_SMITH_SWORD);
         else if (icon[slot] != 0)
             Port_SecondScreenRender_DrawItemIconBank(s->px, s->w, s->h, s->stride, ix, iy, scale, icon[slot], 0xEu);
-        /* Counts in the game's small font: the shells as the pause shows them, three digits up to 999; a count
-         * above 99 (fused kinstones, figurines) the same way, others as the HUD's pair. */
+        /* Counts in the quest page's own digits, as the pause draws the shells (three digits, up to 999) and the
+         * technique count; the fused kinstones and the figurines the same way. */
         if (hasCount[slot]) {
-            if (slot == 3 || count[slot] > 99)
-                DrawGameDigits(s, x + 2 + 24, y + cell - 10, 1, count[slot], slot == 3 ? 3 : 1);
-            else
-                DrawAmmoCount(s, x + 2, y + cell - 10, 1, count[slot]);
+            const int digits = count[slot] > 99 || slot == 3 ? 3 : count[slot] > 9 ? 2 : 1;
+            DrawGameDigits(s, x + 2 + 8 * (digits < 2 ? 2 : digits), y + cell - 10, 1, count[slot], slot == 3 ? 3 : 1);
         }
         if (tappable)
             AddTarget(tl, (float)x, (float)y, (float)(x + cell), (float)(y + cell), SS_ACT_QUESTVIEW,

@@ -72,7 +72,12 @@ enum {
     /* HUD shoulder-button glyph (USA sprite 505 / EU 504, frame 2) — the R
      * badge the game draws beside its contextual prompts. */
     SST_BUTTON_R,
-    SST_COUNT
+    /* The pause quest page's digits (8x8, the shells' count): sprite 0 frame 1 over OBJ tiles 0..9. */
+    SST_QUEST_DIGIT_0,
+    /* The kinstone page's count pair (8x8): the ammo glyphs in the bank that page draws them with. */
+    SST_KINSTONE_TENS_0 = SST_QUEST_DIGIT_0 + 10,
+    SST_KINSTONE_ONES_0 = SST_KINSTONE_TENS_0 + 10,
+    SST_COUNT = SST_KINSTONE_ONES_0 + 10
 };
 
 /* Colors sampled/derived from the decoded art (not hardcoded), for the
