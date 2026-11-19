@@ -20,6 +20,7 @@
 #include "map.h"
 #include "manager/diggingCaveEntranceManager.h"
 #include "manager/lightRayManager.h"
+#include "manager/weatherChangeManager.h"
 #include "manager/horizontalMinishPathBackgroundManager.h"
 #include "manager/verticalMinishPathBackgroundManager.h"
 #include "menu.h"
@@ -2847,6 +2848,37 @@ static void Port_WidescreenLightRayShadow(int width) {
     virtuappu_mode1_ws_shadow_stride[3] = MODE1_WS_SHADOW_FULL_VIEW_COLS;
 }
 
+/* Mount Crenel's storm (src/manager/weatherChangeManager.c): the rain is BG1 over a 32x32 map (screen base 29,
+ * gfx groups 0x2B..0x2E by strength) that only scrolls sideways within one 32-pixel period, in place of the top map
+ * layer (gMapTop.bgSettings NULL). Its pattern repeats every 32 columns and rows, so Full View repeats it over all of
+ * the view, as the fog and the light rays reach the edges; the map alone covered 256 columns, and the rows past it
+ * showed whatever followed it in VRAM. */
+static u16 sWsRain[MODE1_WS_SHADOW_ROWS * MODE1_WS_SHADOW_FULL_VIEW_COLS];
+static void Port_WidescreenRainShadow(int width) {
+    const WeatherChangeManager* weather =
+        (const WeatherChangeManager*)DeepFindEntityByID(MANAGER, WEATHER_CHANGE_MANAGER);
+    if (weather == NULL || weather->unk_22 > 3 || gMapTop.bgSettings != NULL ||
+        (gScreen.lcd.displayControl & DISPCNT_BG1_ON) == 0 || (gScreen.bg1.control & 0xC080) != 0 || width <= 240 ||
+        ((width - 240) & 7) != 0)
+        return;
+    const u16* map = (const u16*)gba_TryMemPtr(0x06000000u + ((gScreen.bg1.control >> 8) & 0x1fu) * 0x800u);
+    if (map == NULL)
+        return;
+    /* Column c of the shadow covers view x [c*8 - fine, c*8 + 8 - fine), as Port_WidescreenLightRayShadow's. */
+    const int first = ((gScreen.bg1.xOffset & 0x1ff) >> 3) - (width - 240) / 8;
+    const int firstRow = (gScreen.bg1.yOffset & 0x1ff) >> 3;
+    for (int k = 0; k < MODE1_WS_SHADOW_ROWS; ++k) {
+        const int row = (firstRow + k) & 31;
+        u16* dst = &sWsRain[row * MODE1_WS_SHADOW_FULL_VIEW_COLS];
+        for (int col = 0; col < MODE1_WS_SHADOW_FULL_VIEW_COLS; ++col)
+            dst[col] = map[row * 32 + ((first + col) & 31)];
+    }
+    virtuappu_mode1_ws_shadow[1] = sWsRain;
+    virtuappu_mode1_ws_shadow_base_tile[1] = 0;
+    virtuappu_mode1_ws_shadow_cols[1] = MODE1_WS_SHADOW_FULL_VIEW_COLS;
+    virtuappu_mode1_ws_shadow_stride[1] = MODE1_WS_SHADOW_FULL_VIEW_COLS;
+}
+
 /* Called per-VBlank from src/interrupts.c::UpdateDisplayControls. */
 /* Rooms narrower than the view whose black sides take the colour of the room's rim (owner, 2026-10-30; the backdrop,
  * which nothing but the sides shows): the BG palette entry (palette * 16 + index) that has it, or -1. */
@@ -3094,6 +3126,7 @@ void Port_Widescreen_UpdateShadows(void) {
     if (latchedMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X) {
         virtuappu_mode1_ws_full_view = 1;
         Port_WidescreenLightRayShadow(400); /* the published view is not 400 wide yet this tick */
+        Port_WidescreenRainShadow(400);
     }
     if (!Port_Widescreen_ShadowsLive()) {
         if (producerMode != PORT_3DS_FULL_VIEW_FALLBACK) {
