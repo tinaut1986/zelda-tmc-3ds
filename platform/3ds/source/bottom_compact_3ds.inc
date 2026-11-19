@@ -1575,7 +1575,7 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
     /* Rupees, and keys in a dungeon, along the bottom. */
     const int dungeon = (snap->areaFlags & SECOND_SCREEN_AR_HAS_KEYS) != 0;
     /* In the HUD's own counter font, three digits as the HUD pads them,
-     * yellow when the wallet is full; then the wallet's size, "/300", in the small font. */
+     * yellow when the wallet is full; then the wallet's size, "/300", packed as the top screen shows it. */
     int32_t by = y + h - (dungeon ? 34 : 17);
     const SecondScreenThemeSprite* wallet = Port_SecondScreenTheme_Get(SST_RUPEE_WALLET0 + (snap->walletType & 3));
     if (wallet) BlitSprite(s, wallet, ix, by, 1);
@@ -1583,7 +1583,8 @@ static void Compact_PaintSidebar(const SSurf* s, const SecondScreenSnapshot* sna
     if (snap->walletMax != 0) {
         char max[8];
         snprintf(max, sizeof(max), "/%u", (unsigned)snap->walletMax);
-        CText(s, ix + 18 + 3 * 8 + 1, by + 16 - kUiGlyphH, CC_TEXT, max);
+        if (DrawHudMax(s, ix + 18 + 3 * 8, by, snap->walletMax, 0) == ix + 18 + 3 * 8)
+            CText(s, ix + 18 + 3 * 8 + 1, by + 16 - kUiGlyphH, CC_TEXT, max); /* no HUD digits (no ROM) */
     }
     if (dungeon) {
         const SecondScreenThemeSprite* key = Port_SecondScreenTheme_Get(SST_KEY);

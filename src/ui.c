@@ -476,8 +476,9 @@ void RecoverUI(u32 bottomPt, u32 topPt) {
 }
 
 #if defined(TMC_3DS) && defined(MODE1_GBA_HEIGHT) && (MODE1_GBA_HEIGHT > 160)
-/* Full View's rupees as "287/300": the wallet's size after the count, in the three tile columns the 400 view's right
- * band has left (the widget moves two columns left, 22..29, the band being 176..239). The HUD's own 8x16 digits are
+/* Full View's rupees as "287/300": the wallet's size after the count. The widget moves three columns left, 21..28,
+ * ending where it always did (the right eye's 3D shift cut column 29 off), and the 400 view's right band starts a
+ * column earlier for it (virtuappu_mode1_ws_hud_right_native_x, 168..239). The HUD's own 8x16 digits are
  * packed at their inked width, outlines shared, and the slash is drawn in their colours; tiles 0x17a..0x17f, which
  * nothing in the game uses (message lines end at 0xe9, cutscene text is BG1). */
 #define RUPEE_MAX_TILE 0x17a
@@ -588,11 +589,11 @@ void DrawRupees(void) {
     static s32 sTilemapOffset;
     s32 tilemapOffset = HudBottomTilemapOffset();
 #if defined(TMC_3DS) && defined(MODE1_GBA_HEIGHT) && (MODE1_GBA_HEIGHT > 160)
-    /* With the max the widget starts two columns left (RenderRupeeMax); a change of layout or wallet repaints. */
+    /* With the max the widget starts three columns left (RenderRupeeMax); a change of layout or wallet repaints. */
     static s32 sLayout = 0;
     const s32 layout = RupeeMaxShown() ? 4 + (gSave.stats.walletType & 3) : 0;
     if (layout != 0) {
-        tilemapOffset -= 2;
+        tilemapOffset -= 3;
     }
     if (layout != sLayout) {
         MemClear(&gBG0Buffer[0x258 + sTilemapOffset], (sLayout != 0 ? 8 : 5) * sizeof(u16));

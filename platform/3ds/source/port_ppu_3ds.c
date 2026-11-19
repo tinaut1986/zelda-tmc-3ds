@@ -307,7 +307,7 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     view->affineRefY = sGpuAffRefY;
     view->wsCols = MODE1_WS_SHADOW_COLS;
     view->wsHudRightAnchor = virtuappu_mode1_ws_hud_right_anchor;
-    view->wsHudRightNativeX = MODE1_WS_HUD_RIGHT_NATIVE_X;
+    view->wsHudRightNativeX = virtuappu_mode1_ws_hud_right_native_x;
     view->wsMsgShift = virtuappu_mode1_ws_msg_shift;
     view->wsMsgX0 = virtuappu_mode1_ws_msg_x0;
     view->wsMsgX1 = virtuappu_mode1_ws_msg_x1;
