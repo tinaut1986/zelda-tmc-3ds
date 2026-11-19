@@ -301,6 +301,38 @@ static void DrawHudXY(void) {
     DrawHudXYButton(0, a->x - HUD_XY_STEP, a->y - HUD_XY_STEP);
     DrawHudXYButton(1, a->x - 2 * HUD_XY_STEP, a->y);
 }
+
+/* The pause menu's item page at 400x240 (Port_Widescreen_PauseWide): A, B, X and Y where the game's HUD has them
+ * in Full View, the diamond at the view's right edge. The pause sprites move by (80, 40) into the view
+ * (port_draw.c), so the buttons are placed that much short of it; their items follow A and B. */
+static bool PauseHudBeside(void) {
+    return Port_Widescreen_PauseWide() && FindUIElement(UI_ELEMENT_ITEM_A) != NULL;
+}
+
+void Port_UI_PausePlaceButtons(void) {
+    if (!PauseHudBeside()) {
+        return;
+    }
+    gHUD.buttonX[0] = 0xd0 + 160 - 80;
+    gHUD.buttonY[0] = HUD_XY_DIAMOND_Y - 40;
+    gHUD.buttonX[1] = 0xd0 - HUD_XY_STEP + 160 - 80;
+    gHUD.buttonY[1] = HUD_XY_DIAMOND_Y + HUD_XY_STEP - 40;
+}
+
+/* In place of DrawUIElements on the pause menu: the elements, then X and Y beside A as in the game's diamond. */
+void Port_UI_PauseDrawElements(void) {
+    const bool beside = PauseHudBeside();
+    Port_Draw_SetPauseHudBeside(beside);
+    DrawUIElements();
+    if (beside) {
+        const UIElement* a = FindUIElement(UI_ELEMENT_BUTTON_A);
+        if (a != NULL && a->unk_0_1 == 1) {
+            DrawHudXYButton(0, a->x - HUD_XY_STEP, a->y - HUD_XY_STEP);
+            DrawHudXYButton(1, a->x - 2 * HUD_XY_STEP, a->y);
+        }
+    }
+    Port_Draw_SetPauseHudBeside(0);
+}
 #endif
 
 #ifdef PC_PORT

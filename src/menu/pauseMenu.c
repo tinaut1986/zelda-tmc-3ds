@@ -54,8 +54,14 @@ void Subtask_PauseMenu(void) {
         FlushSprites();
         pauseMenu_Variants[gPauseMenuOptions.unk11]();
         sub_080A5128();
+#ifdef TMC_3DS
+        Port_UI_PausePlaceButtons();
+        UpdateUIElements();
+        Port_UI_PauseDrawElements();
+#else
         UpdateUIElements();
         DrawUIElements();
+#endif
         if (gPauseMenuOptions.unk11 != 4) {
             gUnk_08128A38[gPauseMenuOptions.screen].func();
         }
@@ -410,6 +416,30 @@ void PauseMenu_ItemMenu_Update(void) {
         menuSlot = gMenu.field_0x3;
 
         entry = &gItemMenuTable[menuSlot];
+#ifdef TMC_3DS
+        {
+            /* X and Y put the item under the cursor on their soft slot (port_softslots.c), as A and B equip it;
+             * pressed again on the same item they empty it, as a tap on the bottom screen does. The lantern is
+             * listed lit while it burns: the slot keeps the unlit one, the item the player owns. */
+            extern bool Port_Config_SoftSlotPressed(int slot);
+            extern unsigned char Port_SoftSlots_GetAssignment(int s);
+            extern void Port_SoftSlots_SetAssignment(int s, unsigned char id);
+            static bool sWasHeld[2] = { true, true };
+            for (int soft = 0; soft < 2; soft++) {
+                const bool held = Port_Config_SoftSlotPressed(soft);
+                if (held && !sWasHeld[soft] && menuSlot != MENU_SLOT_SAVE_BUTTON &&
+                    menuSlot != MENU_SLOT_SAVE_BUTTON_JP && gPauseMenu.items[menuSlot] != 0) {
+                    u32 item = gPauseMenu.items[menuSlot];
+                    if (item == ITEM_LANTERN_ON) {
+                        item = ITEM_LANTERN_OFF;
+                    }
+                    Port_SoftSlots_SetAssignment(soft, Port_SoftSlots_GetAssignment(soft) == item ? 0 : (u8)item);
+                    SoundReq(SFX_TEXTBOX_SELECT);
+                }
+                sWasHeld[soft] = held;
+            }
+        }
+#endif
         switch (gInput.newKeys) {
             case A_BUTTON:
                 if (menuSlot == MENU_SLOT_SAVE_BUTTON) {
