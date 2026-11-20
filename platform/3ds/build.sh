@@ -17,6 +17,20 @@ DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
 BUILD="${ROOT}/build-3ds/game"
 # makerom and bannertool are committed (copied from ../mzm, like ../sm-3ds).
 TOOLS_ROOT="${TMC3DS_TOOLS_ROOT:-${ROOT}/platform/3ds/tools/bin}"
+# On Windows the committed tools are Linux binaries, and devkitPro's makerom.exe
+# 0.19.0 drops the minor version (3DSGuy/Project_CTR#169): use the fixed build
+# from tools/fetch-makerom.sh, never devkitPro's, and devkitPro's bannertool.exe.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    if [[ -z "${MAKEROM:-}" ]]; then
+      MAKEROM="$(sh "${ROOT}/tools/fetch-makerom.sh")" || {
+        printf 'Error: cannot get the fixed makerom.exe (tools/fetch-makerom.sh).\n' >&2
+        exit 1
+      }
+    fi
+    BANNERTOOL="${BANNERTOOL:-${DEVKITPRO}/tools/bin/bannertool.exe}"
+    ;;
+esac
 MAKEROM="${MAKEROM:-${TOOLS_ROOT}/makerom}"
 BANNERTOOL="${BANNERTOOL:-${TOOLS_ROOT}/bannertool}"
 
