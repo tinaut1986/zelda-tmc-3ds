@@ -120,7 +120,10 @@ Attach them to a bug report. [docs/debug-tools.md](docs/debug-tools.md) explains
 ## Building
 
 Requirements: devkitPro with devkitARM, libctru, Citro2D and Citro3D, and CMake. `makerom`
-and `bannertool` are in `platform/3ds/tools/bin/`.
+and `bannertool` are in `platform/3ds/tools/bin/` (Linux). On Windows, `platform/3ds/build.sh` uses
+devkitPro's `bannertool.exe` and a fixed `makerom.exe` from `tools/fetch-makerom.sh` (devkitPro's drops the
+minor version, 3DSGuy/Project_CTR#169). It works from devkitPro's MSYS2 shell and from Git Bash (it
+runs itself again in devkitPro's shell); it needs Python 3 or Windows' `py` launcher.
 
 ```sh
 export DEVKITPRO=/opt/devkitpro DEVKITARM=/opt/devkitpro/devkitARM

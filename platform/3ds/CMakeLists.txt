@@ -18,6 +18,12 @@ if(NOT TMC_3DS_PROJECT_VERSION)
     message(FATAL_ERROR "Invalid 3DS version: ${TMC_3DS_VERSION}")
 endif()
 project(tmc_3ds VERSION "${TMC_3DS_PROJECT_VERSION}" LANGUAGES C CXX)
+# Windows (devkitPro's MSYS2 cmake): the link line with every object (~70 KB) is over Windows' 32 KB command line
+# limit ("argument list too long"); pass the objects in a response file there.
+if(CMAKE_HOST_SYSTEM_NAME MATCHES "MSYS|CYGWIN|MINGW|Windows")
+    set(CMAKE_C_USE_RESPONSE_FILE_FOR_OBJECTS ON)
+    set(CMAKE_CXX_USE_RESPONSE_FILE_FOR_OBJECTS ON)
+endif()
 
 # CHANNEL=beta|release is set by the release workflow (empty for local builds):
 # a beta shows "vX.Y.Z BETA" and the updater treats it as older than the stable
@@ -252,7 +258,8 @@ set_property(TARGET tmc-3ds APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_LIST_D
 # The names of the game's globals and functions go into the ELF after the link
 # (save states that survive a rebuild, tools/gen_state_symbols.py); the 3DSX
 # and the CIA are made from the patched ELF.
-find_program(TMC_PYTHON NAMES python3 python REQUIRED)
+# py: the Windows launcher, the only Python devkitPro's MSYS2 shell finds (C:\Windows is on its PATH).
+find_program(TMC_PYTHON NAMES python3 python py REQUIRED)
 add_custom_command(TARGET tmc-3ds POST_BUILD
     COMMAND "${TMC_PYTHON}" "${TMC_ROOT}/tools/gen_state_symbols.py" "$<TARGET_FILE:tmc-3ds>"
     COMMENT "Patching the save state symbol table into the ELF")

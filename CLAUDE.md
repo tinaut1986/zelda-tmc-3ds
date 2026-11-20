@@ -210,7 +210,12 @@ plain WIDE too (owner, 2026-10-25; `docs/wide-scene-extension.md`, "Patterns").
 Toolchain in `/opt/devkitpro` (devkitARM, libctru, citro2d/3d). The updater's
 curl/mbedTLS/jansson are built once by `platform/3ds/tools/build_update_deps.py`
 into `build-3ds/update-deps/` when the portlibs lack them. `makerom` and
-`bannertool` are committed in `platform/3ds/tools/bin/` (from `../mzm`).
+`bannertool` are committed in `platform/3ds/tools/bin/` (from `../mzm`; Linux). On
+Windows `platform/3ds/build.sh` takes devkitPro's `bannertool.exe` and the fixed
+`makerom.exe` that `tools/fetch-makerom.sh` downloads once into `AppData\Local\3ds-tools`
+(devkitPro's 0.19.0 drops the minor version, 3DSGuy/Project_CTR#169). From Git Bash,
+`build.sh` runs itself again in devkitPro's MSYS2 login shell (devkitPro's tools get no environment otherwise);
+that shell has no Python, so CMake takes Windows' `py` launcher there.
 
 ```sh
 export DEVKITPRO=/opt/devkitpro DEVKITARM=/opt/devkitpro/devkitARM

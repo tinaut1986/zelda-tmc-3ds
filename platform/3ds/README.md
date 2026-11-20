@@ -134,7 +134,9 @@ ROM and save data.
 
 - devkitPro with devkitARM, libctru, Citro2D and Citro3D
 - CMake with the devkitPro Nintendo 3DS toolchain
-- `makerom` and `bannertool` for CIA packaging
+- `makerom` and `bannertool` for CIA packaging (committed in `tools/bin/` for Linux; on Windows
+  `build.sh` uses devkitPro's `bannertool.exe` and the fixed `makerom.exe` from the repository's
+  `tools/fetch-makerom.sh`, since devkitPro's drops the minor version, 3DSGuy/Project_CTR#169)
 
 Run `./build_3ds.sh` from the repository root (see the README's Building section), or the
 bare build:
