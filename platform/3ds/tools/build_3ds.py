@@ -284,7 +284,7 @@ def run_build(debug=True, send_ftp=False, ftp_host="", ftp_port=5000, clean=Fals
 
     env = os.environ.copy()
     devkitpro = env.setdefault("DEVKITPRO", "/opt/devkitpro")
-    env.setdefault("DEVKITARM", os.path.join(devkitpro, "devkitARM"))
+    env.setdefault("DEVKITARM", devkitpro + "/devkitARM")  # not os.path.join: a POSIX path, no backslash on Windows
     env["TMC3DS_DEBUG_TOOLS"] = "1" if debug else "0"
     env["TMC3DS_JOBS"] = str(jobs)
     version = build_version(env)
@@ -294,7 +294,10 @@ def run_build(debug=True, send_ftp=False, ftp_host="", ftp_port=5000, clean=Fals
     steps = []
     if clean:
         steps.append(("Cleaning (build-3ds/game)", ["rm", "-rf", BUILD_DIR]))
-    steps.append(("Building the CIA", ["bash", BUILD_SH]))
+    # Windows looks in System32 before PATH, and the "bash" there is WSL's: take the one on PATH (Git Bash's or
+    # devkitPro's; build.sh moves itself into devkitPro's shell when it has to).
+    bash = (shutil.which("bash") if os.name == "nt" else None) or "bash"
+    steps.append(("Building the CIA", [bash, BUILD_SH]))
     if send_ftp and install:
         # "+ALLO <size>" (the "+" sends it before the transfer) gives the game the total for its
         # progress bar; then the upload, then "-SITE INSTALL" (the "-" sends it after the

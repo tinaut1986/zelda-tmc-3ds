@@ -8,12 +8,37 @@
 #   TMC3DS_JOBS=N          parallel jobs (default: all cores)
 set -euo pipefail
 
+# Windows: devkitPro's tools only get an environment inside devkitPro's own MSYS2 shell. Run from another one (Git
+# Bash) they see none (and /opt/devkitpro does not exist there), so the script runs itself again in devkitPro's
+# login shell, which sets DEVKITPRO/DEVKITARM, passing on by hand the variables it reads.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    if [[ ! -d /opt/devkitpro ]]; then
+      DKP_DIR=C:/devkitpro
+      [[ -n "${DEVKITPRO:-}" && -d "${DEVKITPRO}" ]] && DKP_DIR="${DEVKITPRO}"
+      DKP_BASH="${DKP_DIR}/msys2/usr/bin/bash.exe"
+      [[ -x "${DKP_BASH}" ]] || { printf 'build.sh: no devkitPro MSYS2 shell at %s\n' "${DKP_BASH}" >&2; exit 1; }
+      FWD=()
+      for v in TMC3DS_DEBUG_TOOLS TMC3DS_CHANNEL TMC3DS_VERSION TMC3DS_JOBS TMC3DS_TOOLS_ROOT MAKEROM BANNERTOOL \
+               UPDATE_DEPS_ROOT; do
+        [[ -n "${!v+x}" ]] && FWD+=("$v=${!v}")
+      done
+      SELF="$(cygpath -m "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/build.sh")"
+      exec "${DKP_BASH}" -lc 'cd "$(cygpath -u "$1")" && shift && exec env "$@"' _ "$(cygpath -m "$PWD")" \
+        "${FWD[@]}" bash "${SELF}" "$@"
+    fi
+    ;;
+esac
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VERSION="$(sh "${ROOT}/platform/3ds/tools/version.sh")"
 UPSTREAM_VERSION="$(tr -d '\r\n' < "${ROOT}/platform/3ds/upstream_version.txt")"
 CHANNEL="${TMC3DS_CHANNEL:-}"
 DEBUG_TOOLS="${TMC3DS_DEBUG_TOOLS:-0}"
 DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+DEVKITARM="${DEVKITARM:-${DEVKITPRO}/devkitARM}"
+# devkitPro's MSYS2 has no Python; Windows' py launcher (C:/Windows is on its PATH) runs the host scripts then.
+PYTHON="$(command -v python3 || command -v python || command -v py || echo python3)"
 BUILD="${ROOT}/build-3ds/game"
 # makerom and bannertool are committed (copied from ../mzm, like ../sm-3ds).
 TOOLS_ROOT="${TMC3DS_TOOLS_ROOT:-${ROOT}/platform/3ds/tools/bin}"
@@ -45,13 +70,13 @@ LABEL="${VERSION}"
 [[ "${CHANNEL}" == "beta" ]] && LABEL="${VERSION} BETA"
 printf 'Minish Cap 3DS v%s (upstream %s), debug tools %s\n' "${LABEL}" "${UPSTREAM_VERSION}" "${DEBUG_TOOLS}"
 
-export DEVKITPRO
+export DEVKITPRO DEVKITARM
 if [[ -z "${UPDATE_DEPS_ROOT:-}" ]]; then
   UPDATE_DEPS_ROOT="${DEVKITPRO}/portlibs/3ds"
   if [[ ! -f "${UPDATE_DEPS_ROOT}/lib/libcurl.a" || ! -f "${UPDATE_DEPS_ROOT}/lib/libjansson.a" ]]; then
     UPDATE_DEPS_ROOT="${ROOT}/build-3ds/update-deps/prefix"
     if [[ ! -f "${UPDATE_DEPS_ROOT}/lib/libcurl.a" || ! -f "${UPDATE_DEPS_ROOT}/lib/libjansson.a" ]]; then
-      python3 "${ROOT}/platform/3ds/tools/build_update_deps.py" "${ROOT}/build-3ds/update-deps"
+      "${PYTHON}" "${ROOT}/platform/3ds/tools/build_update_deps.py" "${ROOT}/build-3ds/update-deps"
     fi
   fi
 fi
