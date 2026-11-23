@@ -26,6 +26,11 @@
 #include "port_softslots.h"
 #include "port_widescreen.h"
 #endif
+#ifdef TMC_3DS
+#include "port_turbo_button.h"
+
+extern int Port_Config_GetTurboButton(void);
+#endif
 
 extern void sub_080A4DB8(u32);
 
@@ -631,7 +636,10 @@ void PauseMenu_ItemMenu_Draw(void) {
      * listed lit while it burns. */
     {
         extern unsigned char Port_SoftSlots_GetAssignment(int s);
+        const int turboButton = Port_Config_GetTurboButton();
         for (int soft = 0; soft < 2; soft++) {
+            /* No item marker on a button the turbo owns: it fires nothing. */
+            if (Port_TurboButton_OwnsSoftSlot(turboButton, soft)) continue;
             const u32 item = Port_SoftSlots_GetAssignment(soft);
             i = GetMenuSlotForItem(item);
             if (i >= MENU_SLOT_COUNT && item == ITEM_LANTERN_OFF) {

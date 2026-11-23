@@ -22,6 +22,9 @@
 #ifdef TMC_3DS
 #include "port_hud_xy.h"
 #include "port_softslots.h"
+#include "port_turbo_button.h"
+
+extern int Port_Config_GetTurboButton(void);
 #endif
 
 extern void sub_0805ECEC(u32, u32, u32, u32);
@@ -256,11 +259,12 @@ static void DrawHudXYButton(unsigned slot, s16 x, s16 y) {
     const UIElementDefinition* button = &gUIElementDefinitions[UI_ELEMENT_BUTTON_A];
     const UIElementDefinition* item = &gUIElementDefinitions[UI_ELEMENT_ITEM_A];
     const u32 itemId = HudXYItem(slot);
+    const bool turbo = Port_TurboButton_OwnsSoftSlot(Port_Config_GetTurboButton(), (int)slot);
     u32 first;
 
     gOamCmd.x = x;
     gOamCmd.y = y;
-    if (itemId != 0 && gSpriteAnimations_322[itemId] != NULL) {
+    if (!turbo && itemId != 0 && gSpriteAnimations_322[itemId] != NULL) {
         const Frame* frame = gSpriteAnimations_322[itemId];
         const SpritePtr* sprite = Port_GetSpritePtr(item->spriteIndex);
         int count = -1;
@@ -294,7 +298,7 @@ static void DrawHudXYButton(unsigned slot, s16 x, s16 y) {
     gOamCmd._6 = button->unk_2;
     gOamCmd._8 = PORT_HUD_XY_BUBBLE_TILE(slot);
     DrawDirect(button->spriteIndex, 0);
-    Port_HudXY_AddBubble(slot, first, gOAMControls.updated);
+    Port_HudXY_AddBubble(slot, first, gOAMControls.updated, turbo);
 }
 
 static void DrawHudXY(void) {

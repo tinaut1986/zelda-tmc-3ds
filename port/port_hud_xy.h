@@ -13,6 +13,7 @@
  * never sees them. */
 
 #include "gba/types.h"
+#include <stdbool.h>
 
 #define PORT_HUD_XY_SLOTS 2u
 /* Four tiles of bubble, then up to eight of icon, per slot (X = 0, Y = 1). */
@@ -24,8 +25,9 @@
 
 /* Game thread, while the frame's sprites are drawn. */
 void Port_HudXY_BeginFrame(void);
-/* OAM entries [first, end) of gOAMControls.oam hold `slot`'s bubble. */
-void Port_HudXY_AddBubble(unsigned slot, unsigned first, unsigned end);
+/* OAM entries [first, end) of gOAMControls.oam hold `slot`'s bubble; `turbo`
+ * swaps its letter for the fast-forward bolt (the button is not an item). */
+void Port_HudXY_AddBubble(unsigned slot, unsigned first, unsigned end, bool turbo);
 /* ... or its icon: `numTiles` tiles at `tiles`, and the ammo count over its
  * first two tiles when `count` >= 0 (as the HUD does for A and B). */
 void Port_HudXY_AddIcon(unsigned slot, unsigned first, unsigned end, const void* tiles, unsigned numTiles,

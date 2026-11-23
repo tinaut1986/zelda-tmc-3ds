@@ -72,7 +72,7 @@ int main(void) {
         "CREST PINS", "FLOOR BACK", "COLOURS", "THEME", "SHOW FPS", "SHOW", "HIDE", "ON", "OFF", "RESTART",
         "ORIGINAL", "STABLE", "SLATE", "PARCHMENT", "NIGHT GOLD", "FOREST", "PATTERN", "NONE", "BACK",
         "PREV", "NEXT", "SAVE OVER", "DELETE", "LOAD", "SURE?", "AUTO", "BILINEAR", "PIXEL P.", "GBA GRID",
-        "INTERFACE", "NEIGHBOURS", "DEPTH", "LAYERS",
+        "INTERFACE", "NEIGHBOURS", "DEPTH", "LAYERS", "TURBO MODE", "HOLD", "TOGGLE",
     };
     for (size_t i = 0; i < sizeof(kCellWords) / sizeof(kCellWords[0]); i++) {
         for (int lang = PORT_TEXT_FR; lang < PORT_TEXT_COUNT; lang++) {
@@ -83,6 +83,23 @@ int main(void) {
             }
             if (n > 11) {
                 fprintf(stderr, "too wide for a cell (%d): %s -> %s\n", n, kCellWords[i], t);
+                return 1;
+            }
+        }
+    }
+
+    /* The double-width cells (GAME's TURBO BUTTON spans two columns) hold
+     * twice the room; they still must not run into the next cell. */
+    static const char* const kWideCellWords[] = { "TURBO BUTTON" };
+    for (size_t i = 0; i < sizeof(kWideCellWords) / sizeof(kWideCellWords[0]); i++) {
+        for (int lang = PORT_TEXT_FR; lang < PORT_TEXT_COUNT; lang++) {
+            const char* t = Port_Text_TrFor((PortTextLanguage)lang, kWideCellWords[i]);
+            int n = 0;
+            for (const char* p = t; *p; n++) {
+                (void)Port_Text_Utf8Next(&p);
+            }
+            if (n > 24) {
+                fprintf(stderr, "too wide for a wide cell (%d): %s -> %s\n", n, kWideCellWords[i], t);
                 return 1;
             }
         }

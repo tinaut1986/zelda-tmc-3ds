@@ -12,6 +12,7 @@
 
 #include "updater.h"
 #include "port_ppu_gpu_3ds.h"
+#include "port_turbo_button.h"
 
 /* Built apart from the game headers (their declarations of the ROM symbols
  * below differ from these placeholders), so the dump enum is an int here. */
@@ -92,6 +93,14 @@ bool Port_Config_GetSecondScreenFollowCam(void) { return sFollow; }
 bool Port_Config_GetSecondScreenSwap(void) { return sSwap; }
 bool Port_Config_GetShowFps(void) { return sFps; }
 unsigned Port_Config_GetTurboMultiplier(void) { return sTurbo; }
+static int sTurboButton;
+static int sTurboMode;
+int Port_Config_GetTurboButton(void) { return Port_TurboButton_Clamp(sTurboButton); }
+void Port_Config_SetTurboButton(int button) { sTurboButton = Port_TurboButton_Clamp(button); }
+void Port_Config_CycleTurboButton(void) { sTurboButton = Port_TurboButton_Cycle(sTurboButton); }
+int Port_Config_GetTurboMode(void) { return Port_TurboMode_Clamp(sTurboMode); }
+void Port_Config_SetTurboMode(int mode) { sTurboMode = Port_TurboMode_Clamp(mode); }
+void Port_Config_CycleTurboMode(void) { sTurboMode = Port_TurboMode_Cycle(sTurboMode); }
 void Port_Config_SetAutosaveEnabled(bool on) { sAuto = on; }
 void Port_Config_SetColorCorrection(bool on) { sColor = on; }
 void Port_Config_SetHideTopHud(bool on) { sHideHud = on; }

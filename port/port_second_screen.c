@@ -50,6 +50,7 @@
 #endif
 #include "port_second_screen.h"
 #include "port_softslots.h"
+#include "port_turbo_button.h"
 #include "port_second_screen_camera.h"
 #include "port_second_screen_dungeonmap.h"
 #include "port_second_screen_quest.h"
@@ -206,6 +207,8 @@ enum {
     SS_SET_CRESTS,
     SS_SET_FLOOR_RETURN,
     SS_SET_TURBO,
+    SS_SET_TURBO_BUTTON,  /* turbo_button: OFF / X / Y (hold to fast-forward) */
+    SS_SET_TURBO_MODE,    /* turbo_mode: HOLD / TOGGLE */
     SS_SET_VOLUME,        /* master_volume, cycles 0/25/50/75/100% */
     SS_SET_AUTOSAVE,      /* autosave_enabled via Port_QuickSave */
     SS_SET_COLOR_CORRECTION, /* color_correction + live PPU toggle */
@@ -2367,7 +2370,7 @@ int Port_SecondScreen_TopHudCovered(void) { return sSidebarShown; }
 
 static const char* const kSettingLabels[SS_SET_COUNT] = {
     "TOP HUD",          "WIDESCREEN",        "FOLLOW CAM",       "WINDCREST PINS",
-    "FLOOR AUTO RETURN", "TURBO SPEED",       "MASTER VOLUME",    "AUTOSAVE",
+    "FLOOR AUTO RETURN", "TURBO SPEED",       "TURBO BUTTON",     "TURBO MODE",       "MASTER VOLUME",    "AUTOSAVE",
     "COLOR CORRECTION", "SHOW FPS",           "HOLD TO ADVANCE TEXT",
     "RANDOMIZER",       "PANEL BACKDROP",     "SWAP SCREENS",
 #ifdef TMC_3DS
@@ -2441,6 +2444,8 @@ static int SettingsPageRows(int page, uint8_t* out) {
     } else if (page == SS_SETTINGS_GAMEPLAY) {
 #ifdef TMC_3DS
         out[n++] = SS_SET_TURBO;
+        out[n++] = SS_SET_TURBO_BUTTON;
+        out[n++] = SS_SET_TURBO_MODE;
 #endif
 #ifndef TMC_3DS
         out[n++] = SS_SET_CRESTS;
@@ -2640,6 +2645,16 @@ static int GetSettingState(int row, char* out, int outCap) {
             snprintf(out, (size_t)outCap, "N A");
             return 0;
 #endif
+        case SS_SET_TURBO_BUTTON: {
+            const int turbo = Port_Config_GetTurboButton();
+            snprintf(out, (size_t)outCap, "%s", Port_TurboButton_Name(turbo));
+            return turbo != PORT_TURBO_BUTTON_OFF;
+        }
+        case SS_SET_TURBO_MODE: {
+            const int mode = Port_Config_GetTurboMode();
+            snprintf(out, (size_t)outCap, "%s", Port_TurboMode_Name(mode));
+            return mode != PORT_TURBO_MODE_HOLD;
+        }
         case SS_SET_VOLUME: {
             int pct = GetVolumeStop();
             snprintf(out, (size_t)outCap, "%d", pct);
@@ -3957,6 +3972,17 @@ void Port_SecondScreen_OnTouchRelease(void) {
 }
 #endif
 
+/* The bottom screen's rings are 1 A, 2 B, 3 X, 4 Y; a turbo-owned X or Y is
+ * not an item button, so it cannot be armed nor take the next item tapped. */
+static int TurboOwnsRing(int ring) {
+#ifdef TMC_3DS
+    return ring >= 3 && Port_TurboButton_OwnsSoftSlot(Port_Config_GetTurboButton(), ring - 3);
+#else
+    (void)ring;
+    return 0;
+#endif
+}
+
 static void DispatchTap(int x, int y, int longPress) {
     TapTarget hit;
     int found = 0;
@@ -4097,6 +4123,12 @@ static void DispatchTap(int x, int y, int longPress) {
             UI_UNLOCK();
             break;
         case SS_ACT_RING:
+#ifdef TMC_3DS
+            if (TurboOwnsRing(hit.arg)) {
+                Compact_Toast("%s", Port_Text_Tr("TURBO BUTTON IN USE"));
+                break;
+            }
+#endif
             UI_LOCK();
 #ifdef TMC_3DS
             /* The button tapped stays selected: every item tapped from now on
@@ -4121,6 +4153,13 @@ static void DispatchTap(int x, int y, int longPress) {
             /* X and Y (armed 3 and 4) are the port's soft slots, kept outside the save (port_softslots.h); they
              * go through the same request as A and B (slots 2 and 3), Port_EquipButton's rule on the game's
              * thread: an item moves from the button it was on, a second tap on it changes nothing. */
+            if (TurboOwnsRing(armed)) {
+                UI_LOCK();
+                sUi.armedRing = 0;
+                UI_UNLOCK();
+                Compact_Toast("%s", Port_Text_Tr("TURBO BUTTON IN USE"));
+                break;
+            }
             if (armed >= 3) {
                 Port_SecondScreenState_RequestEquip(hit.arg, (uint8_t)(armed - 1));
                 break;
@@ -4208,6 +4247,18 @@ static void DispatchTap(int x, int y, int longPress) {
 #else
                     break;
 #endif
+                case SS_SET_TURBO_BUTTON: {
+                    Port_Config_CycleTurboButton();
+                    /* Picking the button as turbo cancels a pending assignment
+                     * to it: it cannot take an item any more. */
+                    UI_LOCK();
+                    if (TurboOwnsRing(sUi.armedRing)) sUi.armedRing = 0;
+                    UI_UNLOCK();
+                    break;
+                }
+                case SS_SET_TURBO_MODE:
+                    Port_Config_CycleTurboMode();
+                    break;
                 case SS_SET_VOLUME: {
                     /* Cycle 0 -> 25 -> 50 -> 75 -> 100 -> 0, applied to
                      * the live mixer + persisted — the same call pair as

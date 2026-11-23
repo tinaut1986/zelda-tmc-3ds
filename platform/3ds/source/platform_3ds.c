@@ -11,6 +11,7 @@
 #include "port_second_screen_sync_3ds.h"
 #include "frame_pacing_3ds.h"
 #include "app_paths_3ds.h"
+#include "port_turbo_button.h"
 #include "tmc3ds_build_config.h"
 #if TMC3DS_DEBUG_TOOLS
 #include "debug_link_3ds.h"
@@ -28,6 +29,12 @@ static uint32_t sDown;
 static circlePosition sCirclePosition;
 static circlePosition sCStickPosition;
 static bool sCStickHeld;
+/* OPTIONS -> GAME -> TURBO BUTTON: X or Y held (port_turbo_button.h). Read
+ * from the persisted setting on every input poll. */
+static bool sTurboButtonHeld;
+/* OPTIONS -> GAME -> TURBO MODE: in TOGGLE the button latches the turbo on
+ * until pressed again; dropped when the setting or the button changes. */
+static bool sTurboLatch;
 static bool sScreenDumpRequested;
 static uint64_t sScreenDumpTick; /* when the last screen dump finished, 0 if none */
 static bool sRunning;
@@ -88,6 +95,8 @@ static LightEvent sBottomWorkerDone;
 static aptHookCookie sAptHookCookie;
 static bool sAptHookRegistered;
 extern void Port_Audio_Shutdown(void);
+extern int Port_Config_GetTurboButton(void);
+extern int Port_Config_GetTurboMode(void);
 static void PollInput(void);
 
 void Platform3DS_MarkFrameDiscontinuity(Old3DSFramePacerDiscontinuity reason) {
@@ -130,6 +139,8 @@ int Platform3DS_Init(void) {
     memset(&sCirclePosition, 0, sizeof(sCirclePosition));
     memset(&sCStickPosition, 0, sizeof(sCStickPosition));
     sCStickHeld = false;
+    sTurboButtonHeld = false;
+    sTurboLatch = false;
     sScreenDumpRequested = false;
     sScreenDumpTick = 0;
     sCore1Available = false;
@@ -262,7 +273,7 @@ void Platform3DS_ApplyCpuLimit(void) {
     }
 }
 unsigned Platform3DS_Core1TimeLimit(void) { return sCore1TimeLimit; }
-bool Platform3DS_TurboHeld(void) { return sIsNew3DS && sCStickHeld; }
+bool Platform3DS_TurboHeld(void) { return sTurboButtonHeld || (sIsNew3DS && sCStickHeld); }
 unsigned Platform3DS_TurboMultiplier(void) { return sTurboMultiplier; }
 void Platform3DS_SetTurboMultiplier(unsigned multiplier) {
     sTurboMultiplier = multiplier < 2 ? 2 : (multiplier > 5 ? 5 : multiplier);
@@ -552,7 +563,7 @@ bool Platform3DS_BeginFrameBoundary(void) {
     }
     sLogicLastTick = now;
 
-    if (sIsNew3DS && Platform3DS_TurboHeld()) {
+    if (Platform3DS_TurboHeld()) {
         ++sTurboLogicFrames;
         if (++sTurboPhase >= Platform3DS_TurboMultiplier()) {
             sTurboPhase = 0;
@@ -698,8 +709,10 @@ void Platform3DS_PumpWithoutVBlank(void) {
         PollInput();
         return;
     }
-    /* New 3DS turbo skips run as fast as they can; only a pacer skip sleeps. */
+    /* New 3DS turbo and the turbo button skip runs as fast as they can; only
+     * a pacer skip sleeps. */
     if (sIsNew3DS && !sPacerSkipped) return;
+    if (Platform3DS_TurboHeld() && !sPacerSkipped) return;
     sPacerSkipped = false;
 
     if (sOld3DSSkippedTickSleep != 0) {
@@ -875,6 +888,22 @@ static void PollInput(void) {
 #if TMC3DS_DEBUG_TOOLS
     DebugLink_Poll(&sHeld, &sDown, sLogicFrames); /* remote buttons and requests (SITE over FTP) */
 #endif
+    const int turboButton = Port_Config_GetTurboButton();
+    const int turboMode = Port_Config_GetTurboMode();
+    /* A change in OPTIONS (or no button at all) drops the toggle's state. */
+    static int sLastTurboButton = -1, sLastTurboMode = -1;
+    if (turboButton != sLastTurboButton || turboMode != sLastTurboMode) {
+        sLastTurboButton = turboButton;
+        sLastTurboMode = turboMode;
+        sTurboLatch = false;
+    }
+    sTurboLatch = Port_TurboButton_LatchAfter(turboMode,
+                                              Port_TurboButton_Held(turboButton, (sDown & KEY_X) != 0u,
+                                                                    (sDown & KEY_Y) != 0u),
+                                              sTurboLatch);
+    sTurboButtonHeld = Port_TurboButton_Active(
+        turboMode, Port_TurboButton_Held(turboButton, (sHeld & KEY_X) != 0u, (sHeld & KEY_Y) != 0u),
+        sTurboLatch);
     hidCircleRead(&sCirclePosition);
     if (sIsNew3DS) {
         hidCstickRead(&sCStickPosition);

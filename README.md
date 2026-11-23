@@ -34,6 +34,8 @@ The game is the open-source decompilation of the original, running on a native e
   renderer; the software renderer remains as reference and fallback.
 * New 3DS: 804 MHz mode, L2 cache, multi-core rendering, optional 2x-5x turbo on the C-Stick.
   Old 3DS: an optimised renderer, a lighter audio path and an adaptive frame pacer.
+* Turbo button: hold X or Y while playing (OPTIONS -> GAME -> TURBO BUTTON) to run at the chosen
+  2x-5x speed, hold it or toggle it (OPTIONS -> GAME); the button is not an item button while assigned.
 * X and Y fire items, shown as the console's A/B/X/Y diamond in the HUD and on the bottom
   screen.
 * Bottom screen with live map, dungeon information, quest status, item touch controls, themes
