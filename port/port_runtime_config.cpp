@@ -190,7 +190,7 @@ float sLcdPersistRho = 0.35f;  /* persistence: fraction of prev frame kept */
 /* The persisted colour grade (config.json colour_* keys). The legacy
  * color_correction bool above mirrors "mode != OFF" so older callers stay
  * coherent; SetColourGrade writes both. */
-PortColourGrade sColourGrade = { PORT_COLOUR_OFF, 0, 0, 0, 0 };
+PortColourGrade sColourGrade = { PORT_COLOUR_OFF, 0, 0, 0, 0, 0, 0 };
 bool sRibbonCfg = true;        /* F8 menu style: ribbon (true) vs classic */
 bool sMenuHintSeen = false;    /* set once the F8/settings menu is first opened */
 float sMasterVolume = 1.0f;    /* game master volume [0,1]; 1.0 = unchanged */
@@ -358,6 +358,8 @@ nlohmann::json DefaultsJson(void) {
     j["colour_contrast"] = 0;
     j["colour_saturation"] = 0;
     j["colour_gamma"] = 0;
+    j["colour_shadows"] = 0;
+    j["colour_midtones"] = 0;
     j["touch_scheme"] = "joystick";
     j["aspect_mode"] = "native";
 #ifdef __ANDROID__
@@ -667,7 +669,9 @@ extern "C" void Port_Config_Load(const char* path) {
             sColourGrade.brightness = (int8_t)std::max(-50, std::min(50, j.value("colour_brightness", 0)));
             sColourGrade.contrast = (int8_t)std::max(-50, std::min(50, j.value("colour_contrast", 0)));
             sColourGrade.saturation = (int8_t)std::max(-50, std::min(50, j.value("colour_saturation", 0)));
-            sColourGrade.gamma = (int8_t)std::max(-6, std::min(6, j.value("colour_gamma", 0)));
+            sColourGrade.gamma = (int8_t)std::max(-20, std::min(20, j.value("colour_gamma", 0)));
+            sColourGrade.shadows = (int8_t)std::max(-50, std::min(50, j.value("colour_shadows", 0)));
+            sColourGrade.midtones = (int8_t)std::max(-50, std::min(50, j.value("colour_midtones", 0)));
             sColorCorrect = sColourGrade.mode != PORT_COLOUR_OFF;
         }
         /* frame_time_ns: a MISSING key now defaults to the 60 FPS cap (same as
@@ -1899,6 +1903,8 @@ extern "C" void Port_Config_SetColourGrade(const PortColourGrade* g) {
     sConfigJson["colour_contrast"] = (int)sColourGrade.contrast;
     sConfigJson["colour_saturation"] = (int)sColourGrade.saturation;
     sConfigJson["colour_gamma"] = (int)sColourGrade.gamma;
+    sConfigJson["colour_shadows"] = (int)sColourGrade.shadows;
+    sConfigJson["colour_midtones"] = (int)sColourGrade.midtones;
     sConfigJson["color_correction"] = sColorCorrect;
     SaveConfig();
 }

@@ -51,7 +51,7 @@ void Port_Config_AnswerWideAi(bool yes) { sWideAi = yes; sWideAiAsked = true; }
 static bool sColor = true, sHideHud = false, sHold = true, sCrests = true, sFloor = true, sFollow = true;
 /* The preview has no colour-grade module: hold the grade here, keeping the
  * legacy bool in sync the way the real backends do. */
-static PortColourGrade sColourGrade = { PORT_COLOUR_GBA, 0, 0, 0, 0 };
+static PortColourGrade sColourGrade = { PORT_COLOUR_GBA, 0, 0, 0, 0, 0, 0 };
 static bool sSwap = false, sFps = false, sWide = true, sAuto = true;
 static unsigned sTurbo = 5;
 static float sVolume = 1.0f;

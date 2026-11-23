@@ -99,14 +99,24 @@ static const uint8_t kTileMorton[64] = {
  * atlas and the view rings decode again. */
 static unsigned sColourEpoch = ~0u;
 static uint8_t sColourLut[32];
+static int16_t sColourZoneAdj[256];
 static int sColourSatFactor = 256;
 static bool sColourHasSaturation;
+static bool sColourHasZone;
 
 static void refresh_colour_grade(void) {
     const PortColourGrade* grade = Port_ColourGrade_Current();
     Port_ColourGrade_ChannelLut(grade, sColourLut);
+    Port_ColourGrade_LumaAdjust(grade, sColourZoneAdj);
     sColourHasSaturation = grade->mode != PORT_COLOUR_OFF && grade->saturation != 0;
     sColourSatFactor = ((50 + grade->saturation) * 256) / 50;
+    sColourHasZone = false;
+    for (int i = 0; i < 256; ++i) {
+        if (sColourZoneAdj[i] != 0) {
+            sColourHasZone = true;
+            break;
+        }
+    }
     sColourEpoch = Port_ColourGrade_Epoch();
 }
 
@@ -116,14 +126,25 @@ uint16_t PpuGpu3DS_PackRgba5551(uint16_t gbaColor, bool opaque) {
     r = sColourLut[gbaColor & 0x1fu];
     g = sColourLut[(gbaColor >> 5u) & 0x1fu];
     b = sColourLut[(gbaColor >> 10u) & 0x1fu];
-    if (sColourHasSaturation) {
+    if (sColourHasSaturation || sColourHasZone) {
         const unsigned luma = (299u * r + 587u * g + 114u * b) / 1000u;
-        const int mr = (int)luma + ((((int)r - (int)luma) * sColourSatFactor) >> 8);
-        const int mg = (int)luma + ((((int)g - (int)luma) * sColourSatFactor) >> 8);
-        const int mb = (int)luma + ((((int)b - (int)luma) * sColourSatFactor) >> 8);
-        r = (unsigned)(mr < 0 ? 0 : (mr > 255 ? 255 : mr));
-        g = (unsigned)(mg < 0 ? 0 : (mg > 255 ? 255 : mg));
-        b = (unsigned)(mb < 0 ? 0 : (mb > 255 ? 255 : mb));
+        if (sColourHasSaturation) {
+            const int mr = (int)luma + ((((int)r - (int)luma) * sColourSatFactor) >> 8);
+            const int mg = (int)luma + ((((int)g - (int)luma) * sColourSatFactor) >> 8);
+            const int mb = (int)luma + ((((int)b - (int)luma) * sColourSatFactor) >> 8);
+            r = (unsigned)(mr < 0 ? 0 : (mr > 255 ? 255 : mr));
+            g = (unsigned)(mg < 0 ? 0 : (mg > 255 ? 255 : mg));
+            b = (unsigned)(mb < 0 ? 0 : (mb > 255 ? 255 : mb));
+        }
+        if (sColourHasZone) {
+            const int adj = sColourZoneAdj[luma];
+            const int zr = (int)r + adj;
+            const int zg = (int)g + adj;
+            const int zb = (int)b + adj;
+            r = (unsigned)(zr < 0 ? 0 : (zr > 255 ? 255 : zr));
+            g = (unsigned)(zg < 0 ? 0 : (zg > 255 ? 255 : zg));
+            b = (unsigned)(zb < 0 ? 0 : (zb > 255 ? 255 : zb));
+        }
     }
     r >>= 3u;
     g >>= 3u;

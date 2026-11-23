@@ -359,8 +359,9 @@ void Port_Config_SetGpuRasterGles(bool on);
 /* GBA-LCD display transforms (F8 Display menu). */
 bool Port_Config_GetColorCorrection(void);
 void Port_Config_SetColorCorrection(bool on);
-/* The installed colour grade: PortColourMode in .mode, params in -50..50 / -6..6.
- * SetColourGrade persists all five keys and pushes the module live. */
+/* The installed colour grade: PortColourMode in .mode, brightness/contrast/
+ * saturation/shadows/midtones in -50..50 and gamma in -20..20 (one twentieth per
+ * step). SetColourGrade persists all seven keys and pushes the module live. */
 void Port_Config_GetColourGrade(PortColourGrade* out);
 void Port_Config_SetColourGrade(const PortColourGrade* g);
 bool Port_Config_GetLcdPersistence(void);

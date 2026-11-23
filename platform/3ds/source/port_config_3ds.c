@@ -41,6 +41,8 @@ static _Atomic int sColourBrightness;
 static _Atomic int sColourContrast;
 static _Atomic int sColourSaturation;
 static _Atomic int sColourGamma;
+static _Atomic int sColourShadows;
+static _Atomic int sColourMidtones;
 static _Atomic int sGbaGrid; /* 0 OFF .. 3 HIGH */
 static _Atomic int sGbaFrame; /* 0 NO, 1 GBA, 2 BLUR */
 static _Atomic int sNeighbourRooms = 1; /* the rooms beside a small one in Full View: 0 NO, 1 YES */
@@ -211,6 +213,8 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("colour_contrast=%d\n", (int)sColourContrast);
     APPEND("colour_saturation=%d\n", (int)sColourSaturation);
     APPEND("colour_gamma=%d\n", (int)sColourGamma);
+    APPEND("colour_shadows=%d\n", (int)sColourShadows);
+    APPEND("colour_midtones=%d\n", (int)sColourMidtones);
     APPEND("gba_grid=%d\n", (int)sGbaGrid);
     APPEND("gba_frame=%d\n", (int)sGbaFrame);
     APPEND("neighbour_rooms=%d\n", (int)sNeighbourRooms);
@@ -461,7 +465,13 @@ void Port_Config_Load(const char* path) {
                 sColourSaturation = v < -50 ? -50 : v > 50 ? 50 : v;
             } else if (strcmp(key, "colour_gamma") == 0) {
                 const int v = atoi(value);
-                sColourGamma = v < -6 ? -6 : v > 6 ? 6 : v;
+                sColourGamma = v < -20 ? -20 : v > 20 ? 20 : v;
+            } else if (strcmp(key, "colour_shadows") == 0) {
+                const int v = atoi(value);
+                sColourShadows = v < -50 ? -50 : v > 50 ? 50 : v;
+            } else if (strcmp(key, "colour_midtones") == 0) {
+                const int v = atoi(value);
+                sColourMidtones = v < -50 ? -50 : v > 50 ? 50 : v;
             }
             else if (strcmp(key, "gba_grid") == 0) {
                 const int level = atoi(value);
@@ -525,6 +535,8 @@ void Port_Config_Load(const char* path) {
         grade.contrast = (int8_t)sColourContrast;
         grade.saturation = (int8_t)sColourSaturation;
         grade.gamma = (int8_t)sColourGamma;
+        grade.shadows = (int8_t)sColourShadows;
+        grade.midtones = (int8_t)sColourMidtones;
         /* Clamps and installs; every renderer reads the module from now on. */
         Port_ColourGrade_Set(&grade);
     }
@@ -859,6 +871,8 @@ void Port_Config_GetColourGrade(PortColourGrade* out) {
     out->contrast = (int8_t)sColourContrast;
     out->saturation = (int8_t)sColourSaturation;
     out->gamma = (int8_t)sColourGamma;
+    out->shadows = (int8_t)sColourShadows;
+    out->midtones = (int8_t)sColourMidtones;
 }
 void Port_Config_SetColourGrade(const PortColourGrade* g) {
     if (!g) return;
@@ -871,6 +885,8 @@ void Port_Config_SetColourGrade(const PortColourGrade* g) {
     sColourContrast = cur->contrast;
     sColourSaturation = cur->saturation;
     sColourGamma = cur->gamma;
+    sColourShadows = cur->shadows;
+    sColourMidtones = cur->midtones;
     sColorCorrection = sColourMode != PORT_COLOUR_OFF;
     SaveConfig();
 }

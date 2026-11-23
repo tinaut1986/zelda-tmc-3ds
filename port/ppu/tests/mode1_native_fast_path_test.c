@@ -968,7 +968,7 @@ int main(void) {
         const unsigned evb = (bldalpha >> 8u) & 0x1Fu;
         if (eva <= 16u && evb <= 16u) blendPairCoverage[eva][evb] = true;
         {
-            PortColourGrade grade = { (scene & 1u) ? PORT_COLOUR_GBA : PORT_COLOUR_OFF, 0, 0, 0, 0 };
+            PortColourGrade grade = { (scene & 1u) ? PORT_COLOUR_GBA : PORT_COLOUR_OFF, 0, 0, 0, 0, 0, 0 };
             Port_ColourGrade_Set(&grade);
         }
 

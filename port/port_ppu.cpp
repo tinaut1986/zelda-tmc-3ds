@@ -570,6 +570,8 @@ extern "C" bool Port_PPU_VSyncEnabled(void) {
 #define PORT_GBA_LCD_GAMMA 4.0 /* "classic" GBA reflective-panel display gamma */
 
 static uint8_t sColorLut[256];
+static int16_t sColorAdj[256];
+static bool sColorHasZone = false;
 static bool sColorLutReady = false;
 static unsigned sColorLutEpoch = ~0u;
 
@@ -614,6 +616,15 @@ static void Port_PPU_BuildColorLut(void) {
         if (enc > 1.0)
             enc = 1.0;
         sColorLut[v] = static_cast<uint8_t>(enc * 255.0 + 0.5);
+    }
+    /* Additive shadow/midtone lift, zero for OFF and VIVID (neutral preset). */
+    Port_ColourGrade_LumaAdjust(grade, sColorAdj);
+    sColorHasZone = false;
+    for (int i = 0; i < 256; ++i) {
+        if (sColorAdj[i] != 0) {
+            sColorHasZone = true;
+            break;
+        }
     }
     sColorLutEpoch = Port_ColourGrade_Epoch();
     sColorLutReady = true;
@@ -665,14 +676,27 @@ static void Port_PPU_ColorCorrectBuffer(uint32_t* buf, int count) {
         int r = sColorLut[p & 0xFFu];
         int g = sColorLut[(p >> 8) & 0xFFu];
         int b = sColorLut[(p >> 16) & 0xFFu];
-        if (mixSaturation) {
+        if (mixSaturation || sColorHasZone) {
+            /* Luma of the post-curve channels indexes the zone table, as on the
+             * palette-word renderers. */
             const int luma = (299 * r + 587 * g + 114 * b) / 1000;
-            r = luma + (((r - luma) * satFactor) >> 8);
-            g = luma + (((g - luma) * satFactor) >> 8);
-            b = luma + (((b - luma) * satFactor) >> 8);
-            if (r < 0) r = 0; else if (r > 255) r = 255;
-            if (g < 0) g = 0; else if (g > 255) g = 255;
-            if (b < 0) b = 0; else if (b > 255) b = 255;
+            if (mixSaturation) {
+                r = luma + (((r - luma) * satFactor) >> 8);
+                g = luma + (((g - luma) * satFactor) >> 8);
+                b = luma + (((b - luma) * satFactor) >> 8);
+                if (r < 0) r = 0; else if (r > 255) r = 255;
+                if (g < 0) g = 0; else if (g > 255) g = 255;
+                if (b < 0) b = 0; else if (b > 255) b = 255;
+            }
+            if (sColorHasZone) {
+                const int adj = sColorAdj[luma];
+                r += adj;
+                g += adj;
+                b += adj;
+                if (r < 0) r = 0; else if (r > 255) r = 255;
+                if (g < 0) g = 0; else if (g > 255) g = 255;
+                if (b < 0) b = 0; else if (b > 255) b = 255;
+            }
         }
         buf[i] = (p & 0xFF000000u) | (static_cast<uint32_t>(b) << 16) |
                  (static_cast<uint32_t>(g) << 8) | static_cast<uint32_t>(r);

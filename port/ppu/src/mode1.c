@@ -575,8 +575,10 @@ static bool mode1_palette_source_initialized;
 static unsigned mode1_palette_source_epoch;
 static unsigned mode1_color_lut_epoch = ~0u;
 static uint8_t mode1_color_lut[32];
+static int16_t mode1_color_zone_adj[256];
 static int mode1_color_sat_factor = 256;
 static bool mode1_color_has_saturation;
+static bool mode1_color_has_zone;
 #ifdef TMC_3DS
 static uint8_t mode1_obj_line_indices[MODE1_GBA_HEIGHT][MODE1_GBA_OAM_COUNT];
 static uint8_t mode1_obj_line_counts[MODE1_GBA_HEIGHT];
@@ -592,24 +594,45 @@ uint32_t virtuappu_mode1_rgb555_to_abgr8888(uint16_t color) {
     if (epoch != mode1_color_lut_epoch) {
         const PortColourGrade* grade = Port_ColourGrade_Current();
         Port_ColourGrade_ChannelLut(grade, mode1_color_lut);
+        Port_ColourGrade_LumaAdjust(grade, mode1_color_zone_adj);
         /* Same mix as PpuGpu3DS_PackRgba5551 and ApplySaturation: the module's
          * 8.8 luma-preserving saturation, skipped when it is neutral. OFF keeps
-         * the raw curve with no mix, so the old expansion stays bit-exact. */
+         * the raw curve with no mix, so the old expansion stays bit-exact. The
+         * zone lift is skipped when every table entry is zero, which also covers
+         * OFF and VIVID (its preset zones are neutral). */
         mode1_color_has_saturation = grade->mode != PORT_COLOUR_OFF && grade->saturation != 0;
         mode1_color_sat_factor = ((50 + grade->saturation) * 256) / 50;
+        mode1_color_has_zone = false;
+        for (int i = 0; i < 256; ++i) {
+            if (mode1_color_zone_adj[i] != 0) {
+                mode1_color_has_zone = true;
+                break;
+            }
+        }
         mode1_color_lut_epoch = epoch;
     }
     r = mode1_color_lut[r5];
     g = mode1_color_lut[g5];
     b = mode1_color_lut[b5];
-    if (mode1_color_has_saturation) {
+    if (mode1_color_has_saturation || mode1_color_has_zone) {
         const unsigned luma = (299u * r + 587u * g + 114u * b) / 1000u;
-        const int mr = (int)luma + ((((int)r - (int)luma) * mode1_color_sat_factor) >> 8);
-        const int mg = (int)luma + ((((int)g - (int)luma) * mode1_color_sat_factor) >> 8);
-        const int mb = (int)luma + ((((int)b - (int)luma) * mode1_color_sat_factor) >> 8);
-        r = (unsigned)(mr < 0 ? 0 : (mr > 255 ? 255 : mr));
-        g = (unsigned)(mg < 0 ? 0 : (mg > 255 ? 255 : mg));
-        b = (unsigned)(mb < 0 ? 0 : (mb > 255 ? 255 : mb));
+        if (mode1_color_has_saturation) {
+            const int mr = (int)luma + ((((int)r - (int)luma) * mode1_color_sat_factor) >> 8);
+            const int mg = (int)luma + ((((int)g - (int)luma) * mode1_color_sat_factor) >> 8);
+            const int mb = (int)luma + ((((int)b - (int)luma) * mode1_color_sat_factor) >> 8);
+            r = (unsigned)(mr < 0 ? 0 : (mr > 255 ? 255 : mr));
+            g = (unsigned)(mg < 0 ? 0 : (mg > 255 ? 255 : mg));
+            b = (unsigned)(mb < 0 ? 0 : (mb > 255 ? 255 : mb));
+        }
+        if (mode1_color_has_zone) {
+            const int adj = mode1_color_zone_adj[luma];
+            const int zr = (int)r + adj;
+            const int zg = (int)g + adj;
+            const int zb = (int)b + adj;
+            r = (unsigned)(zr < 0 ? 0 : (zr > 255 ? 255 : zr));
+            g = (unsigned)(zg < 0 ? 0 : (zg > 255 ? 255 : zg));
+            b = (unsigned)(zb < 0 ? 0 : (zb > 255 ? 255 : zb));
+        }
     }
 
     return 0xFF000000u | ((uint32_t)b << 16u) | ((uint32_t)g << 8u) | (uint32_t)r;

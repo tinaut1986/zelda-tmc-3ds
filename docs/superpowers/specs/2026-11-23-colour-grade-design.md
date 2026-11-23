@@ -65,3 +65,19 @@ GAMMA (0.4..1.6, shown as "1.3") — each as name, value and a `-` / `+`
 button. A step is 1 (gamma 0.1) and clamps, never wraps; MODE cycles its 4
 stops. A PREVIEW strip of eight game palette colours sits at the foot.
 New words go through the i18n table (EN/FR/DE/ES/IT), VIVID included.
+
+## Amendment: finer gamma, shadow and midtone zones
+
+GAMMA becomes -20..+20 in twentieths (`factor = 1 + gamma * 0.05`, displayed as
+`100 + gamma * 5` hundredths); VIVID's 0.6 is now stored as -8. The config
+parser and `Port_ColourGrade_Set` clamp to ±20 with no migration for configs
+written by pre-release test builds (they reinterpret the saved step).
+
+Two additive luma zones join the grade: SHADOWS -50..+50, weighted
+`((96-l)/96)²` below luma 96, and MIDTONES -50..+50, weighted
+`4*(l/255)*(1-l/255)`. Their per-channel lift `(zone/100)*255*w` is applied to
+every channel after the curve and the saturation mix, in GBA and CUSTOM only
+(OFF and VIVID ignore them). The module rebuilds a 256-entry `int16_t` table with
+the LUT and exposes it as `Port_ColourGrade_LumaAdjust`; `ChannelLut` stays
+curve-only. Every renderer caches the table on the grade epoch, and the epoch
+includes the two new fields.
