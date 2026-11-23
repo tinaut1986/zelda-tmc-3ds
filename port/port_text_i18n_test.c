@@ -73,7 +73,7 @@ int main(void) {
         "ORIGINAL", "STABLE", "SLATE", "PARCHMENT", "NIGHT GOLD", "FOREST", "PATTERN", "NONE", "BACK",
         "PREV", "NEXT", "SAVE OVER", "DELETE", "LOAD", "SURE?", "AUTO", "BILINEAR", "PIXEL P.", "GBA GRID",
         "INTERFACE", "NEIGHBOURS", "DEPTH", "LAYERS", "MODE", "BRIGHTNESS", "CONTRAST", "SATURATION",
-        "GAMMA", "GBA", "CUSTOM",
+        "GAMMA", "GBA", "CUSTOM", "VIVID",
     };
     for (size_t i = 0; i < sizeof(kCellWords) / sizeof(kCellWords[0]); i++) {
         for (int lang = PORT_TEXT_FR; lang < PORT_TEXT_COUNT; lang++) {

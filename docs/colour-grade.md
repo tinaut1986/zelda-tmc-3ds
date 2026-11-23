@@ -31,13 +31,17 @@ soon as a mode other than OFF is selected.
 ## Where it is adjusted
 
 OPTIONS -> COLOURS on the bottom screen. The list cell shows the current mode
-name and opens a page with five rows: MODE, BRIGHTNESS, CONTRAST, SATURATION,
-GAMMA. Tapping a row cycles it; MODE goes OFF -> GBA -> CUSTOM -> VIVID -> OFF. The page
-also paints a PREVIEW strip of eight fixed in-game RGB555 colours through the
-installed grade, so a tap shows its effect at once.
+name and opens a page in the compact OPTIONS style: a MODE cell, a BACK cell
+and four field rows — BRIGHTNESS, CONTRAST, SATURATION, GAMMA — each as
+name, value and a `-` / `+` button. A button steps the field by one (gamma by
+0.1, shown as "1.3") and clamps at its limit; nothing wraps. Tapping the MODE
+cell cycles OFF -> GBA -> CUSTOM -> VIVID -> OFF. The page also paints a
+PREVIEW strip of eight fixed in-game RGB555 colours through the installed
+grade, so a step shows its effect at once.
 
-The new words (MODE, BRIGHTNESS, CONTRAST, SATURATION, GAMMA, GBA, CUSTOM) go
-through the existing text table (EN/FR/DE/ES/IT).
+The words of the page (COLOURS, MODE, BRIGHTNESS, CONTRAST, SATURATION, GAMMA,
+GBA, CUSTOM, VIVID, PREVIEW, BACK) go through the existing text table
+(EN/FR/DE/ES/IT).
 
 ## Config keys
 

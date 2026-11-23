@@ -655,6 +655,77 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
     CScrollTargets(tl, firstTarget, top, bottom);
 }
 
+/* ---- COLOURS (OPTIONS -> COLOURS) ----
+ * The grade page in the compact idiom: a header row (MODE and the way back)
+ * and four field rows, each field as [name][value][-][+]. A button steps by
+ * one and the handler clamps at the module's limit, so a field already at
+ * its end simply stops. The PREVIEW strip at the foot runs eight fixed
+ * in-game RGB555 colours through the installed grade. */
+static void Compact_PaintColours(const SSurf* s, TargetList* tl) {
+    const int32_t top = CcContentTop(), bottom = CcContentBottom(s->h);
+    FillRect(s, 0, top, s->w, bottom, CC_BG);
+
+    int32_t y = top + 2;
+    COptTitle(s, y, "COLOURS");
+    y += OPT_TITLE_H;
+
+    {
+        int32_t x, w;
+        char value[24];
+        const int on = GetSettingState(SS_SET_COLOUR_MODE, value, sizeof(value));
+        CColumn(s->w, 4, 0, 2, &x, &w);
+        CCell(s, tl, x, y, w, CC_CELL_H, "MODE", value, on ? CC_GOOD : CC_DIM, SS_ACT_SETTING,
+              SS_SET_COLOUR_MODE);
+        CColumn(s->w, 4, 2, 2, &x, &w);
+        CCell(s, tl, x, y, w, CC_CELL_H, "BACK", "< OPTIONS", CC_TEXT, SS_ACT_SETTINGS_BACK, SS_SETTINGS_ROOT);
+    }
+    y += OPT_ROW_H;
+
+    static const struct {
+        const char* name;
+        int setting;
+    } kFields[] = {
+        { "BRIGHTNESS", SS_SET_COLOUR_BRIGHTNESS },
+        { "CONTRAST", SS_SET_COLOUR_CONTRAST },
+        { "SATURATION", SS_SET_COLOUR_SATURATION },
+        { "GAMMA", SS_SET_COLOUR_GAMMA },
+    };
+    for (int i = 0; i < 4; i++) {
+        int32_t x, w;
+        char value[24];
+        const uint32_t color = CompactSettingValue(kFields[i].setting, value, sizeof(value));
+        CColumn(s->w, 4, 0, 1, &x, &w);
+        CCell(s, tl, x, y, w, CC_CELL_H, kFields[i].name, "", CC_TEXT, 0, 0);
+        CColumn(s->w, 4, 1, 1, &x, &w);
+        CCell(s, tl, x, y, w, CC_CELL_H, "", value, color, 0, 0);
+        CColumn(s->w, 4, 2, 1, &x, &w);
+        CButton(s, tl, x, y, w, CC_CELL_H, "-", CC_TEXT, SS_ACT_COLOUR_MINUS, (uint8_t)kFields[i].setting);
+        CColumn(s->w, 4, 3, 1, &x, &w);
+        CButton(s, tl, x, y, w, CC_CELL_H, "+", CC_TEXT, SS_ACT_COLOUR_PLUS, (uint8_t)kFields[i].setting);
+        y += OPT_ROW_H;
+    }
+
+    /* Eight fixed in-game colours, graded at paint time. */
+    static const uint16_t kSwatches[8] = {
+        0x1385, 0x1642, 0x0D41, 0x1150, 0x4B3E, 0x7FFF, 0x71C6, 0x18DC
+    };
+    const int32_t swH = 12, gap = 2;
+    const int32_t swY = bottom - CC_MARGIN - swH;
+    CText(s, CC_MARGIN + 1, swY - 12, CC_DIM, "PREVIEW");
+    const int32_t inner = s->w - 2 * CC_MARGIN;
+    int32_t bw = (inner - 7 * gap) / 8;
+    if (bw < 1) bw = 1;
+    const PortColourGrade* grade = Port_ColourGrade_Current();
+    for (int i = 0; i < 8; i++) {
+        uint8_t rgb[3];
+        Port_ColourGrade_ToRgb888(grade, kSwatches[i], rgb);
+        const uint32_t abgr =
+            0xFF000000u | ((uint32_t)rgb[2] << 16) | ((uint32_t)rgb[1] << 8) | (uint32_t)rgb[0];
+        const int32_t bx = CC_MARGIN + i * (bw + gap);
+        FillRect(s, bx, swY, bx + bw, swY + swH, abgr);
+    }
+}
+
 /* ---- toast: one line over the bottom of the content for ~2 s ---- */
 
 static char sToast[48];

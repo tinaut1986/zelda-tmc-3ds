@@ -257,6 +257,7 @@ static const char* const kEntries[][PORT_TEXT_COUNT] = {
     { "GAMMA", "GAMMA", "GAMMA", "GAMMA", "GAMMA" },
     { "GBA", "GBA", "GBA", "GBA", "GBA" },
     { "CUSTOM", "PERSO.", "EIGENE", "PROPIA", "PERS." },
+    { "VIVID", "VIF", "LEBENDIG", "VÍVIDO", "VIVIDO" },
     { "PREVIEW", "APERÇU", "VORSCHAU", "VISTA PREVIA", "ANTEPRIMA" },
 };
 

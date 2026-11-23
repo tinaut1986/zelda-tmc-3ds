@@ -176,6 +176,8 @@ enum {
     SS_ACT_AUTOUPD_NO, SS_ACT_AUTOUPD_YES, SS_ACT_AUTOUPD_NEWS, /* the prompt after the boot check found a newer build */
     SS_ACT_THEME, /* OPTIONS -> THEME (bottom_compact_3ds.inc) */
     SS_ACT_TABS,  /* OPTIONS -> TABS: tab bar on top or below */
+    SS_ACT_COLOUR_MINUS, /* COLOURS page step down, arg = SS_SET_COLOUR_* */
+    SS_ACT_COLOUR_PLUS,  /* COLOURS page step up, arg = SS_SET_COLOUR_* */
     SS_ACT_DEBUG, /* DEBUG tab command, arg = DBG_CMD_* (bottom_compact_3ds.inc) */
     SS_ACT_STATES, /* STATES tab command, arg = STATES_CMD_* (bottom_compact_3ds.inc) */
     SS_ACT_DEVFTP_CANCEL, /* the install-only FTP bar's CANCEL (bottom_compact_3ds.inc) */
@@ -223,10 +225,10 @@ enum {
     SS_SET_GBA_FRAME,     /* gba_frame: the console's body around a 240x160 / 360x240 picture */
     SS_SET_NEIGHBOURS,    /* neighbour_rooms: OFF / ON */
     SS_SET_STEREO_WORLD,  /* stereo_world_on: OFF / ON (the world's depth while playing, 3D slider up) */
-    SS_SET_COLOUR_MODE,       /* colour_mode: OFF / GBA / CUSTOM */
-    SS_SET_COLOUR_BRIGHTNESS, /* colour_brightness: -50..+50 step 10 */
-    SS_SET_COLOUR_CONTRAST,   /* colour_contrast: -50..+50 step 10 */
-    SS_SET_COLOUR_SATURATION, /* colour_saturation: -50..+50 step 10 */
+    SS_SET_COLOUR_MODE,       /* colour_mode: OFF / GBA / CUSTOM / VIVID */
+    SS_SET_COLOUR_BRIGHTNESS, /* colour_brightness: -50..+50, one point per step */
+    SS_SET_COLOUR_CONTRAST,   /* colour_contrast: -50..+50, one point per step */
+    SS_SET_COLOUR_SATURATION, /* colour_saturation: -50..+50, one point per step */
     SS_SET_COLOUR_GAMMA,      /* colour_gamma: -6..+6, one tenth per step */
 #endif
     SS_SET_COUNT
@@ -2467,12 +2469,6 @@ static int SettingsPageRows(int page, uint8_t* out) {
 #ifdef TMC_3DS
     else if (page == SS_SETTINGS_RANDOMIZER) {
         out[n++] = SS_SET_RANDOMIZER;
-    } else if (page == SS_SETTINGS_COLOURS) {
-        out[n++] = SS_SET_COLOUR_MODE;
-        out[n++] = SS_SET_COLOUR_BRIGHTNESS;
-        out[n++] = SS_SET_COLOUR_CONTRAST;
-        out[n++] = SS_SET_COLOUR_SATURATION;
-        out[n++] = SS_SET_COLOUR_GAMMA;
     }
 #endif
     return n;
@@ -2787,38 +2783,6 @@ static int GetSettingState(int row, char* out, int outCap) {
 #include "../platform/3ds/source/update_ui_3ds.inc"
 #endif
 
-#ifdef TMC_3DS
-/* Live preview of the installed grade: eight fixed in-game RGB555 colours
- * through Port_ColourGrade_ToRgb888, so a tap anywhere on the COLOURS page
- * shows its effect at once. Current() (not the stored config) so a grade
- * pushed by another path is reflected too. */
-static void PaintColourPreview(const SSurf* s, float x0, float y0, float x1, float y1, float u,
-                               int32_t ts) {
-    static const uint16_t kSwatches[8] = {
-        0x1385, 0x1642, 0x0D41, 0x1150, 0x4B3E, 0x7FFF, 0x71C6, 0x18DC
-    };
-    (void)ts;
-    int32_t ms = (int32_t)(1.6f * u);
-    if (ms < 1) ms = 1;
-    float labelH = MENU_TEXT_BOX * ms;
-    MenuTextCentered(s, "PREVIEW", (x0 + x1) / 2, y0 + labelH / 2, ms, SS_TEXT_NAVY);
-    float top = y0 + labelH + 6 * u;
-    if (top > y1 - 4 * u) top = y1 - 4 * u;
-    float gap = 4 * u;
-    float bw = (x1 - x0 - 7 * gap) / 8;
-    if (bw < 1) bw = 1;
-    const PortColourGrade* grade = Port_ColourGrade_Current();
-    for (int i = 0; i < 8; ++i) {
-        uint8_t rgb[3];
-        Port_ColourGrade_ToRgb888(grade, kSwatches[i], rgb);
-        uint32_t abgr = 0xFF000000u | ((uint32_t)rgb[2] << 16) | ((uint32_t)rgb[1] << 8) |
-                        (uint32_t)rgb[0];
-        float bx = x0 + i * (bw + gap);
-        FillRect(s, (int32_t)bx, (int32_t)top, (int32_t)(bx + bw + 0.5f), (int32_t)y1, abgr);
-    }
-}
-#endif
-
 static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
                                float ry0, float rx1, float ry1, float u, int32_t ts, int page, uint32_t tick,
                                uint32_t dumpFlashUntil, uint32_t loadStateFlashUntil, int loadStateResult) {
@@ -2907,14 +2871,6 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
         float ry = y0 + slot * (rowH + gap);
         DrawSettingsValueRow(s, tl, x0, ry, x1, ry + rowH, rows[slot], u, ts);
     }
-#ifdef TMC_3DS
-    if (page == SS_SETTINGS_COLOURS) {
-        float lastBottom = y0 + (nRows - 1) * (rowH + gap) + rowH;
-        if (iy1 - lastBottom > 24 * u) {
-            PaintColourPreview(s, x0, lastBottom + 8 * u, x1, iy1, u, ts);
-        }
-    }
-#endif
 }
 
 typedef struct LoadStateConfirmationLayout {
@@ -3839,6 +3795,8 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
             Compact_PaintOptions(&s, &tl);
         } else if (settingsPage == SS_SETTINGS_UPDATE) {
             PaintUpdatePanel(&s, &tl);
+        } else if (settingsPage == SS_SETTINGS_COLOURS) {
+            Compact_PaintColours(&s, &tl);
         } else
 #endif
         PaintSettingsPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, settingsPage, tick,
@@ -4107,6 +4065,35 @@ static void DispatchTap(int x, int y, int longPress) {
         case SS_ACT_TABS:
             Compact_ToggleTabsBottom();
             break;
+        case SS_ACT_COLOUR_MINUS:
+        case SS_ACT_COLOUR_PLUS: {
+            /* One step per tap, clamped and never wrapped: a field at its
+             * limit stays there. Gamma moves a tenth, the others one point. */
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            const int step = hit.action == SS_ACT_COLOUR_PLUS ? 1 : -1;
+            int8_t* field = NULL;
+            int lo = -50, hi = 50;
+            switch (hit.arg) {
+                case SS_SET_COLOUR_BRIGHTNESS: field = &grade.brightness; break;
+                case SS_SET_COLOUR_CONTRAST: field = &grade.contrast; break;
+                case SS_SET_COLOUR_SATURATION: field = &grade.saturation; break;
+                case SS_SET_COLOUR_GAMMA:
+                    field = &grade.gamma;
+                    lo = -6;
+                    hi = 6;
+                    break;
+                default: break;
+            }
+            if (field) {
+                int v = *field + step;
+                if (v < lo) v = lo;
+                if (v > hi) v = hi;
+                *field = (int8_t)v;
+                Port_Config_SetColourGrade(&grade);
+            }
+            break;
+        }
 #if TMC3DS_DEBUG_TOOLS
         case SS_ACT_DEBUG:
             Compact_DebugCommand(hit.arg);
@@ -4298,39 +4285,11 @@ static void DispatchTap(int x, int y, int longPress) {
                     break;
                 }
                 case SS_SET_COLOUR_MODE: {
-                    /* OFF -> GBA -> CUSTOM -> OFF; the setter persists all
-                     * five keys and pushes the module live. */
+                    /* OFF -> GBA -> CUSTOM -> VIVID -> OFF; the setter
+                     * persists all five keys and pushes the module live. */
                     PortColourGrade grade;
                     Port_Config_GetColourGrade(&grade);
                     grade.mode = (uint8_t)((grade.mode + 1u) % PORT_COLOUR_MODE_COUNT);
-                    Port_Config_SetColourGrade(&grade);
-                    break;
-                }
-                case SS_SET_COLOUR_BRIGHTNESS: {
-                    PortColourGrade grade;
-                    Port_Config_GetColourGrade(&grade);
-                    grade.brightness = (int8_t)(grade.brightness + 10 > 50 ? -50 : grade.brightness + 10);
-                    Port_Config_SetColourGrade(&grade);
-                    break;
-                }
-                case SS_SET_COLOUR_CONTRAST: {
-                    PortColourGrade grade;
-                    Port_Config_GetColourGrade(&grade);
-                    grade.contrast = (int8_t)(grade.contrast + 10 > 50 ? -50 : grade.contrast + 10);
-                    Port_Config_SetColourGrade(&grade);
-                    break;
-                }
-                case SS_SET_COLOUR_SATURATION: {
-                    PortColourGrade grade;
-                    Port_Config_GetColourGrade(&grade);
-                    grade.saturation = (int8_t)(grade.saturation + 10 > 50 ? -50 : grade.saturation + 10);
-                    Port_Config_SetColourGrade(&grade);
-                    break;
-                }
-                case SS_SET_COLOUR_GAMMA: {
-                    PortColourGrade grade;
-                    Port_Config_GetColourGrade(&grade);
-                    grade.gamma = (int8_t)(grade.gamma + 1 > 6 ? -6 : grade.gamma + 1);
                     Port_Config_SetColourGrade(&grade);
                     break;
                 }
@@ -4373,8 +4332,8 @@ static void DispatchTap(int x, int y, int longPress) {
                 }
                 case SS_SET_COLOR_CORRECTION: {
 #ifdef TMC_3DS
-                    /* OFF -> GBA -> CUSTOM -> OFF; the setter persists the
-                     * five keys and pushes the module live. */
+                    /* OFF -> GBA -> CUSTOM -> VIVID -> OFF; the setter
+                     * persists the five keys and pushes the module live. */
                     PortColourGrade grade;
                     Port_Config_GetColourGrade(&grade);
                     grade.mode = (uint8_t)((grade.mode + 1u) % PORT_COLOUR_MODE_COUNT);

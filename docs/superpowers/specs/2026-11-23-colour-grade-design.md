@@ -57,9 +57,11 @@ and has the same decode sites in kind. A porting checklist lives in
 
 ## UI
 
-Bottom screen OPTIONS -> COLOURS cell now shows the mode (OFF/GBA/CUSTOM/VIVID)
-and opens a new `SS_SETTINGS_COLOURS` page (same mechanism as the UPDATE page).
-Rows: MODE (4 stops), BRIGHTNESS/CONTRAST/SATURATION (-50..+50, step 10),
-GAMMA (0.4..1.6, step 0.1 shown as "1.3"). Tap cycles, like VOLUME today.
-A live preview strip of game palette colours is painted on the page.
-New words go through the i18n table (EN/FR/DE/ES/IT).
+Bottom screen OPTIONS -> COLOURS cell shows the mode (OFF/GBA/CUSTOM/VIVID)
+and opens `SS_SETTINGS_COLOURS`, painted in the compact OPTIONS style (the
+`bottom_compact_3ds.inc` grid, not the parchment panel): a MODE cell, a BACK
+cell and four field rows — BRIGHTNESS/CONTRAST/SATURATION (-50..+50) and
+GAMMA (0.4..1.6, shown as "1.3") — each as name, value and a `-` / `+`
+button. A step is 1 (gamma 0.1) and clamps, never wraps; MODE cycles its 4
+stops. A PREVIEW strip of eight game palette colours sits at the foot.
+New words go through the i18n table (EN/FR/DE/ES/IT), VIVID included.
