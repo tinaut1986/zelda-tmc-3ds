@@ -33,6 +33,14 @@ static _Atomic int sTopHud;
 extern int Port_SecondScreen_TopHudCovered(void);
 static _Atomic bool sHoldText;
 static _Atomic bool sColorCorrection;
+/* The colour grade written as colour_* keys. mode is PortColourMode (0 OFF,
+ * 1 GBA, 2 CUSTOM); the params keep PortColourGrade's ranges. The legacy
+ * sColorCorrection mirrors "mode != OFF". */
+static _Atomic int sColourMode;
+static _Atomic int sColourBrightness;
+static _Atomic int sColourContrast;
+static _Atomic int sColourSaturation;
+static _Atomic int sColourGamma;
 static _Atomic int sGbaGrid; /* 0 OFF .. 3 HIGH */
 static _Atomic int sGbaFrame; /* 0 NO, 1 GBA, 2 BLUR */
 static _Atomic int sNeighbourRooms = 1; /* the rooms beside a small one in Full View: 0 NO, 1 YES */
@@ -198,6 +206,11 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("hide_top_hud=%d\n", (int)sTopHud);
     APPEND("hold_to_advance_text=%u\n", sHoldText ? 1u : 0u);
     APPEND("color_correction=%u\n", sColorCorrection ? 1u : 0u);
+    APPEND("colour_mode=%u\n", (unsigned)sColourMode);
+    APPEND("colour_brightness=%d\n", (int)sColourBrightness);
+    APPEND("colour_contrast=%d\n", (int)sColourContrast);
+    APPEND("colour_saturation=%d\n", (int)sColourSaturation);
+    APPEND("colour_gamma=%d\n", (int)sColourGamma);
     APPEND("gba_grid=%d\n", (int)sGbaGrid);
     APPEND("gba_frame=%d\n", (int)sGbaFrame);
     APPEND("neighbour_rooms=%d\n", (int)sNeighbourRooms);
@@ -378,6 +391,7 @@ void Port_Config_Load(const char* path) {
 
     bool hasScreenAspect = false;
     bool hasTabsBottom = false;
+    bool sawColourMode = false;
     bool migratePerformanceProfile = false;
     FILE* file = fopen(sConfigPath, "rb");
     if (file) {
@@ -432,6 +446,23 @@ void Port_Config_Load(const char* path) {
             }
             else if (strcmp(key, "hold_to_advance_text") == 0) sHoldText = ParseBool(value);
             else if (strcmp(key, "color_correction") == 0) sColorCorrection = ParseBool(value);
+            else if (strcmp(key, "colour_mode") == 0) {
+                const int mode = atoi(value);
+                sColourMode = mode >= 0 && mode < PORT_COLOUR_MODE_COUNT ? mode : PORT_COLOUR_OFF;
+                sawColourMode = true;
+            } else if (strcmp(key, "colour_brightness") == 0) {
+                const int v = atoi(value);
+                sColourBrightness = v < -50 ? -50 : v > 50 ? 50 : v;
+            } else if (strcmp(key, "colour_contrast") == 0) {
+                const int v = atoi(value);
+                sColourContrast = v < -50 ? -50 : v > 50 ? 50 : v;
+            } else if (strcmp(key, "colour_saturation") == 0) {
+                const int v = atoi(value);
+                sColourSaturation = v < -50 ? -50 : v > 50 ? 50 : v;
+            } else if (strcmp(key, "colour_gamma") == 0) {
+                const int v = atoi(value);
+                sColourGamma = v < -6 ? -6 : v > 6 ? 6 : v;
+            }
             else if (strcmp(key, "gba_grid") == 0) {
                 const int level = atoi(value);
                 sGbaGrid = level >= 0 && level <= 3 ? level : 0;
@@ -481,6 +512,22 @@ void Port_Config_Load(const char* path) {
     /* FOREST used to put the tab bar below; it is its own option now (TABS).
      * Keep it where a FOREST player had it. */
     if (!hasTabsBottom && sUiTheme == 3) sUiTabsBottom = true;
+
+    /* Files older than the colour grade only carry color_correction: a true
+     * bool means the GBA grade, false the raw expansion. Derived here, after
+     * the whole file is read, so the mode always wins when it is present. */
+    if (!sawColourMode) sColourMode = sColorCorrection ? PORT_COLOUR_GBA : PORT_COLOUR_OFF;
+    sColorCorrection = sColourMode != PORT_COLOUR_OFF;
+    {
+        PortColourGrade grade;
+        grade.mode = (uint8_t)sColourMode;
+        grade.brightness = (int8_t)sColourBrightness;
+        grade.contrast = (int8_t)sColourContrast;
+        grade.saturation = (int8_t)sColourSaturation;
+        grade.gamma = (int8_t)sColourGamma;
+        /* Clamps and installs; every renderer reads the module from now on. */
+        Port_ColourGrade_Set(&grade);
+    }
 
     if (sVolume < 0.0f) sVolume = 0.0f;
     if (sVolume > 1.0f) sVolume = 1.0f;
@@ -797,7 +844,36 @@ void Port_Config_SetPracticeSlowmo(float v) { (void)v; }
 bool Port_Config_GetVSync(void) { return sVsync; }
 void Port_Config_SetVSync(bool on) { sVsync = on; }
 bool Port_Config_GetColorCorrection(void) { return sColorCorrection; }
-void Port_Config_SetColorCorrection(bool on) { sColorCorrection = on; SaveConfig(); }
+void Port_Config_SetColorCorrection(bool on) {
+    /* The legacy bool is a view of the grade mode: ON means GBA, OFF clears
+     * it. Keep the custom params the player set. */
+    PortColourGrade grade;
+    Port_Config_GetColourGrade(&grade);
+    grade.mode = on ? (uint8_t)PORT_COLOUR_GBA : (uint8_t)PORT_COLOUR_OFF;
+    Port_Config_SetColourGrade(&grade);
+}
+void Port_Config_GetColourGrade(PortColourGrade* out) {
+    if (!out) return;
+    out->mode = (uint8_t)sColourMode;
+    out->brightness = (int8_t)sColourBrightness;
+    out->contrast = (int8_t)sColourContrast;
+    out->saturation = (int8_t)sColourSaturation;
+    out->gamma = (int8_t)sColourGamma;
+}
+void Port_Config_SetColourGrade(const PortColourGrade* g) {
+    if (!g) return;
+    /* The module clamps; keep this backend's statics equal to what it
+     * installed so the ini and the renderers never disagree. */
+    Port_ColourGrade_Set(g);
+    const PortColourGrade* cur = Port_ColourGrade_Current();
+    sColourMode = cur->mode;
+    sColourBrightness = cur->brightness;
+    sColourContrast = cur->contrast;
+    sColourSaturation = cur->saturation;
+    sColourGamma = cur->gamma;
+    sColorCorrection = sColourMode != PORT_COLOUR_OFF;
+    SaveConfig();
+}
 float Port_Config_GetLcdPersistenceRho(void) { return 0.0f; }
 void Port_Config_SetLcdPersistenceRho(float v) { (void)v; }
 bool Port_Config_GetHoldToAdvanceText(void) { return sHoldText; }
