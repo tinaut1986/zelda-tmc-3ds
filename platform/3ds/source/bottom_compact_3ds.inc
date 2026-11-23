@@ -564,8 +564,8 @@ enum {
     OPT_TITLE_H = 12,
     OPT_ROW_H = CC_CELL_H + CC_GAP,
     OPT_FOOTER_H = 3 * 10 + 6,
-    /* top margin + 4 group titles + 6 rows of cells + the footer + bottom margin */
-    OPT_TOTAL_H = 2 + 4 * OPT_TITLE_H + 6 * OPT_ROW_H + OPT_FOOTER_H + CC_MARGIN,
+    /* top margin + 4 group titles + 7 rows of cells + the footer + bottom margin */
+    OPT_TOTAL_H = 2 + 4 * OPT_TITLE_H + 7 * OPT_ROW_H + OPT_FOOTER_H + CC_MARGIN,
 };
 static float sOptScroll;
 
@@ -602,9 +602,11 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
     COptTitle(t, y, "GAME");
     y += OPT_TITLE_H;
     CSettingCellAt(t, tl, y, 0, 1, "TURBO", SS_SET_TURBO);
-    CSettingCellAt(t, tl, y, 1, 1, "VOLUME", SS_SET_VOLUME);
-    CSettingCellAt(t, tl, y, 2, 1, "AUTOSAVE", SS_SET_AUTOSAVE);
-    CSettingCellAt(t, tl, y, 3, 1, "HOLD TEXT", SS_SET_HOLD_ADVANCE);
+    CSettingCellAt(t, tl, y, 1, 2, "TURBO BUTTON", SS_SET_TURBO_BUTTON);
+    CSettingCellAt(t, tl, y, 3, 1, "VOLUME", SS_SET_VOLUME);
+    y += OPT_ROW_H;
+    CSettingCellAt(t, tl, y, 0, 2, "AUTOSAVE", SS_SET_AUTOSAVE);
+    CSettingCellAt(t, tl, y, 2, 2, "HOLD TEXT", SS_SET_HOLD_ADVANCE);
     y += OPT_ROW_H;
 
     /* The map's switches (MAP FOLLOW) are chips on the map itself. */
@@ -1471,16 +1473,23 @@ static void Compact_EquipCell(const SSurf* s, const SecondScreenSnapshot* snap, 
     (void)tick;
     CBox(s, x, y, w, h, armed ? MixColor(CC_CELL, CC_ACCENT, 48) : CC_CELL, armed ? CC_ACCENT : CC_CELL_EDGE);
     CText(s, x + 4, y + 4, CC_DIM, kCcButtonNames[button]);
-    uint8_t itemId = Compact_ButtonItem(snap, button);
-    if (itemId >= ITEMID_BOTTLE1 && itemId < ITEMID_BOTTLE1 + 4) {
-        const uint8_t content = snap->bottleContents[itemId - ITEMID_BOTTLE1];
-        if (content != 0) itemId = content;
-    }
-    if (itemId != 0) {
-        const int32_t ix = x + w - 4 - 16, iy = y + (h - 16) / 2;
-        Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, 1, itemId);
-        /* "18/30" when it fits left of the icon, else the HUD's pair. */
-        DrawItemAmmoFraction(s, snap, itemId, x + 3, y + h - 11, w - 3 - 4 - 16 - 2);
+    const bool turbo = button >= 2 && Port_TurboButton_OwnsSoftSlot(Port_Config_GetTurboButton(), button - 2);
+    if (turbo) {
+        /* Not an item button any more: the fast-forward mark stands where
+         * the item's icon would be (the toast says why a tap does nothing). */
+        CText(s, x + w - 16, y + (h - kUiGlyphH) / 2, CC_WARN, ">>");
+    } else {
+        uint8_t itemId = Compact_ButtonItem(snap, button);
+        if (itemId >= ITEMID_BOTTLE1 && itemId < ITEMID_BOTTLE1 + 4) {
+            const uint8_t content = snap->bottleContents[itemId - ITEMID_BOTTLE1];
+            if (content != 0) itemId = content;
+        }
+        if (itemId != 0) {
+            const int32_t ix = x + w - 4 - 16, iy = y + (h - 16) / 2;
+            Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, ix, iy, 1, itemId);
+            /* "18/30" when it fits left of the icon, else the HUD's pair. */
+            DrawItemAmmoFraction(s, snap, itemId, x + 3, y + h - 11, w - 3 - 4 - 16 - 2);
+        }
     }
     AddTarget(tl, (float)x, (float)y, (float)(x + w), (float)(y + h), SS_ACT_RING, (uint8_t)(button + 1));
 }
@@ -1645,12 +1654,15 @@ static void Compact_PaintItems(const SSurf* s, const SecondScreenSnapshot* snap,
     (void)armedRing;
     const int pulseSlot = -1;
     const uint8_t softX = Port_SoftSlots_GetAssignment(0), softY = Port_SoftSlots_GetAssignment(1);
+    const int turboButton = Port_Config_GetTurboButton();
     for (int slot = 0; slot < SECOND_SCREEN_ITEM_SLOTS; slot++) {
         const int32_t x = gx + (slot % 4) * (cell + CC_GAP), y = gy + (slot / 4) * (cell + CC_GAP);
         const bool equippedA = slot == snap->equippedSlotA, equippedB = slot == snap->equippedSlotB;
         const uint8_t itemId = snap->menuItems[slot];
-        /* Lit for any of its buttons: A and B, and X and Y (soft slots) too. */
-        const bool onX = itemId != 0 && itemId == softX, onY = itemId != 0 && itemId == softY;
+        /* Lit for any of its buttons: A and B, and X and Y (soft slots) too.
+         * A turbo-owned button holds nothing, so its item is not marked. */
+        const bool onX = itemId != 0 && itemId == softX && !Port_TurboButton_OwnsSoftSlot(turboButton, 0);
+        const bool onY = itemId != 0 && itemId == softY && !Port_TurboButton_OwnsSoftSlot(turboButton, 1);
         uint32_t edge = CC_TAB;
         if (equippedA || equippedB || onX || onY) edge = CC_ACCENT;
         if (slot == pulseSlot) edge = (tick / 12u) & 1u ? CC_WARN : CC_ACCENT;

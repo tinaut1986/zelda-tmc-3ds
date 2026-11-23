@@ -26,6 +26,12 @@
 #include <stdbool.h>
 #endif
 
+#ifdef TMC_3DS
+#include "port_turbo_button.h"
+
+extern int Port_Config_GetTurboButton(void);
+#endif
+
 const Wallet gWalletSizes[] = {
     { 100, 0xf060 },
     { 300, 0xf064 },
@@ -366,6 +372,12 @@ void Port_EquipButton(u32 button, u32 itemId) {
     if (itemId - 1 >= 0x1f || button > 3) {
         return;
     }
+    /* A button taken by the turbo is not an item button: nothing is assigned
+     * to it (its old assignment stays, inactive, until the turbo moves off). */
+    const int turboButton = Port_Config_GetTurboButton();
+    if (Port_TurboButton_OwnsSoftSlot(turboButton, (int)button - 2)) {
+        return;
+    }
     items[0] = gSave.stats.equipped[EQUIP_SLOT_A];
     items[1] = gSave.stats.equipped[EQUIP_SLOT_B];
     items[2] = Port_SoftSlots_GetAssignment(0);
@@ -376,7 +388,14 @@ void Port_EquipButton(u32 button, u32 itemId) {
     for (i = 0; i < 4; i++) {
         if (i != button && items[i] != 0 && items[i] < 0x80 &&
             gItemMetaData[items[i]].menuSlot == gItemMetaData[itemId].menuSlot) {
-            items[i] = items[button];
+            /* An item moved away from the turbo's button does not swap the
+             * other item back into it: the slot waits empty, so nothing is
+             * ever added to a button that cannot fire. */
+            if (i >= 2 && Port_TurboButton_OwnsSoftSlot(turboButton, (int)i - 2)) {
+                items[i] = 0;
+            } else {
+                items[i] = items[button];
+            }
         }
     }
     items[button] = itemId;

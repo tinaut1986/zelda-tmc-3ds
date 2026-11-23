@@ -29,6 +29,7 @@ typedef struct {
     HudXYObj objs[MAX_OBJS];
     unsigned objCount;
     bool bubble[PORT_HUD_XY_SLOTS];
+    bool turbo[PORT_HUD_XY_SLOTS];
     const uint8_t* iconTiles[PORT_HUD_XY_SLOTS];
     uint8_t iconCount[PORT_HUD_XY_SLOTS];
     int ammo[PORT_HUD_XY_SLOTS];
@@ -56,9 +57,10 @@ static void AddObjs(unsigned first, unsigned end) {
     }
 }
 
-void Port_HudXY_AddBubble(unsigned slot, unsigned first, unsigned end) {
+void Port_HudXY_AddBubble(unsigned slot, unsigned first, unsigned end, bool turbo) {
     if (slot >= PORT_HUD_XY_SLOTS) return;
     sDrawing.bubble[slot] = true;
+    sDrawing.turbo[slot] = turbo;
     AddObjs(first, end);
 }
 
@@ -94,13 +96,24 @@ static const char* const kLetters[PORT_HUD_XY_SLOTS][5] = {
     { "#..#", "#..#", ".##.", ".##.", ".##." },
 };
 
-static void BuildBubble(uint8_t* out, unsigned slot) {
+/* The same 4x5 box while the button is the turbo's: a bolt (hold to
+ * fast-forward), so the bubble reads as neither X's nor Y's item. */
+static const char* const kTurboGlyph[5] = {
+    "..##",
+    ".##.",
+    "###.",
+    "..#.",
+    ".##.",
+};
+
+static void BuildBubble(uint8_t* out, unsigned slot, bool turbo) {
     memcpy(out, (const uint8_t*)gVram + OBJ_VRAM + BUTTON_TILE * 32u, 4u * 32u);
     const unsigned ink = GetPixel(out, 8, 6);  /* the top of the A */
     const unsigned face = GetPixel(out, 7, 5); /* just above it */
+    const char* const* glyph = turbo ? kTurboGlyph : kLetters[slot];
     for (int y = 0; y < 5; ++y)
         for (int x = 0; x < 4; ++x)
-            SetPixel(out, 7 + x, 6 + y, kLetters[slot][y][x] == '#' ? ink : face);
+            SetPixel(out, 7 + x, 6 + y, glyph[y][x] == '#' ? ink : face);
 }
 
 static bool OamCommitted(void) {
@@ -160,7 +173,8 @@ void Port_HudXY_BeginRender(void) {
     memcpy(sSavedVram, vram, sizeof(sSavedVram));
     for (unsigned slot = 0; slot < PORT_HUD_XY_SLOTS; ++slot) {
         if (sCommitted.bubble[slot])
-            BuildBubble((uint8_t*)gVram + OBJ_VRAM + PORT_HUD_XY_BUBBLE_TILE(slot) * 32u, slot);
+            BuildBubble((uint8_t*)gVram + OBJ_VRAM + PORT_HUD_XY_BUBBLE_TILE(slot) * 32u, slot,
+                        sCommitted.turbo[slot]);
         if (sCommitted.iconTiles[slot] != NULL) {
             uint8_t* icon = (uint8_t*)gVram + OBJ_VRAM + PORT_HUD_XY_ICON_TILE(slot) * 32u;
             memcpy(icon, sCommitted.iconTiles[slot], sCommitted.iconCount[slot] * 32u);

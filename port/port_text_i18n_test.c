@@ -88,6 +88,23 @@ int main(void) {
         }
     }
 
+    /* The double-width cells (GAME's TURBO BUTTON spans two columns) hold
+     * twice the room; they still must not run into the next cell. */
+    static const char* const kWideCellWords[] = { "TURBO BUTTON" };
+    for (size_t i = 0; i < sizeof(kWideCellWords) / sizeof(kWideCellWords[0]); i++) {
+        for (int lang = PORT_TEXT_FR; lang < PORT_TEXT_COUNT; lang++) {
+            const char* t = Port_Text_TrFor((PortTextLanguage)lang, kWideCellWords[i]);
+            int n = 0;
+            for (const char* p = t; *p; n++) {
+                (void)Port_Text_Utf8Next(&p);
+            }
+            if (n > 24) {
+                fprintf(stderr, "too wide for a wide cell (%d): %s -> %s\n", n, kWideCellWords[i], t);
+                return 1;
+            }
+        }
+    }
+
     /* UTF-8 -> game charcode (Latin-1 for the accented range). */
     const char* p = "a\xC3\xA9\xC3\x91\xE2\x99\xAA!";
     CHECK(Port_Text_Utf8Next(&p) == 'a');
