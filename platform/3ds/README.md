@@ -74,8 +74,11 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
 - New 3DS: requests 804 MHz, L2 cache and access to the extra application core.
 - Turbo: hold the C-stick in any direction (New 3DS) or the button picked in OPTIONS -> GAME ->
   TURBO BUTTON (X or Y; `turbo_button=0|1|2`, OFF by default) and the game runs at the chosen
-  2x-5x speed until released, on Old and New 3DS. The button is not an item button while assigned:
-  its old item stays stored and comes back when the turbo moves to the other button or OFF.
+  2x-5x speed, on Old and New 3DS. OPTIONS -> GAME -> TURBO MODE (`turbo_mode=0|1`, HOLD by
+  default) picks how it triggers: HOLD runs while the button is down, TOGGLE latches on each
+  press until pressed again; the C-stick stays hold-based in both. The button is not an item
+  button while assigned: its old item stays stored and comes back when the turbo moves to the
+  other button or OFF.
 - Old 3DS: experimental CPU-renderer and audio optimizations plus adaptive
   presentation skipping target 60 Hz engine timing when visual rendering falls
   behind. Input, touch, audio and lifecycle processing continue on skipped

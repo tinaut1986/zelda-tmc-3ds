@@ -408,6 +408,13 @@ int Port_Config_GetTurboButton(void);
 void Port_Config_SetTurboButton(int button);
 void Port_Config_CycleTurboButton(void);
 
+/* OPTIONS -> GAME -> TURBO MODE (port_turbo_button.h): turbo_mode, 0 HOLD
+ * (runs while the button is down) or 1 TOGGLE (latches on each press);
+ * default HOLD. The New 3DS C-stick stays hold-based. */
+int Port_Config_GetTurboMode(void);
+void Port_Config_SetTurboMode(int mode);
+void Port_Config_CycleTurboMode(void);
+
 /* Raw left-analog-stick reading from the first attached gamepad, in
  * the range [-1, 1] per axis (positive Y = downward on screen, matching
  * TMC's top-left coord system). Returns false with outputs untouched

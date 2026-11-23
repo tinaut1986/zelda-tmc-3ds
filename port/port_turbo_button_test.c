@@ -53,6 +53,35 @@ int main(void) {
     CHECK(!Port_TurboButton_OwnsSoftSlot(PORT_TURBO_BUTTON_X, -1));
     CHECK(!Port_TurboButton_OwnsSoftSlot(PORT_TURBO_BUTTON_X, 2));
 
+    /* The trigger's shape: HOLD runs while the button is down, TOGGLE flips a
+     * latch on each press. */
+    CHECK(Port_TurboMode_Clamp(-1) == PORT_TURBO_MODE_HOLD);
+    CHECK(Port_TurboMode_Clamp(0) == PORT_TURBO_MODE_HOLD);
+    CHECK(Port_TurboMode_Clamp(1) == PORT_TURBO_MODE_TOGGLE);
+    CHECK(Port_TurboMode_Clamp(2) == PORT_TURBO_MODE_HOLD);
+    CHECK(Port_TurboMode_Cycle(PORT_TURBO_MODE_HOLD) == PORT_TURBO_MODE_TOGGLE);
+    CHECK(Port_TurboMode_Cycle(PORT_TURBO_MODE_TOGGLE) == PORT_TURBO_MODE_HOLD);
+    CHECK(Port_TurboMode_Cycle(99) == PORT_TURBO_MODE_HOLD);
+    CHECK(strcmp(Port_TurboMode_Name(PORT_TURBO_MODE_HOLD), "HOLD") == 0);
+    CHECK(strcmp(Port_TurboMode_Name(PORT_TURBO_MODE_TOGGLE), "TOGGLE") == 0);
+    CHECK(strcmp(Port_TurboMode_Name(99), "HOLD") == 0);
+
+    /* TOGGLE: only a fresh press of the button flips the latch. */
+    CHECK(Port_TurboButton_LatchAfter(PORT_TURBO_MODE_TOGGLE, true, false));
+    CHECK(!Port_TurboButton_LatchAfter(PORT_TURBO_MODE_TOGGLE, true, true));
+    CHECK(!Port_TurboButton_LatchAfter(PORT_TURBO_MODE_TOGGLE, false, false));
+    CHECK(Port_TurboButton_LatchAfter(PORT_TURBO_MODE_TOGGLE, false, true));
+    /* HOLD: the latch is never consulted. */
+    CHECK(!Port_TurboButton_LatchAfter(PORT_TURBO_MODE_HOLD, true, false));
+    CHECK(Port_TurboButton_LatchAfter(PORT_TURBO_MODE_HOLD, true, true));
+
+    /* What drives the scheduler this poll. */
+    CHECK(Port_TurboButton_Active(PORT_TURBO_MODE_HOLD, true, false));
+    CHECK(!Port_TurboButton_Active(PORT_TURBO_MODE_HOLD, false, true));
+    CHECK(Port_TurboButton_Active(PORT_TURBO_MODE_TOGGLE, false, true));
+    CHECK(!Port_TurboButton_Active(PORT_TURBO_MODE_TOGGLE, true, false));
+    CHECK(!Port_TurboButton_Active(99, true, true));
+
     puts("turbo_button_test OK");
     return 0;
 }

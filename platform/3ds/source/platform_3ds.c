@@ -32,6 +32,9 @@ static bool sCStickHeld;
 /* OPTIONS -> GAME -> TURBO BUTTON: X or Y held (port_turbo_button.h). Read
  * from the persisted setting on every input poll. */
 static bool sTurboButtonHeld;
+/* OPTIONS -> GAME -> TURBO MODE: in TOGGLE the button latches the turbo on
+ * until pressed again; dropped when the setting or the button changes. */
+static bool sTurboLatch;
 static bool sScreenDumpRequested;
 static uint64_t sScreenDumpTick; /* when the last screen dump finished, 0 if none */
 static bool sRunning;
@@ -93,6 +96,7 @@ static aptHookCookie sAptHookCookie;
 static bool sAptHookRegistered;
 extern void Port_Audio_Shutdown(void);
 extern int Port_Config_GetTurboButton(void);
+extern int Port_Config_GetTurboMode(void);
 static void PollInput(void);
 
 void Platform3DS_MarkFrameDiscontinuity(Old3DSFramePacerDiscontinuity reason) {
@@ -136,6 +140,7 @@ int Platform3DS_Init(void) {
     memset(&sCStickPosition, 0, sizeof(sCStickPosition));
     sCStickHeld = false;
     sTurboButtonHeld = false;
+    sTurboLatch = false;
     sScreenDumpRequested = false;
     sScreenDumpTick = 0;
     sCore1Available = false;
@@ -883,8 +888,22 @@ static void PollInput(void) {
 #if TMC3DS_DEBUG_TOOLS
     DebugLink_Poll(&sHeld, &sDown, sLogicFrames); /* remote buttons and requests (SITE over FTP) */
 #endif
-    sTurboButtonHeld = Port_TurboButton_Held(Port_Config_GetTurboButton(), (sHeld & KEY_X) != 0u,
-                                             (sHeld & KEY_Y) != 0u);
+    const int turboButton = Port_Config_GetTurboButton();
+    const int turboMode = Port_Config_GetTurboMode();
+    /* A change in OPTIONS (or no button at all) drops the toggle's state. */
+    static int sLastTurboButton = -1, sLastTurboMode = -1;
+    if (turboButton != sLastTurboButton || turboMode != sLastTurboMode) {
+        sLastTurboButton = turboButton;
+        sLastTurboMode = turboMode;
+        sTurboLatch = false;
+    }
+    sTurboLatch = Port_TurboButton_LatchAfter(turboMode,
+                                              Port_TurboButton_Held(turboButton, (sDown & KEY_X) != 0u,
+                                                                    (sDown & KEY_Y) != 0u),
+                                              sTurboLatch);
+    sTurboButtonHeld = Port_TurboButton_Active(
+        turboMode, Port_TurboButton_Held(turboButton, (sHeld & KEY_X) != 0u, (sHeld & KEY_Y) != 0u),
+        sTurboLatch);
     hidCircleRead(&sCirclePosition);
     if (sIsNew3DS) {
         hidCstickRead(&sCStickPosition);

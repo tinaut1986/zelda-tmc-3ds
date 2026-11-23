@@ -192,6 +192,7 @@ bool sMenuHintSeen = false;    /* set once the F8/settings menu is first opened 
 float sMasterVolume = 1.0f;    /* game master volume [0,1]; 1.0 = unchanged */
 bool sHoldAdvanceText = false; /* hold an advance key to keep paging text */
 int sTurboButton = PORT_TURBO_BUTTON_OFF; /* OPTIONS -> GAME -> TURBO BUTTON (3DS UI) */
+int sTurboMode = PORT_TURBO_MODE_HOLD;    /* OPTIONS -> GAME -> TURBO MODE (3DS UI) */
 bool sRollAttackMacroEnabled = true;
 #ifdef __ANDROID__
 bool sFullscreen = true; /* no windowed mode on a handheld; avoid a visible nav bar */
@@ -312,6 +313,7 @@ const IntCfg kIntCfg[] = {
     { "preferred_region", &sPreferredRegion, -1 },      { "preferred_language", &sPreferredLanguage, -1 },
     { "second_screen_backdrop", &sSecondScreenBackdrop, 0 },
     { "turbo_button", &sTurboButton, PORT_TURBO_BUTTON_OFF },
+    { "turbo_mode", &sTurboMode, PORT_TURBO_MODE_HOLD },
 };
 const StrCfg kStrCfg[] = {
     { "upscale_method", &sUpscaleMethod, "nearest" },
@@ -1906,6 +1908,19 @@ extern "C" void Port_Config_SetTurboButton(int button) {
 }
 extern "C" void Port_Config_CycleTurboButton(void) {
     Port_Config_SetTurboButton(Port_TurboButton_Cycle(sTurboButton));
+}
+/* Same round-trip contract as the turbo button: the desktop UI has no row,
+ * but a 3DS-made turbo_mode survives a pass through config.json. */
+extern "C" int Port_Config_GetTurboMode(void) {
+    return Port_TurboMode_Clamp(sTurboMode);
+}
+extern "C" void Port_Config_SetTurboMode(int mode) {
+    sTurboMode = Port_TurboMode_Clamp(mode);
+    sConfigJson["turbo_mode"] = sTurboMode;
+    SaveConfig();
+}
+extern "C" void Port_Config_CycleTurboMode(void) {
+    Port_Config_SetTurboMode(Port_TurboMode_Cycle(sTurboMode));
 }
 extern "C" bool Port_Config_GetRollAttackMacroEnabled(void) {
     return sRollAttackMacroEnabled;

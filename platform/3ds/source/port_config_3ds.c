@@ -61,6 +61,7 @@ static _Atomic unsigned sTurboMultiplier = 5;
 /* OPTIONS -> GAME -> TURBO BUTTON: 0 OFF, 1 X, 2 Y (port_turbo_button.h). The
  * platform reads it every input poll; the button it owns is not a soft slot. */
 static _Atomic int sTurboButton;
+static _Atomic int sTurboMode; /* OPTIONS -> GAME -> TURBO MODE: 0 HOLD, 1 TOGGLE */
 static bool sConfigLoaded;
 static char sConfigPath[256] = "tmc3ds.ini";
 /* Lets a console session A/B the PICA200 renderer against the software
@@ -216,6 +217,7 @@ static size_t FormatConfig(char* out, size_t cap) {
     APPEND("panel_backdrop=%d\n", sBackdrop);
     APPEND("turbo_multiplier=%u\n", sTurboMultiplier);
     APPEND("turbo_button=%d\n", (int)sTurboButton);
+    APPEND("turbo_mode=%d\n", (int)sTurboMode);
 
     /* Round-trip the performance/research switches. SaveConfig parses these
      * but used to omit them, so any Settings change -- or any exit that saves
@@ -464,6 +466,7 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "panel_backdrop") == 0) sBackdrop = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "turbo_multiplier") == 0) sTurboMultiplier = (unsigned)strtoul(value, NULL, 10);
             else if (strcmp(key, "turbo_button") == 0) sTurboButton = Port_TurboButton_Clamp((int)strtol(value, NULL, 10));
+            else if (strcmp(key, "turbo_mode") == 0) sTurboMode = Port_TurboMode_Clamp((int)strtol(value, NULL, 10));
 #if TMC3DS_DEBUG_TOOLS
             else if (strcmp(key, "debug_log") == 0) sDebugLogOn = ParseBool(value);
             else if (strcmp(key, "debug_log_direct") == 0) sDebugLogDirect = ParseBool(value);
@@ -494,6 +497,7 @@ void Port_Config_Load(const char* path) {
     if (sTurboMultiplier < 2 || sTurboMultiplier > 5) sTurboMultiplier = 5;
     Platform3DS_SetTurboMultiplier(sTurboMultiplier);
     sTurboButton = Port_TurboButton_Clamp(sTurboButton);
+    sTurboMode = Port_TurboMode_Clamp(sTurboMode);
     sConfigLoaded = true;
     if (migratePerformanceProfile) SaveConfig();
 }
@@ -879,6 +883,13 @@ void Port_Config_SetTurboButton(int button) {
     SaveConfig();
 }
 void Port_Config_CycleTurboButton(void) { Port_Config_SetTurboButton(Port_TurboButton_Cycle(sTurboButton)); }
+
+int Port_Config_GetTurboMode(void) { return Port_TurboMode_Clamp(sTurboMode); }
+void Port_Config_SetTurboMode(int mode) {
+    sTurboMode = Port_TurboMode_Clamp(mode);
+    SaveConfig();
+}
+void Port_Config_CycleTurboMode(void) { Port_Config_SetTurboMode(Port_TurboMode_Cycle(sTurboMode)); }
 
 int Port_Config_Get3DSAspectRatio(void) { return (int)sAspectRatio; }
 const char* Port_Config_Get3DSAspectRatioName(void) {

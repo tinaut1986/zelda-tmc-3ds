@@ -47,4 +47,40 @@ static inline bool Port_TurboButton_OwnsSoftSlot(int button, int softSlot) {
            (button == PORT_TURBO_BUTTON_Y && softSlot == 1);
 }
 
+/* OPTIONS -> GAME -> TURBO MODE: how the turbo button triggers. HOLD runs
+ * while the button is down; TOGGLE latches on each press of it. */
+enum {
+    PORT_TURBO_MODE_HOLD = 0,
+    PORT_TURBO_MODE_TOGGLE,
+    PORT_TURBO_MODE_COUNT
+};
+
+static inline int Port_TurboMode_Clamp(int mode) {
+    return mode >= PORT_TURBO_MODE_HOLD && mode < PORT_TURBO_MODE_COUNT ? mode : PORT_TURBO_MODE_HOLD;
+}
+
+static inline int Port_TurboMode_Cycle(int mode) {
+    if (mode == PORT_TURBO_MODE_HOLD) return PORT_TURBO_MODE_TOGGLE;
+    if (mode == PORT_TURBO_MODE_TOGGLE) return PORT_TURBO_MODE_HOLD;
+    return PORT_TURBO_MODE_HOLD;
+}
+
+static inline const char* Port_TurboMode_Name(int mode) {
+    return Port_TurboMode_Clamp(mode) == PORT_TURBO_MODE_TOGGLE ? "TOGGLE" : "HOLD";
+}
+
+/* The toggle's stored state after this poll: a fresh press (buttonDownEdge)
+ * flips it; in HOLD the latch is never consulted. */
+static inline bool Port_TurboButton_LatchAfter(int mode, bool buttonDownEdge, bool latch) {
+    if (mode != PORT_TURBO_MODE_TOGGLE) return latch;
+    return buttonDownEdge ? !latch : latch;
+}
+
+/* Whether the turbo runs this poll: the latch in TOGGLE, the held button in HOLD. */
+static inline bool Port_TurboButton_Active(int mode, bool buttonHeld, bool latch) {
+    if (mode == PORT_TURBO_MODE_HOLD) return buttonHeld;
+    if (mode == PORT_TURBO_MODE_TOGGLE) return latch;
+    return false;
+}
+
 #endif

@@ -56,7 +56,7 @@ Link's house; P4.9 stays open for the rest). Their history is in `git log` and t
 
 | Branch | State |
 |---|---|
-| `feat/turbo-button` _(open, PR #57; built `v0.4.8-dev.5.4+05e721a`, CI green)_ | OPTIONS -> GAME -> TURBO BUTTON (OFF/X/Y, `turbo_button`): hold the button to fast-forward at X2..X5 on both models, C-stick still works; the button is not an item button while assigned and shows a turbo mark. To see: X and Y held in play and in the pause menu, the GAME group, the bottom sidebar cell and ITEMS marks, an old `tmc3ds.ini` loading as OFF. |
+| `feat/turbo-button` _(open, PR #57; built `v0.4.8-dev.5.4+05e721a`, CI green)_ | OPTIONS -> GAME -> TURBO BUTTON (OFF/X/Y, `turbo_button`) and TURBO MODE (HOLD/TOGGLE, `turbo_mode`): hold the button to fast-forward at X2..X5 or latch it with TOGGLE, on both models, C-stick still works; the button is not an item button while assigned and shows a turbo mark. To see: X and Y held and toggled in play and in the pause menu, the GAME group, the bottom sidebar cell and ITEMS marks, an old `tmc3ds.ini` loading as OFF/HOLD. |
 | `feat/pause-wide-view` _(merged into release/v0.4.6 2026-10-25, at the owner's request; seen in Azahar, not on the console)_ | The pause menu at 400x240 (GPU renderer): L and R whole when pressed, the title banner closed on the left, the background made by the game from its own BG3. Still to see on the New 3DS: the three pages, the map page, the save prompt, 3D, the Old 3DS. It raised the linker pins to 0x644000/0x64C000. |
 | `feat/minish-path-leaves` _(merged into release/v0.4.6 2026-10-25, at the owner's request before a console check)_ | Gemini's leaves and the derived shadows beside the Minish Paths' grass corridor (area 0x11), WIDE + AI. Still to see on the New 3DS: the corridor centred, the strips moving with their layers, nothing in the other 0x11 rooms. Its ground's sides are the corridor's edge brown (`feat/minish-path-ground-fill`, merged the same day, seen in Azahar). |
 | `feat/minish-paths-town-ranch-cabin` _(merged into release/v0.4.6 2026-10-25, at the owner's request; seen in Azahar, not on the console)_ | The sides of Minish Paths rooms 0x11/02, 03 and 04: one set of Gemini leaves for the three (04's recoloured), derived shadows, 02's and 03's grounds their edge colour darkening outwards (03's on trial), 04's the water corridor's stalks. WIDE + AI for the leaves and 04's ground. Still to see on the New 3DS. The cut giant sprites beside them are #50-#52. |
@@ -445,7 +445,9 @@ All of these exist only when `TMC3DS_DEBUG_TOOLS=1`; documented in
   Old and New 3DS; the New 3DS C-stick stays an extra trigger. The button is not an item button
   while assigned: holding it neither fires nor assigns an item (the pause menu, the bottom screen's
   ring and its items), its stored item waits and returns when the turbo moves off, and the HUD/pause
-  bubble and the bottom-screen cell show a turbo mark instead of the item.
+  bubble and the bottom-screen cell show a turbo mark instead of the item. TURBO MODE (HOLD /
+  TOGGLE, `turbo_mode`, default HOLD) picks whether the button runs while held or latches on each
+  press; the New 3DS C-stick stays hold-based.
   *Done when:* the owner holds X and Y on the console, the game speeds up and returns, and nothing
   is fired or assigned on that button.
 
@@ -1592,3 +1594,7 @@ P3.4 moves to the GPU; the Old 3DS at ~30 without Full View means something besi
   button away from its item slot (assignment refused; a stored item waits and returns when the turbo moves off), because
   holding it would otherwise both fire and fast-forward. The desktop config keeps `turbo_button` for round trips but has no
   row: there is no second-screen turbo there.
+- **2026-11-23** Turbo mode (P2.10): the toggle lives in the platform's poll (`PollInput`), as a latch flipped by the
+  button's press edge (`sDown`) and dropped when the setting or the assigned button changes, so a value edited in OPTIONS
+  never leaves a stale turbo running. HOLD keeps the previous behaviour. The C-stick is untouched and stays hold-based in
+  both modes.

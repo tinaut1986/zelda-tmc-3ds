@@ -603,9 +603,10 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
     y += OPT_TITLE_H;
     CSettingCellAt(t, tl, y, 0, 1, "TURBO", SS_SET_TURBO);
     CSettingCellAt(t, tl, y, 1, 2, "TURBO BUTTON", SS_SET_TURBO_BUTTON);
-    CSettingCellAt(t, tl, y, 3, 1, "VOLUME", SS_SET_VOLUME);
+    CSettingCellAt(t, tl, y, 3, 1, "TURBO MODE", SS_SET_TURBO_MODE);
     y += OPT_ROW_H;
-    CSettingCellAt(t, tl, y, 0, 2, "AUTOSAVE", SS_SET_AUTOSAVE);
+    CSettingCellAt(t, tl, y, 0, 1, "VOLUME", SS_SET_VOLUME);
+    CSettingCellAt(t, tl, y, 1, 1, "AUTOSAVE", SS_SET_AUTOSAVE);
     CSettingCellAt(t, tl, y, 2, 2, "HOLD TEXT", SS_SET_HOLD_ADVANCE);
     y += OPT_ROW_H;
 
