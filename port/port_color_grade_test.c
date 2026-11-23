@@ -2,7 +2,9 @@
  * port/port_color_grade_test.c — locks the colour grade's byte-exact modes and clamping.
  *
  * OFF must stay identical to the raw 5-bit expansion, GBA to the fixed LCD LUT the
- * game shipped with, and a neutral CUSTOM grade to OFF. Out-of-range settings are
+ * game shipped with, and a neutral CUSTOM grade to OFF. VIVID must match CUSTOM
+ * {10, 10, 0, -4} byte for byte while keeping whatever fields are stored.
+ * Out-of-range settings are
  * clamped by Port_ColourGrade_Set, saturation leaves greys alone, and the epoch only
  * moves when the installed grade differs.
  */
@@ -156,6 +158,54 @@ static void TestEpochActiveAndNames(void) {
     puts("colour_grade_test: epoch, activity and names PASS");
 }
 
+static void TestVividPreset(void) {
+    const PortColourGrade vivid = MakeGrade(PORT_COLOUR_VIVID, 0, 0, 0, 0);
+    const PortColourGrade presetCustom = MakeGrade(PORT_COLOUR_CUSTOM, 10, 10, 0, -4);
+    const uint16_t samples[4] = { 0x0000u, 0x7FFFu, 0x1385u, 0x18DCu };
+    const PortColourGrade* current;
+    uint8_t vividLut[32], customLut[32];
+    uint8_t vividOut[3], customOut[3];
+
+    CHECK(strcmp(Port_ColourModeName(PORT_COLOUR_VIVID), "VIVID") == 0, "mode name VIVID");
+
+    Port_ColourGrade_Set(&vivid);
+    Port_ColourGrade_ChannelLut(&vivid, vividLut);
+    Port_ColourGrade_ChannelLut(&presetCustom, customLut);
+    CHECK(memcmp(vividLut, customLut, sizeof(vividLut)) == 0,
+          "VIVID LUT equals CUSTOM {10, 10, 0, -4}");
+
+    for (int i = 0; i < 4; ++i) {
+        Port_ColourGrade_ToRgb888(&vivid, samples[i], vividOut);
+        Port_ColourGrade_ToRgb888(&presetCustom, samples[i], customOut);
+        CHECK(vividOut[0] == customOut[0] && vividOut[1] == customOut[1] && vividOut[2] == customOut[2],
+              "VIVID ToRgb888 equals CUSTOM {10, 10, 0, -4}");
+    }
+
+    /* Mode 3 is legitimate now: only mode >= 4 folds to OFF. */
+    Port_ColourGrade_Set(&vivid);
+    current = Port_ColourGrade_Current();
+    CHECK(current->mode == PORT_COLOUR_VIVID, "mode 3 stays VIVID, not OFF");
+    CHECK(vividLut[31] == customLut[31] && vividLut[0] == customLut[0],
+          "VIVID preset shapes the curve endpoints");
+
+    /* VIVID ignores the fields, and keeps the user's CUSTOM values untouched. */
+    {
+        const PortColourGrade oddVivid = MakeGrade(PORT_COLOUR_VIVID, -30, 40, -20, 5);
+        uint8_t oddBytes[32];
+
+        Port_ColourGrade_Set(&oddVivid);
+        current = Port_ColourGrade_Current();
+        CHECK(current->mode == PORT_COLOUR_VIVID, "VIVID with other fields is still VIVID");
+        CHECK(current->brightness == -30 && current->contrast == 40 && current->saturation == -20 &&
+                  current->gamma == 5,
+              "VIVID keeps the stored CUSTOM fields");
+        Port_ColourGrade_ChannelLut(&oddVivid, oddBytes);
+        CHECK(memcmp(oddBytes, customLut, sizeof(oddBytes)) == 0,
+              "VIVID ignores the stored fields and builds the preset");
+    }
+    puts("colour_grade_test: VIVID preset PASS");
+}
+
 int main(void) {
     TestOffParity();
     TestGbaParity();
@@ -164,6 +214,7 @@ int main(void) {
     TestSaturationPreservesGrey();
     TestLutRangeAndMonotonicity();
     TestEpochActiveAndNames();
+    TestVividPreset();
 
     if (sFailures != 0) {
         fprintf(stderr, "colour_grade_test: %d FAILURE(S)\n", sFailures);

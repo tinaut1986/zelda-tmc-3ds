@@ -5,7 +5,7 @@ player can change that.
 
 ## What it is
 
-The COLOURS option used to be a binary toggle. It is now a three-mode grade:
+The COLOURS option used to be a binary toggle. It is now a four-mode grade:
 
 - **OFF** — the raw expansion the engine always did: each 5-bit channel becomes
   `x << 3`. Bit-exact with the old OFF.
@@ -16,6 +16,11 @@ The COLOURS option used to be a binary toggle. It is now a three-mode grade:
   - CONTRAST, -50..+50 in steps of 10, scaling around mid-grey;
   - SATURATION, -50..+50 in steps of 10, a luma-preserving mix;
   - GAMMA, 0.4..1.6 in steps of 0.1, shown as `1.3` and stored as -6..+6.
+- **VIVID** — a fixed CUSTOM preset: brightness +10, contrast +10, saturation 0
+  and gamma 0.6 (stored as -4). It has no parameters of its own: the stored
+  BRIGHTNESS/CONTRAST/SATURATION/GAMMA fields are kept untouched while VIVID is
+  selected, so switching back to CUSTOM restores what the player had set. The
+  other modes never see those fields.
 
 Saturation also applies on top of the GBA mode: the fixed GBA words can be made
 more or less colourful without leaving GBA. Brightness, contrast and gamma are
@@ -27,7 +32,7 @@ soon as a mode other than OFF is selected.
 
 OPTIONS -> COLOURS on the bottom screen. The list cell shows the current mode
 name and opens a page with five rows: MODE, BRIGHTNESS, CONTRAST, SATURATION,
-GAMMA. Tapping a row cycles it; MODE goes OFF -> GBA -> CUSTOM -> OFF. The page
+GAMMA. Tapping a row cycles it; MODE goes OFF -> GBA -> CUSTOM -> VIVID -> OFF. The page
 also paints a PREVIEW strip of eight fixed in-game RGB555 colours through the
 installed grade, so a tap shows its effect at once.
 
@@ -44,7 +49,7 @@ The grade is persisted in every backend:
 
 | Key | Values |
 | --- | --- |
-| `colour_mode` | 0 OFF, 1 GBA, 2 CUSTOM |
+| `colour_mode` | 0 OFF, 1 GBA, 2 CUSTOM, 3 VIVID |
 | `colour_brightness` | -50..+50 |
 | `colour_contrast` | -50..+50 |
 | `colour_saturation` | -50..+50 |
@@ -121,4 +126,6 @@ sites to search for, not a claim about their exact contents.
 
 `port/port_color_grade_test.c` (xmake target `colour_grade_test`) covers OFF and
 GBA parity, neutral CUSTOM parity, clamping, grey preservation, LUT
-monotonicity, the epoch and the mode names.
+monotonicity, the epoch and the mode names, and VIVID's parity with CUSTOM
+`{10, 10, 0, -4}` (LUT bytes and `ToRgb888`) while its stored fields stay as
+they were.

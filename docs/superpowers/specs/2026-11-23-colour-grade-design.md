@@ -7,9 +7,11 @@ Date: 2026-11-23. Branch: `feat/colour-grade` (cut from `release/v0.4.7`).
 The COLOURS option is a binary toggle applying a fixed GBA-LCD curve
 (`kLcdLut`, 32 entries per channel) that crushes blacks and oversaturates.
 Players want control over the look, not just on/off. This replaces the toggle
-with a three-mode colour grade — OFF / GBA / CUSTOM — whose CUSTOM mode
+with a four-mode colour grade — OFF / GBA / CUSTOM / VIVID — whose CUSTOM mode
 exposes brightness, contrast, saturation and gamma, edited live from a new
-bottom-screen COLOURS page.
+bottom-screen COLOURS page. VIVID is a fixed CUSTOM preset (brightness +10,
+contrast +10, saturation 0, gamma 0.6) and keeps the player's CUSTOM fields
+untouched while selected.
 
 ## Goals
 
@@ -17,6 +19,10 @@ bottom-screen COLOURS page.
 - GBA: byte-exact with today's fixed LUT.
 - CUSTOM: parameterised curve, integer math on hot paths (LUT rebuilt only on
   settings change), saturation via fixed-point luma mix.
+- VIVID: a fourth persisted mode (value 3, appended so 0/1/2 never shift) that
+  builds the CUSTOM curve from a fixed preset — brightness +10, contrast +10,
+  saturation 0, gamma 0.6 (stored as -4) — and ignores, but preserves, the
+  player's CUSTOM fields.
 - Live apply everywhere COLOURS is applied today: software renderer
   (`port/ppu/src/mode1.c`), 3DS GPU renderer (`platform/3ds/source/port_ppu_gpu_3ds_model.c`),
   second-screen art (`port/port_second_screen_color.c`), scene picture caches
@@ -51,9 +57,9 @@ and has the same decode sites in kind. A porting checklist lives in
 
 ## UI
 
-Bottom screen OPTIONS -> COLOURS cell now shows the mode (OFF/GBA/CUSTOM) and
-opens a new `SS_SETTINGS_COLOURS` page (same mechanism as the UPDATE page).
-Rows: MODE (3 stops), BRIGHTNESS/CONTRAST/SATURATION (-50..+50, step 10),
+Bottom screen OPTIONS -> COLOURS cell now shows the mode (OFF/GBA/CUSTOM/VIVID)
+and opens a new `SS_SETTINGS_COLOURS` page (same mechanism as the UPDATE page).
+Rows: MODE (4 stops), BRIGHTNESS/CONTRAST/SATURATION (-50..+50, step 10),
 GAMMA (0.4..1.6, step 0.1 shown as "1.3"). Tap cycles, like VOLUME today.
 A live preview strip of game palette colours is painted on the page.
 New words go through the i18n table (EN/FR/DE/ES/IT).

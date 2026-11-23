@@ -15,6 +15,14 @@ static uint8_t s_lut[32];
 static unsigned s_epoch;
 static bool s_lutValid;
 
+/* VIVID's fixed curve. The grade's own fields are kept as the user set them so
+ * returning to CUSTOM restores them; VIVID ignores them and uses this preset. */
+static const PortColourGrade kVividPreset = { PORT_COLOUR_VIVID, 10, 10, 0, -4 };
+
+static PortColourGrade EffectiveGrade(const PortColourGrade* g) {
+    return g->mode == PORT_COLOUR_VIVID ? kVividPreset : *g;
+}
+
 static int ClampInt(int v, int lo, int hi) {
     if (v < lo) {
         return lo;
@@ -40,7 +48,8 @@ static bool SameGrade(const PortColourGrade* a, const PortColourGrade* b) {
            a->saturation == b->saturation && a->gamma == b->gamma;
 }
 
-/* One CUSTOM curve entry; the only place this module uses floating point. */
+/* One parameterised curve entry (CUSTOM and VIVID); the only place this module
+ * uses floating point. */
 static uint8_t CurveEntry(int x, const PortColourGrade* g) {
     double t = (double)(x << 3) / 255.0;
     t = pow(t, 1.0 / (1.0 + (double)g->gamma * 0.1));
@@ -55,18 +64,20 @@ static uint8_t CurveEntry(int x, const PortColourGrade* g) {
 }
 
 static void BuildLut(const PortColourGrade* g, uint8_t lut[32]) {
-    if (g->mode == PORT_COLOUR_OFF) {
+    const PortColourGrade eff = EffectiveGrade(g);
+
+    if (eff.mode == PORT_COLOUR_OFF) {
         for (int x = 0; x < 32; ++x) {
             lut[x] = (uint8_t)(x << 3);
         }
         return;
     }
-    if (g->mode == PORT_COLOUR_GBA) {
+    if (eff.mode == PORT_COLOUR_GBA) {
         memcpy(lut, kGbaLut, sizeof(kGbaLut));
         return;
     }
     for (int x = 0; x < 32; ++x) {
-        lut[x] = CurveEntry(x, g);
+        lut[x] = CurveEntry(x, &eff);
     }
 }
 
@@ -128,6 +139,7 @@ void Port_ColourGrade_ChannelLut(const PortColourGrade* g, uint8_t lut[32]) {
 void Port_ColourGrade_ToRgb888(const PortColourGrade* g, uint16_t rgb555, uint8_t out[3]) {
     PortColourGrade off = { PORT_COLOUR_OFF, 0, 0, 0, 0 };
     PortColourGrade clamped;
+    PortColourGrade eff;
     uint8_t scratch[32];
     const uint8_t* lut;
     unsigned r, gr, b;
@@ -136,16 +148,17 @@ void Port_ColourGrade_ToRgb888(const PortColourGrade* g, uint16_t rgb555, uint8_
         g = &off;
     }
     clamped = ClampGrade(g);
+    eff = EffectiveGrade(&clamped);
     lut = ResolveLut(&clamped, scratch);
     r = lut[rgb555 & 0x1Fu];
     gr = lut[(rgb555 >> 5) & 0x1Fu];
     b = lut[(rgb555 >> 10) & 0x1Fu];
 
-    if (clamped.mode != PORT_COLOUR_OFF) {
+    if (eff.mode != PORT_COLOUR_OFF) {
         const unsigned luma = (299u * r + 587u * gr + 114u * b) / 1000u;
-        r = ApplySaturation(r, luma, clamped.saturation);
-        gr = ApplySaturation(gr, luma, clamped.saturation);
-        b = ApplySaturation(b, luma, clamped.saturation);
+        r = ApplySaturation(r, luma, eff.saturation);
+        gr = ApplySaturation(gr, luma, eff.saturation);
+        b = ApplySaturation(b, luma, eff.saturation);
     }
 
     out[0] = (uint8_t)r;
@@ -161,6 +174,8 @@ const char* Port_ColourModeName(unsigned mode) {
             return "GBA";
         case PORT_COLOUR_CUSTOM:
             return "CUSTOM";
+        case PORT_COLOUR_VIVID:
+            return "VIVID";
         default:
             return "OFF";
     }

@@ -1,8 +1,10 @@
 #pragma once
 /* The colour grade applied to the game's 15-bit palettes: OFF keeps the raw 5-bit
- * expansion, GBA reproduces the fixed LCD curve the game was tuned for, and CUSTOM
- * shapes that curve with brightness, contrast, saturation and gamma. GBA and CUSTOM
- * share the channel LUT; saturation is a separate luma mix on top of it.
+ * expansion, GBA reproduces the fixed LCD curve the game was tuned for, CUSTOM
+ * shapes that curve with brightness, contrast, saturation and gamma, and VIVID is
+ * a fixed CUSTOM preset (brightness +10, contrast +10, saturation 0, gamma 0.6).
+ * GBA, CUSTOM and VIVID share the channel LUT; saturation is a separate luma mix
+ * on top of it.
  *
  * Float math happens only when the 32-entry LUT is rebuilt (Port_ColourGrade_Set);
  * ChannelLut/ToRgb888 are integer lookups. Platform-neutral: <stdint.h> and
@@ -18,6 +20,7 @@ typedef enum {
     PORT_COLOUR_OFF = 0,
     PORT_COLOUR_GBA,
     PORT_COLOUR_CUSTOM,
+    PORT_COLOUR_VIVID, /* = 3; appended so persisted mode values never shift */
     PORT_COLOUR_MODE_COUNT,
 } PortColourMode;
 
@@ -42,7 +45,7 @@ bool Port_ColourGrade_Active(const PortColourGrade* g);
 void Port_ColourGrade_ChannelLut(const PortColourGrade* g, uint8_t lut[32]);
 /* One RGB555 game colour as three 8-bit channels after the grade. */
 void Port_ColourGrade_ToRgb888(const PortColourGrade* g, uint16_t rgb555, uint8_t out[3]);
-/* "OFF", "GBA" or "CUSTOM"; an unknown mode reports "OFF". */
+/* "OFF", "GBA", "CUSTOM" or "VIVID"; an unknown mode reports "OFF". */
 const char* Port_ColourModeName(unsigned mode);
 
 #ifdef __cplusplus
