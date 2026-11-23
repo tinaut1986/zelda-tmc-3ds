@@ -831,6 +831,7 @@ target("tmc_pc")
     add_files("port/port_second_screen_state.c") -- Thread-safe gSave/gRoomControls snapshot for the second screen
     add_files("port/port_text_i18n.c") -- Port UI strings in the language selected in-game
     add_files("port/port_second_screen_color.c") -- COLOURS curve for the second screen's game art
+    add_files("port/port_color_grade.c") -- Colour grade (OFF/GBA/CUSTOM) shared by every renderer
     add_files("port/port_second_screen_render.c") -- Item-icon compositor for the second screen (reads ROM/asset data directly)
     add_files("port/port_second_screen_worldmap.c") -- Hyrule map art for the second screen, decoded from ROM at runtime
     add_files("port/port_second_screen_dungeonmap.c") -- Authentic dungeon-map art for the second screen
@@ -1097,6 +1098,21 @@ target("rng_golden_test")
     set_targetdir("build/pc")
     add_includedirs("port")
     add_files("port/port_rng_golden_test.c")
+target_end()
+
+
+-- ====================
+-- Colour grade regression test (OFF/GBA byte parity, neutral CUSTOM, clamping,
+-- grey-safe saturation, epoch invalidation; see port_color_grade_test.c)
+-- ====================
+target("colour_grade_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs("port")
+    add_files("port/port_color_grade.c")
+    add_files("port/port_color_grade_test.c")
+    add_syslinks("m")
 target_end()
 
 
