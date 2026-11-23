@@ -575,6 +575,8 @@ static bool mode1_palette_source_initialized;
 static unsigned mode1_palette_source_epoch;
 static unsigned mode1_color_lut_epoch = ~0u;
 static uint8_t mode1_color_lut[32];
+static int mode1_color_sat_factor = 256;
+static bool mode1_color_has_saturation;
 #ifdef TMC_3DS
 static uint8_t mode1_obj_line_indices[MODE1_GBA_HEIGHT][MODE1_GBA_OAM_COUNT];
 static uint8_t mode1_obj_line_counts[MODE1_GBA_HEIGHT];
@@ -585,15 +587,30 @@ uint32_t virtuappu_mode1_rgb555_to_abgr8888(uint16_t color) {
     uint8_t r5 = (uint8_t)(color & 0x1Fu);
     uint8_t g5 = (uint8_t)((color >> 5u) & 0x1Fu);
     uint8_t b5 = (uint8_t)((color >> 10u) & 0x1Fu);
-    uint8_t r, g, b;
+    unsigned r, g, b;
 
     if (epoch != mode1_color_lut_epoch) {
-        Port_ColourGrade_ChannelLut(Port_ColourGrade_Current(), mode1_color_lut);
+        const PortColourGrade* grade = Port_ColourGrade_Current();
+        Port_ColourGrade_ChannelLut(grade, mode1_color_lut);
+        /* Same mix as PpuGpu3DS_PackRgba5551 and ApplySaturation: the module's
+         * 8.8 luma-preserving saturation, skipped when it is neutral. OFF keeps
+         * the raw curve with no mix, so the old expansion stays bit-exact. */
+        mode1_color_has_saturation = grade->mode != PORT_COLOUR_OFF && grade->saturation != 0;
+        mode1_color_sat_factor = ((50 + grade->saturation) * 256) / 50;
         mode1_color_lut_epoch = epoch;
     }
     r = mode1_color_lut[r5];
     g = mode1_color_lut[g5];
     b = mode1_color_lut[b5];
+    if (mode1_color_has_saturation) {
+        const unsigned luma = (299u * r + 587u * g + 114u * b) / 1000u;
+        const int mr = (int)luma + ((((int)r - (int)luma) * mode1_color_sat_factor) >> 8);
+        const int mg = (int)luma + ((((int)g - (int)luma) * mode1_color_sat_factor) >> 8);
+        const int mb = (int)luma + ((((int)b - (int)luma) * mode1_color_sat_factor) >> 8);
+        r = (unsigned)(mr < 0 ? 0 : (mr > 255 ? 255 : mr));
+        g = (unsigned)(mg < 0 ? 0 : (mg > 255 ? 255 : mg));
+        b = (unsigned)(mb < 0 ? 0 : (mb > 255 ? 255 : mb));
+    }
 
     return 0xFF000000u | ((uint32_t)b << 16u) | ((uint32_t)g << 8u) | (uint32_t)r;
 }

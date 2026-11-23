@@ -73,8 +73,9 @@ boolean:
 
 - **Software renderer** (`port/ppu/src/mode1.c`): palette conversion goes
   through a private 32-entry copy of the channel LUT, rebuilt when the epoch
-  moves; the BG/OBJ palette LUTs and the 4bpp pair tables are rebuilt on the
-  same change.
+  moves (together with the saturation factor of the installed grade); each word
+  then takes the same 8.8 luma mix as the GPU path, skipped in OFF. The BG/OBJ
+  palette LUTs and the 4bpp pair tables are rebuilt on the same change.
 - **3DS GPU renderer** (`platform/3ds/source/port_ppu_gpu_3ds_model.c`):
   `PpuGpu3DS_PackRgba5551` converts each palette word through the LUT (plus the
   saturation mix) and packs back to 5551. `PpuGpu3DS_CacheBeginFrame` compares
@@ -90,9 +91,9 @@ boolean:
   is applied to the finished frame, with the saturation mix in the same pass.
   The same pass runs over the GPU supersample buffer.
 
-The software renderer's palette path applies the channel curve only. Saturation
-reaches the main picture through the GPU renderer and the desktop post-process;
-it is also applied to the bottom-screen art through `ToRgb888`.
+Every site applies the full transformation, curve plus saturation. The only
+remaining difference is the desktop present's domain: it works on 8-bit channels
+after the blend, where the others work on the 15-bit palette words.
 
 ## Porting checklist (EstebanPdN upstream)
 
