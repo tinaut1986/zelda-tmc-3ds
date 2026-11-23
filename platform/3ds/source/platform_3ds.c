@@ -11,6 +11,7 @@
 #include "port_second_screen_sync_3ds.h"
 #include "frame_pacing_3ds.h"
 #include "app_paths_3ds.h"
+#include "port_turbo_button.h"
 #include "tmc3ds_build_config.h"
 #if TMC3DS_DEBUG_TOOLS
 #include "debug_link_3ds.h"
@@ -28,6 +29,9 @@ static uint32_t sDown;
 static circlePosition sCirclePosition;
 static circlePosition sCStickPosition;
 static bool sCStickHeld;
+/* OPTIONS -> GAME -> TURBO BUTTON: X or Y held (port_turbo_button.h). Read
+ * from the persisted setting on every input poll. */
+static bool sTurboButtonHeld;
 static bool sScreenDumpRequested;
 static uint64_t sScreenDumpTick; /* when the last screen dump finished, 0 if none */
 static bool sRunning;
@@ -88,6 +92,7 @@ static LightEvent sBottomWorkerDone;
 static aptHookCookie sAptHookCookie;
 static bool sAptHookRegistered;
 extern void Port_Audio_Shutdown(void);
+extern int Port_Config_GetTurboButton(void);
 static void PollInput(void);
 
 void Platform3DS_MarkFrameDiscontinuity(Old3DSFramePacerDiscontinuity reason) {
@@ -130,6 +135,7 @@ int Platform3DS_Init(void) {
     memset(&sCirclePosition, 0, sizeof(sCirclePosition));
     memset(&sCStickPosition, 0, sizeof(sCStickPosition));
     sCStickHeld = false;
+    sTurboButtonHeld = false;
     sScreenDumpRequested = false;
     sScreenDumpTick = 0;
     sCore1Available = false;
@@ -262,7 +268,7 @@ void Platform3DS_ApplyCpuLimit(void) {
     }
 }
 unsigned Platform3DS_Core1TimeLimit(void) { return sCore1TimeLimit; }
-bool Platform3DS_TurboHeld(void) { return sIsNew3DS && sCStickHeld; }
+bool Platform3DS_TurboHeld(void) { return sTurboButtonHeld || (sIsNew3DS && sCStickHeld); }
 unsigned Platform3DS_TurboMultiplier(void) { return sTurboMultiplier; }
 void Platform3DS_SetTurboMultiplier(unsigned multiplier) {
     sTurboMultiplier = multiplier < 2 ? 2 : (multiplier > 5 ? 5 : multiplier);
@@ -552,7 +558,7 @@ bool Platform3DS_BeginFrameBoundary(void) {
     }
     sLogicLastTick = now;
 
-    if (sIsNew3DS && Platform3DS_TurboHeld()) {
+    if (Platform3DS_TurboHeld()) {
         ++sTurboLogicFrames;
         if (++sTurboPhase >= Platform3DS_TurboMultiplier()) {
             sTurboPhase = 0;
@@ -698,8 +704,10 @@ void Platform3DS_PumpWithoutVBlank(void) {
         PollInput();
         return;
     }
-    /* New 3DS turbo skips run as fast as they can; only a pacer skip sleeps. */
+    /* New 3DS turbo and the turbo button skip runs as fast as they can; only
+     * a pacer skip sleeps. */
     if (sIsNew3DS && !sPacerSkipped) return;
+    if (Platform3DS_TurboHeld() && !sPacerSkipped) return;
     sPacerSkipped = false;
 
     if (sOld3DSSkippedTickSleep != 0) {
@@ -875,6 +883,8 @@ static void PollInput(void) {
 #if TMC3DS_DEBUG_TOOLS
     DebugLink_Poll(&sHeld, &sDown, sLogicFrames); /* remote buttons and requests (SITE over FTP) */
 #endif
+    sTurboButtonHeld = Port_TurboButton_Held(Port_Config_GetTurboButton(), (sHeld & KEY_X) != 0u,
+                                             (sHeld & KEY_Y) != 0u);
     hidCircleRead(&sCirclePosition);
     if (sIsNew3DS) {
         hidCstickRead(&sCStickPosition);

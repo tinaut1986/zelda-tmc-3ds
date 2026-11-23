@@ -1,5 +1,6 @@
 #include "port_runtime_config.h"
 #include "port_touch_controls.h"
+#include "port_turbo_button.h"
 
 #include <SDL3/SDL.h>
 #include <array>
@@ -190,6 +191,7 @@ bool sRibbonCfg = true;        /* F8 menu style: ribbon (true) vs classic */
 bool sMenuHintSeen = false;    /* set once the F8/settings menu is first opened */
 float sMasterVolume = 1.0f;    /* game master volume [0,1]; 1.0 = unchanged */
 bool sHoldAdvanceText = false; /* hold an advance key to keep paging text */
+int sTurboButton = PORT_TURBO_BUTTON_OFF; /* OPTIONS -> GAME -> TURBO BUTTON (3DS UI) */
 bool sRollAttackMacroEnabled = true;
 #ifdef __ANDROID__
 bool sFullscreen = true; /* no windowed mode on a handheld; avoid a visible nav bar */
@@ -309,6 +311,7 @@ const BoolCfg kBoolCfg[] = {
 const IntCfg kIntCfg[] = {
     { "preferred_region", &sPreferredRegion, -1 },      { "preferred_language", &sPreferredLanguage, -1 },
     { "second_screen_backdrop", &sSecondScreenBackdrop, 0 },
+    { "turbo_button", &sTurboButton, PORT_TURBO_BUTTON_OFF },
 };
 const StrCfg kStrCfg[] = {
     { "upscale_method", &sUpscaleMethod, "nearest" },
@@ -1890,6 +1893,19 @@ extern "C" void Port_Config_SetHoldToAdvanceText(bool on) {
     sHoldAdvanceText = on;
     sConfigJson["hold_advance_text"] = on;
     SaveConfig();
+}
+/* The 3DS OPTIONS row; the desktop UI does not show it, but the key is kept
+ * in config.json so a 3DS-made value survives a round trip through the PC. */
+extern "C" int Port_Config_GetTurboButton(void) {
+    return Port_TurboButton_Clamp(sTurboButton);
+}
+extern "C" void Port_Config_SetTurboButton(int button) {
+    sTurboButton = Port_TurboButton_Clamp(button);
+    sConfigJson["turbo_button"] = sTurboButton;
+    SaveConfig();
+}
+extern "C" void Port_Config_CycleTurboButton(void) {
+    Port_Config_SetTurboButton(Port_TurboButton_Cycle(sTurboButton));
 }
 extern "C" bool Port_Config_GetRollAttackMacroEnabled(void) {
     return sRollAttackMacroEnabled;

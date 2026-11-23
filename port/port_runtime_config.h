@@ -400,6 +400,14 @@ bool Port_Config_InputEdgePressed(PortInput input);
 /* Soft-slot input poll, indexed 0..3 (X, Y, L2, R2). */
 bool Port_Config_SoftSlotPressed(int slot);
 
+/* OPTIONS -> GAME -> TURBO BUTTON (port_turbo_button.h): 0 OFF, 1 X, 2 Y.
+ * Holding the chosen button fast-forwards at Port_Config_GetTurboMultiplier();
+ * that soft slot no longer fires or accepts an item. Persisted in tmc3ds.ini
+ * (3DS) and config.json (desktop); OFF by default. */
+int Port_Config_GetTurboButton(void);
+void Port_Config_SetTurboButton(int button);
+void Port_Config_CycleTurboButton(void);
+
 /* Raw left-analog-stick reading from the first attached gamepad, in
  * the range [-1, 1] per axis (positive Y = downward on screen, matching
  * TMC's top-left coord system). Returns false with outputs untouched
