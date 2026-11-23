@@ -72,8 +72,10 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
   stays as the reference for GPU CHECK and as the fallback.
 - Performance profile: selected automatically from the detected console model.
 - New 3DS: requests 804 MHz, L2 cache and access to the extra application core.
-- New 3DS turbo: hold the C-stick in any direction and select 2x through 5x
-  game speed from the Gameplay settings.
+- Turbo: hold the C-stick in any direction (New 3DS) or the button picked in OPTIONS -> GAME ->
+  TURBO BUTTON (X or Y; `turbo_button=0|1|2`, OFF by default) and the game runs at the chosen
+  2x-5x speed until released, on Old and New 3DS. The button is not an item button while assigned:
+  its old item stays stored and comes back when the turbo moves to the other button or OFF.
 - Old 3DS: experimental CPU-renderer and audio optimizations plus adaptive
   presentation skipping target 60 Hz engine timing when visual rendering falls
   behind. Input, touch, audio and lifecycle processing continue on skipped
