@@ -10,6 +10,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum {
     PORT_COLOUR_OFF = 0,
     PORT_COLOUR_GBA,
@@ -40,3 +44,7 @@ void Port_ColourGrade_ChannelLut(const PortColourGrade* g, uint8_t lut[32]);
 void Port_ColourGrade_ToRgb888(const PortColourGrade* g, uint16_t rgb555, uint8_t out[3]);
 /* "OFF", "GBA" or "CUSTOM"; an unknown mode reports "OFF". */
 const char* Port_ColourModeName(unsigned mode);
+
+#ifdef __cplusplus
+}
+#endif

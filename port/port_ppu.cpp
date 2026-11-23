@@ -569,9 +569,9 @@ extern "C" bool Port_PPU_VSyncEnabled(void) {
  * accumulator and move it toward each new frame by (1 - rho). Opt-in. */
 #define PORT_GBA_LCD_GAMMA 4.0 /* "classic" GBA reflective-panel display gamma */
 
-static bool sColorCorrectEnabled = true;
 static uint8_t sColorLut[256];
 static bool sColorLutReady = false;
+static unsigned sColorLutEpoch = ~0u;
 
 static bool sPersistEnabled = false;
 static float sPersistRho = 0.35f; /* fraction of the previous frame retained */
@@ -594,24 +594,45 @@ static double Port_PPU_SrgbOetf(double linear) {
 }
 
 static void Port_PPU_BuildColorLut(void) {
+    const PortColourGrade* grade = Port_ColourGrade_Current();
     for (int v = 0; v < 256; ++v) {
         double x = static_cast<double>(v) / 255.0;
-        double enc = Port_PPU_SrgbOetf(std::pow(x, PORT_GBA_LCD_GAMMA));
+        double enc;
+        if (grade->mode == PORT_COLOUR_OFF) {
+            enc = x; /* identity: the pass is skipped anyway, this only guards a stale read */
+        } else if (grade->mode == PORT_COLOUR_GBA) {
+            enc = Port_PPU_SrgbOetf(std::pow(x, PORT_GBA_LCD_GAMMA));
+        } else {
+            /* CUSTOM, in this LUT's 8-bit domain: the module's curve is the
+             * same math on 5-bit input (port_color_grade.c, CurveEntry). */
+            enc = std::pow(x, 1.0 / (1.0 + static_cast<double>(grade->gamma) * 0.1));
+            enc = (enc - 0.5) * (1.0 + static_cast<double>(grade->contrast) / 50.0) + 0.5;
+            enc += static_cast<double>(grade->brightness) / 100.0;
+        }
         if (enc < 0.0)
             enc = 0.0;
         if (enc > 1.0)
             enc = 1.0;
         sColorLut[v] = static_cast<uint8_t>(enc * 255.0 + 0.5);
     }
+    sColorLutEpoch = Port_ColourGrade_Epoch();
     sColorLutReady = true;
 }
 
 extern "C" void Port_PPU_SetColorCorrection(bool enabled) {
-    sColorCorrectEnabled = enabled;
+    PortColourGrade grade = *Port_ColourGrade_Current();
+    if (enabled) {
+        if (grade.mode == PORT_COLOUR_OFF) {
+            grade.mode = PORT_COLOUR_GBA;
+        }
+    } else {
+        grade.mode = PORT_COLOUR_OFF;
+    }
+    Port_ColourGrade_Set(&grade);
 }
 
 extern "C" bool Port_PPU_ColorCorrectionEnabled(void) {
-    return sColorCorrectEnabled;
+    return Port_ColourGrade_Active(Port_ColourGrade_Current());
 }
 
 extern "C" void Port_PPU_SetPersistence(bool enabled, float rho) {
@@ -624,20 +645,37 @@ extern "C" void Port_PPU_SetPersistence(bool enabled, float rho) {
     }
 }
 
-/* Colour-correct `count` ABGR8888 pixels in place via the per-channel LUT.
- * No-op when disabled. Shared by the native post-process and the GPU
- * supersample buffer (per-pixel LUT commutes with S*S replication, so applying
- * it to the S*S buffer matches applying it to the native frame then scaling). */
+/* Colour-correct `count` ABGR8888 pixels in place via the per-channel LUT and
+ * the grade's saturation mix. No-op when the grade is OFF. Shared by the
+ * native post-process and the GPU supersample buffer (per-pixel LUT commutes
+ * with S*S replication, so applying it to the S*S buffer matches applying it
+ * to the native frame then scaling). */
 static void Port_PPU_ColorCorrectBuffer(uint32_t* buf, int count) {
-    if (!sColorCorrectEnabled || !sColorLutReady) {
+    const PortColourGrade* grade = Port_ColourGrade_Current();
+    if (!Port_ColourGrade_Active(grade)) {
         return;
     }
+    if (!sColorLutReady || sColorLutEpoch != Port_ColourGrade_Epoch()) {
+        Port_PPU_BuildColorLut();
+    }
+    const bool mixSaturation = grade->saturation != 0;
+    const int satFactor = ((50 + static_cast<int>(grade->saturation)) * 256) / 50;
     for (int i = 0; i < count; ++i) {
         uint32_t p = buf[i];
-        uint32_t r = sColorLut[p & 0xFFu];
-        uint32_t g = sColorLut[(p >> 8) & 0xFFu];
-        uint32_t b = sColorLut[(p >> 16) & 0xFFu];
-        buf[i] = (p & 0xFF000000u) | (b << 16) | (g << 8) | r;
+        int r = sColorLut[p & 0xFFu];
+        int g = sColorLut[(p >> 8) & 0xFFu];
+        int b = sColorLut[(p >> 16) & 0xFFu];
+        if (mixSaturation) {
+            const int luma = (299 * r + 587 * g + 114 * b) / 1000;
+            r = luma + (((r - luma) * satFactor) >> 8);
+            g = luma + (((g - luma) * satFactor) >> 8);
+            b = luma + (((b - luma) * satFactor) >> 8);
+            if (r < 0) r = 0; else if (r > 255) r = 255;
+            if (g < 0) g = 0; else if (g > 255) g = 255;
+            if (b < 0) b = 0; else if (b > 255) b = 255;
+        }
+        buf[i] = (p & 0xFF000000u) | (static_cast<uint32_t>(b) << 16) |
+                 (static_cast<uint32_t>(g) << 8) | static_cast<uint32_t>(r);
     }
 }
 
@@ -936,16 +974,21 @@ bind_virtuappu_memory: {
 
     /* GBA-LCD display transforms. Source of truth is the persisted config
      * (F8 Display menu); the TMC_* env vars override it for headless A/B.
-     * Colour correction defaults on, LCD persistence off. The LUT is built
+     * The grade defaults to GBA, LCD persistence is off. The LUT is built
      * here on the main thread before the first frame, so the render's OpenMP
      * scanline workers never see a half-filled table. */
     {
-        bool cc = Port_Config_GetColorCorrection();
+        PortColourGrade grade;
+        Port_Config_GetColourGrade(&grade);
         const char* ccEnv = getenv("TMC_COLOR_CORRECTION");
         if (ccEnv && ccEnv[0]) {
-            cc = (ccEnv[0] != '0');
+            if (ccEnv[0] == '0') {
+                grade.mode = PORT_COLOUR_OFF;
+            } else if (grade.mode == PORT_COLOUR_OFF) {
+                grade.mode = PORT_COLOUR_GBA;
+            }
         }
-        sColorCorrectEnabled = cc;
+        Port_ColourGrade_Set(&grade);
         Port_PPU_BuildColorLut();
 
         bool lcd = Port_Config_GetLcdPersistence();

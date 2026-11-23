@@ -1,8 +1,4 @@
-/* port_color_grade.h is plain C and carries no __cplusplus guard; declare its
- * entry points with C linkage so this TU links against the C module. */
-extern "C" {
 #include "port_color_grade.h"
-}
 #include "port_runtime_config.h"
 #include "port_touch_controls.h"
 

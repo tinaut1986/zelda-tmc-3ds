@@ -12,6 +12,7 @@
 #include "stereo_3ds.h"
 #include "tmc3ds_build_config.h"
 #include "cpu/mode1.h"
+#include "port_color_grade.h"
 #include "retro_ach.h"
 #include "ui_font_3ds.h"
 #include "port_text_i18n.h"
@@ -101,7 +102,6 @@ _Static_assert(SHARP_BILINEAR_TEXTURE_HEIGHT >= 160 * 2 + 1,
 extern u32 __ctru_linear_heap;
 extern u32 __ctru_linear_heap_size;
 extern bool Port_Config_GetShowFps(void);
-extern bool Port_Config_GetColorCorrection(void);
 extern bool Port_Config_GetWideAi(void);
 extern int Port_Config_GbaFrameActive(void); /* 0 NO, 1 GBA, 2 BLUR */
 extern void Port_FadedBlackRGB(uint8_t* r, uint8_t* g, uint8_t* b); /* src/fade.c */
@@ -1099,7 +1099,7 @@ typedef struct ScenePicture {
     unsigned width, height, texWidth, texHeight;
     C3D_Tex texture;
     int state;      /* 0 not tried, 1 loaded, -1 no file */
-    bool corrected; /* the colour correction the texture was made with */
+    uint32_t colourEpoch; /* the colour grade epoch the texture was made with */
     bool procedural; /* made by code from the game's own art, no generative AI: WIDE is enough */
     const uint16_t* (*make)(void); /* made by the game instead of read from a file: GBA colours, 0 where nothing */
 } ScenePicture;
@@ -1147,7 +1147,7 @@ static void LoadScenePicture(ScenePicture* picture) {
                                 (u32*)picture->texture.data, GX_BUFFER_DIM(picture->texWidth, picture->texHeight),
                                 TextureTransfer());
         C3D_TexSetFilter(&picture->texture, GPU_NEAREST, GPU_NEAREST);
-        picture->corrected = Port_Config_GetColorCorrection();
+        picture->colourEpoch = Port_ColourGrade_Epoch();
         picture->state = 1;
     }
     linearFree(linear);
@@ -1156,7 +1156,7 @@ static void LoadScenePicture(ScenePicture* picture) {
 /* Whether the scene's picture can be drawn this frame; frees it when the scene is not shown. */
 static bool ScenePictureReady(ScenePicture* picture, bool shown) {
     if (!picture->procedural && !Port_Config_GetWideAi()) shown = false; /* generated art: only WIDE + AI */
-    if (picture->state == 1 && (!shown || picture->corrected != Port_Config_GetColorCorrection())) {
+    if (picture->state == 1 && (!shown || picture->colourEpoch != Port_ColourGrade_Epoch())) {
         C3D_TexDelete(&picture->texture);
         picture->state = 0;
     }
@@ -1272,15 +1272,15 @@ static bool CaveReady(bool shown) {
         memset(sCave.linear, 0, CAVE_TEX_W * CAVE_TEX_H * sizeof(uint32_t));
         C3D_TexSetFilter(&picture->texture, GPU_NEAREST, GPU_NEAREST);
         picture->state = 1;
-        picture->corrected = !Port_Config_GetColorCorrection(); /* made below */
+        picture->colourEpoch = Port_ColourGrade_Epoch() + 1u; /* made below */
     }
     if (picture->state != 1) return false;
     const uint16_t* palettes = FadeGpu3DS_ShownPalettes() + CAVE_FIRST_PALETTE * 16;
-    if (picture->corrected == Port_Config_GetColorCorrection() &&
+    if (picture->colourEpoch == Port_ColourGrade_Epoch() &&
         memcmp(palettes, sCave.palettes, sizeof(sCave.palettes)) == 0)
         return true;
     memcpy(sCave.palettes, palettes, sizeof(sCave.palettes));
-    picture->corrected = Port_Config_GetColorCorrection();
+    picture->colourEpoch = Port_ColourGrade_Epoch();
     uint32_t colours[64];
     for (unsigned i = 0; i < 64; ++i) colours[i] = virtuappu_mode1_rgb555_to_abgr8888(sCave.palettes[i]);
     for (unsigned y = 0; y < CAVE_H; ++y) {

@@ -6,6 +6,7 @@
  * is a hard failure. */
 
 #include "cpu/mode1.h"
+#include "port_color_grade.h"
 #include "virtuappu.h"
 
 #include <stdint.h>
@@ -243,7 +244,6 @@ static int CheckCompactWideShadowFootprint(const PPUMemory* fullPpu) {
     WriteIo16(MODE1_IO_BG0HOFS, 0u);
     WriteIo16(MODE1_IO_BG0VOFS, 0u);
     WriteIo16(MODE1_IO_BLDCNT, 0u);
-    virtuappu_mode1_set_color_correction(false);
     virtuappu_mode1_set_old3ds_profile(false);
 
     virtuappu_mode1_set_native_fast_paths_enabled(true);
@@ -332,7 +332,6 @@ static int CheckFullViewShakeAlignment(PPUMemory* ppu) {
     WriteIo16(MODE1_IO_DISPCNT, MODE1_DISP_BG0_ON);
     WriteIo16(MODE1_IO_BG0CNT, (uint16_t)(SCREEN_BASE << 8u));
     WriteIo16(MODE1_IO_BLDCNT, 0u);
-    virtuappu_mode1_set_color_correction(false);
     virtuappu_mode1_set_old3ds_profile(false);
 
     for (size_t sy = 0; sy < sizeof(shakes) / sizeof(shakes[0]); ++sy) {
@@ -439,7 +438,6 @@ static int CheckFullViewBg3Geometry(PPUMemory* ppu) {
     /* A no-target brightness mode rejects the direct path without changing
      * pixels, forcing the production compact-token renderer. */
     WriteIo16(MODE1_IO_BLDCNT, (uint16_t)(2u << 6u));
-    virtuappu_mode1_set_color_correction(false);
 
     sCenteredOverlayCallbackCount = 0;
     virtuappu_mode1_pre_line_callback = ApplyCenteredOverlayProfile;
@@ -906,7 +904,6 @@ static int CheckWideCloudRepeat(PPUMemory* ppu) {
     WriteIo16(MODE1_IO_BG3CNT,28u<<8); WriteIo16(MODE1_IO_BG2CNT,(24u<<8)|0x4001);
     WriteIo16(MODE1_IO_BLDCNT,(1u<<3)|(1u<<6)|(1u<<10));
     WriteIo16(MODE1_IO_BLDALPHA,0x0609);
-    virtuappu_mode1_set_color_correction(false);
     for (int path=0;path<4;++path) {
         virtuappu_mode1_set_old3ds_profile((path&1)!=0);
         virtuappu_mode1_set_native_fast_paths_enabled((path&2)!=0);
@@ -970,7 +967,10 @@ int main(void) {
         const unsigned eva = bldalpha & 0x1Fu;
         const unsigned evb = (bldalpha >> 8u) & 0x1Fu;
         if (eva <= 16u && evb <= 16u) blendPairCoverage[eva][evb] = true;
-        virtuappu_mode1_set_color_correction((scene & 1u) != 0u);
+        {
+            PortColourGrade grade = { (scene & 1u) ? PORT_COLOUR_GBA : PORT_COLOUR_OFF, 0, 0, 0, 0 };
+            Port_ColourGrade_Set(&grade);
+        }
 
         virtuappu_mode1_set_old3ds_profile(true);
         virtuappu_mode1_set_native_fast_paths_enabled(true);

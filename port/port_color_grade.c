@@ -3,7 +3,7 @@
 #include <math.h>
 #include <string.h>
 
-/* The GBA LCD's curve, as in port/ppu/src/mode1.c (mode1_gba_lcd_lut). */
+/* The GBA LCD's fixed 5-bit response curve (the same table the game was tuned for). */
 static const uint8_t kGbaLut[32] = {
     0, 0, 0, 0, 1, 2, 4, 8, 13, 19, 25, 32, 39, 46, 54, 63,
     71, 80, 90, 100, 110, 120, 131, 142, 154, 165, 178, 190, 203, 216, 229, 243,

@@ -235,7 +235,10 @@ extern float Port_Audio_GetMasterVolume(void);
 extern int Port_QuickSave_AutoEnabled(void);
 extern void Port_QuickSave_SetAutoEnabled(int enabled);
 extern void Port_Config_SetAutosaveEnabled(bool enabled);
+#ifndef TMC_3DS
+/* The desktop backend's live switch; the 3DS reads the grade module instead. */
 extern void Port_PPU_SetColorCorrection(bool enabled);
+#endif
 extern bool Port_Config_WidescreenEnabled(void);
 extern void Port_Config_SetWidescreenEnabled(bool enabled);
 extern bool Port_Config_GetSecondScreenSwap(void);
@@ -2646,7 +2649,18 @@ static int GetSettingState(int row, char* out, int outCap) {
             return pct > 0;
         }
         case SS_SET_AUTOSAVE: on = Port_QuickSave_AutoEnabled() != 0; break;
-        case SS_SET_COLOR_CORRECTION: on = Port_Config_GetColorCorrection(); break;
+        case SS_SET_COLOR_CORRECTION:
+#ifdef TMC_3DS
+        {
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            snprintf(out, (size_t)outCap, "%s", Port_ColourModeName(grade.mode));
+            return grade.mode != PORT_COLOUR_OFF;
+        }
+#else
+            on = Port_Config_GetColorCorrection();
+            break;
+#endif
         case SS_SET_SHOW_FPS: on = Port_Config_GetShowFps(); break;
         case SS_SET_HOLD_ADVANCE: on = Port_Config_GetHoldToAdvanceText(); break;
         case SS_SET_RANDOMIZER: on = false; break;
@@ -4226,6 +4240,14 @@ static void DispatchTap(int x, int y, int longPress) {
                     break;
                 }
                 case SS_SET_COLOR_CORRECTION: {
+#ifdef TMC_3DS
+                    /* OFF -> GBA -> CUSTOM -> OFF; the setter persists the
+                     * five keys and pushes the module live. */
+                    PortColourGrade grade;
+                    Port_Config_GetColourGrade(&grade);
+                    grade.mode = (uint8_t)((grade.mode + 1u) % PORT_COLOUR_MODE_COUNT);
+                    Port_Config_SetColourGrade(&grade);
+#else
                     /* Persisted flag (whose config DEFAULT is itself
                      * #ifdef __ANDROID__-guarded — off on device, on
                      * elsewhere; reading the getter tracks either) plus
@@ -4233,6 +4255,7 @@ static void DispatchTap(int x, int y, int longPress) {
                     bool on = !Port_Config_GetColorCorrection();
                     Port_Config_SetColorCorrection(on);
                     Port_PPU_SetColorCorrection(on);
+#endif
                     break;
                 }
                 case SS_SET_SHOW_FPS:

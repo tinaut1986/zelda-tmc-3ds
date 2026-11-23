@@ -295,7 +295,6 @@ static int compare_against_software(PpuGpu3DSFrameView* frame,
     virtuappu_mode1_bg_repeat_mask = frame->bgRepeatMask;
     virtuappu_mode1_bind_gba_memory(&frame->memory);
     virtuappu_mode1_set_output_buffer(gSoftwarePixels, 512);
-    virtuappu_mode1_set_color_correction(false);
     virtuappu_mode1_render_frame(&ppu);
 
     unsigned differing = 0, firstX = 0, firstY = 0;
