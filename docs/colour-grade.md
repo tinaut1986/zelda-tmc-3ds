@@ -39,12 +39,20 @@ Both zones are additive on the three channels, indexed by the post-curve luma
 `l` (0..255, `(299r + 587g + 114b) / 1000`). Each is a -50..+50 parameter, 0
 neutral, edited from the COLOURS page like the other fields:
 
-- shadow weight `wS = ((96 - l) / 96)²` for `l < 96`, else 0: 1 at black,
-  fading smoothly to 0 at 37.5% luma;
+- shadow weight `wS = (128 - l) / 128` for `l < 128`, else 0: 1 at black,
+  falling linearly to 0 at 50% luma. It used to fade quadratically to 0 at
+  37.5% luma, which left the game's real shadows (post-curve luma 20..60)
+  almost untouched; the linear ramp reaches them at full strength;
 - midtone weight `wM = 4 * (l / 255) * (1 - l / 255)`: 1 at 50% luma;
 - `adj(l) = (shadows / 100) * 255 * wS + (midtones / 100) * 255 * wM`,
   rounded to an integer. Every channel gets the same `adj(l)`, then clamps to
   0..255.
+
+With SHADOWS +50 and neutral midtones the table reads:
+
+| luma | 0 | 24 | 48 | 64 | 96 | 128 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `adj(l)` | 127 | 104 | 80 | 64 | 32 | 0 |
 
 The 256-entry table is rebuilt with the LUT when the grade changes and cached by
 epoch. `Port_ColourGrade_ChannelLut` stays curve-only: a zone never changes an
@@ -177,4 +185,5 @@ preservation, LUT monotonicity, the epoch (including a zone-only change) and the
 mode names, VIVID's parity with CUSTOM `{10, 10, 0, -8}` (LUT bytes and
 `ToRgb888`) while its stored fields stay as they were, the shadow/midtone lifts
 by luma band, neutral-zone parity, OFF/VIVID ignoring zones, GBA receiving them,
-and the all-zero/falling `LumaAdjust` table.
+and the all-zero/falling `LumaAdjust` table (linear shadow ramp to 50% luma,
+midtone bell peaking at 50% luma, and the GBA black lift at SHADOWS +50).

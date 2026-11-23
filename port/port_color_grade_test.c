@@ -303,18 +303,24 @@ static void TestOffAndVividIgnoreZones(void) {
 static void TestGbaReceivesZones(void) {
     const PortColourGrade neutral = MakeGrade(PORT_COLOUR_GBA, 0, 0, 0, 0, 0, 0);
     const PortColourGrade lifted = MakeGrade(PORT_COLOUR_GBA, 0, 0, 0, 0, 20, 0);
-    uint8_t before[3], after[3];
+    const PortColourGrade full = MakeGrade(PORT_COLOUR_GBA, 0, 0, 0, 0, 50, 0);
+    uint8_t before[3], after[3], strong[3];
 
     Port_ColourGrade_ToRgb888(&neutral, 0x0000u, before);
     Port_ColourGrade_ToRgb888(&lifted, 0x0000u, after);
     CHECK(before[0] == 0 && before[1] == 0 && before[2] == 0, "GBA leaves black at 0");
     CHECK(after[0] > 0, "GBA receives the shadow lift");
+
+    Port_ColourGrade_ToRgb888(&full, 0x0000u, strong);
+    CHECK(strong[0] >= 120 && strong[0] <= 135 && strong[1] == strong[0] && strong[2] == strong[0],
+          "GBA SHADOWS +50 lifts black to about 128");
     puts("colour_grade_test: GBA receives zones PASS");
 }
 
 static void TestLumaAdjustTable(void) {
     const PortColourGrade neutral = MakeGrade(PORT_COLOUR_CUSTOM, 0, 0, 0, 0, 0, 0);
     const PortColourGrade shadows = MakeGrade(PORT_COLOUR_CUSTOM, 0, 0, 0, 0, 50, 0);
+    const PortColourGrade midtones = MakeGrade(PORT_COLOUR_CUSTOM, 0, 0, 0, 0, 0, 50);
     const PortColourGrade offZoned = MakeGrade(PORT_COLOUR_OFF, 0, 0, 0, 0, 40, 40);
     int16_t adj[256];
     bool allZero = true;
@@ -336,9 +342,18 @@ static void TestLumaAdjustTable(void) {
     }
     CHECK(allZero, "OFF builds an all-zero table even with stored zones");
 
+    /* The shadow weight is linear over the real shadow luma range: 1 at black
+     * down to 0 at 50% luma, so the lift still reaches luma 48..64. */
     Port_ColourGrade_LumaAdjust(&shadows, adj);
-    CHECK(adj[0] > 0 && adj[0] > adj[95] && adj[95] >= 0,
-          "the shadow weight falls from black to 37.5% luma");
+    CHECK(adj[0] > adj[24] && adj[24] > adj[48] && adj[48] > adj[96] && adj[96] > 0,
+          "the shadow weight falls linearly from black to 50% luma");
+    CHECK(adj[128] == 0, "the shadow weight is zero at and above 50% luma");
+
+    /* The midtone bell peaks at 50% luma (127/128), above both tails. */
+    Port_ColourGrade_LumaAdjust(&midtones, adj);
+    CHECK(adj[127] > adj[32] && adj[127] > adj[223],
+          "the midtone weight peaks at 50% luma, above 32 and 223");
+    CHECK(adj[127] > 0 && adj[32] > 0 && adj[223] > 0, "MIDTONES +50 lifts all three bands");
     puts("colour_grade_test: luma adjust table PASS");
 }
 

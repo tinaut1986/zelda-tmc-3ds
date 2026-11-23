@@ -96,8 +96,8 @@ static const uint8_t* ResolveLut(const PortColourGrade* g, uint8_t scratch[32]) 
     return scratch;
 }
 
-/* Additive per-channel lift by post-curve luma l (0..255). Shadows fade smoothly
- * from 1 at black to 0 at 96 (37.5%); midtones peak at 1 at 50% luma. Values are
+/* Additive per-channel lift by post-curve luma l (0..255). Shadows fade linearly
+ * from 1 at black to 0 at 128 (50%); midtones peak at 1 at 50% luma. Values are
  * rounded to the nearest integer, so a neutral zone table is all zero. */
 static void BuildLumaAdjust(const PortColourGrade* g, int16_t adj[256]) {
     const double shadows = (double)g->shadows * 2.55; /* (shadows/100)*255 */
@@ -111,9 +111,8 @@ static void BuildLumaAdjust(const PortColourGrade* g, int16_t adj[256]) {
         const double u = (double)l / 255.0;
         const double wM = 4.0 * u * (1.0 - u);
         double wS = 0.0;
-        if (l < 96) {
-            const double t = (96.0 - (double)l) / 96.0;
-            wS = t * t;
+        if (l < 128) {
+            wS = (128.0 - (double)l) / 128.0;
         }
         const double value = shadows * wS + midtones * wM;
         adj[l] = (int16_t)(value >= 0.0 ? value + 0.5 : value - 0.5);
