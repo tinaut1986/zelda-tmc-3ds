@@ -193,6 +193,12 @@ void Port_SecondScreen_3DS_OnTouchMove(int x, int y) {
     if (Port_SecondScreen_OnTouchMove(x, y)) RequestTouchRefresh();
 }
 
+int Port_SecondScreen_3DS_OnTouchHold(int x, int y, uint32_t nowMs) {
+    if (!Port_SecondScreen_OnTouchHold(x, y, nowMs)) return 0;
+    RequestTouchRefresh();
+    return 1;
+}
+
 void Port_SecondScreen_3DS_OnTouchRelease(void) {
     if (sPendingTap.ticksLeft != 0) {
         sPendingTap.released = 1; /* replayed with the tap */

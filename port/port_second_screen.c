@@ -337,6 +337,13 @@ static struct {
     /* A finger down on the map (3DS): a tap picks a tile only on release, because the same touch may turn
      * into a drag that pans the zoomed-in map. dragDx/dragDy are screen pixels not yet applied. */
     uint8_t mapTouch, mapTouchMoved, mapDragging;
+    /* COLOURS hold-to-repeat: the +/- target armed by the finger's down tap.
+     * OnTouchHold re-fires the same step after the initial delay for as long
+     * as the finger stays on the target (plus a little slop). */
+    uint8_t colourHoldOn;
+    uint8_t colourHoldAction, colourHoldArg;
+    int32_t colourHoldX0, colourHoldY0, colourHoldX1, colourHoldY1;
+    uint32_t colourHoldNextMs; /* 0 = the baseline has not been stamped yet */
     uint8_t scrollTouch;      /* 1: the touch is on a scrolling panel (OPTIONS); 2: and it began on a target */
     int32_t scrollHitX, scrollHitY;
     /* The scroll bar of the panel just painted (0 sbMax = none): the tap thread grabs it, the paint thread
@@ -357,6 +364,11 @@ static struct {
 
 /* sUi.questView */
 enum { SS_QUEST_MAIN = 0, SS_QUEST_KINSTONES, SS_QUEST_TECHNIQUES };
+
+/* COLOURS hold-to-repeat timing: one step at once on the down tap, then this
+ * delay before the first repeat, and this interval after each one. A finger
+ * this far outside the target's rect still counts as on it. */
+enum { SS_COLOUR_HOLD_DELAY_MS = 400, SS_COLOUR_HOLD_REPEAT_MS = 100, SS_COLOUR_HOLD_SLOP = 6 };
 
 #ifdef __ANDROID__
 #include <pthread.h>
@@ -4029,6 +4041,8 @@ int Port_SecondScreen_OnTouchMove(int x, int y) {
             sUi.mapTouchLastY = y;
         }
     }
+    /* A drag (scroll bar, list or map) is not a hold on a colour button. */
+    if (sUi.colourHoldOn && (sUi.scrollTouch || sUi.mapDragging)) sUi.colourHoldOn = 0;
     UI_UNLOCK();
     return changed;
 }
@@ -4048,9 +4062,46 @@ void Port_SecondScreen_OnTouchRelease(void) {
         sUi.scrollTouch = 0;
     }
     sUi.mapDragging = 0;
+    sUi.colourHoldOn = 0;
     UI_UNLOCK();
     if (tap && scroll) DispatchTap(x, y, 0);
     else if (tap) PickMapRegion(x, y);
+}
+#endif
+
+#ifdef TMC_3DS
+/* One step of a COLOURS field, clamped and never wrapped: a field at its
+ * limit stays there. Gamma moves a twentieth, the others one point. A mode
+ * that ignores the params (OFF stays raw, VIVID is a fixed preset) keeps the
+ * step anyway and says so, so the missing effect never reads as a defect. */
+static void ColourStep(uint8_t action, uint8_t arg) {
+    PortColourGrade grade;
+    Port_Config_GetColourGrade(&grade);
+    const int step = action == SS_ACT_COLOUR_PLUS ? 1 : -1;
+    int8_t* field = NULL;
+    int lo = -50, hi = 50;
+    switch (arg) {
+        case SS_SET_COLOUR_BRIGHTNESS: field = &grade.brightness; break;
+        case SS_SET_COLOUR_CONTRAST: field = &grade.contrast; break;
+        case SS_SET_COLOUR_SATURATION: field = &grade.saturation; break;
+        case SS_SET_COLOUR_SHADOWS: field = &grade.shadows; break;
+        case SS_SET_COLOUR_MIDTONES: field = &grade.midtones; break;
+        case SS_SET_COLOUR_GAMMA:
+            field = &grade.gamma;
+            lo = -20;
+            hi = 20;
+            break;
+        default: break;
+    }
+    if (!field) return;
+    int v = *field + step;
+    if (v < lo) v = lo;
+    if (v > hi) v = hi;
+    *field = (int8_t)v;
+    Port_Config_SetColourGrade(&grade);
+    if (grade.mode == PORT_COLOUR_OFF || grade.mode == PORT_COLOUR_VIVID) {
+        Compact_Toast("%s", Port_Text_Tr("USED IN GBA AND CUSTOM"));
+    }
 }
 #endif
 
@@ -4097,34 +4148,20 @@ static void DispatchTap(int x, int y, int longPress) {
             break;
         case SS_ACT_COLOUR_MINUS:
         case SS_ACT_COLOUR_PLUS: {
-            /* One step per tap, clamped and never wrapped: a field at its
-             * limit stays there. Gamma moves a twentieth, the others one
-             * point. */
-            PortColourGrade grade;
-            Port_Config_GetColourGrade(&grade);
-            const int step = hit.action == SS_ACT_COLOUR_PLUS ? 1 : -1;
-            int8_t* field = NULL;
-            int lo = -50, hi = 50;
-            switch (hit.arg) {
-                case SS_SET_COLOUR_BRIGHTNESS: field = &grade.brightness; break;
-                case SS_SET_COLOUR_CONTRAST: field = &grade.contrast; break;
-                case SS_SET_COLOUR_SATURATION: field = &grade.saturation; break;
-                case SS_SET_COLOUR_SHADOWS: field = &grade.shadows; break;
-                case SS_SET_COLOUR_MIDTONES: field = &grade.midtones; break;
-                case SS_SET_COLOUR_GAMMA:
-                    field = &grade.gamma;
-                    lo = -20;
-                    hi = 20;
-                    break;
-                default: break;
-            }
-            if (field) {
-                int v = *field + step;
-                if (v < lo) v = lo;
-                if (v > hi) v = hi;
-                *field = (int8_t)v;
-                Port_Config_SetColourGrade(&grade);
-            }
+            ColourStep(hit.action, hit.arg);
+            /* Arm hold-to-repeat for this target only: every frame the finger
+             * stays on it (Port_SecondScreen_OnTouchHold) re-fires the same
+             * step. A first step already happened on the down tap. */
+            UI_LOCK();
+            sUi.colourHoldOn = 1;
+            sUi.colourHoldAction = hit.action;
+            sUi.colourHoldArg = hit.arg;
+            sUi.colourHoldX0 = hit.x0;
+            sUi.colourHoldY0 = hit.y0;
+            sUi.colourHoldX1 = hit.x1;
+            sUi.colourHoldY1 = hit.y1;
+            sUi.colourHoldNextMs = 0;
+            UI_UNLOCK();
             break;
         }
         case SS_ACT_COLOUR_MODE_OPEN:
@@ -4133,19 +4170,19 @@ static void DispatchTap(int x, int y, int longPress) {
             UI_UNLOCK();
             break;
         case SS_ACT_COLOUR_MODE_CLOSE:
-            /* Dismissed by a tap outside the box: nothing changes. */
+            /* Dismissed by the X in the header or a tap outside the box:
+             * nothing changes. */
             UI_LOCK();
             sUi.colourModePopup = 0;
             UI_UNLOCK();
             break;
         case SS_ACT_COLOUR_MODE_SET: {
+            /* The popup stays open so the player can compare presets: its
+             * selected row follows the grade on the next paint. */
             PortColourGrade grade;
             Port_Config_GetColourGrade(&grade);
             grade.mode = hit.arg;
             Port_Config_SetColourGrade(&grade);
-            UI_LOCK();
-            sUi.colourModePopup = 0;
-            UI_UNLOCK();
             break;
         }
 #if TMC3DS_DEBUG_TOOLS
@@ -4512,6 +4549,39 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
 #endif
     DispatchTap(x, y, longPress);
 }
+
+#ifdef TMC_3DS
+/* The 3DS HID loop calls this every frame the touch is still down, with a
+ * millisecond clock. A COLOURS +/- target armed by its down tap steps again
+ * after the initial delay, then on every repeat interval, while the finger
+ * stays on the target's padded rect. Leaving it, lifting or dragging cancels
+ * (the latter two in OnTouchMove/OnTouchRelease). Only colour steps arm the
+ * state, so no other button repeats. Returns 1 when a step was dispatched. */
+int Port_SecondScreen_OnTouchHold(int x, int y, uint32_t nowMs) {
+    int fire = 0;
+    uint8_t action = 0, arg = 0;
+    UI_LOCK();
+    if (sUi.colourHoldOn) {
+        const int inside = x >= sUi.colourHoldX0 - SS_COLOUR_HOLD_SLOP &&
+                           x < sUi.colourHoldX1 + SS_COLOUR_HOLD_SLOP &&
+                           y >= sUi.colourHoldY0 - SS_COLOUR_HOLD_SLOP &&
+                           y < sUi.colourHoldY1 + SS_COLOUR_HOLD_SLOP;
+        if (!inside) {
+            sUi.colourHoldOn = 0;
+        } else if (sUi.colourHoldNextMs == 0) {
+            sUi.colourHoldNextMs = nowMs + SS_COLOUR_HOLD_DELAY_MS;
+        } else if ((int32_t)(nowMs - sUi.colourHoldNextMs) >= 0) {
+            sUi.colourHoldNextMs = nowMs + SS_COLOUR_HOLD_REPEAT_MS;
+            action = sUi.colourHoldAction;
+            arg = sUi.colourHoldArg;
+            fire = 1;
+        }
+    }
+    UI_UNLOCK();
+    if (fire) ColourStep(action, arg);
+    return fire;
+}
+#endif
 
 /* ------------------------------------------------------------------ */
 /*  Android surface plumbing                                           */

@@ -30,6 +30,9 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
 void Port_SecondScreen_3DS_ServicePendingTap(void);
 void Port_SecondScreen_3DS_OnTouchMove(int x, int y);
 void Port_SecondScreen_3DS_OnTouchRelease(void);
+/* Feed the held finger every frame so the COLOURS +/- buttons repeat. `nowMs`
+ * is a free-running millisecond clock; returns 1 when a step was dispatched. */
+int Port_SecondScreen_3DS_OnTouchHold(int x, int y, uint32_t nowMs);
 /* The bottom screen shows generation (from RequestRefresh) or a newer paint. */
 int Port_SecondScreen_3DS_IsShown(uint32_t generation);
 int Port_SecondScreen_3DS_HudChanged(const SecondScreenSnapshot* previous, const SecondScreenSnapshot* current);

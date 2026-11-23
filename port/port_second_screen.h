@@ -69,6 +69,10 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress);
 #ifdef TMC_3DS
 int Port_SecondScreen_OnTouchMove(int x, int y);
 void Port_SecondScreen_OnTouchRelease(void);
+/* Called every frame the touch is still down, with a millisecond clock: it
+ * re-fires the COLOURS +/- step under the finger (hold-to-repeat). Returns 1
+ * when a step was dispatched. */
+int Port_SecondScreen_OnTouchHold(int x, int y, uint32_t nowMs);
 #endif
 
 #ifdef PORT_SECOND_SCREEN_TEST

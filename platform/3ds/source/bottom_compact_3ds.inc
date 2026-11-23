@@ -676,17 +676,19 @@ static float sColoursScroll;
 static int sColourPopupWasOpen;
 
 /* The MODE popup's four preset rows, with a mini-swatch strip per row. The
- * swatches are cached on the grade epoch and remade whenever the popup opens. */
+ * swatches are cached on the grade epoch and the applied mode, and remade
+ * whenever the popup opens. */
 static void PaintColourModePopup(const SSurf* s, TargetList* tl, int32_t top, int32_t bottom) {
     static const unsigned kModeIds[4] = { PORT_COLOUR_OFF, PORT_COLOUR_GBA, PORT_COLOUR_VIVID,
                                           PORT_COLOUR_CUSTOM };
     static const uint16_t kSwatchColours[4] = { 0x1385, 0x18DC, 0x7FFF, 0x4B3E };
     static uint32_t swatch[4][4];
-    static unsigned swatchEpoch;
+    static unsigned swatchEpoch, swatchMode;
     static int swatchValid;
 
     const unsigned epoch = Port_ColourGrade_Epoch();
-    if (!swatchValid || swatchEpoch != epoch || !sColourPopupWasOpen) {
+    const unsigned mode = Port_ColourGrade_Current()->mode;
+    if (!swatchValid || swatchEpoch != epoch || swatchMode != mode || !sColourPopupWasOpen) {
         const PortColourGrade current = *Port_ColourGrade_Current();
         for (int m = 0; m < 4; m++) {
             PortColourGrade g = current;
@@ -699,6 +701,7 @@ static void PaintColourModePopup(const SSurf* s, TargetList* tl, int32_t top, in
         }
         swatchValid = 1;
         swatchEpoch = epoch;
+        swatchMode = mode;
     }
     sColourPopupWasOpen = 1;
 
@@ -714,10 +717,12 @@ static void PaintColourModePopup(const SSurf* s, TargetList* tl, int32_t top, in
     const int32_t px1 = px + pw, py1 = py + ph;
     CBox(s, px, py, pw, ph, CC_CELL, CC_CELL_EDGE);
 
-    /* Header band, then four preset rows and the footer hint. */
+    /* Header band, then four preset rows and the footer hint. The X at the
+     * band's right edge closes the popup without changing the mode. */
     const int32_t headerH = 20;
     FillRect(s, px + 2, py + 2, px1 - 2, py + headerH, CC_BG);
     CTextCentered(s, (px + px1) / 2, py + (headerH - kUiGlyphH) / 2 + 1, CC_ACCENT, "MODE");
+    CButton(s, tl, px1 - 2 - 20, py + 2, 20, 16, "X", CC_ACCENT, SS_ACT_COLOUR_MODE_CLOSE, 0);
 
     const int32_t hintH = 16;
     const int32_t rowH = (py1 - py - headerH - hintH) / 4;
@@ -744,7 +749,7 @@ static void PaintColourModePopup(const SSurf* s, TargetList* tl, int32_t top, in
     }
 
     CTextCentered(s, (px + px1) / 2, py1 - hintH + (hintH - kUiGlyphH) / 2, CC_FAINT,
-                  "TAP OUTSIDE TO CLOSE");
+                  "CLOSE WITH X OR A TAP OUTSIDE");
 
     /* Added last: DispatchTap takes the first matching target, so a row wins
      * over the backdrop it sits on. */
@@ -765,6 +770,11 @@ static void Compact_PaintColours(const SSurf* s, TargetList* tl, int popupOpen) 
     const int firstTarget = tl->n;
     int32_t y = 2 - (int32_t)sColoursScroll;
     const SSurf* t = &body;
+    /* OFF keeps the raw colours and VIVID is a fixed preset, so the six
+     * params have no effect in either: their values and buttons read faint
+     * rather than pretending the step did something. */
+    const PortColourGrade* grade = Port_ColourGrade_Current();
+    const int paramsIgnored = grade->mode == PORT_COLOUR_OFF || grade->mode == PORT_COLOUR_VIVID;
 
     COptTitle(t, y, "COLOURS");
     y += OPT_TITLE_H;
@@ -798,11 +808,13 @@ static void Compact_PaintColours(const SSurf* s, TargetList* tl, int popupOpen) 
         CColumn(t->w, 4, 0, 1, &x, &w);
         CCell(t, tl, x, y, w, CC_CELL_H, kFields[i].name, "", CC_TEXT, 0, 0);
         CColumn(t->w, 4, 1, 1, &x, &w);
-        CCell(t, tl, x, y, w, CC_CELL_H, "", value, color, 0, 0);
+        CCell(t, tl, x, y, w, CC_CELL_H, "", value, paramsIgnored ? CC_FAINT : color, 0, 0);
         CColumn(t->w, 4, 2, 1, &x, &w);
-        CButton(t, tl, x, y, w, CC_CELL_H, "-", CC_TEXT, SS_ACT_COLOUR_MINUS, (uint8_t)kFields[i].setting);
+        CButton(t, tl, x, y, w, CC_CELL_H, "-", paramsIgnored ? CC_FAINT : CC_TEXT, SS_ACT_COLOUR_MINUS,
+                (uint8_t)kFields[i].setting);
         CColumn(t->w, 4, 3, 1, &x, &w);
-        CButton(t, tl, x, y, w, CC_CELL_H, "+", CC_TEXT, SS_ACT_COLOUR_PLUS, (uint8_t)kFields[i].setting);
+        CButton(t, tl, x, y, w, CC_CELL_H, "+", paramsIgnored ? CC_FAINT : CC_TEXT, SS_ACT_COLOUR_PLUS,
+                (uint8_t)kFields[i].setting);
         y += COL_ROW_H;
     }
 
@@ -816,7 +828,6 @@ static void Compact_PaintColours(const SSurf* s, TargetList* tl, int popupOpen) 
     if (bw < 1) bw = 1;
     CText(t, CC_MARGIN + 1, y, CC_DIM, "PREVIEW");
     const int32_t swY = y + 12;
-    const PortColourGrade* grade = Port_ColourGrade_Current();
     for (int i = 0; i < 8; i++) {
         uint8_t rgb[3];
         Port_ColourGrade_ToRgb888(grade, kSwatches[i], rgb);

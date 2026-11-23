@@ -893,6 +893,11 @@ static void PollInput(void) {
         touchPosition touch;
         hidTouchRead(&touch);
         Port_SecondScreen_3DS_OnTouchMove(touch.px, touch.py);
+        /* The down/held/up truth lives here, so the hold-to-repeat is polled
+         * here too: the COLOURS +/- step under the finger fires again every
+         * repeat interval while the finger stays on it. */
+        Port_SecondScreen_3DS_OnTouchHold(touch.px, touch.py,
+                                          (uint32_t)(svcGetSystemTick() / (SYSCLOCK_ARM11 / 1000)));
     }
     if (hidKeysUp() & KEY_TOUCH) Port_SecondScreen_3DS_OnTouchRelease();
 }

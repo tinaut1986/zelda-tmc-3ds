@@ -71,15 +71,28 @@ when the rows and the PREVIEW strip reach past the content area.
 
 Tapping the MODE cell opens a floating popup instead of cycling in place: four
 rows OFF / GBA / VIVID / CUSTOM, the current one outlined, each with four
-mini-swatches of the preset's look; a tap on a row applies it and closes the
-popup, a tap outside the box (or on the dimmed page) closes it without changing
-anything. The swatches are cached and remade when the grade or the popup's open
-state changes. The page also paints a PREVIEW strip of eight fixed in-game
-RGB555 colours through the installed grade, so a step shows its effect at once.
+mini-swatches of the preset's look; a tap on a row applies it and leaves the
+popup open, so presets can be compared, and the X in the header or a tap
+outside the box closes it without changing anything. The swatches are cached
+and remade when the grade, the applied mode or the popup's open state changes.
+The page also paints a PREVIEW strip of eight fixed in-game RGB555 colours
+through the installed grade, so a step shows its effect at once.
+
+Each `-` / `+` button steps once on the tap and repeats while the finger is
+held on it (about 400 ms before the first repeat, then every 100 ms); sliding
+off the button, lifting or scrolling stops it. The repeat is polled by the
+3DS HID loop, which owns the press/release state, so the Android build (whose
+tap bridge reports only completed taps) does not repeat yet.
+
+OFF keeps the raw colours and VIVID is a fixed preset, so the six params have
+no effect in either mode. Their values and buttons then read faint, and a
+step still keeps the value but raises the "USED IN GBA AND CUSTOM" toast, so a
+missing effect never reads as a broken button.
 
 The words of the page (COLOURS, MODE, BRIGHTNESS, CONTRAST, SATURATION, GAMMA,
-SHADOWS, MIDTONES, GBA, CUSTOM, VIVID, PREVIEW, BACK, TAP OUTSIDE TO CLOSE) go
-through the existing text table (EN/FR/DE/ES/IT).
+SHADOWS, MIDTONES, GBA, CUSTOM, VIVID, PREVIEW, BACK, CLOSE WITH X OR A TAP
+OUTSIDE, USED IN GBA AND CUSTOM) go through the existing text table
+(EN/FR/DE/ES/IT).
 
 ## Config keys
 

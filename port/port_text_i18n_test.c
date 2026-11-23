@@ -66,7 +66,7 @@ int main(void) {
 
     /* Quarter-width cells of the compact OPTIONS page hold 12 characters of
      * the 5x7 font (6 px each in ~76 px); a longer word would run into the
-     * next cell. Footer-only hints ("TAP OUTSIDE TO CLOSE") are not cells. */
+     * next cell. Footer-only hints ("CLOSE WITH X OR A TAP OUTSIDE") are not cells. */
     static const char* const kCellWords[] = {
         "VIEW", "STYLE", "FRAMES", "TOP HUD", "TURBO", "VOLUME", "AUTOSAVE", "HOLD TEXT", "MAP FOLLOW",
         "CREST PINS", "FLOOR BACK", "COLOURS", "THEME", "SHOW FPS", "SHOW", "HIDE", "ON", "OFF", "RESTART",
