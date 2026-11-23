@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "updater.h"
+#include "port_color_grade.h"
 #include "port_ppu_gpu_3ds.h"
 
 /* Built apart from the game headers (their declarations of the ROM symbols
@@ -48,6 +49,9 @@ bool Port_Config_GetWideAi(void) { return sWideAi; }
 bool Port_Config_WideAiQuestionDue(void) { return !sWideAiAsked && !getenv("NO_WIDE_ASK"); }
 void Port_Config_AnswerWideAi(bool yes) { sWideAi = yes; sWideAiAsked = true; }
 static bool sColor = true, sHideHud = false, sHold = true, sCrests = true, sFloor = true, sFollow = true;
+/* The preview has no colour-grade module: hold the grade here, keeping the
+ * legacy bool in sync the way the real backends do. */
+static PortColourGrade sColourGrade = { PORT_COLOUR_GBA, 0, 0, 0, 0, 0, 0 };
 static bool sSwap = false, sFps = false, sWide = true, sAuto = true;
 static unsigned sTurbo = 5;
 static float sVolume = 1.0f;
@@ -80,6 +84,12 @@ bool Port_Config_GbaFrameAvailable(void) { return sAspect == 1; }
 int Port_Config_GbaFrameActive(void) { return sAspect == 1 ? sGbaFrame : 0; }
 void Port_Config_CycleGbaFrame(void) { sGbaFrame = (sGbaFrame + 1) % 3; }
 bool Port_Config_GetColorCorrection(void) { return sColor; }
+void Port_Config_GetColourGrade(PortColourGrade* out) { if (out) *out = sColourGrade; }
+void Port_Config_SetColourGrade(const PortColourGrade* g) {
+    if (!g) return;
+    sColourGrade = *g;
+    sColor = sColourGrade.mode != PORT_COLOUR_OFF;
+}
 int sTopHudMode = 0;
 int Port_Config_GetTopHudMode(void) { return sTopHudMode; }
 void Port_Config_CycleTopHudMode(void) { sTopHudMode = (sTopHudMode + 1) % 3; }
@@ -93,7 +103,10 @@ bool Port_Config_GetSecondScreenSwap(void) { return sSwap; }
 bool Port_Config_GetShowFps(void) { return sFps; }
 unsigned Port_Config_GetTurboMultiplier(void) { return sTurbo; }
 void Port_Config_SetAutosaveEnabled(bool on) { sAuto = on; }
-void Port_Config_SetColorCorrection(bool on) { sColor = on; }
+void Port_Config_SetColorCorrection(bool on) {
+    sColor = on;
+    sColourGrade.mode = on ? (uint8_t)PORT_COLOUR_GBA : (uint8_t)PORT_COLOUR_OFF;
+}
 void Port_Config_SetHideTopHud(bool on) { sHideHud = on; }
 void Port_Config_SetHoldToAdvanceText(bool on) { sHold = on; }
 void Port_Config_SetMasterVolume(float v) { sVolume = v; }

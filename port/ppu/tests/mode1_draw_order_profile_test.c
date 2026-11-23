@@ -190,7 +190,6 @@ int main(void) {
     ppu.frame_width = MODE1_GBA_WIDTH;
     ppu.frame_pitch = MODE1_GBA_WIDTH;
     virtuappu_mode1_bind_gba_memory(&memory);
-    virtuappu_mode1_set_color_correction(false);
 
     if (!CheckCanopyProfile() || !CheckOamIndexPrecedence(&ppu)) {
         return 1;

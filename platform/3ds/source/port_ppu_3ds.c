@@ -88,7 +88,6 @@ static uint64_t sBottomPeriodicChecks;
 static uint64_t sBottomPeriodicSkips;
 static bool sGpuPresenterReady;
 static bool sInitialized;
-static bool sColorCorrection;
 static uint32_t sFrameNumber;
 static uint64_t sPerfLastFrameTick;
 static uint64_t sPerfRenderTicks;
@@ -1081,9 +1080,12 @@ void Port_PPU_Init(SDL_Window* window) {
     VirtuaPPUMode1GbaMemory memory = { gIoMem, gVram, gBgPltt, gObjPltt, gOamMem };
     virtuappu_mode1_bind_gba_memory(&memory);
     virtuappu_mode1_set_old3ds_profile(old3dsProfile);
-    sColorCorrection = Port_Config_GetColorCorrection();
-    virtuappu_mode1_set_color_correction(sColorCorrection);
-    PpuGpu3DS_SetColorCorrection(sColorCorrection);
+    {
+        /* The grade feeds both renderers (software and GPU) through the module. */
+        PortColourGrade grade;
+        Port_Config_GetColourGrade(&grade);
+        Port_ColourGrade_Set(&grade);
+    }
     Port_Widescreen_SetWindowPixels(400, 240);
     virtuappu_registers.frame_width = GBA_NATIVE_W;
     virtuappu_registers.frame_height = GBA_H;
@@ -1886,14 +1888,6 @@ bool Port_PPU_VSyncEnabled(void) {
 }
 unsigned Port_PPU_DisplayRefreshRate(void) {
     return 60;
-}
-void Port_PPU_SetColorCorrection(bool enabled) {
-    sColorCorrection = enabled;
-    virtuappu_mode1_set_color_correction(enabled);
-    PpuGpu3DS_SetColorCorrection(enabled);
-}
-bool Port_PPU_ColorCorrectionEnabled(void) {
-    return sColorCorrection;
 }
 void Port_PPU_SetPersistence(bool enabled, float rho) {
     (void)enabled;

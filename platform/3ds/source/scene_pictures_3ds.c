@@ -3,6 +3,7 @@
 #include "app_paths_3ds.h"
 #include "cpu/mode1.h"
 #include "fade_gpu_3ds.h"
+#include "port_color_grade.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,7 +11,6 @@
 #include <unistd.h>
 #include <zlib.h>
 
-extern bool Port_Config_GetColorCorrection(void);
 extern bool Port_Config_GetWideAi(void); /* these pictures are generated art: only WIDE + AI shows them */
 
 #define TITLE_SD TMC3DS_APP_DIR "/title-forest.bin"
@@ -75,7 +75,7 @@ static uint16_t* sFaded555;  /* scratch for the software renderer's faded copy *
 static uint32_t* sFadedAbgr;
 static uint16_t* sTitle555;
 static uint32_t* sTitleAbgr;
-static bool sAbgrCorrected;
+static unsigned sAbgrColourEpoch;
 
 bool ScenePictures_TitleAvailable(void) {
     if (!Port_Config_GetWideAi()) return false;
@@ -104,16 +104,16 @@ const uint16_t* ScenePictures_Title555(void) {
 const uint32_t* ScenePictures_TitleAbgr(void) {
     const uint16_t* gba = ScenePictures_Title555();
     if (gba == NULL) return NULL;
-    const bool corrected = Port_Config_GetColorCorrection();
+    const unsigned colourEpoch = Port_ColourGrade_Epoch();
     if (sTitleAbgr == NULL) {
         sTitleAbgr = malloc(SCENE_TITLE_W * SCENE_TITLE_H * sizeof(uint32_t));
         if (sTitleAbgr == NULL) return NULL;
-        sAbgrCorrected = !corrected;
+        sAbgrColourEpoch = colourEpoch + 1u;
     }
-    if (sAbgrCorrected != corrected) {
+    if (sAbgrColourEpoch != colourEpoch) {
         for (unsigned i = 0; i < SCENE_TITLE_W * SCENE_TITLE_H; ++i)
             sTitleAbgr[i] = gba[i] != 0 ? virtuappu_mode1_rgb555_to_abgr8888(gba[i]) : 0u;
-        sAbgrCorrected = corrected;
+        sAbgrColourEpoch = colourEpoch;
     }
     return sTitleAbgr;
 }

@@ -1,3 +1,4 @@
+#include "port_color_grade.h"
 #include "port_runtime_config.h"
 #include "port_touch_controls.h"
 
@@ -186,6 +187,10 @@ bool sColorCorrect = true; /* GBA-LCD colour correction (default on) */
 #endif
 bool sLcdPersist = false;      /* LCD temporal persistence (default off) */
 float sLcdPersistRho = 0.35f;  /* persistence: fraction of prev frame kept */
+/* The persisted colour grade (config.json colour_* keys). The legacy
+ * color_correction bool above mirrors "mode != OFF" so older callers stay
+ * coherent; SetColourGrade writes both. */
+PortColourGrade sColourGrade = { PORT_COLOUR_OFF, 0, 0, 0, 0, 0, 0 };
 bool sRibbonCfg = true;        /* F8 menu style: ribbon (true) vs classic */
 bool sMenuHintSeen = false;    /* set once the F8/settings menu is first opened */
 float sMasterVolume = 1.0f;    /* game master volume [0,1]; 1.0 = unchanged */
@@ -346,6 +351,15 @@ nlohmann::json DefaultsJson(void) {
     /* Bespoke-default keys (custom parse/typing in apply()). */
     j["frame_time_ns"] = kDefaultFrameTimeNs; /* 60 FPS cap; uncapped is unstable for frame-tied logic */
     j["autosave_interval_ms"] = 60000;
+    /* The colour grade follows the platform's legacy colour_correction
+     * default until the player changes it; params start neutral. */
+    j["colour_mode"] = j["color_correction"].get<bool>() ? (int)PORT_COLOUR_GBA : (int)PORT_COLOUR_OFF;
+    j["colour_brightness"] = 0;
+    j["colour_contrast"] = 0;
+    j["colour_saturation"] = 0;
+    j["colour_gamma"] = 0;
+    j["colour_shadows"] = 0;
+    j["colour_midtones"] = 0;
     j["touch_scheme"] = "joystick";
     j["aspect_mode"] = "native";
 #ifdef __ANDROID__
@@ -644,6 +658,22 @@ extern "C" void Port_Config_Load(const char* path) {
             int v = j.value(e.key, e.def);
             *e.var = (v >= e.lo && v <= e.hi) ? (u8)v : (u8)e.def;
         }
+        /* Colour grade: an absent colour_mode migrates the legacy
+         * color_correction bool (true -> GBA, false -> OFF); when the key is
+         * present it wins, and an unknown mode reads as OFF. The four params
+         * clamp to the module's ranges. */
+        {
+            const int legacyMode = sColorCorrect ? (int)PORT_COLOUR_GBA : (int)PORT_COLOUR_OFF;
+            const int mode = j.value("colour_mode", legacyMode);
+            sColourGrade.mode = mode >= 0 && mode < PORT_COLOUR_MODE_COUNT ? (uint8_t)mode : (uint8_t)PORT_COLOUR_OFF;
+            sColourGrade.brightness = (int8_t)std::max(-50, std::min(50, j.value("colour_brightness", 0)));
+            sColourGrade.contrast = (int8_t)std::max(-50, std::min(50, j.value("colour_contrast", 0)));
+            sColourGrade.saturation = (int8_t)std::max(-50, std::min(50, j.value("colour_saturation", 0)));
+            sColourGrade.gamma = (int8_t)std::max(-20, std::min(20, j.value("colour_gamma", 0)));
+            sColourGrade.shadows = (int8_t)std::max(-50, std::min(50, j.value("colour_shadows", 0)));
+            sColourGrade.midtones = (int8_t)std::max(-50, std::min(50, j.value("colour_midtones", 0)));
+            sColorCorrect = sColourGrade.mode != PORT_COLOUR_OFF;
+        }
         /* frame_time_ns: a MISSING key now defaults to the 60 FPS cap (same as
          * DefaultsJson) so VSync is enforced by default — an uncapped default
          * makes Port_Config_TargetFps()==0, which port_bios.c treats as "must
@@ -739,6 +769,10 @@ extern "C" void Port_Config_Load(const char* path) {
         sConfigJson = def;
         apply(def); /* defaults are well-typed and cannot throw */
     }
+
+    /* apply() runs the legacy migration; push the resulting grade so the module
+     * matches the file before the first frame. */
+    Port_ColourGrade_Set(&sColourGrade);
 }
 
 extern "C" u8 Port_Config_WindowScale(void) {
@@ -1845,8 +1879,33 @@ extern "C" bool Port_Config_GetColorCorrection(void) {
     return sColorCorrect;
 }
 extern "C" void Port_Config_SetColorCorrection(bool on) {
-    sColorCorrect = on;
-    sConfigJson["color_correction"] = on;
+    /* The legacy bool is a view of the grade mode: ON means GBA, OFF clears
+     * it. Keep the custom params the player set. */
+    PortColourGrade g = sColourGrade;
+    g.mode = on ? (uint8_t)PORT_COLOUR_GBA : (uint8_t)PORT_COLOUR_OFF;
+    Port_Config_SetColourGrade(&g);
+}
+extern "C" void Port_Config_GetColourGrade(PortColourGrade* out) {
+    if (out) {
+        *out = sColourGrade;
+    }
+}
+extern "C" void Port_Config_SetColourGrade(const PortColourGrade* g) {
+    if (!g) {
+        return;
+    }
+    /* The module clamps; read back what it installed and persist that. */
+    Port_ColourGrade_Set(g);
+    sColourGrade = *Port_ColourGrade_Current();
+    sColorCorrect = sColourGrade.mode != PORT_COLOUR_OFF;
+    sConfigJson["colour_mode"] = (int)sColourGrade.mode;
+    sConfigJson["colour_brightness"] = (int)sColourGrade.brightness;
+    sConfigJson["colour_contrast"] = (int)sColourGrade.contrast;
+    sConfigJson["colour_saturation"] = (int)sColourGrade.saturation;
+    sConfigJson["colour_gamma"] = (int)sColourGrade.gamma;
+    sConfigJson["colour_shadows"] = (int)sColourGrade.shadows;
+    sConfigJson["colour_midtones"] = (int)sColourGrade.midtones;
+    sConfigJson["color_correction"] = sColorCorrect;
     SaveConfig();
 }
 extern "C" bool Port_Config_GetLcdPersistence(void) {

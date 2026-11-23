@@ -1,6 +1,7 @@
 #pragma once
 
 #include "port_types.h"
+#include "port_color_grade.h"
 #if !defined(TMC_N64) && !defined(TMC_3DS)
 #include <SDL3/SDL.h>
 #endif
@@ -358,6 +359,11 @@ void Port_Config_SetGpuRasterGles(bool on);
 /* GBA-LCD display transforms (F8 Display menu). */
 bool Port_Config_GetColorCorrection(void);
 void Port_Config_SetColorCorrection(bool on);
+/* The installed colour grade: PortColourMode in .mode, brightness/contrast/
+ * saturation/shadows/midtones in -50..50 and gamma in -20..20 (one twentieth per
+ * step). SetColourGrade persists all seven keys and pushes the module live. */
+void Port_Config_GetColourGrade(PortColourGrade* out);
+void Port_Config_SetColourGrade(const PortColourGrade* g);
 bool Port_Config_GetLcdPersistence(void);
 void Port_Config_SetLcdPersistence(bool on);
 float Port_Config_GetLcdPersistenceRho(void);

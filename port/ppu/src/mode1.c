@@ -21,6 +21,7 @@
 #endif
 
 #include "virtuappu.h"
+#include "port_color_grade.h"
 
 virtuappu_mode1_pre_line_fn virtuappu_mode1_pre_line_callback = NULL;
 
@@ -569,38 +570,81 @@ static bool mode1_bg_token_pairs_initialized;
 static uint16_t mode1_bg_palette_source_cache[MODE1_PALETTE_COLORS];
 static uint16_t mode1_obj_palette_source_cache[MODE1_PALETTE_COLORS];
 static bool mode1_palette_source_initialized;
-static bool mode1_palette_source_color_correction;
-static bool mode1_color_correction;
-static const uint8_t mode1_gba_lcd_lut[32] = {
-    0, 0, 0, 0, 1, 2, 4, 8, 13, 19, 25, 32, 39, 46, 54, 63,
-    71, 80, 90, 100, 110, 120, 131, 142, 154, 165, 178, 190, 203, 216, 229, 243,
-};
+/* The grade epoch the palette caches and the colour LUT copy below were built
+ * under; a change means the palettes must be converted again. */
+static unsigned mode1_palette_source_epoch;
+static unsigned mode1_color_lut_epoch = ~0u;
+static uint8_t mode1_color_lut[32];
+static int16_t mode1_color_zone_adj[256];
+static int mode1_color_sat_factor = 256;
+static bool mode1_color_has_saturation;
+static bool mode1_color_has_zone;
 #ifdef TMC_3DS
 static uint8_t mode1_obj_line_indices[MODE1_GBA_HEIGHT][MODE1_GBA_OAM_COUNT];
 static uint8_t mode1_obj_line_counts[MODE1_GBA_HEIGHT];
 #endif
 
 uint32_t virtuappu_mode1_rgb555_to_abgr8888(uint16_t color) {
+    const unsigned epoch = Port_ColourGrade_Epoch();
     uint8_t r5 = (uint8_t)(color & 0x1Fu);
     uint8_t g5 = (uint8_t)((color >> 5u) & 0x1Fu);
     uint8_t b5 = (uint8_t)((color >> 10u) & 0x1Fu);
-    uint8_t r = mode1_color_correction ? mode1_gba_lcd_lut[r5] : (uint8_t)(r5 << 3u);
-    uint8_t g = mode1_color_correction ? mode1_gba_lcd_lut[g5] : (uint8_t)(g5 << 3u);
-    uint8_t b = mode1_color_correction ? mode1_gba_lcd_lut[b5] : (uint8_t)(b5 << 3u);
+    unsigned r, g, b;
+
+    if (epoch != mode1_color_lut_epoch) {
+        const PortColourGrade* grade = Port_ColourGrade_Current();
+        Port_ColourGrade_ChannelLut(grade, mode1_color_lut);
+        Port_ColourGrade_LumaAdjust(grade, mode1_color_zone_adj);
+        /* Same mix as PpuGpu3DS_PackRgba5551 and ApplySaturation: the module's
+         * 8.8 luma-preserving saturation, skipped when it is neutral. OFF keeps
+         * the raw curve with no mix, so the old expansion stays bit-exact. The
+         * zone lift is skipped when every table entry is zero, which also covers
+         * OFF and VIVID (its preset zones are neutral). */
+        mode1_color_has_saturation = grade->mode != PORT_COLOUR_OFF && grade->saturation != 0;
+        mode1_color_sat_factor = ((50 + grade->saturation) * 256) / 50;
+        mode1_color_has_zone = false;
+        for (int i = 0; i < 256; ++i) {
+            if (mode1_color_zone_adj[i] != 0) {
+                mode1_color_has_zone = true;
+                break;
+            }
+        }
+        mode1_color_lut_epoch = epoch;
+    }
+    r = mode1_color_lut[r5];
+    g = mode1_color_lut[g5];
+    b = mode1_color_lut[b5];
+    if (mode1_color_has_saturation || mode1_color_has_zone) {
+        const unsigned luma = (299u * r + 587u * g + 114u * b) / 1000u;
+        if (mode1_color_has_saturation) {
+            const int mr = (int)luma + ((((int)r - (int)luma) * mode1_color_sat_factor) >> 8);
+            const int mg = (int)luma + ((((int)g - (int)luma) * mode1_color_sat_factor) >> 8);
+            const int mb = (int)luma + ((((int)b - (int)luma) * mode1_color_sat_factor) >> 8);
+            r = (unsigned)(mr < 0 ? 0 : (mr > 255 ? 255 : mr));
+            g = (unsigned)(mg < 0 ? 0 : (mg > 255 ? 255 : mg));
+            b = (unsigned)(mb < 0 ? 0 : (mb > 255 ? 255 : mb));
+        }
+        if (mode1_color_has_zone) {
+            const int adj = mode1_color_zone_adj[luma];
+            const int zr = (int)r + adj;
+            const int zg = (int)g + adj;
+            const int zb = (int)b + adj;
+            r = (unsigned)(zr < 0 ? 0 : (zr > 255 ? 255 : zr));
+            g = (unsigned)(zg < 0 ? 0 : (zg > 255 ? 255 : zg));
+            b = (unsigned)(zb < 0 ? 0 : (zb > 255 ? 255 : zb));
+        }
+    }
 
     return 0xFF000000u | ((uint32_t)b << 16u) | ((uint32_t)g << 8u) | (uint32_t)r;
-}
-
-void virtuappu_mode1_set_color_correction(bool enabled) {
-    mode1_color_correction = enabled;
 }
 
 /* Convert the current BG + OBJ palette RAM into the ABGR8888 LUTs. Call once
  * per frame after the palette is final (post pre-line callback) and before the
  * parallel scanline render. */
 static void virtuappu_mode1_publish_palette_luts(void) {
+    const unsigned correctionEpoch = Port_ColourGrade_Epoch();
     const bool correction_changed =
-        !mode1_palette_source_initialized || mode1_palette_source_color_correction != mode1_color_correction;
+        !mode1_palette_source_initialized || mode1_palette_source_epoch != correctionEpoch;
     const bool bg_changed = correction_changed || memcmp(mode1_bg_palette_source_cache, mode1_memory.bg_palette,
                                    sizeof(mode1_bg_palette_source_cache)) != 0;
     const bool obj_changed = correction_changed || memcmp(mode1_obj_palette_source_cache, mode1_memory.obj_palette,
@@ -619,7 +663,7 @@ static void virtuappu_mode1_publish_palette_luts(void) {
         memcpy(mode1_obj_palette_source_cache, mode1_memory.obj_palette, sizeof(mode1_obj_palette_source_cache));
     }
     mode1_palette_source_initialized = true;
-    mode1_palette_source_color_correction = mode1_color_correction;
+    mode1_palette_source_epoch = correctionEpoch;
 
     if (!mode1_old3ds_profile) {
         for (unsigned bank = 0; (bg_changed || !mode1_bg_pair_palette_initialized) && bank < 16u; ++bank) {

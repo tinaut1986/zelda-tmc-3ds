@@ -176,6 +176,11 @@ enum {
     SS_ACT_AUTOUPD_NO, SS_ACT_AUTOUPD_YES, SS_ACT_AUTOUPD_NEWS, /* the prompt after the boot check found a newer build */
     SS_ACT_THEME, /* OPTIONS -> THEME (bottom_compact_3ds.inc) */
     SS_ACT_TABS,  /* OPTIONS -> TABS: tab bar on top or below */
+    SS_ACT_COLOUR_MINUS, /* COLOURS page step down, arg = SS_SET_COLOUR_* */
+    SS_ACT_COLOUR_PLUS,  /* COLOURS page step up, arg = SS_SET_COLOUR_* */
+    SS_ACT_COLOUR_MODE_OPEN,  /* COLOURS page: open the MODE preset popup */
+    SS_ACT_COLOUR_MODE_SET,   /* MODE popup row picked, arg = PORT_COLOUR_* */
+    SS_ACT_COLOUR_MODE_CLOSE, /* MODE popup dismissed without a change */
     SS_ACT_DEBUG, /* DEBUG tab command, arg = DBG_CMD_* (bottom_compact_3ds.inc) */
     SS_ACT_STATES, /* STATES tab command, arg = STATES_CMD_* (bottom_compact_3ds.inc) */
     SS_ACT_DEVFTP_CANCEL, /* the install-only FTP bar's CANCEL (bottom_compact_3ds.inc) */
@@ -192,6 +197,7 @@ enum {
     SS_SETTINGS_RANDOMIZER,
 #ifdef TMC_3DS
     SS_SETTINGS_UPDATE,
+    SS_SETTINGS_COLOURS,
 #endif
 };
 
@@ -222,6 +228,13 @@ enum {
     SS_SET_GBA_FRAME,     /* gba_frame: the console's body around a 240x160 / 360x240 picture */
     SS_SET_NEIGHBOURS,    /* neighbour_rooms: OFF / ON */
     SS_SET_STEREO_WORLD,  /* stereo_world_on: OFF / ON (the world's depth while playing, 3D slider up) */
+    SS_SET_COLOUR_MODE,       /* colour_mode: OFF / GBA / CUSTOM / VIVID */
+    SS_SET_COLOUR_BRIGHTNESS, /* colour_brightness: -50..+50, one point per step */
+    SS_SET_COLOUR_CONTRAST,   /* colour_contrast: -50..+50, one point per step */
+    SS_SET_COLOUR_SATURATION, /* colour_saturation: -50..+50, one point per step */
+    SS_SET_COLOUR_GAMMA,      /* colour_gamma: -20..+20, one twentieth per step */
+    SS_SET_COLOUR_SHADOWS,    /* colour_shadows: -50..+50, additive dark-end lift */
+    SS_SET_COLOUR_MIDTONES,   /* colour_midtones: -50..+50, additive mid-lift */
 #endif
     SS_SET_COUNT
 };
@@ -235,7 +248,10 @@ extern float Port_Audio_GetMasterVolume(void);
 extern int Port_QuickSave_AutoEnabled(void);
 extern void Port_QuickSave_SetAutoEnabled(int enabled);
 extern void Port_Config_SetAutosaveEnabled(bool enabled);
+#ifndef TMC_3DS
+/* The desktop backend's live switch; the 3DS reads the grade module instead. */
 extern void Port_PPU_SetColorCorrection(bool enabled);
+#endif
 extern bool Port_Config_WidescreenEnabled(void);
 extern void Port_Config_SetWidescreenEnabled(bool enabled);
 extern bool Port_Config_GetSecondScreenSwap(void);
@@ -291,6 +307,7 @@ static int sTapTargetCount = 0;
 static struct {
     uint8_t tab;
     uint8_t settingsPage;
+    uint8_t colourModePopup; /* COLOURS page: the MODE preset popup is open */
     uint8_t wholeMap;   /* map tab: whole-Hyrule view instead of follow cam */
     uint8_t armedRing;  /* 0 none, 1 = next item tap assigns A, 2 = B */
     int8_t floorPreview; /* plaque-selected display floor, SS_NO_FLOOR = live */
@@ -320,6 +337,13 @@ static struct {
     /* A finger down on the map (3DS): a tap picks a tile only on release, because the same touch may turn
      * into a drag that pans the zoomed-in map. dragDx/dragDy are screen pixels not yet applied. */
     uint8_t mapTouch, mapTouchMoved, mapDragging;
+    /* COLOURS hold-to-repeat: the +/- target armed by the finger's down tap.
+     * OnTouchHold re-fires the same step after the initial delay for as long
+     * as the finger stays on the target (plus a little slop). */
+    uint8_t colourHoldOn;
+    uint8_t colourHoldAction, colourHoldArg;
+    int32_t colourHoldX0, colourHoldY0, colourHoldX1, colourHoldY1;
+    uint32_t colourHoldNextMs; /* 0 = the baseline has not been stamped yet */
     uint8_t scrollTouch;      /* 1: the touch is on a scrolling panel (OPTIONS); 2: and it began on a target */
     int32_t scrollHitX, scrollHitY;
     /* The scroll bar of the panel just painted (0 sbMax = none): the tap thread grabs it, the paint thread
@@ -340,6 +364,11 @@ static struct {
 
 /* sUi.questView */
 enum { SS_QUEST_MAIN = 0, SS_QUEST_KINSTONES, SS_QUEST_TECHNIQUES };
+
+/* COLOURS hold-to-repeat timing: one step at once on the down tap, then this
+ * delay before the first repeat, and this interval after each one. A finger
+ * this far outside the target's rect still counts as on it. */
+enum { SS_COLOUR_HOLD_DELAY_MS = 400, SS_COLOUR_HOLD_REPEAT_MS = 100, SS_COLOUR_HOLD_SLOP = 6 };
 
 #ifdef __ANDROID__
 #include <pthread.h>
@@ -2373,6 +2402,8 @@ static const char* const kSettingLabels[SS_SET_COUNT] = {
 #ifdef TMC_3DS
     "ASPECT RATIO",     "DISPLAY STYLE",    "FRAMES",
     "GBA GRID",         "FRAME",         "NEIGHBOURS",      "3D WORLD",
+    "MODE",             "BRIGHTNESS",    "CONTRAST",        "SATURATION",      "GAMMA",
+    "SHADOWS",          "MIDTONES",
 #endif
 };
 
@@ -2401,6 +2432,8 @@ static const char* SettingValueMinWord(int setting) {
         case SS_SET_ASPECT_RATIO: return "ORIGINAL";
         case SS_SET_DISPLAY_STYLE: return "PIXEL PERFECT";
         case SS_SET_GBA_GRID: return "HIGH";
+        case SS_SET_COLOUR_MODE: return "CUSTOM";
+        case SS_SET_COLOUR_GAMMA: return "1.25";
 #endif
         default: return "OFF";
     }
@@ -2426,7 +2459,6 @@ static int SettingsPageRows(int page, uint8_t* out) {
         out[n++] = SS_SET_GBA_FRAME;
         out[n++] = SS_SET_NEIGHBOURS;
         out[n++] = SS_SET_TOP_HUD;
-        out[n++] = SS_SET_COLOR_CORRECTION;
         out[n++] = SS_SET_BACKDROP;
 #else
         out[n++] = SS_SET_TOP_HUD;
@@ -2469,13 +2501,20 @@ static const char* SettingsPageTitle(int page) {
         case SS_SETTINGS_RANDOMIZER: return "RANDOMIZER";
 #ifdef TMC_3DS
         case SS_SETTINGS_UPDATE: return "UPDATE";
+        case SS_SETTINGS_COLOURS: return "COLOURS";
 #endif
         default: return "SETTINGS";
     }
 }
 
 static int SettingsBackPage(int page) {
-    return page == SS_SETTINGS_OVERLAY ? SS_SETTINGS_DEVELOPER : SS_SETTINGS_ROOT;
+    switch (page) {
+        case SS_SETTINGS_OVERLAY: return SS_SETTINGS_DEVELOPER;
+#ifdef TMC_3DS
+        case SS_SETTINGS_COLOURS: return SS_SETTINGS_ROOT;
+#endif
+        default: return SS_SETTINGS_ROOT;
+    }
 }
 
 static void DrawSettingsChevron(const SSurf* s, float cx, float cy, float u) {
@@ -2646,7 +2685,18 @@ static int GetSettingState(int row, char* out, int outCap) {
             return pct > 0;
         }
         case SS_SET_AUTOSAVE: on = Port_QuickSave_AutoEnabled() != 0; break;
-        case SS_SET_COLOR_CORRECTION: on = Port_Config_GetColorCorrection(); break;
+        case SS_SET_COLOR_CORRECTION:
+#ifdef TMC_3DS
+        {
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            snprintf(out, (size_t)outCap, "%s", Port_ColourModeName(grade.mode));
+            return grade.mode != PORT_COLOUR_OFF;
+        }
+#else
+            on = Port_Config_GetColorCorrection();
+            break;
+#endif
         case SS_SET_SHOW_FPS: on = Port_Config_GetShowFps(); break;
         case SS_SET_HOLD_ADVANCE: on = Port_Config_GetHoldToAdvanceText(); break;
         case SS_SET_RANDOMIZER: on = false; break;
@@ -2699,6 +2749,56 @@ static int GetSettingState(int row, char* out, int outCap) {
             int pacing = Port_Config_GetFramePacing();
             snprintf(out, (size_t)outCap, "%s", kPacing[pacing]);
             return pacing == PORT_3DS_PACING_AUTO;
+        }
+        case SS_SET_COLOUR_MODE: {
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            snprintf(out, (size_t)outCap, "%s", Port_Text_Tr(Port_ColourModeName(grade.mode)));
+            return grade.mode != PORT_COLOUR_OFF;
+        }
+        case SS_SET_COLOUR_BRIGHTNESS: {
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            snprintf(out, (size_t)outCap, "%+d", (int)grade.brightness);
+            return grade.brightness != 0;
+        }
+        case SS_SET_COLOUR_CONTRAST: {
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            snprintf(out, (size_t)outCap, "%+d", (int)grade.contrast);
+            return grade.contrast != 0;
+        }
+        case SS_SET_COLOUR_SATURATION: {
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            snprintf(out, (size_t)outCap, "%+d", (int)grade.saturation);
+            return grade.saturation != 0;
+        }
+        case SS_SET_COLOUR_GAMMA: {
+            /* The hundredths display: h = 100 + v*5 is 0..200 in hundredths,
+             * so -8 prints "0.6", +5 "1.25" and 0 "1.0". A hundredths digit
+             * of zero drops to one decimal. */
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            const int h = 100 + (int)grade.gamma * 5;
+            if (h % 10 == 0) {
+                snprintf(out, (size_t)outCap, "%d.%d", h / 100, (h % 100) / 10);
+            } else {
+                snprintf(out, (size_t)outCap, "%d.%02d", h / 100, h % 100);
+            }
+            return grade.gamma != 0;
+        }
+        case SS_SET_COLOUR_SHADOWS: {
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            snprintf(out, (size_t)outCap, "%+d", (int)grade.shadows);
+            return grade.shadows != 0;
+        }
+        case SS_SET_COLOUR_MIDTONES: {
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            snprintf(out, (size_t)outCap, "%+d", (int)grade.midtones);
+            return grade.midtones != 0;
         }
 #endif
     }
@@ -3584,6 +3684,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
         sUi.regionState = SS_REGION_OFF; /* a zoom never survives a load */
         sUi.questView = SS_QUEST_MAIN;   /* nor does an open list */
         sUi.settingsPage = SS_SETTINGS_ROOT;
+        sUi.colourModePopup = 0;
         sUi.loadConfirmActive = 0;
         sUi.unavailableNoticeActive = 0;
         UI_UNLOCK();
@@ -3601,6 +3702,9 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     int isDungeon = (snap->areaFlags & SECOND_SCREEN_AR_IS_DUNGEON) != 0;
 
     int tab, armedRing, regionState, settingsPage, loadStateResult, loadConfirmActive, unavailableNoticeActive;
+#ifdef TMC_3DS
+    int colourModePopup;
+#endif
     int32_t regionId;
     uint32_t dumpFlashUntil, loadStateFlashUntil;
     UI_LOCK();
@@ -3614,6 +3718,9 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     regionState = sUi.regionState;
     regionId = sUi.regionId;
     settingsPage = sUi.settingsPage;
+#ifdef TMC_3DS
+    colourModePopup = sUi.colourModePopup;
+#endif
     dumpFlashUntil = sUi.dumpFlashUntil;
     loadStateFlashUntil = sUi.loadStateFlashUntil;
     loadStateResult = sUi.loadStateResult;
@@ -3730,6 +3837,8 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
             Compact_PaintOptions(&s, &tl);
         } else if (settingsPage == SS_SETTINGS_UPDATE) {
             PaintUpdatePanel(&s, &tl);
+        } else if (settingsPage == SS_SETTINGS_COLOURS) {
+            Compact_PaintColours(&s, &tl, colourModePopup);
         } else
 #endif
         PaintSettingsPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, settingsPage, tick,
@@ -3932,6 +4041,8 @@ int Port_SecondScreen_OnTouchMove(int x, int y) {
             sUi.mapTouchLastY = y;
         }
     }
+    /* A drag (scroll bar, list or map) is not a hold on a colour button. */
+    if (sUi.colourHoldOn && (sUi.scrollTouch || sUi.mapDragging)) sUi.colourHoldOn = 0;
     UI_UNLOCK();
     return changed;
 }
@@ -3951,9 +4062,46 @@ void Port_SecondScreen_OnTouchRelease(void) {
         sUi.scrollTouch = 0;
     }
     sUi.mapDragging = 0;
+    sUi.colourHoldOn = 0;
     UI_UNLOCK();
     if (tap && scroll) DispatchTap(x, y, 0);
     else if (tap) PickMapRegion(x, y);
+}
+#endif
+
+#ifdef TMC_3DS
+/* One step of a COLOURS field, clamped and never wrapped: a field at its
+ * limit stays there. Gamma moves a twentieth, the others one point. A mode
+ * that ignores the params (OFF stays raw, VIVID is a fixed preset) keeps the
+ * step anyway and says so, so the missing effect never reads as a defect. */
+static void ColourStep(uint8_t action, uint8_t arg) {
+    PortColourGrade grade;
+    Port_Config_GetColourGrade(&grade);
+    const int step = action == SS_ACT_COLOUR_PLUS ? 1 : -1;
+    int8_t* field = NULL;
+    int lo = -50, hi = 50;
+    switch (arg) {
+        case SS_SET_COLOUR_BRIGHTNESS: field = &grade.brightness; break;
+        case SS_SET_COLOUR_CONTRAST: field = &grade.contrast; break;
+        case SS_SET_COLOUR_SATURATION: field = &grade.saturation; break;
+        case SS_SET_COLOUR_SHADOWS: field = &grade.shadows; break;
+        case SS_SET_COLOUR_MIDTONES: field = &grade.midtones; break;
+        case SS_SET_COLOUR_GAMMA:
+            field = &grade.gamma;
+            lo = -20;
+            hi = 20;
+            break;
+        default: break;
+    }
+    if (!field) return;
+    int v = *field + step;
+    if (v < lo) v = lo;
+    if (v > hi) v = hi;
+    *field = (int8_t)v;
+    Port_Config_SetColourGrade(&grade);
+    if (grade.mode == PORT_COLOUR_OFF || grade.mode == PORT_COLOUR_VIVID) {
+        Compact_Toast("%s", Port_Text_Tr("USED IN GBA AND CUSTOM"));
+    }
 }
 #endif
 
@@ -3998,6 +4146,45 @@ static void DispatchTap(int x, int y, int longPress) {
         case SS_ACT_TABS:
             Compact_ToggleTabsBottom();
             break;
+        case SS_ACT_COLOUR_MINUS:
+        case SS_ACT_COLOUR_PLUS: {
+            ColourStep(hit.action, hit.arg);
+            /* Arm hold-to-repeat for this target only: every frame the finger
+             * stays on it (Port_SecondScreen_OnTouchHold) re-fires the same
+             * step. A first step already happened on the down tap. */
+            UI_LOCK();
+            sUi.colourHoldOn = 1;
+            sUi.colourHoldAction = hit.action;
+            sUi.colourHoldArg = hit.arg;
+            sUi.colourHoldX0 = hit.x0;
+            sUi.colourHoldY0 = hit.y0;
+            sUi.colourHoldX1 = hit.x1;
+            sUi.colourHoldY1 = hit.y1;
+            sUi.colourHoldNextMs = 0;
+            UI_UNLOCK();
+            break;
+        }
+        case SS_ACT_COLOUR_MODE_OPEN:
+            UI_LOCK();
+            sUi.colourModePopup = 1;
+            UI_UNLOCK();
+            break;
+        case SS_ACT_COLOUR_MODE_CLOSE:
+            /* Dismissed by the X in the header or a tap outside the box:
+             * nothing changes. */
+            UI_LOCK();
+            sUi.colourModePopup = 0;
+            UI_UNLOCK();
+            break;
+        case SS_ACT_COLOUR_MODE_SET: {
+            /* The popup stays open so the player can compare presets: its
+             * selected row follows the grade on the next paint. */
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            grade.mode = hit.arg;
+            Port_Config_SetColourGrade(&grade);
+            break;
+        }
 #if TMC3DS_DEBUG_TOOLS
         case SS_ACT_DEBUG:
             Compact_DebugCommand(hit.arg);
@@ -4024,6 +4211,7 @@ static void DispatchTap(int x, int y, int longPress) {
 #endif
             sUi.questView = SS_QUEST_MAIN; /* ...and closes a list left open */
             sUi.settingsPage = SS_SETTINGS_ROOT;
+            sUi.colourModePopup = 0; /* and a MODE popup */
             UI_UNLOCK();
             break;
         case SS_ACT_SETTINGS_PAGE:
@@ -4032,6 +4220,7 @@ static void DispatchTap(int x, int y, int longPress) {
                 sUi.unavailableNoticeActive = 1;
             } else {
                 sUi.settingsPage = hit.arg;
+                sUi.colourModePopup = 0;
             }
             UI_UNLOCK();
 #ifdef TMC_3DS
@@ -4045,6 +4234,7 @@ static void DispatchTap(int x, int y, int longPress) {
         case SS_ACT_SETTINGS_BACK:
             UI_LOCK();
             sUi.settingsPage = hit.arg;
+            sUi.colourModePopup = 0;
             UI_UNLOCK();
             break;
         case SS_ACT_DEVELOPER_DUMP:
@@ -4226,6 +4416,7 @@ static void DispatchTap(int x, int y, int longPress) {
                     break;
                 }
                 case SS_SET_COLOR_CORRECTION: {
+#ifndef TMC_3DS
                     /* Persisted flag (whose config DEFAULT is itself
                      * #ifdef __ANDROID__-guarded — off on device, on
                      * elsewhere; reading the getter tracks either) plus
@@ -4233,6 +4424,9 @@ static void DispatchTap(int x, int y, int longPress) {
                     bool on = !Port_Config_GetColorCorrection();
                     Port_Config_SetColorCorrection(on);
                     Port_PPU_SetColorCorrection(on);
+#endif
+                    /* 3DS: the mode is chosen on the COLOURS page's MODE
+                     * popup, so the SCREEN page no longer carries this row. */
                     break;
                 }
                 case SS_SET_SHOW_FPS:
@@ -4320,6 +4514,7 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
     int deferred = 0;
     UI_LOCK();
     if ((sUi.tab == SS_TAB_SETTINGS && sUi.settingsPage == SS_SETTINGS_ROOT) ||
+        (sUi.tab == SS_TAB_SETTINGS && sUi.settingsPage == SS_SETTINGS_COLOURS && !sUi.colourModePopup) ||
         (sUi.tab == SS_TAB_STATES && Compact_StatesListShown())) {
         int found = 0, cell = 0;
         for (int i = 0; i < sTapTargetCount; i++) {
@@ -4354,6 +4549,39 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
 #endif
     DispatchTap(x, y, longPress);
 }
+
+#ifdef TMC_3DS
+/* The 3DS HID loop calls this every frame the touch is still down, with a
+ * millisecond clock. A COLOURS +/- target armed by its down tap steps again
+ * after the initial delay, then on every repeat interval, while the finger
+ * stays on the target's padded rect. Leaving it, lifting or dragging cancels
+ * (the latter two in OnTouchMove/OnTouchRelease). Only colour steps arm the
+ * state, so no other button repeats. Returns 1 when a step was dispatched. */
+int Port_SecondScreen_OnTouchHold(int x, int y, uint32_t nowMs) {
+    int fire = 0;
+    uint8_t action = 0, arg = 0;
+    UI_LOCK();
+    if (sUi.colourHoldOn) {
+        const int inside = x >= sUi.colourHoldX0 - SS_COLOUR_HOLD_SLOP &&
+                           x < sUi.colourHoldX1 + SS_COLOUR_HOLD_SLOP &&
+                           y >= sUi.colourHoldY0 - SS_COLOUR_HOLD_SLOP &&
+                           y < sUi.colourHoldY1 + SS_COLOUR_HOLD_SLOP;
+        if (!inside) {
+            sUi.colourHoldOn = 0;
+        } else if (sUi.colourHoldNextMs == 0) {
+            sUi.colourHoldNextMs = nowMs + SS_COLOUR_HOLD_DELAY_MS;
+        } else if ((int32_t)(nowMs - sUi.colourHoldNextMs) >= 0) {
+            sUi.colourHoldNextMs = nowMs + SS_COLOUR_HOLD_REPEAT_MS;
+            action = sUi.colourHoldAction;
+            arg = sUi.colourHoldArg;
+            fire = 1;
+        }
+    }
+    UI_UNLOCK();
+    if (fire) ColourStep(action, arg);
+    return fire;
+}
+#endif
 
 /* ------------------------------------------------------------------ */
 /*  Android surface plumbing                                           */

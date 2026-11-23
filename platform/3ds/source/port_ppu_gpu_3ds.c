@@ -6,6 +6,7 @@
 
 #include "platform_gpu_3ds.h"
 #include "tmc3ds_build_config.h"
+#include "port_color_grade.h"
 #if TMC3DS_DEBUG_TOOLS
 #include "debug_log_3ds.h"
 #endif
@@ -93,7 +94,7 @@ static C3D_Tex sRingTex[PPU_GPU3DS_RING_COUNT];
 /* BG1 drawn from a picture (PortPpuGpu3DS_SetBg1Picture): made when one is set, freed when cleared. */
 static C3D_Tex sPictureTex;
 static const uint16_t* sPicturePixels;
-static bool sPictureCorrected;
+static unsigned sPictureColourEpoch;
 /* Or from palette indices (PortPpuGpu3DS_SetIndexedPicture): the indices in the texture's
  * layout, and the palettes the texels were last made from. */
 static const uint8_t* sPictureIndices;
@@ -104,7 +105,7 @@ static bool sPicturePalettesValid;
 /* Side strips per BG (PortPpuGpu3DS_SetScrollPicture): a texture each, made when one is set, freed when cleared. */
 static C3D_Tex sScrollTex[MODE1_GBA_BG_COUNT];
 static const uint16_t* sScrollPixels[MODE1_GBA_BG_COUNT];
-static bool sScrollCorrected[MODE1_GBA_BG_COUNT];
+static unsigned sScrollColourEpoch[MODE1_GBA_BG_COUNT];
 static unsigned sBoundTexture;
 static C3D_Tex sOutputTexture;
 static C3D_RenderTarget* sOutputTarget;
@@ -285,8 +286,6 @@ void PortPpuGpu3DS_Shutdown(void) {
     memset(sBufferInfo, 0, sizeof(sBufferInfo));
 }
 
-extern bool Port_Config_GetColorCorrection(void);
-
 /* The picture texture, the colour one or the indexed one, gone. */
 static void ReleasePicture(void) {
     if (sPictureTex.data) C3D_TexDelete(&sPictureTex);
@@ -340,12 +339,12 @@ void PortPpuGpu3DS_SetIndexedPicture(const uint8_t* indices, unsigned width, uns
 static bool RefreshIndexedPicture(const PpuGpu3DSFrameView* frame) {
     if (sPictureIndices == NULL || sPictureTex.data == NULL) return true;
     const uint16_t* palettes = frame->memory.bg_palette + sPictureFirstPalette * 16u;
-    const bool corrected = Port_Config_GetColorCorrection();
-    if (sPicturePalettesValid && corrected == sPictureCorrected &&
+    const unsigned colourEpoch = Port_ColourGrade_Epoch();
+    if (sPicturePalettesValid && colourEpoch == sPictureColourEpoch &&
         memcmp(palettes, sPicturePalettes, sizeof(sPicturePalettes)) == 0)
         return true;
     memcpy(sPicturePalettes, palettes, sizeof(sPicturePalettes));
-    sPictureCorrected = corrected;
+    sPictureColourEpoch = colourEpoch;
     sPicturePalettesValid = true;
     uint16_t colours[64];
     for (unsigned i = 0; i < 64; ++i) colours[i] = (i & 15u) ? PpuGpu3DS_PackRgba5551(palettes[i], true) : 0;
@@ -361,12 +360,12 @@ static bool RefreshIndexedPicture(const PpuGpu3DSFrameView* frame) {
 }
 
 void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsigned height) {
-    const bool corrected = Port_Config_GetColorCorrection();
+    const unsigned colourEpoch = Port_ColourGrade_Epoch();
     if (sPictureIndices != NULL) {
         if (gbaPixels == NULL) return; /* the indexed picture is not this one's to clear */
         ReleasePicture();
     }
-    if (gbaPixels == sPicturePixels && (gbaPixels == NULL || corrected == sPictureCorrected)) return;
+    if (gbaPixels == sPicturePixels && (gbaPixels == NULL || colourEpoch == sPictureColourEpoch)) return;
     ReleasePicture();
     if (gbaPixels == NULL || width > PPU_GPU3DS_PICTURE_TEX_WIDTH || height > PPU_GPU3DS_PICTURE_TEX_HEIGHT ||
         !MakePictureTexture())
@@ -379,13 +378,13 @@ void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsi
                    PpuGpu3DS_MortonIndex(x & 7u, y & 7u)] = PpuGpu3DS_PackRgba5551(gbaPixels[y * width + x], gbaPixels[y * width + x] != 0);
     C3D_TexFlush(&sPictureTex);
     sPicturePixels = gbaPixels;
-    sPictureCorrected = corrected;
+    sPictureColourEpoch = colourEpoch;
 }
 
 void PortPpuGpu3DS_SetScrollPicture(unsigned bg, const uint16_t* gbaPixels, unsigned width, unsigned height, bool repeat) {
     if (bg >= MODE1_GBA_BG_COUNT) return;
-    const bool corrected = Port_Config_GetColorCorrection();
-    if (gbaPixels == sScrollPixels[bg] && (gbaPixels == NULL || corrected == sScrollCorrected[bg])) return;
+    const unsigned colourEpoch = Port_ColourGrade_Epoch();
+    if (gbaPixels == sScrollPixels[bg] && (gbaPixels == NULL || colourEpoch == sScrollColourEpoch[bg])) return;
     C3D_Tex* const tex = &sScrollTex[bg];
     if (tex->data) C3D_TexDelete(tex);
     memset(tex, 0, sizeof(*tex));
@@ -412,7 +411,7 @@ void PortPpuGpu3DS_SetScrollPicture(unsigned bg, const uint16_t* gbaPixels, unsi
                 PpuGpu3DS_PackRgba5551(gbaPixels[y * width + x], gbaPixels[y * width + x] != 0);
     C3D_TexFlush(tex);
     sScrollPixels[bg] = gbaPixels;
-    sScrollCorrected[bg] = corrected;
+    sScrollColourEpoch[bg] = colourEpoch;
 }
 
 bool PortPpuGpu3DS_Init(void) {

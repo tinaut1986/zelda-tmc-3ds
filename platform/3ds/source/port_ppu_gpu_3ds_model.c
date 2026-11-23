@@ -1,5 +1,6 @@
 #include <math.h>
 #include "port_ppu_gpu_3ds_model.h"
+#include "port_color_grade.h"
 #include "port_zone_tiles.h"
 #include "sprite_lean_3ds.h"
 #include "sprite_support_3ds.h"
@@ -90,26 +91,64 @@ static const uint8_t kTileMorton[64] = {
     42, 43, 46, 47, 58, 59, 62, 63
 };
 
-/* The GBA LCD's response (mode1.c's lut, 8-bit): applied per channel when the
- * COLOURS option is on. Toggling it bumps every palette generation, so the
+/* The colour grade (port_color_grade.h) applied per channel when it is on:
+ * OFF expands raw (x << 3), GBA walks the LCD curve, CUSTOM the player's own.
+ * The 32-entry LUT copy is rebuilt only when the grade's epoch moves; the
+ * saturation mix is the module's 8.8 luma mix, skipped when it is neutral.
+ * A grade change bumps the palette generations (CacheBeginFrame), so the
  * atlas and the view rings decode again. */
-static const uint8_t kLcdLut[32] = {
-    0, 0, 0, 0, 1, 2, 4, 8, 13, 19, 25, 32, 39, 46, 54, 63,
-    71, 80, 90, 100, 110, 120, 131, 142, 154, 165, 178, 190, 203, 216, 229, 243,
-};
-static bool sColorCorrection, sColorCorrectionApplied;
+static unsigned sColourEpoch = ~0u;
+static uint8_t sColourLut[32];
+static int16_t sColourZoneAdj[256];
+static int sColourSatFactor = 256;
+static bool sColourHasSaturation;
+static bool sColourHasZone;
 
-void PpuGpu3DS_SetColorCorrection(bool enabled) {
-    sColorCorrection = enabled;
+static void refresh_colour_grade(void) {
+    const PortColourGrade* grade = Port_ColourGrade_Current();
+    Port_ColourGrade_ChannelLut(grade, sColourLut);
+    Port_ColourGrade_LumaAdjust(grade, sColourZoneAdj);
+    sColourHasSaturation = grade->mode != PORT_COLOUR_OFF && grade->saturation != 0;
+    sColourSatFactor = ((50 + grade->saturation) * 256) / 50;
+    sColourHasZone = false;
+    for (int i = 0; i < 256; ++i) {
+        if (sColourZoneAdj[i] != 0) {
+            sColourHasZone = true;
+            break;
+        }
+    }
+    sColourEpoch = Port_ColourGrade_Epoch();
 }
 
 uint16_t PpuGpu3DS_PackRgba5551(uint16_t gbaColor, bool opaque) {
-    unsigned r = gbaColor & 0x1fu, g = (gbaColor >> 5u) & 0x1fu, b = (gbaColor >> 10u) & 0x1fu;
-    if (sColorCorrection) {
-        r = kLcdLut[r] >> 3u;
-        g = kLcdLut[g] >> 3u;
-        b = kLcdLut[b] >> 3u;
+    unsigned r, g, b;
+    if (sColourEpoch != Port_ColourGrade_Epoch()) refresh_colour_grade();
+    r = sColourLut[gbaColor & 0x1fu];
+    g = sColourLut[(gbaColor >> 5u) & 0x1fu];
+    b = sColourLut[(gbaColor >> 10u) & 0x1fu];
+    if (sColourHasSaturation || sColourHasZone) {
+        const unsigned luma = (299u * r + 587u * g + 114u * b) / 1000u;
+        if (sColourHasSaturation) {
+            const int mr = (int)luma + ((((int)r - (int)luma) * sColourSatFactor) >> 8);
+            const int mg = (int)luma + ((((int)g - (int)luma) * sColourSatFactor) >> 8);
+            const int mb = (int)luma + ((((int)b - (int)luma) * sColourSatFactor) >> 8);
+            r = (unsigned)(mr < 0 ? 0 : (mr > 255 ? 255 : mr));
+            g = (unsigned)(mg < 0 ? 0 : (mg > 255 ? 255 : mg));
+            b = (unsigned)(mb < 0 ? 0 : (mb > 255 ? 255 : mb));
+        }
+        if (sColourHasZone) {
+            const int adj = sColourZoneAdj[luma];
+            const int zr = (int)r + adj;
+            const int zg = (int)g + adj;
+            const int zb = (int)b + adj;
+            r = (unsigned)(zr < 0 ? 0 : (zr > 255 ? 255 : zr));
+            g = (unsigned)(zg < 0 ? 0 : (zg > 255 ? 255 : zg));
+            b = (unsigned)(zb < 0 ? 0 : (zb > 255 ? 255 : zb));
+        }
     }
+    r >>= 3u;
+    g >>= 3u;
+    b >>= 3u;
     return (uint16_t)((r << 11u) | (g << 6u) | (b << 1u) | (opaque ? 1u : 0u));
 }
 
@@ -210,14 +249,18 @@ void PpuGpu3DS_CacheBeginFrame(PpuGpu3DSCache* cache, const uint16_t* bgPalette,
     /* Slots used during this frame are the most recent entries in the LRU
      * order, so eviction recognizes them by lastUseFrame without a sweep. */
     cache->exhausted = false;
-    if (sColorCorrectionApplied != sColorCorrection) {
-        sColorCorrectionApplied = sColorCorrection;
-        for (unsigned bank = 0; bank < 16u; ++bank) {
-            ++cache->bgBankGeneration[bank];
-            ++cache->objBankGeneration[bank];
+    {
+        static unsigned appliedEpoch = ~0u;
+        const unsigned epoch = Port_ColourGrade_Epoch();
+        if (appliedEpoch != epoch) {
+            appliedEpoch = epoch;
+            for (unsigned bank = 0; bank < 16u; ++bank) {
+                ++cache->bgBankGeneration[bank];
+                ++cache->objBankGeneration[bank];
+            }
+            ++cache->bg256Generation;
+            ++cache->obj256Generation;
         }
-        ++cache->bg256Generation;
-        ++cache->obj256Generation;
     }
     sBgPaletteShadowProbe = cache->bgPalette;
     update_palette(cache->bgPalette, cache->bgBankGeneration, &cache->bg256Generation,
