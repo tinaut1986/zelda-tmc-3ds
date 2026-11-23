@@ -64,16 +64,16 @@ int main(void) {
         }
     }
 
-    /* Quarter-width cells of the compact OPTIONS page hold 11 characters of
-     * the 5x7 font (6 px each in ~68 px); a longer word would run into the
-     * next cell. */
+    /* Quarter-width cells of the compact OPTIONS page hold 12 characters of
+     * the 5x7 font (6 px each in ~76 px); a longer word would run into the
+     * next cell. Footer-only hints ("TAP OUTSIDE TO CLOSE") are not cells. */
     static const char* const kCellWords[] = {
         "VIEW", "STYLE", "FRAMES", "TOP HUD", "TURBO", "VOLUME", "AUTOSAVE", "HOLD TEXT", "MAP FOLLOW",
         "CREST PINS", "FLOOR BACK", "COLOURS", "THEME", "SHOW FPS", "SHOW", "HIDE", "ON", "OFF", "RESTART",
         "ORIGINAL", "STABLE", "SLATE", "PARCHMENT", "NIGHT GOLD", "FOREST", "PATTERN", "NONE", "BACK",
         "PREV", "NEXT", "SAVE OVER", "DELETE", "LOAD", "SURE?", "AUTO", "BILINEAR", "PIXEL P.", "GBA GRID",
         "INTERFACE", "NEIGHBOURS", "DEPTH", "LAYERS", "MODE", "BRIGHTNESS", "CONTRAST", "SATURATION",
-        "GAMMA", "GBA", "CUSTOM", "VIVID",
+        "GAMMA", "GBA", "CUSTOM", "VIVID", "SHADOWS", "MIDTONES",
     };
     for (size_t i = 0; i < sizeof(kCellWords) / sizeof(kCellWords[0]); i++) {
         for (int lang = PORT_TEXT_FR; lang < PORT_TEXT_COUNT; lang++) {
@@ -82,7 +82,7 @@ int main(void) {
             for (const char* p = t; *p; n++) {
                 (void)Port_Text_Utf8Next(&p);
             }
-            if (n > 11) {
+            if (n > 12) {
                 fprintf(stderr, "too wide for a cell (%d): %s -> %s\n", n, kCellWords[i], t);
                 return 1;
             }

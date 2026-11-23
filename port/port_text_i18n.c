@@ -259,6 +259,9 @@ static const char* const kEntries[][PORT_TEXT_COUNT] = {
     { "CUSTOM", "PERSO.", "EIGENE", "PROPIA", "PERS." },
     { "VIVID", "VIF", "LEBENDIG", "VÍVIDO", "VIVIDO" },
     { "PREVIEW", "APERÇU", "VORSCHAU", "VISTA PREVIA", "ANTEPRIMA" },
+    { "SHADOWS", "OMBRES", "SCHATTEN", "SOMBRAS", "OMBRE" },
+    { "MIDTONES", "TONS MOYENS", "MITTELTÖNE", "TONOS MEDIOS", "MEZZITONI" },
+    { "TAP OUTSIDE TO CLOSE", "TOUCHEZ DEHORS", "AUSSEN TIPPEN ZU", "TOCA FUERA CIERRA", "TOCCA FUORI CHIUDI" },
 };
 
 #define ENTRY_COUNT ((int)(sizeof(kEntries) / sizeof(kEntries[0])))

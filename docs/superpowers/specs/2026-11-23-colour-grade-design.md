@@ -81,3 +81,14 @@ every channel after the curve and the saturation mix, in GBA and CUSTOM only
 the LUT and exposes it as `Port_ColourGrade_LumaAdjust`; `ChannelLut` stays
 curve-only. Every renderer caches the table on the grade epoch, and the epoch
 includes the two new fields.
+
+## Amendment: COLOURS page zones and MODE popup
+
+The COLOURS page now scrolls (drag, like OPTIONS) and lists SHADOWS and
+MIDTONES as two more `[name][value][-][+]` rows, so the seven rows plus the
+PREVIEW strip no longer fit a 240-line screen at once. Tapping MODE opens a
+floating popup over the dimmed page instead of cycling in place: OFF, GBA, VIVID
+and CUSTOM rows, each with four mini-swatches of that preset, the current row
+outlined. A row applies the mode and closes the popup; a tap outside closes it
+with no change. The page's `SS_SET_*` ids grow SHADOWS and MIDTONES, and the new
+`SS_ACT_COLOUR_MODE_OPEN/SET/CLOSE` actions carry the popup.

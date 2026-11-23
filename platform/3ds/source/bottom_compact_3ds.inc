@@ -656,30 +656,129 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
 }
 
 /* ---- COLOURS (OPTIONS -> COLOURS) ----
- * The grade page in the compact idiom: a header row (MODE and the way back)
- * and four field rows, each field as [name][value][-][+]. A button steps by
- * one and the handler clamps at the module's limit, so a field already at
- * its end simply stops. The PREVIEW strip at the foot runs eight fixed
- * in-game RGB555 colours through the installed grade. */
-static void Compact_PaintColours(const SSurf* s, TargetList* tl) {
+ * The grade page in the compact idiom: a header row (MODE and the way back),
+ * six field rows, each field as [name][value][-][+], and the PREVIEW strip. A
+ * button steps by one and the handler clamps at the module's limit, so a field
+ * already at its end simply stops. MODE opens a floating preset popup instead
+ * of cycling in place; its four rows preview the preset as mini swatches and a
+ * tap outside the box closes it without changing anything. The page scrolls by
+ * dragging, like OPTIONS, because the last row and the strip fall below a
+ * 240-line screen. */
+enum {
+    COL_ROW_H = CC_CELL_H + CC_GAP,
+    COL_PREVIEW_H = 30,
+    /* top margin + title + 1 header row + 6 field rows + the preview + bottom margin */
+    COLOURS_TOTAL_H = 2 + OPT_TITLE_H + 7 * COL_ROW_H + COL_PREVIEW_H + CC_MARGIN,
+};
+static float sColoursScroll;
+/* Whether the MODE popup was open on the previous paint, so its swatch strip
+ * is remade on every (re)open, not only when the grade changes. */
+static int sColourPopupWasOpen;
+
+/* The MODE popup's four preset rows, with a mini-swatch strip per row. The
+ * swatches are cached on the grade epoch and remade whenever the popup opens. */
+static void PaintColourModePopup(const SSurf* s, TargetList* tl, int32_t top, int32_t bottom) {
+    static const unsigned kModeIds[4] = { PORT_COLOUR_OFF, PORT_COLOUR_GBA, PORT_COLOUR_VIVID,
+                                          PORT_COLOUR_CUSTOM };
+    static const uint16_t kSwatchColours[4] = { 0x1385, 0x18DC, 0x7FFF, 0x4B3E };
+    static uint32_t swatch[4][4];
+    static unsigned swatchEpoch;
+    static int swatchValid;
+
+    const unsigned epoch = Port_ColourGrade_Epoch();
+    if (!swatchValid || swatchEpoch != epoch || !sColourPopupWasOpen) {
+        const PortColourGrade current = *Port_ColourGrade_Current();
+        for (int m = 0; m < 4; m++) {
+            PortColourGrade g = current;
+            g.mode = (uint8_t)kModeIds[m];
+            for (int c = 0; c < 4; c++) {
+                uint8_t rgb[3];
+                Port_ColourGrade_ToRgb888(&g, kSwatchColours[c], rgb);
+                swatch[m][c] = 0xFF000000u | ((uint32_t)rgb[2] << 16) | ((uint32_t)rgb[1] << 8) | rgb[0];
+            }
+        }
+        swatchValid = 1;
+        swatchEpoch = epoch;
+    }
+    sColourPopupWasOpen = 1;
+
+    /* Dim everything under the box: a flat mix of the panel colour toward
+     * black, painted over the page rather than behind it. */
+    FillRect(s, 0, top, s->w, bottom, MixColor(CC_BG, RGB(0, 0, 0), 160));
+
+    int32_t pw = s->w * 13 / 20, ph = s->h * 7 / 12;
+    if (pw > s->w - 16) pw = s->w - 16;
+    if (ph > bottom - top - 8) ph = bottom - top - 8;
+    const int32_t px = (s->w - pw) / 2;
+    const int32_t py = top + (bottom - top - ph) / 2;
+    const int32_t px1 = px + pw, py1 = py + ph;
+    CBox(s, px, py, pw, ph, CC_CELL, CC_CELL_EDGE);
+
+    /* Header band, then four preset rows and the footer hint. */
+    const int32_t headerH = 20;
+    FillRect(s, px + 2, py + 2, px1 - 2, py + headerH, CC_BG);
+    CTextCentered(s, (px + px1) / 2, py + (headerH - kUiGlyphH) / 2 + 1, CC_ACCENT, "MODE");
+
+    const int32_t hintH = 16;
+    const int32_t rowH = (py1 - py - headerH - hintH) / 4;
+    const int32_t rowX0 = px + 6, rowX1 = px1 - 6;
+    const int32_t swW = 12, swH = 14, swGap = 2;
+    const int32_t swTotal = 4 * swW + 3 * swGap;
+    int currentMode = Port_ColourGrade_Current()->mode;
+
+    for (int m = 0; m < 4; m++) {
+        const int32_t ry = py + headerH + m * rowH;
+        const int selected = (int)kModeIds[m] == currentMode;
+        const int32_t rh = rowH - 2;
+        CBox(s, rowX0, ry, rowX1 - rowX0, rh, selected ? MixColor(CC_CELL, CC_GOOD, 24) : CC_CELL,
+             selected ? CC_GOOD : CC_CELL_EDGE);
+        CText(s, rowX0 + 6, ry + (rh - kUiGlyphH) / 2, selected ? CC_GOOD : CC_TEXT,
+              Port_ColourModeName(kModeIds[m]));
+        int32_t sx = rowX1 - 4 - swTotal;
+        for (int c = 0; c < 4; c++) {
+            FillRect(s, sx, ry + (rh - swH) / 2, sx + swW, ry + (rh - swH) / 2 + swH, swatch[m][c]);
+            sx += swW + swGap;
+        }
+        AddTarget(tl, (float)rowX0, (float)ry, (float)rowX1, (float)(ry + rh), SS_ACT_COLOUR_MODE_SET,
+                  (uint8_t)kModeIds[m]);
+    }
+
+    CTextCentered(s, (px + px1) / 2, py1 - hintH + (hintH - kUiGlyphH) / 2, CC_FAINT,
+                  "TAP OUTSIDE TO CLOSE");
+
+    /* Added last: DispatchTap takes the first matching target, so a row wins
+     * over the backdrop it sits on. */
+    AddTarget(tl, 0, top, s->w, bottom, SS_ACT_COLOUR_MODE_CLOSE, 0);
+}
+
+static void Compact_PaintColours(const SSurf* s, TargetList* tl, int popupOpen) {
     const int32_t top = CcContentTop(), bottom = CcContentBottom(s->h);
     FillRect(s, 0, top, s->w, bottom, CC_BG);
+    SSurf v = *s;
+    v.px = s->px + (size_t)top * (size_t)s->stride;
+    v.h = bottom - top;
+    const float maxScroll = (float)(COLOURS_TOTAL_H - v.h) > 0.0f ? (float)(COLOURS_TOTAL_H - v.h) : 0.0f;
+    CScrollUpdate(&sColoursScroll, maxScroll);
+    SSurf body = v;
+    body.w = v.w - (maxScroll > 0.0f ? CC_SB_GUTTER : 0);
 
-    int32_t y = top + 2;
-    COptTitle(s, y, "COLOURS");
+    const int firstTarget = tl->n;
+    int32_t y = 2 - (int32_t)sColoursScroll;
+    const SSurf* t = &body;
+
+    COptTitle(t, y, "COLOURS");
     y += OPT_TITLE_H;
 
     {
         int32_t x, w;
         char value[24];
         const int on = GetSettingState(SS_SET_COLOUR_MODE, value, sizeof(value));
-        CColumn(s->w, 4, 0, 2, &x, &w);
-        CCell(s, tl, x, y, w, CC_CELL_H, "MODE", value, on ? CC_GOOD : CC_DIM, SS_ACT_SETTING,
-              SS_SET_COLOUR_MODE);
-        CColumn(s->w, 4, 2, 2, &x, &w);
-        CCell(s, tl, x, y, w, CC_CELL_H, "BACK", "< OPTIONS", CC_TEXT, SS_ACT_SETTINGS_BACK, SS_SETTINGS_ROOT);
+        CColumn(t->w, 4, 0, 2, &x, &w);
+        CCell(t, tl, x, y, w, CC_CELL_H, "MODE", value, on ? CC_GOOD : CC_DIM, SS_ACT_COLOUR_MODE_OPEN, 0);
+        CColumn(t->w, 4, 2, 2, &x, &w);
+        CCell(t, tl, x, y, w, CC_CELL_H, "BACK", "< OPTIONS", CC_TEXT, SS_ACT_SETTINGS_BACK, SS_SETTINGS_ROOT);
     }
-    y += OPT_ROW_H;
+    y += COL_ROW_H;
 
     static const struct {
         const char* name;
@@ -689,20 +788,22 @@ static void Compact_PaintColours(const SSurf* s, TargetList* tl) {
         { "CONTRAST", SS_SET_COLOUR_CONTRAST },
         { "SATURATION", SS_SET_COLOUR_SATURATION },
         { "GAMMA", SS_SET_COLOUR_GAMMA },
+        { "SHADOWS", SS_SET_COLOUR_SHADOWS },
+        { "MIDTONES", SS_SET_COLOUR_MIDTONES },
     };
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 6; i++) {
         int32_t x, w;
         char value[24];
         const uint32_t color = CompactSettingValue(kFields[i].setting, value, sizeof(value));
-        CColumn(s->w, 4, 0, 1, &x, &w);
-        CCell(s, tl, x, y, w, CC_CELL_H, kFields[i].name, "", CC_TEXT, 0, 0);
-        CColumn(s->w, 4, 1, 1, &x, &w);
-        CCell(s, tl, x, y, w, CC_CELL_H, "", value, color, 0, 0);
-        CColumn(s->w, 4, 2, 1, &x, &w);
-        CButton(s, tl, x, y, w, CC_CELL_H, "-", CC_TEXT, SS_ACT_COLOUR_MINUS, (uint8_t)kFields[i].setting);
-        CColumn(s->w, 4, 3, 1, &x, &w);
-        CButton(s, tl, x, y, w, CC_CELL_H, "+", CC_TEXT, SS_ACT_COLOUR_PLUS, (uint8_t)kFields[i].setting);
-        y += OPT_ROW_H;
+        CColumn(t->w, 4, 0, 1, &x, &w);
+        CCell(t, tl, x, y, w, CC_CELL_H, kFields[i].name, "", CC_TEXT, 0, 0);
+        CColumn(t->w, 4, 1, 1, &x, &w);
+        CCell(t, tl, x, y, w, CC_CELL_H, "", value, color, 0, 0);
+        CColumn(t->w, 4, 2, 1, &x, &w);
+        CButton(t, tl, x, y, w, CC_CELL_H, "-", CC_TEXT, SS_ACT_COLOUR_MINUS, (uint8_t)kFields[i].setting);
+        CColumn(t->w, 4, 3, 1, &x, &w);
+        CButton(t, tl, x, y, w, CC_CELL_H, "+", CC_TEXT, SS_ACT_COLOUR_PLUS, (uint8_t)kFields[i].setting);
+        y += COL_ROW_H;
     }
 
     /* Eight fixed in-game colours, graded at paint time. */
@@ -710,11 +811,11 @@ static void Compact_PaintColours(const SSurf* s, TargetList* tl) {
         0x1385, 0x1642, 0x0D41, 0x1150, 0x4B3E, 0x7FFF, 0x71C6, 0x18DC
     };
     const int32_t swH = 12, gap = 2;
-    const int32_t swY = bottom - CC_MARGIN - swH;
-    CText(s, CC_MARGIN + 1, swY - 12, CC_DIM, "PREVIEW");
-    const int32_t inner = s->w - 2 * CC_MARGIN;
+    const int32_t inner = t->w - 2 * CC_MARGIN;
     int32_t bw = (inner - 7 * gap) / 8;
     if (bw < 1) bw = 1;
+    CText(t, CC_MARGIN + 1, y, CC_DIM, "PREVIEW");
+    const int32_t swY = y + 12;
     const PortColourGrade* grade = Port_ColourGrade_Current();
     for (int i = 0; i < 8; i++) {
         uint8_t rgb[3];
@@ -722,7 +823,19 @@ static void Compact_PaintColours(const SSurf* s, TargetList* tl) {
         const uint32_t abgr =
             0xFF000000u | ((uint32_t)rgb[2] << 16) | ((uint32_t)rgb[1] << 8) | (uint32_t)rgb[0];
         const int32_t bx = CC_MARGIN + i * (bw + gap);
-        FillRect(s, bx, swY, bx + bw, swY + swH, abgr);
+        FillRect(t, bx, swY, bx + bw, swY + swH, abgr);
+    }
+
+    CScrollBar(&v, top, sColoursScroll, maxScroll, COLOURS_TOTAL_H);
+    CScrollTargets(tl, firstTarget, top, bottom);
+
+    if (popupOpen) {
+        /* The popup is modal over the page: drop the page's targets and add
+         * its own, then paint it over everything (the preview included). */
+        tl->n = firstTarget;
+        PaintColourModePopup(s, tl, top, bottom);
+    } else {
+        sColourPopupWasOpen = 0; /* the next open remakes the swatch strip */
     }
 }
 

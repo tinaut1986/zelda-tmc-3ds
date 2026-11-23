@@ -36,7 +36,8 @@ take effect as soon as a mode other than OFF is selected.
 ## Shadow and midtone zones
 
 Both zones are additive on the three channels, indexed by the post-curve luma
-`l` (0..255, `(299r + 587g + 114b) / 1000`):
+`l` (0..255, `(299r + 587g + 114b) / 1000`). Each is a -50..+50 parameter, 0
+neutral, edited from the COLOURS page like the other fields:
 
 - shadow weight `wS = ((96 - l) / 96)²` for `l < 96`, else 0: 1 at black,
   fading smoothly to 0 at 37.5% luma;
@@ -53,16 +54,24 @@ isolated channel, only a colour's overall lift.
 
 OPTIONS -> COLOURS on the bottom screen. The list cell shows the current mode
 name and opens a page in the compact OPTIONS style: a MODE cell, a BACK cell
-and four field rows — BRIGHTNESS, CONTRAST, SATURATION, GAMMA — each as
-name, value and a `-` / `+` button. A button steps the field by one (gamma by
-0.05, shown as "1.25") and clamps at its limit; nothing wraps. Tapping the MODE
-cell cycles OFF -> GBA -> CUSTOM -> VIVID -> OFF. The page also paints a
-PREVIEW strip of eight fixed in-game RGB555 colours through the installed
-grade, so a step shows its effect at once.
+and six field rows — BRIGHTNESS, CONTRAST, SATURATION, GAMMA, SHADOWS,
+MIDTONES — each as name, value and a `-` / `+` button. A button steps the field
+by one (gamma by 0.05, shown as "1.25") and clamps at its limit; nothing wraps.
+GAMMA reads in hundredths (`100 + gamma * 5`), so -8 is "0.6" and +20 is "2.0";
+the two zones read as signed points ("+10", "0"). The page scrolls by dragging
+when the rows and the PREVIEW strip reach past the content area.
+
+Tapping the MODE cell opens a floating popup instead of cycling in place: four
+rows OFF / GBA / VIVID / CUSTOM, the current one outlined, each with four
+mini-swatches of the preset's look; a tap on a row applies it and closes the
+popup, a tap outside the box (or on the dimmed page) closes it without changing
+anything. The swatches are cached and remade when the grade or the popup's open
+state changes. The page also paints a PREVIEW strip of eight fixed in-game
+RGB555 colours through the installed grade, so a step shows its effect at once.
 
 The words of the page (COLOURS, MODE, BRIGHTNESS, CONTRAST, SATURATION, GAMMA,
-GBA, CUSTOM, VIVID, PREVIEW, BACK) go through the existing text table
-(EN/FR/DE/ES/IT).
+SHADOWS, MIDTONES, GBA, CUSTOM, VIVID, PREVIEW, BACK, TAP OUTSIDE TO CLOSE) go
+through the existing text table (EN/FR/DE/ES/IT).
 
 ## Config keys
 
