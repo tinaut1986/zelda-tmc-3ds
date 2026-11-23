@@ -192,6 +192,7 @@ enum {
     SS_SETTINGS_RANDOMIZER,
 #ifdef TMC_3DS
     SS_SETTINGS_UPDATE,
+    SS_SETTINGS_COLOURS,
 #endif
 };
 
@@ -222,6 +223,11 @@ enum {
     SS_SET_GBA_FRAME,     /* gba_frame: the console's body around a 240x160 / 360x240 picture */
     SS_SET_NEIGHBOURS,    /* neighbour_rooms: OFF / ON */
     SS_SET_STEREO_WORLD,  /* stereo_world_on: OFF / ON (the world's depth while playing, 3D slider up) */
+    SS_SET_COLOUR_MODE,       /* colour_mode: OFF / GBA / CUSTOM */
+    SS_SET_COLOUR_BRIGHTNESS, /* colour_brightness: -50..+50 step 10 */
+    SS_SET_COLOUR_CONTRAST,   /* colour_contrast: -50..+50 step 10 */
+    SS_SET_COLOUR_SATURATION, /* colour_saturation: -50..+50 step 10 */
+    SS_SET_COLOUR_GAMMA,      /* colour_gamma: -6..+6, one tenth per step */
 #endif
     SS_SET_COUNT
 };
@@ -2376,6 +2382,7 @@ static const char* const kSettingLabels[SS_SET_COUNT] = {
 #ifdef TMC_3DS
     "ASPECT RATIO",     "DISPLAY STYLE",    "FRAMES",
     "GBA GRID",         "FRAME",         "NEIGHBOURS",      "3D WORLD",
+    "MODE",             "BRIGHTNESS",    "CONTRAST",        "SATURATION",      "GAMMA",
 #endif
 };
 
@@ -2404,6 +2411,8 @@ static const char* SettingValueMinWord(int setting) {
         case SS_SET_ASPECT_RATIO: return "ORIGINAL";
         case SS_SET_DISPLAY_STYLE: return "PIXEL PERFECT";
         case SS_SET_GBA_GRID: return "HIGH";
+        case SS_SET_COLOUR_MODE: return "CUSTOM";
+        case SS_SET_COLOUR_GAMMA: return "-0.6";
 #endif
         default: return "OFF";
     }
@@ -2458,6 +2467,12 @@ static int SettingsPageRows(int page, uint8_t* out) {
 #ifdef TMC_3DS
     else if (page == SS_SETTINGS_RANDOMIZER) {
         out[n++] = SS_SET_RANDOMIZER;
+    } else if (page == SS_SETTINGS_COLOURS) {
+        out[n++] = SS_SET_COLOUR_MODE;
+        out[n++] = SS_SET_COLOUR_BRIGHTNESS;
+        out[n++] = SS_SET_COLOUR_CONTRAST;
+        out[n++] = SS_SET_COLOUR_SATURATION;
+        out[n++] = SS_SET_COLOUR_GAMMA;
     }
 #endif
     return n;
@@ -2472,13 +2487,20 @@ static const char* SettingsPageTitle(int page) {
         case SS_SETTINGS_RANDOMIZER: return "RANDOMIZER";
 #ifdef TMC_3DS
         case SS_SETTINGS_UPDATE: return "UPDATE";
+        case SS_SETTINGS_COLOURS: return "COLOURS";
 #endif
         default: return "SETTINGS";
     }
 }
 
 static int SettingsBackPage(int page) {
-    return page == SS_SETTINGS_OVERLAY ? SS_SETTINGS_DEVELOPER : SS_SETTINGS_ROOT;
+    switch (page) {
+        case SS_SETTINGS_OVERLAY: return SS_SETTINGS_DEVELOPER;
+#ifdef TMC_3DS
+        case SS_SETTINGS_COLOURS: return SS_SETTINGS_ROOT;
+#endif
+        default: return SS_SETTINGS_ROOT;
+    }
 }
 
 static void DrawSettingsChevron(const SSurf* s, float cx, float cy, float u) {
@@ -2714,6 +2736,39 @@ static int GetSettingState(int row, char* out, int outCap) {
             snprintf(out, (size_t)outCap, "%s", kPacing[pacing]);
             return pacing == PORT_3DS_PACING_AUTO;
         }
+        case SS_SET_COLOUR_MODE: {
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            snprintf(out, (size_t)outCap, "%s", Port_Text_Tr(Port_ColourModeName(grade.mode)));
+            return grade.mode != PORT_COLOUR_OFF;
+        }
+        case SS_SET_COLOUR_BRIGHTNESS: {
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            snprintf(out, (size_t)outCap, "%+d", (int)grade.brightness);
+            return grade.brightness != 0;
+        }
+        case SS_SET_COLOUR_CONTRAST: {
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            snprintf(out, (size_t)outCap, "%+d", (int)grade.contrast);
+            return grade.contrast != 0;
+        }
+        case SS_SET_COLOUR_SATURATION: {
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            snprintf(out, (size_t)outCap, "%+d", (int)grade.saturation);
+            return grade.saturation != 0;
+        }
+        case SS_SET_COLOUR_GAMMA: {
+            /* One decimal without printf floats: 10 + v is 4..16, so 13
+             * prints "1.3" and 4 prints "0.4". */
+            PortColourGrade grade;
+            Port_Config_GetColourGrade(&grade);
+            const int tenths = 10 + (int)grade.gamma;
+            snprintf(out, (size_t)outCap, "%d.%d", tenths / 10, tenths % 10);
+            return grade.gamma != 0;
+        }
 #endif
     }
     if (row != SS_SET_TOP_HUD) {
@@ -2730,6 +2785,38 @@ static int GetSettingState(int row, char* out, int outCap) {
 #include "../platform/3ds/source/updater.h"
 #include "../platform/3ds/source/bottom_compact_3ds.inc"
 #include "../platform/3ds/source/update_ui_3ds.inc"
+#endif
+
+#ifdef TMC_3DS
+/* Live preview of the installed grade: eight fixed in-game RGB555 colours
+ * through Port_ColourGrade_ToRgb888, so a tap anywhere on the COLOURS page
+ * shows its effect at once. Current() (not the stored config) so a grade
+ * pushed by another path is reflected too. */
+static void PaintColourPreview(const SSurf* s, float x0, float y0, float x1, float y1, float u,
+                               int32_t ts) {
+    static const uint16_t kSwatches[8] = {
+        0x1385, 0x1642, 0x0D41, 0x1150, 0x4B3E, 0x7FFF, 0x71C6, 0x18DC
+    };
+    (void)ts;
+    int32_t ms = (int32_t)(1.6f * u);
+    if (ms < 1) ms = 1;
+    float labelH = MENU_TEXT_BOX * ms;
+    MenuTextCentered(s, "PREVIEW", (x0 + x1) / 2, y0 + labelH / 2, ms, SS_TEXT_NAVY);
+    float top = y0 + labelH + 6 * u;
+    if (top > y1 - 4 * u) top = y1 - 4 * u;
+    float gap = 4 * u;
+    float bw = (x1 - x0 - 7 * gap) / 8;
+    if (bw < 1) bw = 1;
+    const PortColourGrade* grade = Port_ColourGrade_Current();
+    for (int i = 0; i < 8; ++i) {
+        uint8_t rgb[3];
+        Port_ColourGrade_ToRgb888(grade, kSwatches[i], rgb);
+        uint32_t abgr = 0xFF000000u | ((uint32_t)rgb[2] << 16) | ((uint32_t)rgb[1] << 8) |
+                        (uint32_t)rgb[0];
+        float bx = x0 + i * (bw + gap);
+        FillRect(s, (int32_t)bx, (int32_t)top, (int32_t)(bx + bw + 0.5f), (int32_t)y1, abgr);
+    }
+}
 #endif
 
 static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
@@ -2820,6 +2907,14 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
         float ry = y0 + slot * (rowH + gap);
         DrawSettingsValueRow(s, tl, x0, ry, x1, ry + rowH, rows[slot], u, ts);
     }
+#ifdef TMC_3DS
+    if (page == SS_SETTINGS_COLOURS) {
+        float lastBottom = y0 + (nRows - 1) * (rowH + gap) + rowH;
+        if (iy1 - lastBottom > 24 * u) {
+            PaintColourPreview(s, x0, lastBottom + 8 * u, x1, iy1, u, ts);
+        }
+    }
+#endif
 }
 
 typedef struct LoadStateConfirmationLayout {
@@ -4200,6 +4295,43 @@ static void DispatchTap(int x, int y, int longPress) {
                     Port_Config_SetFramePacing(next);
                     if (next == PORT_3DS_PACING_NO_SKIP) Compact_Toast("%s", Port_Text_Tr("THE GAME SLOWS DOWN IF IT CANNOT KEEP UP"));
                     else if (next == PORT_3DS_PACING_LOCK30) Compact_Toast("%s", Port_Text_Tr("30 FPS SHOWN, GAME AT FULL SPEED"));
+                    break;
+                }
+                case SS_SET_COLOUR_MODE: {
+                    /* OFF -> GBA -> CUSTOM -> OFF; the setter persists all
+                     * five keys and pushes the module live. */
+                    PortColourGrade grade;
+                    Port_Config_GetColourGrade(&grade);
+                    grade.mode = (uint8_t)((grade.mode + 1u) % PORT_COLOUR_MODE_COUNT);
+                    Port_Config_SetColourGrade(&grade);
+                    break;
+                }
+                case SS_SET_COLOUR_BRIGHTNESS: {
+                    PortColourGrade grade;
+                    Port_Config_GetColourGrade(&grade);
+                    grade.brightness = (int8_t)(grade.brightness + 10 > 50 ? -50 : grade.brightness + 10);
+                    Port_Config_SetColourGrade(&grade);
+                    break;
+                }
+                case SS_SET_COLOUR_CONTRAST: {
+                    PortColourGrade grade;
+                    Port_Config_GetColourGrade(&grade);
+                    grade.contrast = (int8_t)(grade.contrast + 10 > 50 ? -50 : grade.contrast + 10);
+                    Port_Config_SetColourGrade(&grade);
+                    break;
+                }
+                case SS_SET_COLOUR_SATURATION: {
+                    PortColourGrade grade;
+                    Port_Config_GetColourGrade(&grade);
+                    grade.saturation = (int8_t)(grade.saturation + 10 > 50 ? -50 : grade.saturation + 10);
+                    Port_Config_SetColourGrade(&grade);
+                    break;
+                }
+                case SS_SET_COLOUR_GAMMA: {
+                    PortColourGrade grade;
+                    Port_Config_GetColourGrade(&grade);
+                    grade.gamma = (int8_t)(grade.gamma + 1 > 6 ? -6 : grade.gamma + 1);
+                    Port_Config_SetColourGrade(&grade);
                     break;
                 }
 #endif

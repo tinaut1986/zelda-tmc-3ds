@@ -72,7 +72,8 @@ int main(void) {
         "CREST PINS", "FLOOR BACK", "COLOURS", "THEME", "SHOW FPS", "SHOW", "HIDE", "ON", "OFF", "RESTART",
         "ORIGINAL", "STABLE", "SLATE", "PARCHMENT", "NIGHT GOLD", "FOREST", "PATTERN", "NONE", "BACK",
         "PREV", "NEXT", "SAVE OVER", "DELETE", "LOAD", "SURE?", "AUTO", "BILINEAR", "PIXEL P.", "GBA GRID",
-        "INTERFACE", "NEIGHBOURS", "DEPTH", "LAYERS",
+        "INTERFACE", "NEIGHBOURS", "DEPTH", "LAYERS", "MODE", "BRIGHTNESS", "CONTRAST", "SATURATION",
+        "GAMMA", "GBA", "CUSTOM",
     };
     for (size_t i = 0; i < sizeof(kCellWords) / sizeof(kCellWords[0]); i++) {
         for (int lang = PORT_TEXT_FR; lang < PORT_TEXT_COUNT; lang++) {

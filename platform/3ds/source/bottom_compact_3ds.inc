@@ -591,7 +591,15 @@ static void Compact_PaintOptions(const SSurf* s, TargetList* tl) {
     CSettingCellAt(t, tl, y, 2, 1, "FRAMES", SS_SET_FRAMES);
     CSettingCellAt(t, tl, y, 3, 1, "TOP HUD", SS_SET_TOP_HUD);
     y += OPT_ROW_H;
-    CSettingCellAt(t, tl, y, 0, 1, "COLOURS", SS_SET_COLOR_CORRECTION);
+    {
+        /* The mode name opens the COLOURS page; GREEN once a grade is on. */
+        PortColourGrade grade;
+        Port_Config_GetColourGrade(&grade);
+        int32_t x, w;
+        CColumn(t->w, 4, 0, 1, &x, &w);
+        CCell(t, tl, x, y, w, CC_CELL_H, "COLOURS", Port_Text_Tr(Port_ColourModeName(grade.mode)),
+              grade.mode != PORT_COLOUR_OFF ? CC_GOOD : CC_DIM, SS_ACT_SETTINGS_PAGE, SS_SETTINGS_COLOURS);
+    }
     CSettingCellAt(t, tl, y, 1, 1, "GBA GRID", SS_SET_GBA_GRID);
     CSettingCellAt(t, tl, y, 2, 1, "FRAME", SS_SET_GBA_FRAME);
     CSettingCellAt(t, tl, y, 3, 1, "NEIGHBOURS", SS_SET_NEIGHBOURS);
